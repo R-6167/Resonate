@@ -13,7 +13,7 @@ dependencies:
   shared_preferences: ^2.1.1
   cupertino_icons: ^1.0.5
   just_audio: ^0.9.31
-  just_audio_background: ^0.0.5
+  just_audio_background: ^0.0.1-beta.17
   audio_session: ^0.1.7
   audio_service: ^0.18.0
   sqflite: ^2.2.8+4
