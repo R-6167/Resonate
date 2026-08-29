@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/audio_effects_provider.dart';
+import '../providers/crossfade_provider.dart';
 import 'equalizer_screen.dart';
 import 'audio_effects_screen.dart';
+import 'crossfade_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -78,12 +80,13 @@ class SettingsScreen extends StatelessWidget {
               ),
               ListTile(
                 title: const Text('Crossfade'),
-                subtitle: const Text('Enable smooth transitions'),
+                subtitle: const Text('Smooth transitions between songs'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Crossfade - Feature coming soon'),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CrossfadeScreen(),
                     ),
                   );
                 },
