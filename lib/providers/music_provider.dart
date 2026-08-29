@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 
 class MusicProvider extends ChangeNotifier {
@@ -18,6 +17,10 @@ class MusicProvider extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   AudioPlayer get player => _player;
 
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<PlayerState> get playerStateStream => _player.playerStateStream;
+
   Future<void> _init() async {
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
@@ -28,6 +31,11 @@ class MusicProvider extends ChangeNotifier {
         _isPlaying = playing;
         notifyListeners();
       }
+    });
+
+    _player.playerStateStream.listen((state) {
+      // notify on state changes so UI can respond to buffering/completed
+      notifyListeners();
     });
   }
 
@@ -57,8 +65,13 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+  }
+
   Future<void> setCrossfade(Duration duration) async {
     try {
+      // just_audio provides setCrossfadeDuration on some versions; guard in try/catch
       await _player.setCrossFadeEnabled(true);
       await _player.setCrossfadeDuration(duration);
     } catch (e) {
