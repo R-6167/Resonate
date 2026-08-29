@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_service/audio_service.dart';
+import 'audio_handler.dart';
 import 'providers/music_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/equalizer_provider.dart';
@@ -20,18 +22,29 @@ void main() async {
     androidNotificationOngoing: true,
   );
 
-  runApp(const MyApp());
+  // Initialize audio_service and the background audio handler so background isolate is ready
+  final audioHandler = await AudioService.init(
+    builder: () => audioHandlerFactory(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.resonatemp.resonate.channel.audio',
+      androidNotificationChannelName: 'Resonate audio playback',
+      androidNotificationOngoing: true,
+    ),
+  );
+
+  runApp(MyApp(audioHandler: audioHandler));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  final AudioHandler audioHandler;
+  const MyApp({Key? key, required this.audioHandler}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => MusicProvider()),
+        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler)),
         ChangeNotifierProvider(create: (_) => EqualizerProvider()),
         ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
         ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
