@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.resonatemp.resonate">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- For Android 13+ use READ_MEDIA_AUDIO; older versions use READ_EXTERNAL_STORAGE -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <application
+        android:label="Resonate"
+        android:icon="@mipmap/ic_launcher">
+        <!-- AudioService requires nothing extra here for embedding v2, but keep the manifest minimal. -->
+
+        <!-- MethodChannel handler lives in Kotlin class below (registered in MainActivity). -->
+
+    </application>
+</manifest>
