@@ -7,6 +7,7 @@ import '../providers/crossfade_provider.dart';
 import 'equalizer_screen.dart';
 import 'audio_effects_screen.dart';
 import 'crossfade_screen.dart';
+import 'audio_visualization_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -87,6 +88,19 @@ class SettingsScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => const CrossfadeScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                title: const Text('Visualization'),
+                subtitle: const Text('Audio spectrum & waveform display'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AudioVisualizationSettingsScreen(),
                     ),
                   );
                 },
