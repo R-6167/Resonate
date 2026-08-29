@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/library_provider.dart';
 import '../models/song.dart';
+import '../widgets/waveform_widget.dart';
 
 class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({Key? key}) : super(key: key);
@@ -91,44 +92,17 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> with SingleTickerPr
               ),
             ),
           const SizedBox(height: 24),
-          Expanded(child: _Visualizer(animController: _animController)),
+          // Waveform visualizer (precomputed waveform)
+          if (song != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0),
+              child: WaveformWidget(audioPath: song.path, samples: 140),
+            )
+          else
+            const SizedBox(height: 80),
           _NowPlayingControls(),
         ],
       ),
-    );
-  }
-}
-
-class _Visualizer extends StatefulWidget {
-  final AnimationController animController;
-  const _Visualizer({Key? key, required this.animController}) : super(key: key);
-
-  @override
-  State<_Visualizer> createState() => _VisualizerState();
-}
-
-class _VisualizerState extends State<_Visualizer> {
-  final _random = Random();
-
-  @override
-  Widget build(BuildContext context) {
-    final music = Provider.of<MusicProvider>(context);
-    return AnimatedBuilder(
-      animation: widget.animController,
-      builder: (context, child) {
-        final playing = music.isPlaying;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(20, (i) {
-            final base = playing ? (0.2 + _random.nextDouble() * 0.8) : 0.05 + _random.nextDouble() * 0.05;
-            final height = base * MediaQuery.of(context).size.height * 0.25;
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2.0),
-              child: Container(width: 6, height: height, color: Colors.indigoAccent),
-            );
-          }),
-        );
-      },
     );
   }
 }
