@@ -3,7 +3,7 @@ name: flutter-build-apk
 on:
   push:
     branches:
-      - feature/playback-db
+      - main
   workflow_dispatch:
 
 jobs:
@@ -17,15 +17,19 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
+          flutter-version: stable
+          channel: stable
+
+      - name: Create Android project files
+        run: flutter create --platforms=android .
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build APK (release)
+      - name: Build APK
         run: flutter build apk --release --no-shrink
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: resonate-apk
