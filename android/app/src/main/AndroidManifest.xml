@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.resonatemp.resonate">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- For Android 13+ use READ_MEDIA_AUDIO; older versions use READ_EXTERNAL_STORAGE -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+    <application
+        android:label="Resonate"
+        android:icon="@mipmap/ic_launcher">
+
+        <!-- AudioService foreground service declaration to improve survive-on-swipe behavior -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- MethodChannel handler lives in Kotlin MainActivity -->
+
+    </application>
+</manifest>

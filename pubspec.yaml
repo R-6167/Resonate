@@ -3,7 +3,7 @@ description: A feature-rich offline music player built with Flutter.
 version: 0.1.0
 publish_to: "none"
 environment:
-  sdk: ">=2.17.0 <3.0.0"
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
@@ -12,6 +12,14 @@ dependencies:
   google_fonts: ^4.0.3
   shared_preferences: ^2.1.1
   cupertino_icons: ^1.0.5
+  just_audio: ^0.9.31
+  just_audio_background: ^0.0.5
+  audio_session: ^0.1.7
+  audio_service: ^0.18.0
+  sqflite: ^2.2.8+4
+  path_provider: ^2.0.15
+  permission_handler: ^10.4.0
+  uuid: ^4.0.2
 
 dev_dependencies:
   flutter_test:
