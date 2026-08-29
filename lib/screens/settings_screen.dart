@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/equalizer_provider.dart';
+import '../providers/audio_effects_provider.dart';
 import 'equalizer_screen.dart';
+import 'audio_effects_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -57,6 +59,19 @@ class SettingsScreen extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (_) => const EqualizerScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                title: const Text('Audio Effects'),
+                subtitle: const Text('Bass boost, treble boost & more'),
+                trailing: const Icon(Icons.arrow_forward_ios),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AudioEffectsScreen(),
                     ),
                   );
                 },
