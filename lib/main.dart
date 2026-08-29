@@ -7,6 +7,7 @@ import 'providers/equalizer_provider.dart';
 import 'providers/audio_effects_provider.dart';
 import 'providers/crossfade_provider.dart';
 import 'providers/audio_visualization_provider.dart';
+import 'providers/library_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -26,6 +27,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
         ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
         ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
+        ChangeNotifierProvider(create: (_) => LibraryProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
