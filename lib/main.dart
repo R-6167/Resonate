@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'providers/music_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/equalizer_provider.dart';
@@ -10,7 +11,15 @@ import 'providers/audio_visualization_provider.dart';
 import 'providers/library_provider.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize just_audio_background for media notifications & background playback
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.resonatemp.resonate.channel.audio',
+    androidNotificationChannelName: 'Resonate audio playback',
+    androidNotificationOngoing: true,
+  );
+
   runApp(const MyApp());
 }
 

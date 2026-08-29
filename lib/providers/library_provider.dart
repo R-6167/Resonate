@@ -1,20 +1,25 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/song.dart';
 import '../services/database_helper.dart';
+import 'package:uuid/uuid.dart';
+import 'package:path/path.dart';
+import 'package:android_intent_plus/android_intent_plus.dart';
 
 class LibraryProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper();
-  
+  final Uuid _uuid = const Uuid();
+
   List<Song> _allSongs = [];
   List<Song> _filteredSongs = [];
   List<Song> _favoriteSongs = [];
-  String _sortBy = 'title'; // title, artist, album, date_added, play_count
-  String _filterBy = 'all'; // all, favorites, recent
+  String _sortBy = 'title';
+  String _filterBy = 'all';
   String _searchQuery = '';
   Map<String, dynamic> _statistics = {};
+  bool _scannedOnFirstRun = false;
 
-  // Getters
   List<Song> get allSongs => _filteredSongs;
   List<Song> get favoriteSongs => _favoriteSongs;
   String get sortBy => _sortBy;
@@ -23,7 +28,6 @@ class LibraryProvider extends ChangeNotifier {
   Map<String, dynamic> get statistics => _statistics;
 
   LibraryProvider() {
-    _loadPreferences();
     _initializeLibrary();
   }
 
@@ -31,53 +35,110 @@ class LibraryProvider extends ChangeNotifier {
     await loadAllSongs();
     await loadFavoriteSongs();
     await loadStatistics();
+    // Auto scan on first run - guard to avoid repeated scans in a single session
+    if (!_scannedOnFirstRun) {
+      await _autoScan();
+      _scannedOnFirstRun = true;
+    }
   }
 
-  // Load all songs from database
+  Future<void> _autoScan() async {
+    try {
+      // Request permission for media on Android 13+ it's READ_MEDIA_AUDIO
+      final status = await Permission.storage.request();
+      if (!status.isGranted) return;
+
+      // Try MediaStore-based scanning via Android intent as fallback for simplicity
+      // In-depth MediaStore queries require platform channel; for now use common roots
+      final commonRoots = [
+        Directory('/storage/emulated/0/Music'),
+        Directory('/storage/emulated/0/Download'),
+      ];
+
+      for (final root in commonRoots) {
+        if (await root.exists()) {
+          await scanDirectory(root);
+        }
+      }
+    } catch (e) {
+      debugPrint('Auto scan error: $e');
+    }
+  }
+
   Future<void> loadAllSongs() async {
     try {
       _allSongs = await _db.getAllSongs();
       _applyFiltersAndSort();
       notifyListeners();
     } catch (e) {
-      print('Error loading all songs: $e');
+      debugPrint('Error loading all songs: $e');
     }
   }
 
-  // Load favorite songs
   Future<void> loadFavoriteSongs() async {
     try {
       _favoriteSongs = await _db.getFavoriteSongs();
       notifyListeners();
     } catch (e) {
-      print('Error loading favorite songs: $e');
+      debugPrint('Error loading favorite songs: $e');
     }
   }
 
-  // Load statistics
   Future<void> loadStatistics() async {
     try {
       _statistics = await _db.getStatistics();
       notifyListeners();
     } catch (e) {
-      print('Error loading statistics: $e');
+      debugPrint('Error loading statistics: $e');
     }
   }
 
-  // Add songs to library
   Future<void> addSongs(List<Song> songs) async {
     try {
       final count = await _db.insertSongs(songs);
-      print('Added $count songs to library');
+      debugPrint('Added $count songs to library');
       await loadAllSongs();
       await loadStatistics();
       notifyListeners();
     } catch (e) {
-      print('Error adding songs: $e');
+      debugPrint('Error adding songs: $e');
     }
   }
 
-  // Search songs
+  // Simple scanner that walks a directory and finds audio files by extension.
+  Future<void> scanDirectory(Directory startDir) async {
+    final status = await Permission.storage.request();
+    if (!status.isGranted) return;
+
+    final audioExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.aac', '.ogg'];
+    final List<Song> found = [];
+
+    await for (final entity in startDir.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        final ext = extension(entity.path).toLowerCase();
+        if (audioExtensions.contains(ext)) {
+          final stat = await entity.stat();
+          final song = Song(
+            id: _uuid.v4(),
+            title: basenameWithoutExtension(entity.path),
+            artist: 'Unknown',
+            album: 'Unknown',
+            duration: 0,
+            path: entity.path,
+            dateAdded: stat.modified,
+            playCount: 0,
+            isFavorite: false,
+          );
+          found.add(song);
+        }
+      }
+    }
+
+    if (found.isNotEmpty) {
+      await addSongs(found);
+    }
+  }
+
   Future<void> searchSongs(String query) async {
     _searchQuery = query;
     try {
@@ -89,89 +150,78 @@ class LibraryProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('Error searching songs: $e');
+      debugPrint('Error searching songs: $e');
     }
   }
 
-  // Set sort method
   Future<void> setSortBy(String sortBy) async {
     _sortBy = sortBy;
-    await _saveSortPreference();
     _applySorting();
     notifyListeners();
   }
 
-  // Set filter method
   Future<void> setFilterBy(String filterBy) async {
     _filterBy = filterBy;
-    await _saveFilterPreference();
     _applyFiltersAndSort();
     notifyListeners();
   }
 
-  // Get songs by artist
   Future<List<Song>> getSongsByArtist(String artist) async {
     try {
       return await _db.getSongsByArtist(artist);
     } catch (e) {
-      print('Error getting songs by artist: $e');
+      debugPrint('Error getting songs by artist: $e');
       return [];
     }
   }
 
-  // Get songs by album
   Future<List<Song>> getSongsByAlbum(String album) async {
     try {
       return await _db.getSongsByAlbum(album);
     } catch (e) {
-      print('Error getting songs by album: $e');
+      debugPrint('Error getting songs by album: $e');
       return [];
     }
   }
 
-  // Add favorite
   Future<void> addFavorite(Song song) async {
     try {
       await _db.addFavorite(song.id);
       await loadFavoriteSongs();
       notifyListeners();
     } catch (e) {
-      print('Error adding favorite: $e');
+      debugPrint('Error adding favorite: $e');
     }
   }
 
-  // Remove favorite
   Future<void> removeFavorite(String songId) async {
     try {
       await _db.removeFavorite(songId);
       await loadFavoriteSongs();
       notifyListeners();
     } catch (e) {
-      print('Error removing favorite: $e');
+      debugPrint('Error removing favorite: $e');
     }
   }
 
-  // Check if song is favorite
   Future<bool> isFavorite(String songId) async {
     try {
       return await _db.isFavorite(songId);
     } catch (e) {
-      print('Error checking if favorite: $e');
+      debugPrint('Error checking if favorite: $e');
       return false;
     }
   }
 
-  // Update play count
   Future<void> updatePlayCount(String songId) async {
     try {
       await _db.updateSongPlayCount(songId);
       await loadStatistics();
     } catch (e) {
-      print('Error updating play count: $e');
+      debugPrint('Error updating play count: $e');
     }
   }
 
-  // Delete song
   Future<void> deleteSong(String songId) async {
     try {
       await _db.deleteSong(songId);
@@ -179,15 +229,13 @@ class LibraryProvider extends ChangeNotifier {
       await loadStatistics();
       notifyListeners();
     } catch (e) {
-      print('Error deleting song: $e');
+      debugPrint('Error deleting song: $e');
     }
   }
 
-  // Private helper methods
   void _applyFiltersAndSort() {
     _filteredSongs = List.from(_allSongs);
 
-    // Apply filter
     switch (_filterBy) {
       case 'favorites':
         _filteredSongs = _filteredSongs
@@ -195,16 +243,13 @@ class LibraryProvider extends ChangeNotifier {
             .toList();
         break;
       case 'recent':
-        _filteredSongs.sort(
-          (a, b) => b.dateAdded.compareTo(a.dateAdded),
-        );
+        _filteredSongs.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
         break;
       case 'all':
       default:
         break;
     }
 
-    // Apply search if query is not empty
     if (_searchQuery.isNotEmpty) {
       _filteredSongs = _filteredSongs
           .where((song) =>
@@ -214,7 +259,6 @@ class LibraryProvider extends ChangeNotifier {
           .toList();
     }
 
-    // Apply sorting
     _applySorting();
   }
 
@@ -234,34 +278,6 @@ class LibraryProvider extends ChangeNotifier {
         break;
       default:
         break;
-    }
-  }
-
-  Future<void> _saveSortPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('library_sort_by', _sortBy);
-    } catch (e) {
-      print('Error saving sort preference: $e');
-    }
-  }
-
-  Future<void> _saveFilterPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('library_filter_by', _filterBy);
-    } catch (e) {
-      print('Error saving filter preference: $e');
-    }
-  }
-
-  Future<void> _loadPreferences() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _sortBy = prefs.getString('library_sort_by') ?? 'title';
-      _filterBy = prefs.getString('library_filter_by') ?? 'all';
-    } catch (e) {
-      print('Error loading preferences: $e');
     }
   }
 }
