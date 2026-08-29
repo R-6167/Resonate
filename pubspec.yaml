@@ -1,0 +1,21 @@
+name: resonate
+description: A feature-rich offline music player built with Flutter.
+version: 0.1.0
+publish_to: "none"
+environment:
+  sdk: ">=2.17.0 <3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.0.5
+  google_fonts: ^4.0.3
+  shared_preferences: ^2.1.1
+  cupertino_icons: ^1.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
