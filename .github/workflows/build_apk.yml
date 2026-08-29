@@ -1,9 +1,6 @@
 name: flutter-build-apk
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -22,10 +19,7 @@ jobs:
       - name: Show Flutter version
         run: flutter --version
 
-      - name: Create Android project files
-        run: flutter create --platforms=android .
-
-      - name: Install dependencies
+      - name: Get dependencies
         run: flutter pub get
 
       - name: Build APK
