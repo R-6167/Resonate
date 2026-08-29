@@ -2,14 +2,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:audio_service/audio_service.dart';
 import '../models/song.dart';
 
 class MusicProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
+  final AudioHandler? _audioHandler;
   Song? _current;
   bool _isPlaying = false;
 
-  MusicProvider() {
+  MusicProvider([this._audioHandler]) {
     _init();
   }
 
@@ -42,8 +44,29 @@ class MusicProvider extends ChangeNotifier {
   Future<void> playSong(Song song) async {
     try {
       _current = song;
-      await _player.setFilePath(song.path);
-      await _player.play();
+      // If an audio handler is present (background), set its media item too.
+      if (_audioHandler != null) {
+        try {
+          // Use a MediaItem for the audio handler; audio handler may implement custom methods.
+          final item = MediaItem(
+            id: song.id,
+            album: song.album,
+            title: song.title,
+            artist: song.artist,
+            duration: Duration(milliseconds: song.duration),
+            extras: {'path': song.path},
+          );
+          _audioHandler!.addQueueItem(item);
+          _audioHandler!.play();
+        } catch (_) {
+          // Fall back to local player if handler interaction fails
+          await _player.setFilePath(song.path);
+          await _player.play();
+        }
+      } else {
+        await _player.setFilePath(song.path);
+        await _player.play();
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Error playing song: $e');
@@ -53,20 +76,24 @@ class MusicProvider extends ChangeNotifier {
   Future<void> playPause() async {
     if (_player.playing) {
       await _player.pause();
+      _audioHandler?.pause();
     } else {
       await _player.play();
+      _audioHandler?.play();
     }
     notifyListeners();
   }
 
   Future<void> stop() async {
     await _player.stop();
+    _audioHandler?.stop();
     _current = null;
     notifyListeners();
   }
 
   Future<void> seek(Duration position) async {
     await _player.seek(position);
+    _audioHandler?.seek(position);
   }
 
   Future<void> setCrossfade(Duration duration) async {
