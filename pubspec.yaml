@@ -13,6 +13,19 @@ dependencies:
   shared_preferences: ^2.1.1
   cupertino_icons: ^1.0.5
 
+  # Audio & background playback
+  just_audio: ^0.9.34
+  just_audio_background: ^0.0.1
+  audio_service: ^0.18.0
+  audio_session: ^0.1.6
+
+  # Database & utilities
+  sqflite: ^2.0.0+4
+  path: ^1.8.3
+
+  # Other
+  uuid: ^3.0.6
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
