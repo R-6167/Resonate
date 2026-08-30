@@ -238,14 +238,10 @@ class DatabaseHelper {
   Future<int> updateSongPlayCount(String songId) async {
     final db = await database;
     try {
-      return await db.update(
-        tableSongs,
-        {
-          columnSongPlayCount: FieldValue.increment(1),
-          columnSongLastPlayed: DateTime.now().toIso8601String(),
-        },
-        where: '$columnSongId = ?',
-        whereArgs: [songId],
+      // Increment play_count and set last_played timestamp
+      return await db.rawUpdate(
+        'UPDATE $tableSongs SET $columnSongPlayCount = COALESCE($columnSongPlayCount, 0) + 1, $columnSongLastPlayed = ? WHERE $columnSongId = ?',
+        [DateTime.now().toIso8601String(), songId],
       );
     } catch (e) {
       print('Error updating play count: $e');
