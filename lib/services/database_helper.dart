@@ -99,9 +99,14 @@ class DatabaseHelper {
         $columnPlaylistSongPlaylistId TEXT NOT NULL,
         $columnPlaylistSongSongId TEXT NOT NULL,
         $columnPlaylistSongPosition INTEGER,
-        PRIMARY KEY ($columnPlaylistSongPlaylistId, $columnPlaylistSongSongId),
-        FOREIGN KEY ($columnPlaylistSongPlaylistId) REFERENCES $tablePlaylists($columnPlaylistId),
-        FOREIGN KEY ($columnPlaylistSongSongId) REFERENCES $tableSongs($columnSongId)
+        PRIMARY KEY (
+          $columnPlaylistSongPlaylistId,
+          $columnPlaylistSongSongId
+        ),
+        FOREIGN KEY ($columnPlaylistSongPlaylistId)
+          REFERENCES $tablePlaylists($columnPlaylistId),
+        FOREIGN KEY ($columnPlaylistSongSongId)
+          REFERENCES $tableSongs($columnSongId)
       )
     ''');
 
@@ -110,19 +115,35 @@ class DatabaseHelper {
       CREATE TABLE $tableFavorites (
         $columnFavoriteSongId TEXT PRIMARY KEY,
         $columnFavoriteDateAdded TEXT NOT NULL,
-        FOREIGN KEY ($columnFavoriteSongId) REFERENCES $tableSongs($columnSongId)
+        FOREIGN KEY ($columnFavoriteSongId)
+          REFERENCES $tableSongs($columnSongId)
       )
     ''');
 
-    // Create indexes for better query performance
-    await db.execute('CREATE INDEX idx_songs_title ON $tableSongs($columnSongTitle)');
-    await db.execute('CREATE INDEX idx_songs_artist ON $tableSongs($columnSongArtist)');
-    await db.execute('CREATE INDEX idx_playlists_name ON $tablePlaylists($columnPlaylistName)');
+    // Create indexes
+    await db.execute(
+      'CREATE INDEX idx_songs_title '
+      'ON $tableSongs($columnSongTitle)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_songs_artist '
+      'ON $tableSongs($columnSongArtist)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_playlists_name '
+      'ON $tablePlaylists($columnPlaylistName)',
+    );
   }
 
-  // Song operations
+  // ============================================================
+  // SONG OPERATIONS
+  // ============================================================
+
   Future<int> insertSong(Song song) async {
     final db = await database;
+
     try {
       return await db.insert(
         tableSongs,
@@ -148,7 +169,8 @@ class DatabaseHelper {
   Future<int> insertSongs(List<Song> songs) async {
     final db = await database;
     int count = 0;
-    for (var song in songs) {
+
+    for (final song in songs) {
       try {
         await db.insert(
           tableSongs,
@@ -165,22 +187,29 @@ class DatabaseHelper {
           },
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+
         count++;
       } catch (e) {
         print('Error inserting song ${song.title}: $e');
       }
     }
+
     return count;
   }
 
   Future<List<Song>> getAllSongs() async {
     final db = await database;
+
     try {
       final maps = await db.query(
         tableSongs,
         orderBy: '$columnSongTitle ASC',
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching all songs: $e');
       return [];
@@ -189,14 +218,26 @@ class DatabaseHelper {
 
   Future<List<Song>> searchSongs(String query) async {
     final db = await database;
+
     try {
       final maps = await db.query(
         tableSongs,
-        where: '$columnSongTitle LIKE ? OR $columnSongArtist LIKE ? OR $columnSongAlbum LIKE ?',
-        whereArgs: ['%$query%', '%$query%', '%$query%'],
+        where:
+            '$columnSongTitle LIKE ? OR '
+            '$columnSongArtist LIKE ? OR '
+            '$columnSongAlbum LIKE ?',
+        whereArgs: [
+          '%$query%',
+          '%$query%',
+          '%$query%',
+        ],
         orderBy: '$columnSongTitle ASC',
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error searching songs: $e');
       return [];
@@ -205,6 +246,7 @@ class DatabaseHelper {
 
   Future<List<Song>> getSongsByArtist(String artist) async {
     final db = await database;
+
     try {
       final maps = await db.query(
         tableSongs,
@@ -212,7 +254,11 @@ class DatabaseHelper {
         whereArgs: [artist],
         orderBy: '$columnSongTitle ASC',
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching songs by artist: $e');
       return [];
@@ -221,6 +267,7 @@ class DatabaseHelper {
 
   Future<List<Song>> getSongsByAlbum(String album) async {
     final db = await database;
+
     try {
       final maps = await db.query(
         tableSongs,
@@ -228,7 +275,11 @@ class DatabaseHelper {
         whereArgs: [album],
         orderBy: '$columnSongTitle ASC',
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching songs by album: $e');
       return [];
@@ -237,15 +288,22 @@ class DatabaseHelper {
 
   Future<int> updateSongPlayCount(String songId) async {
     final db = await database;
+
     try {
-      return await db.update(
-        tableSongs,
-        {
-          columnSongPlayCount: FieldValue.increment(1),
-          columnSongLastPlayed: DateTime.now().toIso8601String(),
-        },
-        where: '$columnSongId = ?',
-        whereArgs: [songId],
+      // sqflite does NOT support Firebase's FieldValue.increment().
+      // Use SQL arithmetic instead.
+      return await db.rawUpdate(
+        '''
+        UPDATE $tableSongs
+        SET $columnSongPlayCount =
+              COALESCE($columnSongPlayCount, 0) + 1,
+            $columnSongLastPlayed = ?
+        WHERE $columnSongId = ?
+        ''',
+        [
+          DateTime.now().toIso8601String(),
+          songId,
+        ],
       );
     } catch (e) {
       print('Error updating play count: $e');
@@ -255,6 +313,7 @@ class DatabaseHelper {
 
   Future<int> deleteSong(String songId) async {
     final db = await database;
+
     try {
       return await db.delete(
         tableSongs,
@@ -267,16 +326,24 @@ class DatabaseHelper {
     }
   }
 
-  // Playlist operations
+  // ============================================================
+  // PLAYLIST OPERATIONS
+  // ============================================================
+
   Future<int> insertPlaylist(Playlist playlist) async {
     final db = await database;
+
     try {
-      return await db.insert(tablePlaylists, {
-        columnPlaylistId: playlist.id,
-        columnPlaylistName: playlist.name,
-        columnPlaylistCreatedAt: playlist.createdAt.toIso8601String(),
-        columnPlaylistDescription: playlist.description,
-      });
+      return await db.insert(
+        tablePlaylists,
+        {
+          columnPlaylistId: playlist.id,
+          columnPlaylistName: playlist.name,
+          columnPlaylistCreatedAt:
+              playlist.createdAt.toIso8601String(),
+          columnPlaylistDescription: playlist.description,
+        },
+      );
     } catch (e) {
       print('Error inserting playlist: $e');
       return -1;
@@ -285,20 +352,30 @@ class DatabaseHelper {
 
   Future<List<Playlist>> getAllPlaylists() async {
     final db = await database;
+
     try {
       final maps = await db.query(
         tablePlaylists,
         orderBy: '$columnPlaylistName ASC',
       );
-      return List.generate(maps.length, (i) => _playlistFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _playlistFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching all playlists: $e');
       return [];
     }
   }
 
-  Future<int> addSongToPlaylist(String playlistId, String songId, int position) async {
+  Future<int> addSongToPlaylist(
+    String playlistId,
+    String songId,
+    int position,
+  ) async {
     final db = await database;
+
     try {
       return await db.insert(
         tablePlaylistSongs,
@@ -317,28 +394,43 @@ class DatabaseHelper {
 
   Future<List<Song>> getPlaylistSongs(String playlistId) async {
     final db = await database;
+
     try {
       final maps = await db.rawQuery(
         'SELECT s.* FROM $tableSongs s '
-        'INNER JOIN $tablePlaylistSongs ps ON s.$columnSongId = ps.$columnPlaylistSongSongId '
+        'INNER JOIN $tablePlaylistSongs ps '
+        'ON s.$columnSongId = ps.$columnPlaylistSongSongId '
         'WHERE ps.$columnPlaylistSongPlaylistId = ? '
         'ORDER BY ps.$columnPlaylistSongPosition ASC',
         [playlistId],
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching playlist songs: $e');
       return [];
     }
   }
 
-  Future<int> removeSongFromPlaylist(String playlistId, String songId) async {
+  Future<int> removeSongFromPlaylist(
+    String playlistId,
+    String songId,
+  ) async {
     final db = await database;
+
     try {
       return await db.delete(
         tablePlaylistSongs,
-        where: '$columnPlaylistSongPlaylistId = ? AND $columnPlaylistSongSongId = ?',
-        whereArgs: [playlistId, songId],
+        where:
+            '$columnPlaylistSongPlaylistId = ? '
+            'AND $columnPlaylistSongSongId = ?',
+        whereArgs: [
+          playlistId,
+          songId,
+        ],
       );
     } catch (e) {
       print('Error removing song from playlist: $e');
@@ -348,14 +440,14 @@ class DatabaseHelper {
 
   Future<int> deletePlaylist(String playlistId) async {
     final db = await database;
+
     try {
-      // Delete playlist songs first
       await db.delete(
         tablePlaylistSongs,
         where: '$columnPlaylistSongPlaylistId = ?',
         whereArgs: [playlistId],
       );
-      // Delete playlist
+
       return await db.delete(
         tablePlaylists,
         where: '$columnPlaylistId = ?',
@@ -367,15 +459,20 @@ class DatabaseHelper {
     }
   }
 
-  // Favorites operations
+  // ============================================================
+  // FAVORITES OPERATIONS
+  // ============================================================
+
   Future<int> addFavorite(String songId) async {
     final db = await database;
+
     try {
       return await db.insert(
         tableFavorites,
         {
           columnFavoriteSongId: songId,
-          columnFavoriteDateAdded: DateTime.now().toIso8601String(),
+          columnFavoriteDateAdded:
+              DateTime.now().toIso8601String(),
         },
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
@@ -387,13 +484,19 @@ class DatabaseHelper {
 
   Future<List<Song>> getFavoriteSongs() async {
     final db = await database;
+
     try {
       final maps = await db.rawQuery(
         'SELECT s.* FROM $tableSongs s '
-        'INNER JOIN $tableFavorites f ON s.$columnSongId = f.$columnFavoriteSongId '
+        'INNER JOIN $tableFavorites f '
+        'ON s.$columnSongId = f.$columnFavoriteSongId '
         'ORDER BY s.$columnSongTitle ASC',
       );
-      return List.generate(maps.length, (i) => _songFromMap(maps[i]));
+
+      return List.generate(
+        maps.length,
+        (i) => _songFromMap(maps[i]),
+      );
     } catch (e) {
       print('Error fetching favorite songs: $e');
       return [];
@@ -402,12 +505,14 @@ class DatabaseHelper {
 
   Future<bool> isFavorite(String songId) async {
     final db = await database;
+
     try {
       final result = await db.query(
         tableFavorites,
         where: '$columnFavoriteSongId = ?',
         whereArgs: [songId],
       );
+
       return result.isNotEmpty;
     } catch (e) {
       print('Error checking if favorite: $e');
@@ -417,6 +522,7 @@ class DatabaseHelper {
 
   Future<int> removeFavorite(String songId) async {
     final db = await database;
+
     try {
       return await db.delete(
         tableFavorites,
@@ -429,25 +535,42 @@ class DatabaseHelper {
     }
   }
 
-  // Statistics
+  // ============================================================
+  // STATISTICS
+  // ============================================================
+
   Future<Map<String, dynamic>> getStatistics() async {
     final db = await database;
+
     try {
       final totalSongs = Sqflite.firstIntValue(
-        await db.rawQuery('SELECT COUNT(*) FROM $tableSongs'),
-      ) ?? 0;
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM $tableSongs',
+            ),
+          ) ??
+          0;
 
       final totalPlaylists = Sqflite.firstIntValue(
-        await db.rawQuery('SELECT COUNT(*) FROM $tablePlaylists'),
-      ) ?? 0;
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM $tablePlaylists',
+            ),
+          ) ??
+          0;
 
       final favoriteCount = Sqflite.firstIntValue(
-        await db.rawQuery('SELECT COUNT(*) FROM $tableFavorites'),
-      ) ?? 0;
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM $tableFavorites',
+            ),
+          ) ??
+          0;
 
       final totalPlayCount = Sqflite.firstIntValue(
-        await db.rawQuery('SELECT SUM($columnSongPlayCount) FROM $tableSongs'),
-      ) ?? 0;
+            await db.rawQuery(
+              'SELECT COALESCE(SUM($columnSongPlayCount), 0) '
+              'FROM $tableSongs',
+            ),
+          ) ??
+          0;
 
       return {
         'totalSongs': totalSongs,
@@ -457,6 +580,7 @@ class DatabaseHelper {
       };
     } catch (e) {
       print('Error getting statistics: $e');
+
       return {
         'totalSongs': 0,
         'totalPlaylists': 0,
@@ -466,7 +590,10 @@ class DatabaseHelper {
     }
   }
 
-  // Helper methods
+  // ============================================================
+  // HELPER METHODS
+  // ============================================================
+
   Song _songFromMap(Map<String, dynamic> map) {
     return Song(
       id: map[columnSongId],
@@ -474,8 +601,12 @@ class DatabaseHelper {
       artist: map[columnSongArtist] ?? 'Unknown Artist',
       album: map[columnSongAlbum] ?? 'Unknown Album',
       filePath: map[columnSongFilePath],
-      duration: Duration(milliseconds: map[columnSongDuration] ?? 0),
-      dateAdded: DateTime.parse(map[columnSongDateAdded]),
+      duration: Duration(
+        milliseconds: map[columnSongDuration] ?? 0,
+      ),
+      dateAdded: DateTime.parse(
+        map[columnSongDateAdded],
+      ),
       albumArt: map[columnSongAlbumArt],
     );
   }
@@ -485,14 +616,20 @@ class DatabaseHelper {
       id: map[columnPlaylistId],
       name: map[columnPlaylistName],
       songIds: [],
-      createdAt: DateTime.parse(map[columnPlaylistCreatedAt]),
+      createdAt: DateTime.parse(
+        map[columnPlaylistCreatedAt],
+      ),
       description: map[columnPlaylistDescription],
     );
   }
 
-  // Database utilities
+  // ============================================================
+  // DATABASE UTILITIES
+  // ============================================================
+
   Future<void> clearAllData() async {
     final db = await database;
+
     try {
       await db.delete(tablePlaylistSongs);
       await db.delete(tableFavorites);
@@ -506,47 +643,6 @@ class DatabaseHelper {
   Future<void> closeDatabase() async {
     final db = await database;
     await db.close();
-  }
-}
-  // Helper methods
-  Song _songFromMap(Map<String, dynamic> map) {
-    return Song(
-      id: map[columnSongId],
-      title: map[columnSongTitle],
-      artist: map[columnSongArtist] ?? 'Unknown Artist',
-      album: map[columnSongAlbum] ?? 'Unknown Album',
-      filePath: map[columnSongFilePath],
-      duration: Duration(milliseconds: map[columnSongDuration] ?? 0),
-      dateAdded: DateTime.parse(map[columnSongDateAdded]),
-      albumArt: map[columnSongAlbumArt],
-    );
-  }
-
-  Playlist _playlistFromMap(Map<String, dynamic> map) {
-    return Playlist(
-      id: map[columnPlaylistId],
-      name: map[columnPlaylistName],
-      songIds: [],
-      createdAt: DateTime.parse(map[columnPlaylistCreatedAt]),
-      description: map[columnPlaylistDescription],
-    );
-  }
-
-  // Database utilities
-  Future<void> clearAllData() async {
-    final db = await database;
-    try {
-      await db.delete(tablePlaylistSongs);
-      await db.delete(tableFavorites);
-      await db.delete(tablePlaylists);
-      await db.delete(tableSongs);
-    } catch (e) {
-      print('Error clearing database: $e');
-    }
-  }
-
-  Future<void> closeDatabase() async {
-    final db = await database;
-    await db.close();
+    _database = null;
   }
 }
