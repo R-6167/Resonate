@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 class EqualizerProvider extends ChangeNotifier {
-  // Simple stub: 5-band eq with default gains at 0.0 dB
   final Map<String, double> bands = {
     '60Hz': 0.0,
     '250Hz': 0.0,

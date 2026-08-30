@@ -6,6 +6,10 @@ class ThemeProvider extends ChangeNotifier {
 
   bool get isDarkMode => _isDarkMode;
 
+  ThemeProvider() {
+    loadFromPrefs();
+  }
+
   Future<void> loadFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
