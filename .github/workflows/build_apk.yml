@@ -25,11 +25,11 @@ jobs:
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '8.14'
 
       - name: Generate Gradle wrapper
         working-directory: android
-        run: gradle wrapper --gradle-version 8.13
+        run: gradle wrapper --gradle-version 8.14
 
       - name: Make Gradle executable
         run: chmod +x android/gradlew
