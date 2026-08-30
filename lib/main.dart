@@ -11,17 +11,10 @@ import 'providers/library_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart'; // our handler
 import 'package:audio_service/audio_service.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize just_audio_background so notifications / media session work
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.yourcompany.resonate.channel.audio',
-    androidNotificationChannelName: 'Audio Playback',
-    androidNotificationOngoing: true,
-  );
 
   // Initialize audio_service with our handler so background controls work
   final audioHandler = await AudioService.init(
