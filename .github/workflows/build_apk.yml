@@ -22,6 +22,18 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
+      - name: Install Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version 8.14
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
       - name: Build APK
         run: flutter build apk --release --no-shrink
 

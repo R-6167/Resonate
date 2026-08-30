@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -e
+BASEDIR=$(dirname "$0")
+CLASSPATH="$BASEDIR/gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$CLASSPATH" ]; then
+  echo "Warning: gradle wrapper jar not found. Attempting to use system gradle if available."
+  exec gradle "$@"
+else
+  exec "$CLASSPATH" "$@"
+fi
