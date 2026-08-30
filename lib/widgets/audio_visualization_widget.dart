@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_visualization_provider.dart';
@@ -136,8 +138,8 @@ class CircularVisualizationPainter extends CustomPainter {
     );
   }
 
-  double cosAngle(double angle) => (angle).cos();
-  double sinAngle(double angle) => (angle).sin();
+ double cosAngle(double angle) => math.cos(angle);
+double sinAngle(double angle) => math.sin(angle);
 
   @override
   bool shouldRepaint(CircularVisualizationPainter oldDelegate) => true;
@@ -338,7 +340,8 @@ class WaveAnimationPainter extends CustomPainter {
 
     for (int i = 0; i < frequencies.length; i++) {
       final x = i * pointWidth;
-      final waveOffset = 20 * (frequencies[i]).sin() * animationValue;
+      final waveOffset = 
+        20 * math.sin(frequencies[i]) * animationValue;
       final y = centerY - (frequencies[i] * centerY) + waveOffset;
 
       if (i == 0) {
