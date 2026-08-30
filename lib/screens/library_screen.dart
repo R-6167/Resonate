@@ -1,28 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/music_provider.dart';
 import '../providers/library_provider.dart';
-import '../services/audio_service.dart';
 import 'player_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({Key? key}) : super(key: key);
+  const LibraryScreen({
+    Key? key,
+  }) : super(key: key);
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  State<LibraryScreen> createState() =>
+      _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
-  final TextEditingController _searchController = TextEditingController();
+class _LibraryScreenState
+    extends State<LibraryScreen> {
+  final TextEditingController _searchController =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_onSearchChanged);
+
+    _searchController.addListener(
+      _onSearchChanged,
+    );
   }
 
   void _onSearchChanged() {
-    context.read<LibraryProvider>().searchSongs(_searchController.text);
+    context
+        .read<LibraryProvider>()
+        .searchSongs(
+          _searchController.text,
+        );
+
+    setState(() {});
   }
 
   @override
@@ -35,150 +49,234 @@ class _LibraryScreenState extends State<LibraryScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
-              final libraryProvider = context.read<LibraryProvider>();
+              final libraryProvider =
+                  context.read<LibraryProvider>();
+
               await libraryProvider.loadAllSongs();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Library refreshed')),
+
+              if (!mounted) {
+                return;
+              }
+
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(
+                const SnackBar(
+                  content:
+                      Text('Library refreshed'),
+                ),
               );
             },
           ),
-          PopupMenuButton(
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                child: const Text('Sort by Title'),
-                onTap: () => context.read<LibraryProvider>().setSortBy('title'),
+
+          // Explicit generic type fixes the PopupMenu
+          // type inference error.
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              final libraryProvider =
+                  context.read<LibraryProvider>();
+
+              switch (value) {
+                case 'title':
+                  libraryProvider.setSortBy(
+                    'title',
+                  );
+                  break;
+
+                case 'artist':
+                  libraryProvider.setSortBy(
+                    'artist',
+                  );
+                  break;
+
+                case 'album':
+                  libraryProvider.setSortBy(
+                    'album',
+                  );
+                  break;
+
+                case 'date_added':
+                  libraryProvider.setSortBy(
+                    'date_added',
+                  );
+                  break;
+
+                case 'all':
+                  libraryProvider.setFilterBy(
+                    'all',
+                  );
+                  break;
+
+                case 'favorites':
+                  libraryProvider.setFilterBy(
+                    'favorites',
+                  );
+                  break;
+
+                case 'recent':
+                  libraryProvider.setFilterBy(
+                    'recent',
+                  );
+                  break;
+              }
+            },
+            itemBuilder: (context) =>
+                const <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'title',
+                child: Text('Sort by Title'),
               ),
-              PopupMenuItem(
-                child: const Text('Sort by Artist'),
-                onTap: () => context.read<LibraryProvider>().setSortBy('artist'),
+              PopupMenuItem<String>(
+                value: 'artist',
+                child: Text('Sort by Artist'),
               ),
-              PopupMenuItem(
-                child: const Text('Sort by Album'),
-                onTap: () => context.read<LibraryProvider>().setSortBy('album'),
+              PopupMenuItem<String>(
+                value: 'album',
+                child: Text('Sort by Album'),
               ),
-              PopupMenuItem(
-                child: const Text('Sort by Date Added'),
-                onTap: () => context.read<LibraryProvider>().setSortBy('date_added'),
+              PopupMenuItem<String>(
+                value: 'date_added',
+                child: Text('Sort by Date Added'),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                child: const Text('Filter: All'),
-                onTap: () => context.read<LibraryProvider>().setFilterBy('all'),
+              PopupMenuDivider(),
+              PopupMenuItem<String>(
+                value: 'all',
+                child: Text('Filter: All'),
               ),
-              PopupMenuItem(
-                child: const Text('Filter: Favorites'),
-                onTap: () => context.read<LibraryProvider>().setFilterBy('favorites'),
+              PopupMenuItem<String>(
+                value: 'favorites',
+                child: Text('Filter: Favorites'),
               ),
-              PopupMenuItem(
-                child: const Text('Filter: Recent'),
-                onTap: () => context.read<LibraryProvider>().setFilterBy('recent'),
+              PopupMenuItem<String>(
+                value: 'recent',
+                child: Text('Filter: Recent'),
               ),
             ],
           ),
         ],
       ),
+
       body: Column(
         children: [
-          // Search bar
+          // -------------------------------------------------------------------
+          // SEARCH
+          // -------------------------------------------------------------------
+
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding:
+                const EdgeInsets.all(16.0),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search songs, artists, albums...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                      )
-                    : null,
+                hintText:
+                    'Search songs, artists, albums...',
+                prefixIcon:
+                    const Icon(Icons.search),
+                suffixIcon:
+                    _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.clear,
+                            ),
+                            onPressed: () {
+                              _searchController
+                                  .clear();
+                            },
+                          )
+                        : null,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius:
+                      BorderRadius.circular(8),
                 ),
               ),
             ),
           ),
-          // Statistics bar
+
+          // -------------------------------------------------------------------
+          // STATISTICS
+          // -------------------------------------------------------------------
+
           Consumer<LibraryProvider>(
-            builder: (context, libraryProvider, _) {
-              final stats = libraryProvider.statistics;
+            builder:
+                (context, libraryProvider, _) {
+              final stats =
+                  libraryProvider.statistics;
+
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding:
+                    const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  mainAxisAlignment:
+                      MainAxisAlignment.spaceAround,
                   children: [
-                    Column(
-                      children: [
-                        Text(
+                    _StatItem(
+                      value:
                           '${stats['totalSongs'] ?? 0}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'Songs',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+                      label: 'Songs',
                     ),
-                    Column(
-                      children: [
-                        Text(
+                    _StatItem(
+                      value:
                           '${stats['favoriteCount'] ?? 0}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'Favorites',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+                      label: 'Favorites',
                     ),
-                    Column(
-                      children: [
-                        Text(
+                    _StatItem(
+                      value:
                           '${stats['totalPlaylists'] ?? 0}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'Playlists',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+                      label: 'Playlists',
                     ),
                   ],
                 ),
               );
             },
           ),
+
           const Divider(),
-          // Songs list
+
+          // -------------------------------------------------------------------
+          // SONG LIST
+          // -------------------------------------------------------------------
+
           Expanded(
-            child: Consumer<LibraryProvider>(
-              builder: (context, libraryProvider, _) {
-                final songs = libraryProvider.allSongs;
+            child:
+                Consumer<LibraryProvider>(
+              builder:
+                  (context, libraryProvider, _) {
+                final songs =
+                    libraryProvider.allSongs;
 
                 if (songs.isEmpty) {
                   return Center(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment:
+                          MainAxisAlignment.center,
                       children: [
                         Icon(
                           Icons.music_note,
                           size: 64,
                           color: Colors.grey[400],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(
+                          height: 16,
+                        ),
                         Text(
                           'No songs found',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(
+                          height: 8,
+                        ),
                         Text(
-                          libraryProvider.searchQuery.isNotEmpty
+                          libraryProvider
+                                  .searchQuery
+                                  .isNotEmpty
                               ? 'Try a different search'
                               : 'Add songs to get started',
-                          style: Theme.of(context).textTheme.bodyMedium,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium,
                         ),
                       ],
                     ),
@@ -187,61 +285,130 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
                 return ListView.builder(
                   itemCount: songs.length,
-                  itemBuilder: (context, index) {
+                  itemBuilder:
+                      (context, index) {
                     final song = songs[index];
+
+                    final musicProvider =
+                        context
+                            .read<MusicProvider>();
+
+                    final isCurrent =
+                        musicProvider.currentSong
+                                ?.id ==
+                            song.id;
+
                     return ListTile(
                       leading: Icon(
                         Icons.music_note,
-                        color: context.read<MusicProvider>().currentSong?.id ==
-                                song.id
-                            ? Theme.of(context).primaryColor
+                        color: isCurrent
+                            ? Theme.of(context)
+                                .primaryColor
                             : null,
                       ),
-                      title: Text(song.title),
-                      subtitle: Text(song.artist),
-                      trailing: PopupMenuButton(
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            child: const Text('Add to favorites'),
-                            onTap: () {
-                              libraryProvider.addFavorite(song);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Added to favorites'),
-                                  duration: Duration(seconds: 1),
+                      title: Text(
+                        song.title,
+                      ),
+                      subtitle: Text(
+                        song.artist,
+                      ),
+                      trailing:
+                          PopupMenuButton<String>(
+                        onSelected: (value) async {
+                          if (value ==
+                              'favorite') {
+                            await libraryProvider
+                                .addFavorite(song);
+
+                            if (!mounted) {
+                              return;
+                            }
+
+                            ScaffoldMessenger
+                                    .of(context)
+                                .showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Added to favorites',
                                 ),
-                              );
-                            },
+                                duration:
+                                    Duration(
+                                  seconds: 1,
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (value ==
+                              'delete') {
+                            await libraryProvider
+                                .deleteSong(
+                              song.id,
+                            );
+
+                            if (!mounted) {
+                              return;
+                            }
+
+                            ScaffoldMessenger
+                                    .of(context)
+                                .showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Song deleted',
+                                ),
+                                duration:
+                                    Duration(
+                                  seconds: 1,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        itemBuilder:
+                            (context) =>
+                                const <
+                                    PopupMenuEntry<
+                                        String>>[
+                          PopupMenuItem<String>(
+                            value: 'favorite',
+                            child: Text(
+                              'Add to favorites',
+                            ),
                           ),
-                          PopupMenuItem(
-                            child: const Text('Delete'),
-                            onTap: () {
-                              libraryProvider.deleteSong(song.id);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Song deleted'),
-                                  duration: Duration(seconds: 1),
-                                ),
-                              );
-                            },
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Text(
+                              'Delete',
+                            ),
                           ),
                         ],
                       ),
-                      selected:
-                          context.read<MusicProvider>().currentSong?.id ==
-                              song.id,
+                      selected: isCurrent,
                       onTap: () async {
-                        final musicProvider = context.read<MusicProvider>();
-                        await musicProvider.playSong(song);
-                        await libraryProvider.updatePlayCount(song.id);
-                        if (mounted) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PlayerScreen(),
-                            ),
-                          );
+                        final musicProvider =
+                            context.read<
+                                MusicProvider>();
+
+                        await musicProvider
+                            .playSong(song);
+
+                        await libraryProvider
+                            .updatePlayCount(
+                          song.id,
+                        );
+
+                        if (!mounted) {
+                          return;
                         }
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const PlayerScreen(),
+                          ),
+                        );
                       },
                     );
                   },
@@ -256,7 +423,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    _searchController.removeListener(
+      _onSearchChanged,
+    );
+
     _searchController.dispose();
+
     super.dispose();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// STATISTICS WIDGET
+// -----------------------------------------------------------------------------
+
+class _StatItem extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _StatItem({
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium,
+        ),
+        Text(
+          label,
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall,
+        ),
+      ],
+    );
   }
 }
