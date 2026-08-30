@@ -15,7 +15,8 @@ class LibraryProvider extends ChangeNotifier {
   Map<String, dynamic> _statistics = {};
 
   // Getters
-  List<Song> get allSongs => _filteredSongs;
+  List<Song> get allSongs => _allSongs;
+  List<Song> get filteredSongs => _filteredSongs;
   List<Song> get favoriteSongs => _favoriteSongs;
   String get sortBy => _sortBy;
   String get filterBy => _filterBy;
