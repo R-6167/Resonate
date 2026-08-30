@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
 import '../models/song.dart';
 import '../models/playlist.dart';
 
@@ -7,13 +8,19 @@ class DatabaseHelper {
   static const _databaseName = 'resonate.db';
   static const _databaseVersion = 1;
 
-  // Table names
+  // ---------------------------------------------------------------------------
+  // TABLE NAMES
+  // ---------------------------------------------------------------------------
+
   static const String tableSongs = 'songs';
   static const String tablePlaylists = 'playlists';
   static const String tablePlaylistSongs = 'playlist_songs';
   static const String tableFavorites = 'favorites';
 
-  // Song columns
+  // ---------------------------------------------------------------------------
+  // SONG COLUMNS
+  // ---------------------------------------------------------------------------
+
   static const String columnSongId = 'id';
   static const String columnSongTitle = 'title';
   static const String columnSongArtist = 'artist';
@@ -25,20 +32,33 @@ class DatabaseHelper {
   static const String columnSongPlayCount = 'play_count';
   static const String columnSongLastPlayed = 'last_played';
 
-  // Playlist columns
+  // ---------------------------------------------------------------------------
+  // PLAYLIST COLUMNS
+  // ---------------------------------------------------------------------------
+
   static const String columnPlaylistId = 'id';
   static const String columnPlaylistName = 'name';
   static const String columnPlaylistCreatedAt = 'created_at';
   static const String columnPlaylistDescription = 'description';
 
-  // Playlist songs columns
+  // ---------------------------------------------------------------------------
+  // PLAYLIST SONG COLUMNS
+  // ---------------------------------------------------------------------------
+
   static const String columnPlaylistSongPlaylistId = 'playlist_id';
   static const String columnPlaylistSongSongId = 'song_id';
   static const String columnPlaylistSongPosition = 'position';
 
-  // Favorites columns
+  // ---------------------------------------------------------------------------
+  // FAVORITE COLUMNS
+  // ---------------------------------------------------------------------------
+
   static const String columnFavoriteSongId = 'song_id';
   static const String columnFavoriteDateAdded = 'date_added';
+
+  // ---------------------------------------------------------------------------
+  // SINGLETON
+  // ---------------------------------------------------------------------------
 
   static final DatabaseHelper _instance = DatabaseHelper._internal();
 
@@ -50,24 +70,35 @@ class DatabaseHelper {
 
   static Database? _database;
 
+  // ---------------------------------------------------------------------------
+  // DATABASE
+  // ---------------------------------------------------------------------------
+
   Future<Database> get database async {
-    _database ??= await _initDatabase();
+    if (_database != null) {
+      return _database!;
+    }
+
+    _database = await _initDatabase();
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
     final databasesPath = await getDatabasesPath();
-    final path = join(databasesPath, _databaseName);
+    final dbPath = join(databasesPath, _databaseName);
 
-    return await openDatabase(
-      path,
+    return openDatabase(
+      dbPath,
       version: _databaseVersion,
       onCreate: _onCreate,
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // CREATE DATABASE
+  // ---------------------------------------------------------------------------
+
   Future<void> _onCreate(Database db, int version) async {
-    // Create songs table
     await db.execute('''
       CREATE TABLE $tableSongs (
         $columnSongId TEXT PRIMARY KEY,
@@ -83,7 +114,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create playlists table
     await db.execute('''
       CREATE TABLE $tablePlaylists (
         $columnPlaylistId TEXT PRIMARY KEY,
@@ -93,7 +123,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create playlist songs junction table
     await db.execute('''
       CREATE TABLE $tablePlaylistSongs (
         $columnPlaylistSongPlaylistId TEXT NOT NULL,
@@ -110,7 +139,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create favorites table
     await db.execute('''
       CREATE TABLE $tableFavorites (
         $columnFavoriteSongId TEXT PRIMARY KEY,
@@ -120,7 +148,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Create indexes
+    // Indexes
     await db.execute(
       'CREATE INDEX idx_songs_title '
       'ON $tableSongs($columnSongTitle)',
@@ -137,9 +165,9 @@ class DatabaseHelper {
     );
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // SONG OPERATIONS
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   Future<int> insertSong(Song song) async {
     final db = await database;
@@ -157,6 +185,7 @@ class DatabaseHelper {
           columnSongDateAdded: song.dateAdded.toIso8601String(),
           columnSongAlbumArt: song.albumArt,
           columnSongPlayCount: 0,
+          columnSongLastPlayed: null,
         },
         conflictAlgorithm: ConflictAlgorithm.ignore,
       );
@@ -184,6 +213,7 @@ class DatabaseHelper {
             columnSongDateAdded: song.dateAdded.toIso8601String(),
             columnSongAlbumArt: song.albumArt,
             columnSongPlayCount: 0,
+            columnSongLastPlayed: null,
           },
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
@@ -206,10 +236,7 @@ class DatabaseHelper {
         orderBy: '$columnSongTitle ASC',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error fetching all songs: $e');
       return [];
@@ -220,24 +247,24 @@ class DatabaseHelper {
     final db = await database;
 
     try {
+      final searchTerm = '%$query%';
+
       final maps = await db.query(
         tableSongs,
-        where:
-            '$columnSongTitle LIKE ? OR '
-            '$columnSongArtist LIKE ? OR '
-            '$columnSongAlbum LIKE ?',
+        where: '''
+          $columnSongTitle LIKE ?
+          OR $columnSongArtist LIKE ?
+          OR $columnSongAlbum LIKE ?
+        ''',
         whereArgs: [
-          '%$query%',
-          '%$query%',
-          '%$query%',
+          searchTerm,
+          searchTerm,
+          searchTerm,
         ],
         orderBy: '$columnSongTitle ASC',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error searching songs: $e');
       return [];
@@ -255,10 +282,7 @@ class DatabaseHelper {
         orderBy: '$columnSongTitle ASC',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error fetching songs by artist: $e');
       return [];
@@ -276,10 +300,7 @@ class DatabaseHelper {
         orderBy: '$columnSongTitle ASC',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error fetching songs by album: $e');
       return [];
@@ -290,14 +311,13 @@ class DatabaseHelper {
     final db = await database;
 
     try {
-      // sqflite does NOT support Firebase's FieldValue.increment().
-      // Use SQL arithmetic instead.
       return await db.rawUpdate(
         '''
         UPDATE $tableSongs
-        SET $columnSongPlayCount =
-              COALESCE($columnSongPlayCount, 0) + 1,
-            $columnSongLastPlayed = ?
+        SET
+          $columnSongPlayCount =
+            COALESCE($columnSongPlayCount, 0) + 1,
+          $columnSongLastPlayed = ?
         WHERE $columnSongId = ?
         ''',
         [
@@ -315,6 +335,21 @@ class DatabaseHelper {
     final db = await database;
 
     try {
+      // Remove from playlists first.
+      await db.delete(
+        tablePlaylistSongs,
+        where: '$columnPlaylistSongSongId = ?',
+        whereArgs: [songId],
+      );
+
+      // Remove from favorites.
+      await db.delete(
+        tableFavorites,
+        where: '$columnFavoriteSongId = ?',
+        whereArgs: [songId],
+      );
+
+      // Finally remove the song.
       return await db.delete(
         tableSongs,
         where: '$columnSongId = ?',
@@ -326,9 +361,9 @@ class DatabaseHelper {
     }
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // PLAYLIST OPERATIONS
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   Future<int> insertPlaylist(Playlist playlist) async {
     final db = await database;
@@ -343,6 +378,7 @@ class DatabaseHelper {
               playlist.createdAt.toIso8601String(),
           columnPlaylistDescription: playlist.description,
         },
+        conflictAlgorithm: ConflictAlgorithm.replace,
       );
     } catch (e) {
       print('Error inserting playlist: $e');
@@ -359,10 +395,7 @@ class DatabaseHelper {
         orderBy: '$columnPlaylistName ASC',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _playlistFromMap(maps[i]),
-      );
+      return maps.map(_playlistFromMap).toList();
     } catch (e) {
       print('Error fetching all playlists: $e');
       return [];
@@ -397,18 +430,18 @@ class DatabaseHelper {
 
     try {
       final maps = await db.rawQuery(
-        'SELECT s.* FROM $tableSongs s '
-        'INNER JOIN $tablePlaylistSongs ps '
-        'ON s.$columnSongId = ps.$columnPlaylistSongSongId '
-        'WHERE ps.$columnPlaylistSongPlaylistId = ? '
-        'ORDER BY ps.$columnPlaylistSongPosition ASC',
+        '''
+        SELECT s.*
+        FROM $tableSongs s
+        INNER JOIN $tablePlaylistSongs ps
+          ON s.$columnSongId = ps.$columnPlaylistSongSongId
+        WHERE ps.$columnPlaylistSongPlaylistId = ?
+        ORDER BY ps.$columnPlaylistSongPosition ASC
+        ''',
         [playlistId],
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error fetching playlist songs: $e');
       return [];
@@ -459,9 +492,9 @@ class DatabaseHelper {
     }
   }
 
-  // ============================================================
-  // FAVORITES OPERATIONS
-  // ============================================================
+  // ---------------------------------------------------------------------------
+  // FAVORITES
+  // ---------------------------------------------------------------------------
 
   Future<int> addFavorite(String songId) async {
     final db = await database;
@@ -487,16 +520,16 @@ class DatabaseHelper {
 
     try {
       final maps = await db.rawQuery(
-        'SELECT s.* FROM $tableSongs s '
-        'INNER JOIN $tableFavorites f '
-        'ON s.$columnSongId = f.$columnFavoriteSongId '
-        'ORDER BY s.$columnSongTitle ASC',
+        '''
+        SELECT s.*
+        FROM $tableSongs s
+        INNER JOIN $tableFavorites f
+          ON s.$columnSongId = f.$columnFavoriteSongId
+        ORDER BY s.$columnSongTitle ASC
+        ''',
       );
 
-      return List.generate(
-        maps.length,
-        (i) => _songFromMap(maps[i]),
-      );
+      return maps.map(_songFromMap).toList();
     } catch (e) {
       print('Error fetching favorite songs: $e');
       return [];
@@ -511,11 +544,12 @@ class DatabaseHelper {
         tableFavorites,
         where: '$columnFavoriteSongId = ?',
         whereArgs: [songId],
+        limit: 1,
       );
 
       return result.isNotEmpty;
     } catch (e) {
-      print('Error checking if favorite: $e');
+      print('Error checking favorite: $e');
       return false;
     }
   }
@@ -535,9 +569,9 @@ class DatabaseHelper {
     }
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // STATISTICS
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> getStatistics() async {
     final db = await database;
@@ -590,42 +624,60 @@ class DatabaseHelper {
     }
   }
 
-  // ============================================================
-  // HELPER METHODS
-  // ============================================================
+  // ---------------------------------------------------------------------------
+  // MAP CONVERSIONS
+  // ---------------------------------------------------------------------------
 
   Song _songFromMap(Map<String, dynamic> map) {
+    final dateAddedString =
+        map[columnSongDateAdded]?.toString();
+
+    DateTime dateAdded;
+
+    if (dateAddedString != null && dateAddedString.isNotEmpty) {
+      dateAdded =
+          DateTime.tryParse(dateAddedString) ?? DateTime.now();
+    } else {
+      dateAdded = DateTime.now();
+    }
+
     return Song(
-      id: map[columnSongId],
-      title: map[columnSongTitle],
-      artist: map[columnSongArtist] ?? 'Unknown Artist',
-      album: map[columnSongAlbum] ?? 'Unknown Album',
-      filePath: map[columnSongFilePath],
+      id: map[columnSongId]?.toString() ?? '',
+      title: map[columnSongTitle]?.toString() ?? 'Unknown Title',
+      artist:
+          map[columnSongArtist]?.toString() ?? 'Unknown Artist',
+      album:
+          map[columnSongAlbum]?.toString() ?? 'Unknown Album',
+      filePath:
+          map[columnSongFilePath]?.toString() ?? '',
       duration: Duration(
-        milliseconds: map[columnSongDuration] ?? 0,
+        milliseconds:
+            (map[columnSongDuration] as num?)?.toInt() ?? 0,
       ),
-      dateAdded: DateTime.parse(
-        map[columnSongDateAdded],
-      ),
-      albumArt: map[columnSongAlbumArt],
+      dateAdded: dateAdded,
+      albumArt: map[columnSongAlbumArt]?.toString(),
     );
   }
 
   Playlist _playlistFromMap(Map<String, dynamic> map) {
+    final createdAtString =
+        map[columnPlaylistCreatedAt]?.toString();
+
     return Playlist(
-      id: map[columnPlaylistId],
-      name: map[columnPlaylistName],
-      songIds: [],
-      createdAt: DateTime.parse(
-        map[columnPlaylistCreatedAt],
-      ),
-      description: map[columnPlaylistDescription],
+      id: map[columnPlaylistId]?.toString() ?? '',
+      name: map[columnPlaylistName]?.toString() ?? 'Untitled Playlist',
+      songIds: const [],
+      createdAt:
+          DateTime.tryParse(createdAtString ?? '') ??
+              DateTime.now(),
+      description:
+          map[columnPlaylistDescription]?.toString(),
     );
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // DATABASE UTILITIES
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   Future<void> clearAllData() async {
     final db = await database;
@@ -641,8 +693,9 @@ class DatabaseHelper {
   }
 
   Future<void> closeDatabase() async {
-    final db = await database;
-    await db.close();
-    _database = null;
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
   }
 }
