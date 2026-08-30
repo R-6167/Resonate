@@ -15,7 +15,7 @@ dependencies:
 
   # Audio & background playback
   just_audio: ^0.9.34
-  just_audio_background: ^0.0.1
+  just_audio_background: any
   audio_service: ^0.18.0
   audio_session: ^0.1.6
 
