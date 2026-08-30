@@ -26,7 +26,11 @@ jobs:
         run: |
           mkdir -p android/gradle/wrapper
           curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar
+          chmod +x android/gradle/wrapper/gradle-wrapper.jar
           ls -lh android/gradle/wrapper/gradle-wrapper.jar
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
 
       - name: Build APK
         run: flutter build apk --release --no-shrink
