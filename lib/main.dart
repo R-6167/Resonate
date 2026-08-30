@@ -9,20 +9,44 @@ import 'providers/crossfade_provider.dart';
 import 'providers/audio_visualization_provider.dart';
 import 'providers/library_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/audio_service_handler.dart'; // our handler
+import 'package:audio_service/audio_service.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
-void main() {
-  runApp(const MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize just_audio_background so notifications / media session work
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.yourcompany.resonate.channel.audio',
+    androidNotificationChannelName: 'Audio Playback',
+    androidNotificationOngoing: true,
+  );
+
+  // Initialize audio_service with our handler so background controls work
+  final audioHandler = await AudioService.init(
+    builder: () => AudioServiceHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.yourcompany.resonate.channel.audio',
+      androidNotificationChannelName: 'Audio Playback',
+      androidNotificationOngoing: true,
+    ),
+  );
+
+  runApp(MyApp(audioHandler: audioHandler));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  final AudioHandler audioHandler;
+  const MyApp({Key? key, required this.audioHandler}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => MusicProvider()),
+        // Provide the audio handler to the MusicProvider if you want it to control background
+        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
         ChangeNotifierProvider(create: (_) => EqualizerProvider()),
         ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
         ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
