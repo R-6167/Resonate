@@ -1,0 +1,37 @@
+name: Flutter Check
+
+on:
+  push:
+    branches:
+      - Intelligence
+  pull_request:
+    branches:
+      - Intelligence
+  workflow_dispatch:
+
+jobs:
+  flutter-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Clean project
+        run: flutter clean
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze project
+        run: flutter analyze
