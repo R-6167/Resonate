@@ -36,15 +36,20 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --release --no-shrink
-
-      - name: Find generated APK
+        
+      - name: Inspect build outputs
         if: always()
         run: |
-          echo "Searching for APK files..."
+          echo "=== APK FILES ==="
           find . -type f -name "*.apk" -print
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: resonate-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          echo "=== AAB FILES ==="
+          find . -type f -name "*.aab" -print
+
+          echo "=== BUILD DIRECTORY ==="
+          find build -maxdepth 6 -type f 2>/dev/null | head -300
+
+          echo "=== ANDROID OUTPUTS ==="
+          find android -type f \( -name "*.apk" -o -name "*.aab" \) -print
+
+      
