@@ -110,6 +110,136 @@ static const String columnEventSkipPositionMs =
       onCreate: _onCreate,
     );
   }
+  await db.execute('''
+  CREATE TABLE $tableListeningEvents (
+    $columnEventId TEXT PRIMARY KEY,
+    $columnEventSongId TEXT NOT NULL,
+    $columnEventPreviousSongId TEXT,
+    $columnEventStartedAt TEXT NOT NULL,
+    $columnEventEndedAt TEXT,
+    $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0,
+    $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0,
+    $columnEventCompletionRatio REAL NOT NULL DEFAULT 0,
+    $columnEventCompleted INTEGER NOT NULL DEFAULT 0,
+    $columnEventSkipped INTEGER NOT NULL DEFAULT 0,
+    $columnEventSkipPositionMs INTEGER,
+    FOREIGN KEY ($columnEventSongId)
+      REFERENCES $tableSongs($columnSongId)
+  )
+''');
+  await db.execute(
+  'CREATE INDEX idx_events_song '
+  'ON $tableListeningEvents($columnEventSongId)',
+);
+
+await db.execute(
+  'CREATE INDEX idx_events_previous_song '
+  'ON $tableListeningEvents($columnEventPreviousSongId)',
+);
+
+await db.execute(
+  'CREATE INDEX idx_events_started_at '
+  'ON $tableListeningEvents($columnEventStartedAt)',
+);
+  return openDatabase(
+  dbPath,
+  version: _databaseVersion,
+  onCreate: _onCreate,
+  onUpgrade: _onUpgrade,
+);
+  Future<void> _onUpgrade(
+  Database db,
+  int oldVersion,
+  int newVersion,
+) async {
+  if (oldVersion < 2) {
+    await db.execute('''
+      CREATE TABLE $tableListeningEvents (
+        $columnEventId TEXT PRIMARY KEY,
+        $columnEventSongId TEXT NOT NULL,
+        $columnEventPreviousSongId TEXT,
+        $columnEventStartedAt TEXT NOT NULL,
+        $columnEventEndedAt TEXT,
+        $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0,
+        $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0,
+        $columnEventCompletionRatio REAL NOT NULL DEFAULT 0,
+        $columnEventCompleted INTEGER NOT NULL DEFAULT 0,
+        $columnEventSkipped INTEGER NOT NULL DEFAULT 0,
+        $columnEventSkipPositionMs INTEGER,
+        FOREIGN KEY ($columnEventSongId)
+          REFERENCES $tableSongs($columnSongId)
+      )
+    ''');
+
+    await db.execute(
+      'CREATE INDEX idx_events_song '
+      'ON $tableListeningEvents($columnEventSongId)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_events_previous_song '
+      'ON $tableListeningEvents($columnEventPreviousSongId)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_events_started_at '
+      'ON $tableListeningEvents($columnEventStartedAt)',
+    );
+  }
+}
+  Future<int> insertListeningEvent(
+  ListeningEvent event,
+) async {
+  final db = await database;
+
+  return db.insert(
+    tableListeningEvents,
+    event.toMap(),
+    conflictAlgorithm: ConflictAlgorithm.replace,
+  );
+}
+  Future<int> updateListeningEvent(
+  ListeningEvent event,
+) async {
+  final db = await database;
+
+  return db.update(
+    tableListeningEvents,
+    event.toMap(),
+    where: '$columnEventId = ?',
+    whereArgs: [event.id],
+  );
+}
+  Future<List<ListeningEvent>> getRecentListeningEvents({
+  int limit = 100,
+}) async {
+  final db = await database;
+
+  final maps = await db.query(
+    tableListeningEvents,
+    orderBy: '$columnEventStartedAt DESC',
+    limit: limit,
+  );
+
+  return maps
+      .map(ListeningEvent.fromMap)
+      .toList();
+}
+  Future<List<Map<String, dynamic>>> getTransitionCounts(
+  String songId,
+) async {
+  final db = await database;
+
+  return db.rawQuery('''
+    SELECT
+      $columnEventSongId AS next_song_id,
+      COUNT(*) AS transition_count
+    FROM $tableListeningEvents
+    WHERE $columnEventPreviousSongId = ?
+    GROUP BY $columnEventSongId
+    ORDER BY transition_count DESC
+  ''', [songId]);
+}
 
   // ---------------------------------------------------------------------------
   // CREATE DATABASE
