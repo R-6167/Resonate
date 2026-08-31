@@ -3,27 +3,13 @@ import 'package:path/path.dart';
 
 import '../models/song.dart';
 import '../models/playlist.dart';
+import '../models/listening_event.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
+
+  // Version 2 adds the Intelligence listening_events table.
   static const _databaseVersion = 2;
-  static const String tableListeningEvents = 'listening_events';
-  static const String columnEventId = 'id';
-static const String columnEventSongId = 'song_id';
-static const String columnEventPreviousSongId = 'previous_song_id';
-static const String columnEventStartedAt = 'started_at';
-static const String columnEventEndedAt = 'ended_at';
-static const String columnEventDurationPlayedMs =
-    'duration_played_ms';
-static const String columnEventSongDurationMs =
-    'song_duration_ms';
-static const String columnEventCompletionRatio =
-    'completion_ratio';
-static const String columnEventCompleted = 'completed';
-static const String columnEventSkipped = 'skipped';
-static const String columnEventSkipPositionMs =
-    'skip_position_ms';
-  import '../models/listening_event.dart';
 
   // ---------------------------------------------------------------------------
   // TABLE NAMES
@@ -33,6 +19,7 @@ static const String columnEventSkipPositionMs =
   static const String tablePlaylists = 'playlists';
   static const String tablePlaylistSongs = 'playlist_songs';
   static const String tableFavorites = 'favorites';
+  static const String tableListeningEvents = 'listening_events';
 
   // ---------------------------------------------------------------------------
   // SONG COLUMNS
@@ -74,6 +61,26 @@ static const String columnEventSkipPositionMs =
   static const String columnFavoriteDateAdded = 'date_added';
 
   // ---------------------------------------------------------------------------
+  // LISTENING EVENT COLUMNS
+  // ---------------------------------------------------------------------------
+
+  static const String columnEventId = 'id';
+  static const String columnEventSongId = 'song_id';
+  static const String columnEventPreviousSongId = 'previous_song_id';
+  static const String columnEventStartedAt = 'started_at';
+  static const String columnEventEndedAt = 'ended_at';
+  static const String columnEventDurationPlayedMs =
+      'duration_played_ms';
+  static const String columnEventSongDurationMs =
+      'song_duration_ms';
+  static const String columnEventCompletionRatio =
+      'completion_ratio';
+  static const String columnEventCompleted = 'completed';
+  static const String columnEventSkipped = 'skipped';
+  static const String columnEventSkipPositionMs =
+      'skip_position_ms';
+
+  // ---------------------------------------------------------------------------
   // SINGLETON
   // ---------------------------------------------------------------------------
 
@@ -108,51 +115,95 @@ static const String columnEventSkipPositionMs =
       dbPath,
       version: _databaseVersion,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
-  await db.execute('''
-  CREATE TABLE $tableListeningEvents (
-    $columnEventId TEXT PRIMARY KEY,
-    $columnEventSongId TEXT NOT NULL,
-    $columnEventPreviousSongId TEXT,
-    $columnEventStartedAt TEXT NOT NULL,
-    $columnEventEndedAt TEXT,
-    $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0,
-    $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0,
-    $columnEventCompletionRatio REAL NOT NULL DEFAULT 0,
-    $columnEventCompleted INTEGER NOT NULL DEFAULT 0,
-    $columnEventSkipped INTEGER NOT NULL DEFAULT 0,
-    $columnEventSkipPositionMs INTEGER,
-    FOREIGN KEY ($columnEventSongId)
-      REFERENCES $tableSongs($columnSongId)
-  )
-''');
-  await db.execute(
-  'CREATE INDEX idx_events_song '
-  'ON $tableListeningEvents($columnEventSongId)',
-);
 
-await db.execute(
-  'CREATE INDEX idx_events_previous_song '
-  'ON $tableListeningEvents($columnEventPreviousSongId)',
-);
+  // ---------------------------------------------------------------------------
+  // DATABASE CREATION
+  // ---------------------------------------------------------------------------
 
-await db.execute(
-  'CREATE INDEX idx_events_started_at '
-  'ON $tableListeningEvents($columnEventStartedAt)',
-);
-  return openDatabase(
-  dbPath,
-  version: _databaseVersion,
-  onCreate: _onCreate,
-  onUpgrade: _onUpgrade,
-);
-  Future<void> _onUpgrade(
-  Database db,
-  int oldVersion,
-  int newVersion,
-) async {
-  if (oldVersion < 2) {
+  Future<void> _onCreate(Database db, int version) async {
+    // -------------------------------------------------------------------------
+    // SONGS
+    // -------------------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE $tableSongs (
+        $columnSongId TEXT PRIMARY KEY,
+        $columnSongTitle TEXT NOT NULL,
+        $columnSongArtist TEXT,
+        $columnSongAlbum TEXT,
+        $columnSongFilePath TEXT NOT NULL UNIQUE,
+        $columnSongDuration INTEGER,
+        $columnSongDateAdded TEXT,
+        $columnSongAlbumArt TEXT,
+        $columnSongPlayCount INTEGER DEFAULT 0,
+        $columnSongLastPlayed TEXT
+      )
+    ''');
+
+    // -------------------------------------------------------------------------
+    // PLAYLISTS
+    // -------------------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE $tablePlaylists (
+        $columnPlaylistId TEXT PRIMARY KEY,
+        $columnPlaylistName TEXT NOT NULL,
+        $columnPlaylistCreatedAt TEXT NOT NULL,
+        $columnPlaylistDescription TEXT
+      )
+    ''');
+
+    // -------------------------------------------------------------------------
+    // PLAYLIST SONGS
+    // -------------------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE $tablePlaylistSongs (
+        $columnPlaylistSongPlaylistId TEXT NOT NULL,
+        $columnPlaylistSongSongId TEXT NOT NULL,
+        $columnPlaylistSongPosition INTEGER,
+        PRIMARY KEY (
+          $columnPlaylistSongPlaylistId,
+          $columnPlaylistSongSongId
+        ),
+        FOREIGN KEY ($columnPlaylistSongPlaylistId)
+          REFERENCES $tablePlaylists($columnPlaylistId),
+        FOREIGN KEY ($columnPlaylistSongSongId)
+          REFERENCES $tableSongs($columnSongId)
+      )
+    ''');
+
+    // -------------------------------------------------------------------------
+    // FAVORITES
+    // -------------------------------------------------------------------------
+
+    await db.execute('''
+      CREATE TABLE $tableFavorites (
+        $columnFavoriteSongId TEXT PRIMARY KEY,
+        $columnFavoriteDateAdded TEXT NOT NULL,
+        FOREIGN KEY ($columnFavoriteSongId)
+          REFERENCES $tableSongs($columnSongId)
+      )
+    ''');
+
+    // -------------------------------------------------------------------------
+    // LISTENING EVENTS
+    // -------------------------------------------------------------------------
+    //
+    // This is the first Intelligence data layer.
+    //
+    // It records individual listening sessions instead of only aggregate
+    // play counts. This allows Intelligence to eventually learn:
+    //
+    // Song A -> Song B
+    // Song A -> Song C
+    // etc.
+    //
+    // -------------------------------------------------------------------------
+
     await db.execute('''
       CREATE TABLE $tableListeningEvents (
         $columnEventId TEXT PRIMARY KEY,
@@ -171,6 +222,26 @@ await db.execute(
       )
     ''');
 
+    // -------------------------------------------------------------------------
+    // INDEXES
+    // -------------------------------------------------------------------------
+
+    await db.execute(
+      'CREATE INDEX idx_songs_title '
+      'ON $tableSongs($columnSongTitle)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_songs_artist '
+      'ON $tableSongs($columnSongArtist)',
+    );
+
+    await db.execute(
+      'CREATE INDEX idx_playlists_name '
+      'ON $tablePlaylists($columnPlaylistName)',
+    );
+
+    // Intelligence indexes.
     await db.execute(
       'CREATE INDEX idx_events_song '
       'ON $tableListeningEvents($columnEventSongId)',
@@ -186,130 +257,158 @@ await db.execute(
       'ON $tableListeningEvents($columnEventStartedAt)',
     );
   }
-}
+
+  // ---------------------------------------------------------------------------
+  // DATABASE MIGRATION
+  // ---------------------------------------------------------------------------
+
+  Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE $tableListeningEvents (
+          $columnEventId TEXT PRIMARY KEY,
+          $columnEventSongId TEXT NOT NULL,
+          $columnEventPreviousSongId TEXT,
+          $columnEventStartedAt TEXT NOT NULL,
+          $columnEventEndedAt TEXT,
+          $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0,
+          $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0,
+          $columnEventCompletionRatio REAL NOT NULL DEFAULT 0,
+          $columnEventCompleted INTEGER NOT NULL DEFAULT 0,
+          $columnEventSkipped INTEGER NOT NULL DEFAULT 0,
+          $columnEventSkipPositionMs INTEGER,
+          FOREIGN KEY ($columnEventSongId)
+            REFERENCES $tableSongs($columnSongId)
+        )
+      ''');
+
+      await db.execute(
+        'CREATE INDEX idx_events_song '
+        'ON $tableListeningEvents($columnEventSongId)',
+      );
+
+      await db.execute(
+        'CREATE INDEX idx_events_previous_song '
+        'ON $tableListeningEvents($columnEventPreviousSongId)',
+      );
+
+      await db.execute(
+        'CREATE INDEX idx_events_started_at '
+        'ON $tableListeningEvents($columnEventStartedAt)',
+      );
+    }
+  }
+
+  // ===========================================================================
+  // LISTENING INTELLIGENCE
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // INSERT LISTENING EVENT
+  // ---------------------------------------------------------------------------
+
   Future<int> insertListeningEvent(
-  ListeningEvent event,
-) async {
-  final db = await database;
+    ListeningEvent event,
+  ) async {
+    final db = await database;
 
-  return db.insert(
-    tableListeningEvents,
-    event.toMap(),
-    conflictAlgorithm: ConflictAlgorithm.replace,
-  );
-}
+    try {
+      return await db.insert(
+        tableListeningEvents,
+        event.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      print('Error inserting listening event: $e');
+      return -1;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // UPDATE LISTENING EVENT
+  // ---------------------------------------------------------------------------
+
   Future<int> updateListeningEvent(
-  ListeningEvent event,
-) async {
-  final db = await database;
+    ListeningEvent event,
+  ) async {
+    final db = await database;
 
-  return db.update(
-    tableListeningEvents,
-    event.toMap(),
-    where: '$columnEventId = ?',
-    whereArgs: [event.id],
-  );
-}
+    try {
+      return await db.update(
+        tableListeningEvents,
+        event.toMap(),
+        where: '$columnEventId = ?',
+        whereArgs: [event.id],
+      );
+    } catch (e) {
+      print('Error updating listening event: $e');
+      return -1;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET RECENT LISTENING EVENTS
+  // ---------------------------------------------------------------------------
+
   Future<List<ListeningEvent>> getRecentListeningEvents({
-  int limit = 100,
-}) async {
-  final db = await database;
+    int limit = 100,
+  }) async {
+    final db = await database;
 
-  final maps = await db.query(
-    tableListeningEvents,
-    orderBy: '$columnEventStartedAt DESC',
-    limit: limit,
-  );
+    try {
+      final maps = await db.query(
+        tableListeningEvents,
+        orderBy: '$columnEventStartedAt DESC',
+        limit: limit,
+      );
 
-  return maps
-      .map(ListeningEvent.fromMap)
-      .toList();
-}
+      return maps
+          .map(ListeningEvent.fromMap)
+          .toList();
+    } catch (e) {
+      print('Error fetching listening events: $e');
+      return [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET TRANSITION COUNTS
+  // ---------------------------------------------------------------------------
+  //
+  // Example:
+  //
+  // A -> B : 14
+  // A -> C : 5
+  // A -> D : 2
+  //
+  // This will become one of the foundations of the future
+  // "What Should Happen Next?" engine.
+  //
+  // ---------------------------------------------------------------------------
+
   Future<List<Map<String, dynamic>>> getTransitionCounts(
-  String songId,
-) async {
-  final db = await database;
+    String songId,
+  ) async {
+    final db = await database;
 
-  return db.rawQuery('''
-    SELECT
-      $columnEventSongId AS next_song_id,
-      COUNT(*) AS transition_count
-    FROM $tableListeningEvents
-    WHERE $columnEventPreviousSongId = ?
-    GROUP BY $columnEventSongId
-    ORDER BY transition_count DESC
-  ''', [songId]);
-}
-
-  // ---------------------------------------------------------------------------
-  // CREATE DATABASE
-  // ---------------------------------------------------------------------------
-
-  Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE $tableSongs (
-        $columnSongId TEXT PRIMARY KEY,
-        $columnSongTitle TEXT NOT NULL,
-        $columnSongArtist TEXT,
-        $columnSongAlbum TEXT,
-        $columnSongFilePath TEXT NOT NULL UNIQUE,
-        $columnSongDuration INTEGER,
-        $columnSongDateAdded TEXT,
-        $columnSongAlbumArt TEXT,
-        $columnSongPlayCount INTEGER DEFAULT 0,
-        $columnSongLastPlayed TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE $tablePlaylists (
-        $columnPlaylistId TEXT PRIMARY KEY,
-        $columnPlaylistName TEXT NOT NULL,
-        $columnPlaylistCreatedAt TEXT NOT NULL,
-        $columnPlaylistDescription TEXT
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE $tablePlaylistSongs (
-        $columnPlaylistSongPlaylistId TEXT NOT NULL,
-        $columnPlaylistSongSongId TEXT NOT NULL,
-        $columnPlaylistSongPosition INTEGER,
-        PRIMARY KEY (
-          $columnPlaylistSongPlaylistId,
-          $columnPlaylistSongSongId
-        ),
-        FOREIGN KEY ($columnPlaylistSongPlaylistId)
-          REFERENCES $tablePlaylists($columnPlaylistId),
-        FOREIGN KEY ($columnPlaylistSongSongId)
-          REFERENCES $tableSongs($columnSongId)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE TABLE $tableFavorites (
-        $columnFavoriteSongId TEXT PRIMARY KEY,
-        $columnFavoriteDateAdded TEXT NOT NULL,
-        FOREIGN KEY ($columnFavoriteSongId)
-          REFERENCES $tableSongs($columnSongId)
-      )
-    ''');
-
-    // Indexes
-    await db.execute(
-      'CREATE INDEX idx_songs_title '
-      'ON $tableSongs($columnSongTitle)',
-    );
-
-    await db.execute(
-      'CREATE INDEX idx_songs_artist '
-      'ON $tableSongs($columnSongArtist)',
-    );
-
-    await db.execute(
-      'CREATE INDEX idx_playlists_name '
-      'ON $tablePlaylists($columnPlaylistName)',
-    );
+    try {
+      return await db.rawQuery('''
+        SELECT
+          $columnEventSongId AS next_song_id,
+          COUNT(*) AS transition_count
+        FROM $tableListeningEvents
+        WHERE $columnEventPreviousSongId = ?
+        GROUP BY $columnEventSongId
+        ORDER BY transition_count DESC
+      ''', [songId]);
+    } catch (e) {
+      print('Error fetching transition counts: $e');
+      return [];
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -482,6 +581,16 @@ await db.execute(
     final db = await database;
 
     try {
+      // Remove listening events associated with the song first.
+      // This prevents orphaned intelligence records.
+      await db.delete(
+        tableListeningEvents,
+        where:
+            '$columnEventSongId = ? '
+            'OR $columnEventPreviousSongId = ?',
+        whereArgs: [songId, songId],
+      );
+
       // Remove from playlists first.
       await db.delete(
         tablePlaylistSongs,
@@ -790,7 +899,8 @@ await db.execute(
 
     return Song(
       id: map[columnSongId]?.toString() ?? '',
-      title: map[columnSongTitle]?.toString() ?? 'Unknown Title',
+      title:
+          map[columnSongTitle]?.toString() ?? 'Unknown Title',
       artist:
           map[columnSongArtist]?.toString() ?? 'Unknown Artist',
       album:
@@ -802,20 +912,28 @@ await db.execute(
             (map[columnSongDuration] as num?)?.toInt() ?? 0,
       ),
       dateAdded: dateAdded,
-      albumArt: map[columnSongAlbumArt]?.toString(),
+      albumArt:
+          map[columnSongAlbumArt]?.toString(),
     );
   }
 
-  Playlist _playlistFromMap(Map<String, dynamic> map) {
+  Playlist _playlistFromMap(
+    Map<String, dynamic> map,
+  ) {
     final createdAtString =
         map[columnPlaylistCreatedAt]?.toString();
 
     return Playlist(
-      id: map[columnPlaylistId]?.toString() ?? '',
-      name: map[columnPlaylistName]?.toString() ?? 'Untitled Playlist',
+      id:
+          map[columnPlaylistId]?.toString() ?? '',
+      name:
+          map[columnPlaylistName]?.toString() ??
+              'Untitled Playlist',
       songIds: const [],
       createdAt:
-          DateTime.tryParse(createdAtString ?? '') ??
+          DateTime.tryParse(
+                createdAtString ?? '',
+              ) ??
               DateTime.now(),
       description:
           map[columnPlaylistDescription]?.toString(),
@@ -830,6 +948,9 @@ await db.execute(
     final db = await database;
 
     try {
+      // Clear intelligence data first because it references songs.
+      await db.delete(tableListeningEvents);
+
       await db.delete(tablePlaylistSongs);
       await db.delete(tableFavorites);
       await db.delete(tablePlaylists);
