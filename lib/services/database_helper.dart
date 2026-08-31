@@ -6,7 +6,24 @@ import '../models/playlist.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
-  static const _databaseVersion = 1;
+  static const _databaseVersion = 2;
+  static const String tableListeningEvents = 'listening_events';
+  static const String columnEventId = 'id';
+static const String columnEventSongId = 'song_id';
+static const String columnEventPreviousSongId = 'previous_song_id';
+static const String columnEventStartedAt = 'started_at';
+static const String columnEventEndedAt = 'ended_at';
+static const String columnEventDurationPlayedMs =
+    'duration_played_ms';
+static const String columnEventSongDurationMs =
+    'song_duration_ms';
+static const String columnEventCompletionRatio =
+    'completion_ratio';
+static const String columnEventCompleted = 'completed';
+static const String columnEventSkipped = 'skipped';
+static const String columnEventSkipPositionMs =
+    'skip_position_ms';
+  import '../models/listening_event.dart';
 
   // ---------------------------------------------------------------------------
   // TABLE NAMES
