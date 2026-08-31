@@ -20,24 +20,15 @@ jobs:
 
     steps:
 
-      # ---------------------------------------------------------
-      # 1. Checkout
-      # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # 2. Java
-      # ---------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ---------------------------------------------------------
-      # 3. Flutter
-      # ---------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -45,87 +36,32 @@ jobs:
           flutter-version: '3.47.2'
           cache: true
 
-      # ---------------------------------------------------------
-      # 4. Flutter information
-      # ---------------------------------------------------------
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      - name: Flutter version
-        run: flutter --version
-
-      # ---------------------------------------------------------
-      # 5. Android SDK
-      # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # ---------------------------------------------------------
-      # 6. Install required Android components
-      # ---------------------------------------------------------
-      - name: Install Android NDK and CMake
+      - name: Install Android components
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
           sdkmanager "ndk;28.2.13676358"
           sdkmanager "cmake;3.22.1"
 
-      # ---------------------------------------------------------
-      # 7. Force project to use NDK 28.2
-      # ---------------------------------------------------------
-      - name: Configure Android NDK
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("android/app/build.gradle")
-          text = path.read_text()
-
-          if 'ndkVersion' not in text:
-              marker = 'android {'
-              replacement = 'android {\n    ndkVersion = "28.2.13676358"'
-              text = text.replace(marker, replacement, 1)
-              path.write_text(text)
-
-          print("NDK configuration:")
-          for line in path.read_text().splitlines():
-              if "ndkVersion" in line:
-                  print(line)
-          PY
-
-      # ---------------------------------------------------------
-      # 8. Flutter dependencies
-      # ---------------------------------------------------------
       - name: Flutter clean
         run: flutter clean
 
       - name: Flutter pub get
         run: flutter pub get
 
-      # ---------------------------------------------------------
-      # 9. Analyze Dart code
-      # ---------------------------------------------------------
-      # Analysis problems should NOT prevent us from testing
-      # whether the Android application can actually build.
-      # ---------------------------------------------------------
       - name: Flutter analyze
         continue-on-error: true
         run: flutter analyze
 
-      # ---------------------------------------------------------
-      # 10. Build release APK
-      # ---------------------------------------------------------
       - name: Build release APK
         id: build_apk
         continue-on-error: true
         run: |
           flutter build apk --release --no-shrink --verbose
 
-      # ---------------------------------------------------------
-      # 11. Locate generated APK
-      # ---------------------------------------------------------
       - name: Locate APK
         id: locate_apk
         if: always()
@@ -166,9 +102,6 @@ jobs:
             echo "apk_found=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ---------------------------------------------------------
-      # 12. Upload APK
-      # ---------------------------------------------------------
       - name: Upload APK
         if: steps.locate_apk.outputs.apk_found == 'true'
         uses: actions/upload-artifact@v4
@@ -177,9 +110,6 @@ jobs:
           path: ${{ steps.locate_apk.outputs.apk_path }}
           if-no-files-found: error
 
-      # ---------------------------------------------------------
-      # 13. Final result
-      # ---------------------------------------------------------
       - name: Verify build result
         if: always()
         run: |
@@ -188,17 +118,9 @@ jobs:
           echo "========================================"
 
           if [ "${{ steps.locate_apk.outputs.apk_found }}" = "true" ]; then
-            echo ""
             echo "SUCCESS: APK WAS GENERATED."
-            echo ""
-            echo "The APK has been uploaded as:"
-            echo "Resonate-Intelligence-release"
-            echo ""
+            echo "The APK has been uploaded as a GitHub Actions artifact."
           else
-            echo ""
             echo "FAILURE: NO APK WAS FOUND."
-            echo ""
-            echo "The build output above contains the diagnostic information."
-            echo ""
             exit 1
           fi
