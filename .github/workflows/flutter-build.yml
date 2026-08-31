@@ -1,0 +1,158 @@
+name: Resonate Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - Intelligence
+  pull_request:
+    branches:
+      - Intelligence
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Build Resonate APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ---------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Java
+      # ---------------------------------------------------------
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ---------------------------------------------------------
+      # 3. Flutter
+      # ---------------------------------------------------------
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+          cache: true
+
+      # ---------------------------------------------------------
+      # 4. Flutter information
+      # ---------------------------------------------------------
+      - name: Flutter doctor
+        run: flutter doctor -v
+
+      - name: Flutter version
+        run: flutter --version
+
+      # ---------------------------------------------------------
+      # 5. Android SDK / NDK
+      # ---------------------------------------------------------
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK 28.2
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "ndk;28.2.13676358"
+          sdkmanager "cmake;3.22.1"
+
+      # ---------------------------------------------------------
+      # 6. Flutter dependencies
+      # ---------------------------------------------------------
+      - name: Flutter clean
+        run: flutter clean
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # ---------------------------------------------------------
+      # 7. Analyze Dart code
+      # ---------------------------------------------------------
+      - name: Flutter analyze
+        run: flutter analyze
+
+      # ---------------------------------------------------------
+      # 8. Build release APK
+      # ---------------------------------------------------------
+      - name: Build release APK
+        id: build_apk
+        continue-on-error: true
+        run: |
+          flutter build apk --release --no-shrink --verbose
+
+      # ---------------------------------------------------------
+      # 9. Locate generated APK
+      # ---------------------------------------------------------
+      - name: Locate APK
+        id: locate_apk
+        if: always()
+        run: |
+          echo "========================================"
+          echo "SEARCHING FOR APK FILES"
+          echo "========================================"
+
+          find . -type f -name "*.apk" -print
+
+          echo ""
+          echo "========================================"
+          echo "BUILD DIRECTORY"
+          echo "========================================"
+
+          find build -maxdepth 8 -type f 2>/dev/null | sort || true
+
+          echo ""
+          echo "========================================"
+          echo "ANDROID OUTPUTS"
+          echo "========================================"
+
+          find android -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+
+          APK=$(find . -type f -name "*.apk" | head -n 1 || true)
+
+          if [ -n "$APK" ]; then
+            echo "APK FOUND: $APK"
+            echo "apk_found=true" >> "$GITHUB_OUTPUT"
+            echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          else
+            echo "NO APK FOUND"
+            echo "apk_found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ---------------------------------------------------------
+      # 10. Upload APK if it exists
+      # ---------------------------------------------------------
+      - name: Upload APK
+        if: steps.locate_apk.outputs.apk_found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Resonate-Intelligence-release
+          path: ${{ steps.locate_apk.outputs.apk_path }}
+          if-no-files-found: error
+
+      # ---------------------------------------------------------
+      # 11. Report build result
+      # ---------------------------------------------------------
+      - name: Verify build result
+        if: always()
+        run: |
+          echo "========================================"
+          echo "FINAL BUILD REPORT"
+          echo "========================================"
+
+          if [ "${{ steps.locate_apk.outputs.apk_found }}" = "true" ]; then
+            echo "SUCCESS: APK was generated."
+            echo "The APK has been uploaded as a GitHub Actions artifact."
+          else
+            echo "FAILURE: No APK was found."
+            echo "The detailed build output above is required for diagnosis."
+            exit 1
+          fi
