@@ -20,15 +20,24 @@ jobs:
 
     steps:
 
+      # ---------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ---------------------------------------------------------
+      # 2. Java
+      # ---------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # ---------------------------------------------------------
+      # 3. Flutter
+      # ---------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -36,9 +45,15 @@ jobs:
           flutter-version: '3.47.2'
           cache: true
 
+      # ---------------------------------------------------------
+      # 4. Android SDK
+      # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # ---------------------------------------------------------
+      # 5. Android NDK
+      # ---------------------------------------------------------
       - name: Install Android components
         run: |
           yes | sdkmanager --licenses > /dev/null || true
@@ -46,26 +61,91 @@ jobs:
           sdkmanager "ndk;28.2.13676358"
           sdkmanager "cmake;3.22.1"
 
+      # ---------------------------------------------------------
+      # 6. Repair Gradle Wrapper
+      # ---------------------------------------------------------
+      - name: Repair Gradle Wrapper
+        working-directory: android
+        run: |
+          echo "========================================"
+          echo "CHECKING GRADLE WRAPPER"
+          echo "========================================"
+
+          ls -lh gradle/wrapper/
+
+          echo ""
+          echo "Checking wrapper JAR..."
+
+          file gradle/wrapper/gradle-wrapper.jar || true
+
+          echo ""
+          echo "Removing broken wrapper JAR..."
+
+          rm -f gradle/wrapper/gradle-wrapper.jar
+
+          echo ""
+          echo "Downloading official Gradle 8.14 distribution..."
+
+          wget -q \
+            https://services.gradle.org/distributions/gradle-8.14-bin.zip \
+            -O /tmp/gradle.zip
+
+          echo ""
+          echo "Extracting Gradle..."
+
+          mkdir -p /tmp/gradle
+
+          unzip -q /tmp/gradle.zip -d /tmp/gradle
+
+          echo ""
+          echo "Generating Gradle Wrapper..."
+
+          /tmp/gradle/gradle-8.14/bin/gradle wrapper \
+            --gradle-version 8.14
+
+          echo ""
+          echo "Wrapper repaired."
+
+          ls -lh gradle/wrapper/
+
+          file gradle/wrapper/gradle-wrapper.jar
+
+      # ---------------------------------------------------------
+      # 7. Flutter clean
+      # ---------------------------------------------------------
       - name: Flutter clean
         run: flutter clean
 
+      # ---------------------------------------------------------
+      # 8. Flutter dependencies
+      # ---------------------------------------------------------
       - name: Flutter pub get
         run: flutter pub get
 
+      # ---------------------------------------------------------
+      # 9. Analyze
+      # ---------------------------------------------------------
       - name: Flutter analyze
         continue-on-error: true
         run: flutter analyze
 
+      # ---------------------------------------------------------
+      # 10. Build APK
+      # ---------------------------------------------------------
       - name: Build release APK
         id: build_apk
         continue-on-error: true
         run: |
           flutter build apk --release --no-shrink --verbose
 
+      # ---------------------------------------------------------
+      # 11. Locate APK
+      # ---------------------------------------------------------
       - name: Locate APK
         id: locate_apk
         if: always()
         run: |
+
           echo "========================================"
           echo "SEARCHING FOR APK FILES"
           echo "========================================"
@@ -84,7 +164,9 @@ jobs:
           echo "ANDROID OUTPUTS"
           echo "========================================"
 
-          find android -type f \( -name "*.apk" -o -name "*.aab" \) -print || true
+          find android -type f \
+            \( -name "*.apk" -o -name "*.aab" \) \
+            -print || true
 
           echo ""
           echo "========================================"
@@ -102,6 +184,9 @@ jobs:
             echo "apk_found=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # ---------------------------------------------------------
+      # 12. Upload APK
+      # ---------------------------------------------------------
       - name: Upload APK
         if: steps.locate_apk.outputs.apk_found == 'true'
         uses: actions/upload-artifact@v4
@@ -110,17 +195,29 @@ jobs:
           path: ${{ steps.locate_apk.outputs.apk_path }}
           if-no-files-found: error
 
+      # ---------------------------------------------------------
+      # 13. Final report
+      # ---------------------------------------------------------
       - name: Verify build result
         if: always()
         run: |
+
           echo "========================================"
           echo "FINAL BUILD REPORT"
           echo "========================================"
 
           if [ "${{ steps.locate_apk.outputs.apk_found }}" = "true" ]; then
+            echo ""
             echo "SUCCESS: APK WAS GENERATED."
-            echo "The APK has been uploaded as a GitHub Actions artifact."
+            echo ""
+            echo "Artifact:"
+            echo "Resonate-Intelligence-release"
+            echo ""
           else
+            echo ""
             echo "FAILURE: NO APK WAS FOUND."
+            echo ""
+            echo "The Gradle build failed before producing an APK."
+            echo ""
             exit 1
           fi
