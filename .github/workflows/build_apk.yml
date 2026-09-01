@@ -1,187 +1,40 @@
-name: Build Resonate APK
+name: Build Android APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - Intelligence
-
-permissions:
-  contents: read
+    branches: [ "Intelligence", "main", "master" ]
+  pull_request:
+    branches: [ "Intelligence", "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build Resonate APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
 
     steps:
-
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          flutter-version: '3.47.2'
+          channel: 'stable'
           cache: true
 
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK and CMake
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "ndk;28.2.13676358"
-          sdkmanager "cmake;3.22.1"
-
-      # ---------------------------------------------------------
-      # Create machine-specific Android configuration
-      # ---------------------------------------------------------
-      - name: Create local.properties
-        run: |
-          echo "Creating android/local.properties..."
-
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-
-          echo ""
-          echo "android/local.properties:"
-          cat android/local.properties
-
-      # ---------------------------------------------------------
-      # Repair Gradle Wrapper
-      # ---------------------------------------------------------
-      - name: Restore Gradle Wrapper
-        working-directory: android
-        run: |
-          set -e
-
-          echo "Downloading official Gradle 8.14 wrapper JAR..."
-
-          curl -fL \
-            -o gradle/wrapper/gradle-wrapper.jar \
-            https://services.gradle.org/distributions/gradle-8.14-wrapper.jar
-
-          echo ""
-          echo "Checking Gradle Wrapper..."
-
-          file gradle/wrapper/gradle-wrapper.jar
-          ls -lh gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "Gradle wrapper properties:"
-          cat gradle/wrapper/gradle-wrapper.properties
-
-          echo ""
-          echo "Making gradlew executable..."
-          chmod +x gradlew
-
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Flutter pub get
+      - name: Install Dependencies
         run: flutter pub get
 
-      # ---------------------------------------------------------
-      # Check the Android configuration BEFORE expensive build
-      # ---------------------------------------------------------
-      - name: Verify Android configuration
-        working-directory: android
-        run: |
-          echo "========================================"
-          echo "ANDROID CONFIGURATION"
-          echo "========================================"
+      - name: Build Debug APK
+        run: flutter build apk --debug
 
-          echo ""
-          echo "Gradle wrapper:"
-          ls -lh gradlew gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "Local properties:"
-          cat local.properties
-
-          echo ""
-          echo "Testing Gradle wrapper..."
-
-          ./gradlew --version
-
-      # ---------------------------------------------------------
-      # Analyze Dart code
-      # ---------------------------------------------------------
-      - name: Flutter analyze
-        run: flutter analyze
-        continue-on-error: true
-
-      # ---------------------------------------------------------
-      # Build APK
-      # ---------------------------------------------------------
-      - name: Build release APK
-        run: |
-          flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
-
-      # ---------------------------------------------------------
-      # Locate APK
-      # ---------------------------------------------------------
-      - name: Locate APK
-        if: always()
-        run: |
-          echo "========================================"
-          echo "SEARCHING FOR APK"
-          echo "========================================"
-
-          find . -type f -name "*.apk" -print || true
-
-          echo ""
-          echo "Flutter APK output:"
-          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || true
-
-      # ---------------------------------------------------------
-      # Prepare APK
-      # ---------------------------------------------------------
-      - name: Prepare artifact
-        if: success()
-        run: |
-          APK=$(find build/app/outputs/flutter-apk -type f -name "*.apk" | head -1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found."
-            exit 1
-          fi
-
-          echo "APK found: $APK"
-
-          mkdir -p release
-          cp "$APK" release/Resonate-Intelligence-release.apk
-
-      # ---------------------------------------------------------
-      # Upload APK
-      # ---------------------------------------------------------
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Resonate-Intelligence-release
-          path: release/Resonate-Intelligence-release.apk
-          if-no-files-found: error
-
-      # ---------------------------------------------------------
-      # Always save build log
-      # ---------------------------------------------------------
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Resonate-build-log
-          path: build.log
-          if-no-files-found: ignore
+          name: resonate-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
