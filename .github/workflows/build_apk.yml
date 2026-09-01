@@ -30,10 +30,10 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Generate Fresh Gradle Wrapper
+      - name: Force Compatible Gradle Version (8.3)
         run: |
           cd android
-          gradle wrapper
+          gradle wrapper --gradle-version 8.3
 
       - name: Build Debug APK
         run: flutter build apk --debug
