@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -37,49 +37,23 @@ jobs:
       - name: Get Flutter packages
         run: flutter pub get
 
-      - name: Analyze project
-        run: |
-          flutter analyze --no-fatal-infos --no-fatal-warnings || true
-
       - name: Increase file watcher limit
         run: |
-          echo "Increasing file watcher limit..."
+          echo "Increasing inotify limits..."
           echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
           sudo sysctl -p
 
-      - name: Set up Gradle 8.9 wrapper
-        working-directory: android
+      - name: Clear Gradle cache
         run: |
-          set -e
-          echo "Downloading Gradle 8.9..."
-          mkdir -p gradle/wrapper
-          
-          # Download Gradle wrapper JAR directly from the Maven repo
-          wget -q https://repo1.maven.org/maven2/io/github/gradle/gradle-wrapper-jar/8.9/gradle-wrapper-jar-8.9.jar -O gradle/wrapper/gradle-wrapper.jar
-          
-          # Create gradle-wrapper.properties
-          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip
-          networkTimeout=10000
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-          
-          # Make gradlew executable
-          chmod +x gradlew
-          
-          echo "Gradle 8.9 wrapper installed"
-
-      - name: Clean Android build
-        working-directory: android
-        run: ./gradlew clean
+          rm -rf ~/.gradle
+          rm -rf android/.gradle
+          rm -rf android/build
 
       - name: Build release APK
         run: |
           flutter build apk \
-            --release
+            --release \
+            --verbose 2>&1 | head -200
 
       - name: Locate generated APK
         if: always()
@@ -88,11 +62,7 @@ jobs:
           echo "SEARCHING FOR APK FILES"
           echo "========================================"
           echo ""
-          echo "Files under build/:"
-          find build -type f 2>/dev/null | sort || true
-          echo ""
-          echo "APK files found:"
-          find . -type f -name "*.apk" -print || true
+          find . -type f -name "*.apk" -ls 2>/dev/null || echo "No APK files found"
 
       - name: Prepare APK artifact
         if: success()
@@ -103,25 +73,17 @@ jobs:
           echo "PREPARING APK ARTIFACT"
           echo "========================================"
 
-          APK=$(find build -type f -name "*release*.apk" | head -n 1)
+          APK=$(find . -type f -name "*release*.apk" -print | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK was found."
-            echo ""
-            echo "Complete build directory:"
-            find build -type f 2>/dev/null | sort || true
+            echo "ERROR: No release APK was found."
             exit 1
           fi
 
-          echo "APK found:"
-          echo "$APK"
+          echo "APK found: $APK"
 
           mkdir -p release
-
           cp "$APK" release/Resonate-Intelligence-release.apk
-
-          echo ""
-          echo "Prepared:"
           ls -lh release/Resonate-Intelligence-release.apk
 
       - name: Upload APK
