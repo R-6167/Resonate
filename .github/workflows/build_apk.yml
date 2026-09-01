@@ -47,13 +47,34 @@ jobs:
           echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
           sudo sysctl -p
 
-      - name: Make gradlew executable
+      - name: Set up Gradle 8.9 wrapper
         working-directory: android
-        run: chmod +x gradlew
-
-      - name: Update Gradle wrapper to 8.9
-        working-directory: android
-        run: ./gradlew wrapper --gradle-version 8.9
+        run: |
+          set -e
+          echo "Downloading Gradle 8.9..."
+          mkdir -p gradle/wrapper
+          
+          # Download Gradle wrapper JAR and properties
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O /tmp/gradle-8.9-bin.zip
+          unzip -q /tmp/gradle-8.9-bin.zip -d /tmp/
+          
+          # Copy wrapper JAR
+          cp /tmp/gradle-8.9/lib/gradle-8.9.jar gradle/wrapper/gradle-wrapper.jar
+          
+          # Create gradle-wrapper.properties
+          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip
+          networkTimeout=10000
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          
+          # Make gradlew executable
+          chmod +x gradlew
+          
+          echo "Gradle 8.9 wrapper installed"
 
       - name: Clean Android build
         working-directory: android
