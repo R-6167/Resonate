@@ -53,7 +53,16 @@ jobs:
         run: |
           flutter build apk \
             --release \
-            --verbose 2>&1 | head -200
+            --verbose 2>&1 | tee build_log.txt
+        continue-on-error: true
+
+      - name: Show build log tail
+        if: always()
+        run: |
+          echo "========================================"
+          echo "BUILD LOG (LAST 100 LINES)"
+          echo "========================================"
+          tail -100 build_log.txt
 
       - name: Locate generated APK
         if: always()
@@ -62,7 +71,14 @@ jobs:
           echo "SEARCHING FOR APK FILES"
           echo "========================================"
           echo ""
+          echo "Checking build/app/outputs/flutter-apk/:"
+          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
+          echo ""
+          echo "All APK files in workspace:"
           find . -type f -name "*.apk" -ls 2>/dev/null || echo "No APK files found"
+          echo ""
+          echo "Build directory contents:"
+          find build -type f -name "*release*" 2>/dev/null | head -20 || echo "No release files found"
 
       - name: Prepare APK artifact
         if: success()
