@@ -47,10 +47,13 @@ jobs:
           echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
           sudo sysctl -p
 
+      - name: Make gradlew executable
+        working-directory: android
+        run: chmod +x gradlew
+
       - name: Clean Android build
         working-directory: android
-        run: |
-          ./gradlew clean
+        run: ./gradlew clean
 
       - name: Build release APK
         run: |
