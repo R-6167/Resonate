@@ -54,12 +54,8 @@ jobs:
           echo "Downloading Gradle 8.9..."
           mkdir -p gradle/wrapper
           
-          # Download Gradle wrapper JAR and properties
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip -O /tmp/gradle-8.9-bin.zip
-          unzip -q /tmp/gradle-8.9-bin.zip -d /tmp/
-          
-          # Copy wrapper JAR
-          cp /tmp/gradle-8.9/lib/gradle-8.9.jar gradle/wrapper/gradle-wrapper.jar
+          # Download Gradle wrapper JAR directly from the Maven repo
+          wget -q https://repo1.maven.org/maven2/io/github/gradle/gradle-wrapper-jar/8.9/gradle-wrapper-jar-8.9.jar -O gradle/wrapper/gradle-wrapper.jar
           
           # Create gradle-wrapper.properties
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
