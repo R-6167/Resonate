@@ -53,15 +53,29 @@ jobs:
       - name: Reset Gradle wrapper
         working-directory: android
         run: |
+          set -e
+          echo "Cleaning old wrapper files..."
           rm -rf gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
           mkdir -p gradle/wrapper
           
-          # Download fresh Gradle 8.14 wrapper
-          curl -L -o /tmp/gradle-8.14-wrapper.jar https://services.gradle.org/distributions/gradle-8.14-all.zip
-          unzip -q /tmp/gradle-8.14-wrapper.jar -d /tmp/
-          cp /tmp/gradle-8.14/lib/gradle-8.14.jar gradle/wrapper/gradle-wrapper.jar
+          echo "Downloading Gradle 8.14..."
+          curl -L -o /tmp/gradle-8.14-all.zip https://services.gradle.org/distributions/gradle-8.14-all.zip
           
-          # Create wrapper properties for Gradle 8.14
+          echo "Extracting Gradle..."
+          cd /tmp
+          unzip -q gradle-8.14-all.zip
+          
+          echo "Finding JAR file..."
+          JAR_FILE=$(find /tmp/gradle-8.14 -name "gradle-*.jar" -type f | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "ERROR: Could not find gradle JAR in extracted files"
+            exit 1
+          fi
+          
+          echo "Copying JAR: $JAR_FILE"
+          cp "$JAR_FILE" "$(pwd)/gradle/wrapper/gradle-wrapper.jar"
+          
+          echo "Creating wrapper properties..."
           cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
           distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
           distributionBase=GRADLE_USER_HOME
@@ -69,16 +83,24 @@ jobs:
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
           EOF
+          
+          echo "Making gradlew executable..."
+          chmod +x gradlew
+          
+          echo "Gradle 8.14 wrapper ready"
 
       - name: Build release APK
-        run: flutter build apk --release --verbose 2>&1 | tee build.log
-        continue-on-error: true
+        run: flutter build apk --release --verbose 2>&1 | tee build.log || true
 
       - name: Show build output
         if: always()
         run: |
-          echo "=== BUILD LOG (Last 150 lines) ==="
-          tail -150 build.log
+          if [ -f build.log ]; then
+            echo "=== BUILD LOG (Last 150 lines) ==="
+            tail -150 build.log
+          else
+            echo "No build.log found"
+          fi
 
       - name: Locate APK
         if: always()
