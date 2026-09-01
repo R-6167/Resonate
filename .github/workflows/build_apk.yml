@@ -1,146 +1,72 @@
-name: Build Resonate APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - Intelligence
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.47.2'
-          channel: stable
-          cache: true
-
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Get Flutter packages
-        run: flutter pub get
-
-      - name: Analyze project
+      - name: Build Resonate APK - Diagnostic
+        shell: bash
         run: |
-          flutter analyze --no-fatal-infos --no-fatal-warnings || true
-
-      - name: Make sure Gradle wrapper exists
-        working-directory: android
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "CHECKING GRADLE WRAPPER"
-          echo "========================================"
-
-          ls -lah gradle/wrapper/
-
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Gradle wrapper JAR is missing."
-            echo "Generating a fresh Gradle wrapper..."
-
-            wget -q \
-              https://services.gradle.org/distributions/gradle-8.14-bin.zip \
-              -O /tmp/gradle.zip
-
-            rm -rf /tmp/gradle
-            mkdir -p /tmp/gradle
-
-            unzip -q \
-              /tmp/gradle.zip \
-              -d /tmp/gradle
-
-            /tmp/gradle/gradle-8.14/bin/gradle wrapper \
-              --gradle-version 8.14 \
-              --distribution-type bin
-          fi
-
-          echo ""
-          echo "Wrapper files:"
-          ls -lah gradle/wrapper/
-
-          echo ""
-          echo "Wrapper JAR:"
-          file gradle/wrapper/gradle-wrapper.jar
-
-      - name: Build release APK
-        run: |
-          set -e
+          set +e
 
           echo "========================================"
           echo "BUILDING RESONATE RELEASE APK"
           echo "========================================"
 
+          flutter clean
+          flutter pub get
+
+          echo ""
+          echo "========================================"
+          echo "STARTING FLUTTER APK BUILD"
+          echo "========================================"
+
           flutter build apk \
             --release \
             --no-shrink \
-            --android-skip-build-dependency-validation
+            --android-skip-build-dependency-validation \
+            -v
 
-      - name: Locate generated APK
-        if: always()
-        run: |
+          BUILD_EXIT=$?
+
+          echo ""
           echo "========================================"
-          echo "SEARCHING FOR APK FILES"
+          echo "FLUTTER BUILD EXIT CODE: $BUILD_EXIT"
           echo "========================================"
 
           echo ""
-          echo "Files under build/:"
-          find build -type f 2>/dev/null | sort || true
+          echo "========================================"
+          echo "SEARCHING FOR ALL APK FILES"
+          echo "========================================"
+
+          find . -type f -name "*.apk" -print
 
           echo ""
-          echo "APK files found:"
-          find . -type f -name "*.apk" -print || true
-
-      - name: Prepare APK artifact
-        if: success()
-        run: |
-          set -e
-
           echo "========================================"
-          echo "PREPARING APK ARTIFACT"
+          echo "CHECKING EXPECTED FLUTTER APK DIRECTORY"
           echo "========================================"
 
-          APK=$(find build -type f -name "*.apk" | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK was found."
-            echo ""
-            echo "Complete build directory:"
-            find build -type f 2>/dev/null | sort || true
-            exit 1
+          if [ -d "build/app/outputs/flutter-apk" ]; then
+            ls -lah build/app/outputs/flutter-apk/
+          else
+            echo "Expected APK directory does not exist."
           fi
 
-          echo "APK found:"
-          echo "$APK"
+          echo ""
+          echo "========================================"
+          echo "CHECKING GRADLE OUTPUT DIRECTORIES"
+          echo "========================================"
 
-          mkdir -p release
-
-          cp "$APK" release/Resonate-Intelligence-release.apk
+          find build -maxdepth 6 -type d -print 2>/dev/null | head -200
 
           echo ""
-          echo "Prepared:"
-          ls -lh release/Resonate-Intelligence-release.apk
+          echo "========================================"
+          echo "CHECKING GRADLE WRAPPER"
+          echo "========================================"
 
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Resonate-Intelligence-release
-          path: release/Resonate-Intelligence-release.apk
-          if-no-files-found: error
+          ls -lah android/gradle/wrapper/ || true
+
+          echo ""
+          echo "========================================"
+          echo "BUILD DIAGNOSTIC COMPLETE"
+          echo "========================================"
+
+          if [ "$BUILD_EXIT" -ne 0 ]; then
+            echo "Flutter reported a build failure."
+            echo "The diagnostic output above should reveal the real Gradle error."
+            exit "$BUILD_EXIT"
+          fi
