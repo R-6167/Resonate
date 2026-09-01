@@ -1,31 +1,25 @@
 name: Build Resonate APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - Intelligence
-  workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
-  build:
-    name: Build Resonate Release APK
+  build-apk:
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
       # ============================================================
       # 1. CHECK OUT THE INTELLIGENCE BRANCH
       # ============================================================
-      - name: Checkout Intelligence branch
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: Intelligence
-          fetch-depth: 0
 
       # ============================================================
-      # 2. SET UP JAVA 17
+      # 2. SET UP JAVA
       # ============================================================
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -44,288 +38,142 @@ jobs:
           cache: true
 
       # ============================================================
-      # 4. SHOW ENVIRONMENT INFORMATION
+      # 4. SHOW ENVIRONMENT
       # ============================================================
-      - name: Flutter and Java information
+      - name: Check Flutter and Dart
         run: |
-          echo "========================================"
-          echo "ENVIRONMENT"
-          echo "========================================"
-
           flutter --version
-          echo ""
-
+          dart --version
           java -version
-          echo ""
-
-          echo "Flutter doctor:"
-          flutter doctor -v
 
       # ============================================================
-      # 5. REPAIR GRADLE WRAPPER
+      # 5. CREATE ANDROID LOCAL.PROPERTIES
       #
-      # The repository currently contains a broken gradle-wrapper.jar.
-      # We delete it and generate a fresh official wrapper.
-      # ============================================================
-      - name: Repair Gradle wrapper
-        working-directory: android
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "REPAIRING GRADLE WRAPPER"
-          echo "========================================"
-
-          echo "Current wrapper files:"
-          ls -lah gradle/wrapper/ || true
-
-          echo ""
-          echo "Removing broken Gradle wrapper JAR..."
-          rm -f gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "Downloading Gradle 8.14..."
-
-          wget -q \
-            https://services.gradle.org/distributions/gradle-8.14-bin.zip \
-            -O /tmp/gradle-8.14-bin.zip
-
-          echo ""
-          echo "Extracting Gradle..."
-
-          rm -rf /tmp/gradle-8.14
-          mkdir -p /tmp/gradle-8.14
-
-          unzip -q \
-            /tmp/gradle-8.14-bin.zip \
-            -d /tmp/gradle-8.14
-
-          echo ""
-          echo "Generating a new Gradle wrapper..."
-
-          /tmp/gradle-8.14/gradle-8.14/bin/gradle wrapper \
-            --gradle-version 8.14 \
-            --distribution-type bin
-
-          echo ""
-          echo "Checking generated wrapper..."
-
-          ls -lah gradle/wrapper/
-
-          echo ""
-          echo "Checking wrapper JAR..."
-
-          file gradle/wrapper/gradle-wrapper.jar
-
-          echo ""
-          echo "Gradle wrapper repaired successfully."
-
-      # ============================================================
-      # 6. CREATE ANDROID LOCAL.PROPERTIES
-      #
-      # local.properties normally exists only on a developer's
-      # computer, so GitHub Actions needs to create it.
+      # This file must exist because your android/settings.gradle
+      # reads it. It should NOT be committed to GitHub.
       # ============================================================
       - name: Create Android local.properties
         working-directory: android
         run: |
-          set -e
+          echo "flutter.sdk=$FLUTTER_ROOT" > local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
 
           echo "========================================"
-          echo "CREATING local.properties"
+          echo "ANDROID LOCAL.PROPERTIES"
           echo "========================================"
-
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> local.properties
-
-          echo ""
-          echo "Created android/local.properties:"
           cat local.properties
 
       # ============================================================
-      # 7. MAKE GRADLE WRAPPER EXECUTABLE
+      # 6. VERIFY ANDROID PROJECT
       # ============================================================
-      - name: Make Gradle wrapper executable
+      - name: Check Android project
         working-directory: android
         run: |
-          chmod +x gradlew
-
-          echo "Gradle wrapper permissions:"
-          ls -lh gradlew
-
-      # ============================================================
-      # 8. VERIFY GRADLE
-      # ============================================================
-      - name: Verify Gradle
-        working-directory: android
-        run: |
-          set -e
-
           echo "========================================"
-          echo "VERIFYING GRADLE"
+          echo "ANDROID PROJECT CHECK"
           echo "========================================"
 
-          ./gradlew --version
+          echo "Gradle wrapper properties:"
+          cat gradle/wrapper/gradle-wrapper.properties || true
+
+          echo ""
+          echo "Android directory:"
+          ls -lah
+
+          echo ""
+          echo "Gradle wrapper directory:"
+          ls -lah gradle/wrapper/ || true
 
       # ============================================================
-      # 9. GET FLUTTER DEPENDENCIES
+      # 7. GET FLUTTER DEPENDENCIES
       # ============================================================
       - name: Flutter pub get
         run: |
-          set -e
-
-          echo "========================================"
-          echo "FLUTTER PUB GET"
-          echo "========================================"
-
           flutter pub get
 
       # ============================================================
-      # 10. ANALYZE PROJECT
+      # 8. ANALYZE PROJECT
       #
-      # We don't allow existing lint/info messages to stop the APK
-      # build. The important test is whether the project compiles.
+      # We don't stop the build for analyzer warnings/deprecations.
+      # The actual APK compilation is what determines whether the
+      # application can be built.
       # ============================================================
       - name: Flutter analyze
         run: |
-          echo "========================================"
-          echo "FLUTTER ANALYZE"
-          echo "========================================"
-
           flutter analyze || true
 
-          echo ""
-          echo "Analysis completed."
-          echo "Info/warning messages will not stop the release build."
-
       # ============================================================
-      # 11. CLEAN FLUTTER BUILD
-      # ============================================================
-      - name: Flutter clean
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "FLUTTER CLEAN"
-          echo "========================================"
-
-          flutter clean
-
-      # ============================================================
-      # 12. GET DEPENDENCIES AGAIN AFTER CLEAN
-      # ============================================================
-      - name: Flutter pub get after clean
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "FLUTTER PUB GET"
-          echo "========================================"
-
-          flutter pub get
-
-      # ============================================================
-      # 13. BUILD RELEASE APK
+      # 9. BUILD RELEASE APK
+      #
+      # Flutter will use the Android project and its Gradle setup.
+      # --no-shrink avoids R8/shrinker complications while we get
+      # the Intelligence branch producing a working APK.
       # ============================================================
       - name: Build release APK
         run: |
-          set -e
-
-          echo "========================================"
-          echo "BUILDING RESONATE APK"
-          echo "========================================"
-
-          flutter build apk \
-            --release \
-            --no-shrink \
-            --android-skip-build-dependency-validation
+          flutter build apk --release --no-shrink
 
       # ============================================================
-      # 14. CHECK THAT APK WAS ACTUALLY CREATED
+      # 10. FIND GENERATED APK
       # ============================================================
-      - name: Verify APK
+      - name: Find APK
         run: |
-          set -e
-
           echo "========================================"
-          echo "VERIFYING APK"
+          echo "SEARCHING FOR GENERATED APK"
           echo "========================================"
 
-          echo ""
-          echo "APK files found:"
+          find build/app/outputs/apk -type f -name "*.apk" -print
 
-          find build/app/outputs/apk/release \
-            -type f \
-            -name "*.apk" \
-            -print
+      # ============================================================
+      # 11. RENAME APK
+      # ============================================================
+      - name: Prepare APK artifact
+        run: |
+          mkdir -p release-apk
 
-          echo ""
+          APK=$(find build/app/outputs/apk/release -type f -name "*.apk" | head -n 1)
 
-          APK_COUNT=$(find build/app/outputs/apk/release \
-            -type f \
-            -name "*.apk" | wc -l)
-
-          if [ "$APK_COUNT" -eq 0 ]; then
+          if [ -z "$APK" ]; then
             echo "ERROR: No APK was generated."
             exit 1
           fi
 
-          echo "SUCCESS: APK was generated."
-
-      # ============================================================
-      # 15. RENAME APK
-      # ============================================================
-      - name: Prepare APK artifact
-        run: |
-          set -e
-
-          mkdir -p release
-
-          APK=$(find build/app/outputs/apk/release \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
-
           echo "Found APK:"
           echo "$APK"
 
-          cp "$APK" \
-            "release/Resonate-Intelligence-release.apk"
+          cp "$APK" release-apk/Resonate-Intelligence-release.apk
 
           echo ""
           echo "Prepared:"
-          ls -lh release/
+          ls -lh release-apk/
 
       # ============================================================
-      # 16. UPLOAD APK TO GITHUB ACTIONS
+      # 12. UPLOAD APK TO GITHUB ACTIONS
       # ============================================================
-      - name: Upload Resonate APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Resonate-Intelligence-release
-          path: release/Resonate-Intelligence-release.apk
+          path: release-apk/Resonate-Intelligence-release.apk
           if-no-files-found: error
           retention-days: 30
 
       # ============================================================
-      # 17. FINAL BUILD REPORT
+      # 13. FINAL REPORT
       # ============================================================
       - name: Final build report
         run: |
           echo ""
           echo "========================================"
-          echo "FINAL BUILD REPORT"
+          echo "        RESONATE BUILD SUCCESS"
           echo "========================================"
-
           echo ""
-          echo "SUCCESS: RESONATE APK WAS GENERATED."
+          echo "APK successfully generated."
           echo ""
-          echo "Branch: Intelligence"
-          echo "Artifact: Resonate-Intelligence-release"
+          echo "Artifact:"
+          echo "Resonate-Intelligence-release"
           echo ""
-          echo "APK:"
-          ls -lh release/Resonate-Intelligence-release.apk
+          echo "File:"
+          ls -lh release-apk/Resonate-Intelligence-release.apk
           echo ""
-          echo "========================================"
-          echo "BUILD COMPLETE"
           echo "========================================"
