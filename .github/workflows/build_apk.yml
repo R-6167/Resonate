@@ -51,6 +51,10 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
+      - name: Update Gradle wrapper to 8.9
+        working-directory: android
+        run: ./gradlew wrapper --gradle-version 8.9
+
       - name: Clean Android build
         working-directory: android
         run: ./gradlew clean
@@ -58,8 +62,7 @@ jobs:
       - name: Build release APK
         run: |
           flutter build apk \
-            --release \
-            --no-shrink
+            --release
 
       - name: Locate generated APK
         if: always()
