@@ -6,123 +6,180 @@ on:
     branches:
       - Intelligence
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Resonate APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
+      # ---------------------------------------------------------
+      # 1. Checkout repository
+      # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ---------------------------------------------------------
+      # 2. Set up Java
+      # ---------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # ---------------------------------------------------------
+      # 3. Set up Flutter
+      # ---------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.47.2'
           channel: stable
+          flutter-version: '3.47.2'
           cache: true
 
+      # ---------------------------------------------------------
+      # 4. Flutter information
+      # ---------------------------------------------------------
       - name: Flutter version
         run: flutter --version
 
-      - name: Flutter clean
-        run: flutter clean
+      - name: Flutter doctor
+        run: flutter doctor -v
 
-      - name: Get Flutter packages
-        run: flutter pub get
+      # ---------------------------------------------------------
+      # 5. Android SDK
+      # ---------------------------------------------------------
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Increase file watcher limit
+      # ---------------------------------------------------------
+      # 6. Install required Android NDK
+      # ---------------------------------------------------------
+      - name: Install Android NDK 28.2
         run: |
-          echo "Increasing inotify limits..."
-          echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
-          sudo sysctl -p
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "ndk;28.2.13676358"
+          sdkmanager "cmake;3.22.1"
 
-      - name: Clean build directories
-        run: |
-          rm -rf ~/.gradle
-          rm -rf android/.gradle
-          rm -rf android/build
-          rm -rf build
+      # ---------------------------------------------------------
+      # 7. Set up Gradle
+      # ---------------------------------------------------------
+      - name: Set up Gradle 8.14
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
 
-      - name: Reset Gradle wrapper
+      # ---------------------------------------------------------
+      # 8. Generate a REAL Gradle wrapper
+      # ---------------------------------------------------------
+      - name: Generate Gradle wrapper
         working-directory: android
         run: |
           set -e
-          ANDROID_DIR="$(pwd)"
-          
-          echo "Cleaning old wrapper files..."
-          rm -rf gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-          mkdir -p gradle/wrapper
-          
-          echo "Downloading Gradle 8.14..."
-          curl -L -o /tmp/gradle-8.14-all.zip https://services.gradle.org/distributions/gradle-8.14-all.zip
-          
-          echo "Extracting Gradle..."
-          unzip -q /tmp/gradle-8.14-all.zip -d /tmp/
-          
-          echo "Finding JAR file..."
-          JAR_FILE=$(find /tmp/gradle-8.14 -name "gradle-*.jar" -type f | head -1)
-          if [ -z "$JAR_FILE" ]; then
-            echo "ERROR: Could not find gradle JAR in extracted files"
-            exit 1
-          fi
-          
-          echo "Copying JAR: $JAR_FILE to $ANDROID_DIR/gradle/wrapper/gradle-wrapper.jar"
-          cp "$JAR_FILE" "$ANDROID_DIR/gradle/wrapper/gradle-wrapper.jar"
-          
-          echo "Creating wrapper properties..."
-          cat > "$ANDROID_DIR/gradle/wrapper/gradle-wrapper.properties" << 'EOF'
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-          
-          echo "Making gradlew executable..."
-          chmod +x "$ANDROID_DIR/gradlew"
-          
-          echo "Gradle 8.14 wrapper ready"
 
+          echo "Generating Gradle wrapper..."
+
+          gradle wrapper \
+            --gradle-version 8.14 \
+            --distribution-type all
+
+          chmod +x gradlew
+
+          echo ""
+          echo "Gradle wrapper generated successfully."
+
+          echo ""
+          echo "Wrapper files:"
+          ls -lah gradle/wrapper/
+          ls -lah gradlew
+
+      # ---------------------------------------------------------
+      # 9. Clean Flutter project
+      # ---------------------------------------------------------
+      - name: Flutter clean
+        run: flutter clean
+
+      # ---------------------------------------------------------
+      # 10. Get Flutter packages
+      # ---------------------------------------------------------
+      - name: Get Flutter packages
+        run: flutter pub get
+
+      # ---------------------------------------------------------
+      # 11. Build release APK
+      # ---------------------------------------------------------
       - name: Build release APK
-        run: flutter build apk --release --verbose 2>&1 | tee build.log || true
+        run: |
+          set -o pipefail
+          flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
 
+      # ---------------------------------------------------------
+      # 12. Show build output if anything went wrong
+      # ---------------------------------------------------------
       - name: Show build output
         if: always()
         run: |
           if [ -f build.log ]; then
-            echo "=== BUILD LOG (Last 150 lines) ==="
-            tail -150 build.log
+            echo "========================================"
+            echo "LAST 200 LINES OF BUILD LOG"
+            echo "========================================"
+            tail -200 build.log
           else
-            echo "No build.log found"
+            echo "No build.log found."
           fi
 
+      # ---------------------------------------------------------
+      # 13. Locate APK
+      # ---------------------------------------------------------
       - name: Locate APK
         if: always()
         run: |
-          echo "=== Searching for APK files ==="
-          find . -type f -name "*.apk" -ls 2>/dev/null || echo "No APK found"
-          echo ""
-          echo "=== Build directory structure ==="
-          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || echo "flutter-apk directory not found"
+          echo "========================================"
+          echo "SEARCHING FOR APK"
+          echo "========================================"
 
+          find . -type f -name "*.apk" -print 2>/dev/null || true
+
+          echo ""
+          echo "========================================"
+          echo "EXPECTED FLUTTER APK DIRECTORY"
+          echo "========================================"
+
+          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || true
+
+      # ---------------------------------------------------------
+      # 14. Prepare APK artifact
+      # ---------------------------------------------------------
       - name: Prepare artifact
         if: success()
         run: |
-          APK=$(find . -name "*release*.apk" -type f | head -1)
+          set -e
+
+          APK=$(find . -type f -name "*release*.apk" | head -1)
+
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"; 
+            echo "ERROR: No release APK was found."
             exit 1
           fi
+
+          echo "APK found:"
+          echo "$APK"
+
           mkdir -p release
+
           cp "$APK" release/Resonate-Intelligence-release.apk
 
+          echo ""
+          echo "Artifact prepared:"
+          ls -lh release/
+
+      # ---------------------------------------------------------
+      # 15. Upload APK
+      # ---------------------------------------------------------
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
