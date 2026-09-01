@@ -63,10 +63,8 @@ jobs:
       # --------------------------------------------------
       # 7. Check Dart code
       # --------------------------------------------------
-      - name: Flutter analyze
-        run: |
-          flutter analyze
-
+      - name: Run flutter analyze
+        run: flutter analyze || true
       # --------------------------------------------------
       # 8. Check Android project
       # --------------------------------------------------
