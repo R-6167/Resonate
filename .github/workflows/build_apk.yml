@@ -1,223 +1,175 @@
-name: Resonate Android Build
+name: Build Resonate Intelligence APK
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - Intelligence
-  pull_request:
-    branches:
-      - Intelligence
-
-permissions:
-  contents: read
+  workflow_dispatch:
 
 jobs:
-  build-android:
-    name: Build Resonate APK
+  build-apk:
+    name: Build Release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-
-      # ---------------------------------------------------------
-      # 1. Checkout
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # 1. Checkout Intelligence branch
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # 2. Java
-      # ---------------------------------------------------------
-      - name: Set up Java
+      # --------------------------------------------------
+      # 2. Set up Java 17
+      # --------------------------------------------------
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ---------------------------------------------------------
-      # 3. Flutter
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # 3. Set up Flutter
+      # --------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
           flutter-version: '3.47.2'
+          channel: stable
           cache: true
 
-      # ---------------------------------------------------------
-      # 4. Android SDK
-      # ---------------------------------------------------------
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      # ---------------------------------------------------------
-      # 5. Android NDK
-      # ---------------------------------------------------------
-      - name: Install Android components
+      # --------------------------------------------------
+      # 4. Show environment information
+      # --------------------------------------------------
+      - name: Flutter doctor
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools"
-          sdkmanager "ndk;28.2.13676358"
-          sdkmanager "cmake;3.22.1"
+          flutter --version
+          flutter doctor -v
 
-      # ---------------------------------------------------------
-      # 6. Repair Gradle Wrapper
-      # ---------------------------------------------------------
-      - name: Repair Gradle Wrapper
+      # --------------------------------------------------
+      # 5. Get Flutter dependencies
+      # --------------------------------------------------
+      - name: Flutter pub get
+        run: |
+          flutter pub get
+
+      # --------------------------------------------------
+      # 6. Clean previous Flutter build files
+      # --------------------------------------------------
+      - name: Flutter clean
+        run: |
+          flutter clean
+          flutter pub get
+
+      # --------------------------------------------------
+      # 7. Check Dart code
+      # --------------------------------------------------
+      - name: Flutter analyze
+        run: |
+          flutter analyze
+
+      # --------------------------------------------------
+      # 8. Check Android project
+      # --------------------------------------------------
+      - name: Check Android project
         working-directory: android
         run: |
           echo "========================================"
-          echo "CHECKING GRADLE WRAPPER"
+          echo "ANDROID PROJECT CHECK"
           echo "========================================"
 
-          ls -lh gradle/wrapper/
+          echo ""
+          echo "Gradle wrapper:"
+          ls -lh gradle/wrapper/ || true
 
           echo ""
-          echo "Checking wrapper JAR..."
-
-          file gradle/wrapper/gradle-wrapper.jar || true
-
-          echo ""
-          echo "Removing broken wrapper JAR..."
-
-          rm -f gradle/wrapper/gradle-wrapper.jar
+          echo "Gradle wrapper properties:"
+          cat gradle/wrapper/gradle-wrapper.properties || true
 
           echo ""
-          echo "Downloading official Gradle 8.14 distribution..."
+          echo "Settings.gradle:"
+          sed -n '1,160p' settings.gradle || true
 
-          wget -q \
-            https://services.gradle.org/distributions/gradle-8.14-bin.zip \
-            -O /tmp/gradle.zip
-
-          echo ""
-          echo "Extracting Gradle..."
-
-          mkdir -p /tmp/gradle
-
-          unzip -q /tmp/gradle.zip -d /tmp/gradle
-
-          echo ""
-          echo "Generating Gradle Wrapper..."
-
-          /tmp/gradle/gradle-8.14/bin/gradle wrapper \
-            --gradle-version 8.14
-
-          echo ""
-          echo "Wrapper repaired."
-
-          ls -lh gradle/wrapper/
-
-          file gradle/wrapper/gradle-wrapper.jar
-
-      # ---------------------------------------------------------
-      # 7. Flutter clean
-      # ---------------------------------------------------------
-      - name: Flutter clean
-        run: flutter clean
-
-      # ---------------------------------------------------------
-      # 8. Flutter dependencies
-      # ---------------------------------------------------------
-      - name: Flutter pub get
-        run: flutter pub get
-
-      # ---------------------------------------------------------
-      # 9. Analyze
-      # ---------------------------------------------------------
-      - name: Flutter analyze
-        continue-on-error: true
-        run: flutter analyze
-
-      # ---------------------------------------------------------
-      # 10. Build APK
-      # ---------------------------------------------------------
+      # --------------------------------------------------
+      # 9. Build release APK
+      # --------------------------------------------------
       - name: Build release APK
-        id: build_apk
-        continue-on-error: true
         run: |
-          flutter build apk --release --no-shrink --verbose
+          flutter build apk --release --no-shrink
 
-      # ---------------------------------------------------------
-      # 11. Locate APK
-      # ---------------------------------------------------------
-      - name: Locate APK
-        id: locate_apk
-        if: always()
+      # --------------------------------------------------
+      # 10. Find generated APK
+      # --------------------------------------------------
+      - name: Find APK
+        id: find_apk
         run: |
-
           echo "========================================"
-          echo "SEARCHING FOR APK FILES"
-          echo "========================================"
-
-          find . -type f -name "*.apk" -print
-
-          echo ""
-          echo "========================================"
-          echo "BUILD DIRECTORY"
+          echo "SEARCHING FOR APK"
           echo "========================================"
 
-          find build -maxdepth 8 -type f 2>/dev/null | sort || true
+          find build/app/outputs/apk/release -type f -name "*.apk" -print
 
-          echo ""
-          echo "========================================"
-          echo "ANDROID OUTPUTS"
-          echo "========================================"
+          APK=$(find build/app/outputs/apk/release -type f -name "*.apk" | head -n 1)
 
-          find android -type f \
-            \( -name "*.apk" -o -name "*.aab" \) \
-            -print || true
-
-          echo ""
-          echo "========================================"
-          echo "APK SEARCH RESULT"
-          echo "========================================"
-
-          APK=$(find . -type f -name "*.apk" | head -n 1 || true)
-
-          if [ -n "$APK" ]; then
-            echo "APK FOUND: $APK"
-            echo "apk_found=true" >> "$GITHUB_OUTPUT"
-            echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
-          else
-            echo "NO APK FOUND"
-            echo "apk_found=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$APK" ]; then
+            echo "No APK found."
+            exit 1
           fi
 
-      # ---------------------------------------------------------
-      # 12. Upload APK
-      # ---------------------------------------------------------
-      - name: Upload APK
-        if: steps.locate_apk.outputs.apk_found == 'true'
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "APK FOUND:"
+          echo "$APK"
+
+      # --------------------------------------------------
+      # 11. Rename APK
+      # --------------------------------------------------
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+
+          cp "$APK_PATH" \
+            "release/Resonate-Intelligence-release.apk"
+
+          echo "========================================"
+          echo "RELEASE APK"
+          echo "========================================"
+
+          ls -lh release/
+
+      # --------------------------------------------------
+      # 12. Upload APK as GitHub Actions artifact
+      # --------------------------------------------------
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Resonate-Intelligence-release
-          path: ${{ steps.locate_apk.outputs.apk_path }}
+          path: release/Resonate-Intelligence-release.apk
           if-no-files-found: error
 
-      # ---------------------------------------------------------
-      # 13. Final report
-      # ---------------------------------------------------------
-      - name: Verify build result
+      # --------------------------------------------------
+      # 13. Final build report
+      # --------------------------------------------------
+      - name: Final build report
         if: always()
         run: |
-
+          echo ""
           echo "========================================"
           echo "FINAL BUILD REPORT"
           echo "========================================"
 
-          if [ "${{ steps.locate_apk.outputs.apk_found }}" = "true" ]; then
+          if [ -f "release/Resonate-Intelligence-release.apk" ]; then
             echo ""
             echo "SUCCESS: APK WAS GENERATED."
             echo ""
             echo "Artifact:"
             echo "Resonate-Intelligence-release"
             echo ""
+            ls -lh release/Resonate-Intelligence-release.apk
           else
             echo ""
             echo "FAILURE: NO APK WAS FOUND."
             echo ""
-            echo "The Gradle build failed before producing an APK."
+            echo "The Flutter/Gradle build failed before producing an APK."
             echo ""
-            exit 1
           fi
