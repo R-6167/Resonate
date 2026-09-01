@@ -17,13 +17,13 @@ jobs:
 
     steps:
       # ---------------------------------------------------------
-      # 1. Checkout repository
+      # 1. Checkout
       # ---------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # ---------------------------------------------------------
-      # 2. Set up Java
+      # 2. Java
       # ---------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -32,7 +32,7 @@ jobs:
           java-version: '17'
 
       # ---------------------------------------------------------
-      # 3. Set up Flutter
+      # 3. Flutter
       # ---------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -51,89 +51,63 @@ jobs:
         run: flutter doctor -v
 
       # ---------------------------------------------------------
-      # 5. Android SDK
+      # 5. Android SDK / NDK
       # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # ---------------------------------------------------------
-      # 6. Install required Android NDK
-      # ---------------------------------------------------------
-      - name: Install Android NDK 28.2
+      - name: Install Android NDK
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "ndk;28.2.13676358"
           sdkmanager "cmake;3.22.1"
 
       # ---------------------------------------------------------
-      # 7. Set up Gradle
-      # ---------------------------------------------------------
-      - name: Set up Gradle 8.14
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.14'
-
-      # ---------------------------------------------------------
-      # 8. Generate a REAL Gradle wrapper
-      # ---------------------------------------------------------
-      - name: Generate Gradle wrapper
-        working-directory: android
-        run: |
-          set -e
-
-          echo "Generating Gradle wrapper..."
-
-          gradle wrapper \
-            --gradle-version 8.14 \
-            --distribution-type all
-
-          chmod +x gradlew
-
-          echo ""
-          echo "Gradle wrapper generated successfully."
-
-          echo ""
-          echo "Wrapper files:"
-          ls -lah gradle/wrapper/
-          ls -lah gradlew
-
-      # ---------------------------------------------------------
-      # 9. Clean Flutter project
+      # 6. Flutter dependencies
       # ---------------------------------------------------------
       - name: Flutter clean
         run: flutter clean
 
-      # ---------------------------------------------------------
-      # 10. Get Flutter packages
-      # ---------------------------------------------------------
-      - name: Get Flutter packages
+      - name: Flutter pub get
         run: flutter pub get
 
       # ---------------------------------------------------------
-      # 11. Build release APK
+      # 7. Create Android local.properties
+      # ---------------------------------------------------------
+      - name: Create local.properties
+        run: |
+          echo "Creating android/local.properties..."
+
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+
+          echo "Contents of android/local.properties:"
+          cat android/local.properties
+
+      # ---------------------------------------------------------
+      # 8. Configure Gradle permissions
+      # ---------------------------------------------------------
+      - name: Make Gradle executable
+        run: |
+          chmod +x android/gradlew
+          ls -l android/gradlew
+
+      # ---------------------------------------------------------
+      # 9. Flutter analyze
+      # ---------------------------------------------------------
+      - name: Flutter analyze
+        run: flutter analyze
+        continue-on-error: true
+
+      # ---------------------------------------------------------
+      # 10. Build release APK
       # ---------------------------------------------------------
       - name: Build release APK
         run: |
-          set -o pipefail
           flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
 
       # ---------------------------------------------------------
-      # 12. Show build output if anything went wrong
-      # ---------------------------------------------------------
-      - name: Show build output
-        if: always()
-        run: |
-          if [ -f build.log ]; then
-            echo "========================================"
-            echo "LAST 200 LINES OF BUILD LOG"
-            echo "========================================"
-            tail -200 build.log
-          else
-            echo "No build.log found."
-          fi
-
-      # ---------------------------------------------------------
-      # 13. Locate APK
+      # 11. Locate APK
       # ---------------------------------------------------------
       - name: Locate APK
         if: always()
@@ -142,43 +116,35 @@ jobs:
           echo "SEARCHING FOR APK"
           echo "========================================"
 
-          find . -type f -name "*.apk" -print 2>/dev/null || true
+          find . -type f -name "*.apk" -print || true
 
           echo ""
           echo "========================================"
-          echo "EXPECTED FLUTTER APK DIRECTORY"
+          echo "FLUTTER APK OUTPUT"
           echo "========================================"
 
           ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || true
 
       # ---------------------------------------------------------
-      # 14. Prepare APK artifact
+      # 12. Prepare APK
       # ---------------------------------------------------------
       - name: Prepare artifact
         if: success()
         run: |
-          set -e
-
-          APK=$(find . -type f -name "*release*.apk" | head -1)
+          APK=$(find build/app/outputs/flutter-apk -type f -name "*.apk" | head -1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: No release APK was found."
+            echo "ERROR: No APK found."
             exit 1
           fi
 
-          echo "APK found:"
-          echo "$APK"
+          echo "APK found: $APK"
 
           mkdir -p release
-
           cp "$APK" release/Resonate-Intelligence-release.apk
 
-          echo ""
-          echo "Artifact prepared:"
-          ls -lh release/
-
       # ---------------------------------------------------------
-      # 15. Upload APK
+      # 13. Upload APK
       # ---------------------------------------------------------
       - name: Upload APK
         if: success()
@@ -187,3 +153,14 @@ jobs:
           name: Resonate-Intelligence-release
           path: release/Resonate-Intelligence-release.apk
           if-no-files-found: error
+
+      # ---------------------------------------------------------
+      # 14. Build log if something fails
+      # ---------------------------------------------------------
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Resonate-build-log
+          path: build.log
+          if-no-files-found: ignore
