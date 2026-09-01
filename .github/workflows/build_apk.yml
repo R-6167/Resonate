@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -40,57 +41,22 @@ jobs:
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings || true
 
-      - name: Make sure Gradle wrapper exists
+      - name: Increase file watcher limit
+        run: |
+          echo "Increasing file watcher limit..."
+          echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
+          sudo sysctl -p
+
+      - name: Clean Android build
         working-directory: android
         run: |
-          set -e
-
-          echo "========================================"
-          echo "CHECKING GRADLE WRAPPER"
-          echo "========================================"
-
-          ls -lah gradle/wrapper/
-
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Gradle wrapper JAR is missing."
-            echo "Generating a fresh Gradle wrapper..."
-
-            wget -q \
-              https://services.gradle.org/distributions/gradle-8.14-bin.zip \
-              -O /tmp/gradle.zip
-
-            rm -rf /tmp/gradle
-            mkdir -p /tmp/gradle
-
-            unzip -q \
-              /tmp/gradle.zip \
-              -d /tmp/gradle
-
-            /tmp/gradle/gradle-8.14/bin/gradle wrapper \
-              --gradle-version 8.14 \
-              --distribution-type bin
-          fi
-
-          echo ""
-          echo "Wrapper files:"
-          ls -lah gradle/wrapper/
-
-          echo ""
-          echo "Wrapper JAR:"
-          file gradle/wrapper/gradle-wrapper.jar
+          ./gradlew clean
 
       - name: Build release APK
         run: |
-          set -e
-
-          echo "========================================"
-          echo "BUILDING RESONATE RELEASE APK"
-          echo "========================================"
-
           flutter build apk \
             --release \
-            --no-shrink \
-            --android-skip-build-dependency-validation
+            --no-shrink
 
       - name: Locate generated APK
         if: always()
@@ -98,11 +64,9 @@ jobs:
           echo "========================================"
           echo "SEARCHING FOR APK FILES"
           echo "========================================"
-
           echo ""
           echo "Files under build/:"
           find build -type f 2>/dev/null | sort || true
-
           echo ""
           echo "APK files found:"
           find . -type f -name "*.apk" -print || true
@@ -116,7 +80,7 @@ jobs:
           echo "PREPARING APK ARTIFACT"
           echo "========================================"
 
-          APK=$(find build -type f -name "*.apk" | head -n 1)
+          APK=$(find build -type f -name "*release*.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "ERROR: No APK was found."
