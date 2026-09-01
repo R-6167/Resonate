@@ -54,6 +54,8 @@ jobs:
         working-directory: android
         run: |
           set -e
+          ANDROID_DIR="$(pwd)"
+          
           echo "Cleaning old wrapper files..."
           rm -rf gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
           mkdir -p gradle/wrapper
@@ -62,8 +64,7 @@ jobs:
           curl -L -o /tmp/gradle-8.14-all.zip https://services.gradle.org/distributions/gradle-8.14-all.zip
           
           echo "Extracting Gradle..."
-          cd /tmp
-          unzip -q gradle-8.14-all.zip
+          unzip -q /tmp/gradle-8.14-all.zip -d /tmp/
           
           echo "Finding JAR file..."
           JAR_FILE=$(find /tmp/gradle-8.14 -name "gradle-*.jar" -type f | head -1)
@@ -72,11 +73,11 @@ jobs:
             exit 1
           fi
           
-          echo "Copying JAR: $JAR_FILE"
-          cp "$JAR_FILE" "$(pwd)/gradle/wrapper/gradle-wrapper.jar"
+          echo "Copying JAR: $JAR_FILE to $ANDROID_DIR/gradle/wrapper/gradle-wrapper.jar"
+          cp "$JAR_FILE" "$ANDROID_DIR/gradle/wrapper/gradle-wrapper.jar"
           
           echo "Creating wrapper properties..."
-          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          cat > "$ANDROID_DIR/gradle/wrapper/gradle-wrapper.properties" << 'EOF'
           distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
           distributionBase=GRADLE_USER_HOME
           distributionPath=wrapper/dists
@@ -85,7 +86,7 @@ jobs:
           EOF
           
           echo "Making gradlew executable..."
-          chmod +x gradlew
+          chmod +x "$ANDROID_DIR/gradlew"
           
           echo "Gradle 8.14 wrapper ready"
 
