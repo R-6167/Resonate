@@ -16,24 +16,16 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      # ---------------------------------------------------------
-      # 1. Checkout
-      # ---------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------------------------------------------------
-      # 2. Java
-      # ---------------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ---------------------------------------------------------
-      # 3. Flutter
-      # ---------------------------------------------------------
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -41,38 +33,20 @@ jobs:
           flutter-version: '3.47.2'
           cache: true
 
-      # ---------------------------------------------------------
-      # 4. Flutter information
-      # ---------------------------------------------------------
       - name: Flutter version
         run: flutter --version
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      # ---------------------------------------------------------
-      # 5. Android SDK / NDK
-      # ---------------------------------------------------------
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android NDK
+      - name: Install Android NDK and CMake
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "ndk;28.2.13676358"
           sdkmanager "cmake;3.22.1"
 
       # ---------------------------------------------------------
-      # 6. Flutter dependencies
-      # ---------------------------------------------------------
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Flutter pub get
-        run: flutter pub get
-
-      # ---------------------------------------------------------
-      # 7. Create Android local.properties
+      # Create machine-specific Android configuration
       # ---------------------------------------------------------
       - name: Create local.properties
         run: |
@@ -81,33 +55,83 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
 
-          echo "Contents of android/local.properties:"
+          echo ""
+          echo "android/local.properties:"
           cat android/local.properties
 
       # ---------------------------------------------------------
-      # 8. Configure Gradle permissions
+      # Repair Gradle Wrapper
       # ---------------------------------------------------------
-      - name: Make Gradle executable
+      - name: Restore Gradle Wrapper
+        working-directory: android
         run: |
-          chmod +x android/gradlew
-          ls -l android/gradlew
+          set -e
+
+          echo "Downloading official Gradle 8.14 wrapper JAR..."
+
+          curl -fL \
+            -o gradle/wrapper/gradle-wrapper.jar \
+            https://services.gradle.org/distributions/gradle-8.14-wrapper.jar
+
+          echo ""
+          echo "Checking Gradle Wrapper..."
+
+          file gradle/wrapper/gradle-wrapper.jar
+          ls -lh gradle/wrapper/gradle-wrapper.jar
+
+          echo ""
+          echo "Gradle wrapper properties:"
+          cat gradle/wrapper/gradle-wrapper.properties
+
+          echo ""
+          echo "Making gradlew executable..."
+          chmod +x gradlew
+
+      - name: Flutter clean
+        run: flutter clean
+
+      - name: Flutter pub get
+        run: flutter pub get
 
       # ---------------------------------------------------------
-      # 9. Flutter analyze
+      # Check the Android configuration BEFORE expensive build
+      # ---------------------------------------------------------
+      - name: Verify Android configuration
+        working-directory: android
+        run: |
+          echo "========================================"
+          echo "ANDROID CONFIGURATION"
+          echo "========================================"
+
+          echo ""
+          echo "Gradle wrapper:"
+          ls -lh gradlew gradle/wrapper/gradle-wrapper.jar
+
+          echo ""
+          echo "Local properties:"
+          cat local.properties
+
+          echo ""
+          echo "Testing Gradle wrapper..."
+
+          ./gradlew --version
+
+      # ---------------------------------------------------------
+      # Analyze Dart code
       # ---------------------------------------------------------
       - name: Flutter analyze
         run: flutter analyze
         continue-on-error: true
 
       # ---------------------------------------------------------
-      # 10. Build release APK
+      # Build APK
       # ---------------------------------------------------------
       - name: Build release APK
         run: |
           flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
 
       # ---------------------------------------------------------
-      # 11. Locate APK
+      # Locate APK
       # ---------------------------------------------------------
       - name: Locate APK
         if: always()
@@ -119,14 +143,11 @@ jobs:
           find . -type f -name "*.apk" -print || true
 
           echo ""
-          echo "========================================"
-          echo "FLUTTER APK OUTPUT"
-          echo "========================================"
-
+          echo "Flutter APK output:"
           ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || true
 
       # ---------------------------------------------------------
-      # 12. Prepare APK
+      # Prepare APK
       # ---------------------------------------------------------
       - name: Prepare artifact
         if: success()
@@ -144,7 +165,7 @@ jobs:
           cp "$APK" release/Resonate-Intelligence-release.apk
 
       # ---------------------------------------------------------
-      # 13. Upload APK
+      # Upload APK
       # ---------------------------------------------------------
       - name: Upload APK
         if: success()
@@ -155,7 +176,7 @@ jobs:
           if-no-files-found: error
 
       # ---------------------------------------------------------
-      # 14. Build log if something fails
+      # Always save build log
       # ---------------------------------------------------------
       - name: Upload build log
         if: always()
