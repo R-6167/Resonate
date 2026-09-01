@@ -43,64 +43,62 @@ jobs:
           echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
           sudo sysctl -p
 
-      - name: Clear Gradle cache
+      - name: Clean build directories
         run: |
           rm -rf ~/.gradle
           rm -rf android/.gradle
           rm -rf android/build
+          rm -rf build
+
+      - name: Reset Gradle wrapper
+        working-directory: android
+        run: |
+          rm -rf gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          mkdir -p gradle/wrapper
+          
+          # Download fresh Gradle 8.14 wrapper
+          curl -L -o /tmp/gradle-8.14-wrapper.jar https://services.gradle.org/distributions/gradle-8.14-all.zip
+          unzip -q /tmp/gradle-8.14-wrapper.jar -d /tmp/
+          cp /tmp/gradle-8.14/lib/gradle-8.14.jar gradle/wrapper/gradle-wrapper.jar
+          
+          # Create wrapper properties for Gradle 8.14
+          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.14-bin.zip
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
 
       - name: Build release APK
-        run: |
-          flutter build apk \
-            --release \
-            --verbose 2>&1 | tee build_log.txt
+        run: flutter build apk --release --verbose 2>&1 | tee build.log
         continue-on-error: true
 
-      - name: Show build log tail
+      - name: Show build output
         if: always()
         run: |
-          echo "========================================"
-          echo "BUILD LOG (LAST 100 LINES)"
-          echo "========================================"
-          tail -100 build_log.txt
+          echo "=== BUILD LOG (Last 150 lines) ==="
+          tail -150 build.log
 
-      - name: Locate generated APK
+      - name: Locate APK
         if: always()
         run: |
-          echo "========================================"
-          echo "SEARCHING FOR APK FILES"
-          echo "========================================"
+          echo "=== Searching for APK files ==="
+          find . -type f -name "*.apk" -ls 2>/dev/null || echo "No APK found"
           echo ""
-          echo "Checking build/app/outputs/flutter-apk/:"
-          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || echo "Directory not found"
-          echo ""
-          echo "All APK files in workspace:"
-          find . -type f -name "*.apk" -ls 2>/dev/null || echo "No APK files found"
-          echo ""
-          echo "Build directory contents:"
-          find build -type f -name "*release*" 2>/dev/null | head -20 || echo "No release files found"
+          echo "=== Build directory structure ==="
+          ls -lah build/app/outputs/flutter-apk/ 2>/dev/null || echo "flutter-apk directory not found"
 
-      - name: Prepare APK artifact
+      - name: Prepare artifact
         if: success()
         run: |
-          set -e
-
-          echo "========================================"
-          echo "PREPARING APK ARTIFACT"
-          echo "========================================"
-
-          APK=$(find . -type f -name "*release*.apk" -print | head -n 1)
-
+          APK=$(find . -name "*release*.apk" -type f | head -1)
           if [ -z "$APK" ]; then
-            echo "ERROR: No release APK was found."
+            echo "ERROR: No APK found"; 
             exit 1
           fi
-
-          echo "APK found: $APK"
-
           mkdir -p release
           cp "$APK" release/Resonate-Intelligence-release.apk
-          ls -lh release/Resonate-Intelligence-release.apk
 
       - name: Upload APK
         if: success()
