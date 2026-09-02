@@ -15,18 +15,127 @@ import 'services/audio_service_handler.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const ResonateBootstrap());
+}
 
-  final audioHandler = await AudioService.init(
-    builder: () => AudioServiceHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.resonate.audio',
-      androidNotificationChannelName: 'Resonate Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
+class ResonateBootstrap extends StatefulWidget {
+  const ResonateBootstrap({super.key});
 
-  runApp(ResonateApp(audioHandler: audioHandler));
+  @override
+  State<ResonateBootstrap> createState() => _ResonateBootstrapState();
+}
+
+class _ResonateBootstrapState extends State<ResonateBootstrap> {
+  AudioHandler? _audioHandler;
+  Object? _startupError;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAudioService();
+  }
+
+  Future<void> _initializeAudioService() async {
+    try {
+      final handler = await AudioService.init(
+        builder: () => AudioServiceHandler(),
+        config: const AudioServiceConfig(
+          androidNotificationChannelId: 'com.example.resonate.audio',
+          androidNotificationChannelName: 'Resonate Playback',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
+        ),
+      ).timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      setState(() => _audioHandler = handler);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _startupError = e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final handler = _audioHandler;
+
+    if (handler == null) {
+      return MaterialApp(
+        title: 'Resonate',
+        debugShowCheckedModeBanner: false,
+        theme: _theme(Brightness.dark),
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: _startupError == null
+                  ? const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 20),
+                        Text('Starting Resonate...'),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, size: 48),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Audio service could not start.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Resonate startup timed out or failed.\n$_startupError',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: () {
+                            setState(() => _startupError = null);
+                            _initializeAudioService();
+                          },
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ResonateApp(audioHandler: handler);
+  }
+
+  static ThemeData _theme(Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF315B9A),
+      brightness: brightness,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.surface,
+      textTheme: GoogleFonts.interTextTheme(
+        ThemeData(brightness: brightness).textTheme,
+      ),
+      cardTheme: CardThemeData(
+        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
+        ),
+        elevation: 0,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        filled: true,
+      ),
+    );
+  }
 }
 
 class ResonateApp extends StatelessWidget {
@@ -57,33 +166,6 @@ class ResonateApp extends StatelessWidget {
             home: const HomeScreen(),
           );
         },
-      ),
-    );
-  }
-
-  static ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF315B9A),
-      brightness: brightness,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.surface,
-      textTheme: GoogleFonts.interTextTheme(
-        ThemeData(brightness: brightness).textTheme,
-      ),
-      cardTheme: CardThemeData(
-        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
-        ),
-        elevation: 0,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        filled: true,
       ),
     );
   }
