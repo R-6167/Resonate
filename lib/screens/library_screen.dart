@@ -31,7 +31,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return ListView.builder(itemCount: songs.length, itemBuilder: (context, index) { final song = songs[index]; final isCurrent = music.currentSong?.id == song.id; return ListTile(
           leading: Icon(Icons.music_note, color: isCurrent ? Theme.of(context).colorScheme.primary : null), title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), selected: isCurrent,
           trailing: PopupMenuButton<String>(onSelected: (value) async { if (value == 'favorite') await library.addFavorite(song); if (value == 'delete') await library.deleteSong(song.id); }, itemBuilder: (_) => const [PopupMenuItem(value: 'favorite', child: Text('Add to favorites')), PopupMenuItem(value: 'delete', child: Text('Remove from library'))]),
-          onTap: () async { await music.setQueue(songs, startIndex: index); await music.playSong(song); await library.updatePlayCount(song.id); if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())); },
+          onTap: () async {
+            // playSong owns queue setup. Avoid setting the audio source twice,
+            // which can race just_audio/audio_service and cause native crashes.
+            try {
+              await music.playSong(song);
+              await library.updatePlayCount(song.id);
+              if (!mounted) return;
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Unable to play this song. The file may no longer be available.')),
+              );
+            }
+          },
         ); });
       })),
     ]),
