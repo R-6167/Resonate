@@ -77,22 +77,32 @@ jobs:
         run: |
           set -o pipefail
           flutter clean
-          flutter build apk --release --verbose 2>&1 | tee build.log
+          flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
+
+      - name: Verify APK exists
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: Release APK was not created."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+      - name: Verify APK signature
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
+
+          echo "Verifying APK signature with: $APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
       - name: Show build log on failure
         if: failure()
         run: |
           echo "===== LAST 200 LINES OF BUILD LOG ====="
           tail -200 build.log || true
-
-      - name: Verify APK
-        run: |
-          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
-            echo "ERROR: Release APK was not created."
-            exit 1
-          fi
-
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
