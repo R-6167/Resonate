@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart';
 import '../screens/equalizer_screen.dart';
 import '../screens/audio_effects_screen.dart';
@@ -11,42 +9,6 @@ import '../screens/library_management_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
-
-  static const _projectUrl = 'https://github.com/R-6167/Resonate';
-  static const _feedbackUrl = 'https://github.com/R-6167/Resonate/issues/new';
-
-  Future<void> _shareResonate(BuildContext context) async {
-    try {
-      await SharePlus.instance.share(
-        const ShareParams(
-          title: 'Resonate Music Player',
-          text: 'Try Resonate — a local-first music player for Android.\n\n$_projectUrl',
-        ),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the share menu.')),
-      );
-    }
-  }
-
-  Future<void> _sendFeedback(BuildContext context) async {
-    final uri = Uri.parse(_feedbackUrl);
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the feedback page.')),
-        );
-      }
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the feedback page.')),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -84,22 +46,6 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: const Text('What to expect from the recommendation engine'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showIntelligence(context),
-              ),
-              const Divider(),
-              _section(context, 'Help Resonate'),
-              ListTile(
-                leading: const Icon(Icons.share_rounded),
-                title: const Text('Share Resonate'),
-                subtitle: const Text('Share the project with friends and other testers'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _shareResonate(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.feedback_outlined),
-                title: const Text('Send Feedback'),
-                subtitle: const Text('Report a crash, playback problem or suggest an idea'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _sendFeedback(context),
               ),
               const Divider(),
               _section(context, 'About'),
