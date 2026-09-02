@@ -12,29 +12,42 @@ import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart'; // our handler
 import 'package:audio_service/audio_service.dart';
 
+// Global audio handler to be initialized in the background
+AudioHandler? _audioHandler;
+
 Future<void> main() async {
   print('🚀 [MAIN] App starting...');
   WidgetsFlutterBinding.ensureInitialized();
   print('🚀 [MAIN] Widgets binding initialized');
 
-  // Initialize audio_service with our handler so background controls work
-  print('🚀 [MAIN] Initializing audio service...');
-  final audioHandler = await AudioService.init(
-    builder: () => AudioServiceHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.yourcompany.resonate.channel.audio',
-      androidNotificationChannelName: 'Audio Playback',
-      androidNotificationOngoing: true,
-    ),
-  );
-  print('✅ [MAIN] Audio service initialized');
+  // Initialize audio_service in background WITHOUT AWAITING
+  print('🚀 [MAIN] Scheduling audio service initialization in background...');
+  _initializeAudioServiceAsync();
 
-  runApp(MyApp(audioHandler: audioHandler));
+  print('✅ [MAIN] Main complete - launching app');
+  runApp(const MyApp());
+}
+
+/// Initialize audio service in the background without blocking the UI
+Future<void> _initializeAudioServiceAsync() async {
+  try {
+    print('🎵 [AUDIO_SERVICE] Initializing in background...');
+    _audioHandler = await AudioService.init(
+      builder: () => AudioServiceHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.yourcompany.resonate.channel.audio',
+        androidNotificationChannelName: 'Audio Playback',
+        androidNotificationOngoing: true,
+      ),
+    );
+    print('✅ [AUDIO_SERVICE] Initialization complete');
+  } catch (e) {
+    print('❌ [AUDIO_SERVICE] Initialization failed: $e');
+  }
 }
 
 class MyApp extends StatelessWidget {
-  final AudioHandler audioHandler;
-  const MyApp({Key? key, required this.audioHandler}) : super(key: key);
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -47,11 +60,12 @@ class MyApp extends StatelessWidget {
             return ThemeProvider();
           },
         ),
-        // Provide the audio handler to the MusicProvider if you want it to control background
+        // Audio handler will be initialized in background
+        // Pass null initially, MusicProvider should handle null gracefully
         ChangeNotifierProvider(
           create: (_) {
             print('🎵 [Provider] Creating MusicProvider');
-            return MusicProvider(audioHandler: audioHandler);
+            return MusicProvider(audioHandler: _audioHandler);
           },
         ),
         ChangeNotifierProvider(
@@ -81,7 +95,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) {
             print('📚 [Provider] Creating LibraryProvider (NON-BLOCKING)');
-            return LibraryProvider(); // Now runs in background
+            return LibraryProvider();
           },
         ),
       ],
