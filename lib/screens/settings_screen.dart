@@ -4,6 +4,7 @@ import '../providers/theme_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/audio_effects_provider.dart';
 import '../providers/crossfade_provider.dart';
+import '../screens/library_management_screen.dart';
 import 'equalizer_screen.dart';
 import 'audio_effects_screen.dart';
 import 'crossfade_screen.dart';
@@ -41,7 +42,8 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('Use System Theme'),
                 subtitle: const Text('Follow system settings'),
                 value: themeProvider.useSystemTheme,
-                onChanged: (value) => themeProvider.toggleSystemTheme(value),
+                onChanged: (value) =>
+                    themeProvider.toggleSystemTheme(value),
               ),
               const Divider(),
 
@@ -100,7 +102,8 @@ class SettingsScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AudioVisualizationSettingsScreen(),
+                      builder: (_) =>
+                          const AudioVisualizationSettingsScreen(),
                     ),
                   );
                 },
@@ -116,25 +119,29 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               ListTile(
-                title: const Text('Auto-scan for new songs'),
-                subtitle: const Text('Automatically add new audio files'),
+                title: const Text('Scan for Music'),
+                subtitle: const Text('Search device for audio files'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Auto-scan - Feature coming soon'),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const LibraryManagementScreen(),
                     ),
                   );
                 },
               ),
               ListTile(
-                title: const Text('Manage storage'),
-                subtitle: const Text('View music directories'),
+                title: const Text('Manage Library'),
+                subtitle: const Text('View storage info & directories'),
                 trailing: const Icon(Icons.arrow_forward_ios),
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Storage management - Feature coming soon'),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const LibraryManagementScreen(),
                     ),
                   );
                 },
