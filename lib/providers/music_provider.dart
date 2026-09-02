@@ -63,8 +63,17 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> playSong(Song song) async {
+    final path = song.filePath.trim();
+    if (path.isEmpty) {
+      debugPrint('Cannot play song: empty file path for ${song.title}');
+      isPlaying = false;
+      notifyListeners();
+      return;
+    }
+
     currentSong = song;
     currentDuration = song.duration;
+    isPlaying = false;
     notifyListeners();
 
     if (audioHandler is AudioServiceHandler) {
@@ -81,18 +90,26 @@ class MusicProvider extends ChangeNotifier {
         }
         await handler.play();
         return;
-      } catch (e) {
+      } catch (e, stack) {
+        isPlaying = false;
         debugPrint('Error playing through AudioService: $e');
+        debugPrint('$stack');
+        notifyListeners();
         return;
       }
     }
 
     try {
-      await audioPlayer.setAudioSource(AudioSource.uri(_audioUri(song.filePath)));
+      await audioPlayer.setAudioSource(AudioSource.uri(_audioUri(path)));
       await audioPlayer.play();
       isPlaying = true;
       notifyListeners();
-    } catch (e) { debugPrint('Error playing song locally: $e'); }
+    } catch (e, stack) {
+      isPlaying = false;
+      debugPrint('Error playing song locally: $e');
+      debugPrint('$stack');
+      notifyListeners();
+    }
   }
 
   Uri _audioUri(String value) {
@@ -101,63 +118,67 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> togglePlayPause() async {
-    if (audioHandler != null) {
-      if (isPlaying) await audioHandler!.pause(); else await audioHandler!.play();
-      return;
+    try {
+      if (audioHandler != null) {
+        if (isPlaying) await audioHandler!.pause(); else await audioHandler!.play();
+        return;
+      }
+      if (audioPlayer.playing) await audioPlayer.pause(); else await audioPlayer.play();
+    } catch (e) {
+      debugPrint('Playback toggle failed: $e');
+      isPlaying = false;
+      notifyListeners();
     }
-    if (audioPlayer.playing) await audioPlayer.pause(); else await audioPlayer.play();
   }
 
-  Future<void> pause() async { if (audioHandler != null) { await audioHandler!.pause(); return; } await audioPlayer.pause(); }
+  Future<void> pause() async { try { if (audioHandler != null) { await audioHandler!.pause(); return; } await audioPlayer.pause(); } catch (e) { debugPrint('Pause failed: $e'); } }
 
   Future<void> stop() async {
-    if (audioHandler != null) {
-      await audioHandler!.stop();
-      isPlaying = false; currentPosition = Duration.zero; notifyListeners();
-      return;
-    }
-    await audioPlayer.stop(); isPlaying = false; currentPosition = Duration.zero; notifyListeners();
+    try {
+      if (audioHandler != null) {
+        await audioHandler!.stop();
+        isPlaying = false; currentPosition = Duration.zero; notifyListeners();
+        return;
+      }
+      await audioPlayer.stop(); isPlaying = false; currentPosition = Duration.zero; notifyListeners();
+    } catch (e) { debugPrint('Stop failed: $e'); }
   }
 
-  Future<void> nextSong() async {
-    if (audioHandler != null) { await audioHandler!.skipToNext(); return; }
-    if (_queue.isNotEmpty && _queueIndex < _queue.length - 1) { _queueIndex++; await playSong(_queue[_queueIndex]); }
-  }
+  Future<void> nextSong() async { try { if (audioHandler != null) { await audioHandler!.skipToNext(); return; } if (_queue.isNotEmpty && _queueIndex < _queue.length - 1) { _queueIndex++; await playSong(_queue[_queueIndex]); } } catch (e) { debugPrint('Next song failed: $e'); } }
 
-  Future<void> previousSong() async {
-    if (audioHandler != null) { await audioHandler!.skipToPrevious(); return; }
-    if (_queue.isNotEmpty && _queueIndex > 0) { _queueIndex--; await playSong(_queue[_queueIndex]); }
-  }
+  Future<void> previousSong() async { try { if (audioHandler != null) { await audioHandler!.skipToPrevious(); return; } if (_queue.isNotEmpty && _queueIndex > 0) { _queueIndex--; await playSong(_queue[_queueIndex]); } } catch (e) { debugPrint('Previous song failed: $e'); } }
 
-  Future<void> seek(Duration position) async {
-    if (audioHandler != null) { await audioHandler!.seek(position); return; }
-    await audioPlayer.seek(position);
-  }
+  Future<void> seek(Duration position) async { try { if (audioHandler != null) { await audioHandler!.seek(position); return; } await audioPlayer.seek(position); } catch (e) { debugPrint('Seek failed: $e'); } }
 
   Future<void> setVolume(double volume) async {
     final safe = volume.clamp(0.0, 1.0).toDouble();
-    if (audioHandler is AudioServiceHandler) {
-      await (audioHandler as AudioServiceHandler).setVolume(safe);
-    } else {
-      await audioPlayer.setVolume(safe);
-    }
-    _volume = safe;
-    notifyListeners();
+    try {
+      if (audioHandler is AudioServiceHandler) await (audioHandler as AudioServiceHandler).setVolume(safe); else await audioPlayer.setVolume(safe);
+      _volume = safe;
+      notifyListeners();
+    } catch (e) { debugPrint('Volume change failed: $e'); }
   }
 
   Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async {
     _queue = List<Song>.from(songs);
     if (_queue.isEmpty) { _queueIndex = 0; return; }
     _queueIndex = startIndex.clamp(0, _queue.length - 1);
-    if (audioHandler is AudioServiceHandler) {
-      await (audioHandler as AudioServiceHandler).setSongQueue(_queue, startIndex: _queueIndex);
-      return;
+    try {
+      if (audioHandler is AudioServiceHandler) {
+        await (audioHandler as AudioServiceHandler).setSongQueue(_queue, startIndex: _queueIndex);
+        return;
+      }
+      final sources = _queue.map((song) => AudioSource.uri(_audioUri(song.filePath))).toList();
+      await audioPlayer.setAudioSource(ConcatenatingAudioSource(children: sources), initialIndex: _queueIndex);
+      currentSong = _queue[_queueIndex];
+      currentDuration = currentSong!.duration;
+      notifyListeners();
+    } catch (e, stack) {
+      debugPrint('Queue setup failed: $e');
+      debugPrint('$stack');
+      isPlaying = false;
+      notifyListeners();
     }
-    final sources = _queue.map((song) => AudioSource.uri(_audioUri(song.filePath))).toList();
-    await audioPlayer.setAudioSource(ConcatenatingAudioSource(children: sources), initialIndex: _queueIndex);
-    currentSong = _queue[_queueIndex];
-    currentDuration = currentSong!.duration;
-    notifyListeners();
   }
 
   Stream<Duration?> get durationStream => audioHandler != null
