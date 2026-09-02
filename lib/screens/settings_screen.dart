@@ -4,11 +4,11 @@ import '../providers/theme_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/audio_effects_provider.dart';
 import '../providers/crossfade_provider.dart';
+import '../screens/equalizer_screen.dart';
+import '../screens/audio_effects_screen.dart';
+import '../screens/crossfade_screen.dart';
+import '../screens/audio_visualization_settings_screen.dart';
 import '../screens/library_management_screen.dart';
-import 'equalizer_screen.dart';
-import 'audio_effects_screen.dart';
-import 'crossfade_screen.dart';
-import 'audio_visualization_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -16,167 +16,55 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        elevation: 0,
-      ),
-      body: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
-          return ListView(
-            children: [
-              // Theme Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Appearance',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              SwitchListTile(
-                title: const Text('Dark Mode'),
-                subtitle: const Text('Use dark theme'),
-                value: themeProvider.isDarkMode,
-                onChanged: (_) => themeProvider.toggleTheme(),
-              ),
-              SwitchListTile(
-                title: const Text('Use System Theme'),
-                subtitle: const Text('Follow system settings'),
-                value: themeProvider.useSystemTheme,
-                onChanged: (value) =>
-                    themeProvider.toggleSystemTheme(value),
-              ),
-              const Divider(),
-
-              // Audio Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Audio',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              ListTile(
-                title: const Text('Equalizer'),
-                subtitle: const Text('10-band advanced equalizer with presets'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const EqualizerScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                title: const Text('Audio Effects'),
-                subtitle: const Text('Bass boost, treble boost & more'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const AudioEffectsScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                title: const Text('Crossfade'),
-                subtitle: const Text('Smooth transitions between songs'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CrossfadeScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                title: const Text('Visualization'),
-                subtitle: const Text('Audio spectrum & waveform display'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const AudioVisualizationSettingsScreen(),
-                    ),
-                  );
-                },
-              ),
-              const Divider(),
-
-              // Library Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Library',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              ListTile(
-                title: const Text('Scan for Music'),
-                subtitle: const Text('Search device for audio files'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const LibraryManagementScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                title: const Text('Manage Library'),
-                subtitle: const Text('View storage info & directories'),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const LibraryManagementScreen(),
-                    ),
-                  );
-                },
-              ),
-              const Divider(),
-
-              // About Section
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'About',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              const ListTile(
-                title: Text('App Version'),
-                subtitle: Text('1.0.0'),
-              ),
-              ListTile(
-                title: const Text('About Resonate'),
-                subtitle: const Text('A feature-rich music player'),
-                onTap: () {
-                  showAboutDialog(
-                    context: context,
-                    applicationName: 'Resonate',
-                    applicationVersion: '1.0.0',
-                    applicationLegalese:
-                        '© 2024 Resonate. Licensed under MIT.',
-                  );
-                },
-              ),
-            ],
-          );
-        },
-      ),
+      appBar: AppBar(title: const Text('Settings'), elevation: 0),
+      body: Consumer<ThemeProvider>(builder: (context, themeProvider, _) => ListView(
+        children: [
+          _section(context, 'Appearance'),
+          SwitchListTile(title: const Text('Dark Mode'), subtitle: const Text('Use the dark Resonate interface'), value: themeProvider.isDarkMode, onChanged: (_) => themeProvider.toggleTheme()),
+          SwitchListTile(title: const Text('Use System Theme'), subtitle: const Text('Follow Android appearance settings'), value: themeProvider.useSystemTheme, onChanged: themeProvider.toggleSystemTheme),
+          const Divider(),
+          _section(context, 'Audio'),
+          _route(context, Icons.equalizer, 'Equalizer', 'Shape the sound with the equalizer', const EqualizerScreen()),
+          _route(context, Icons.tune, 'Audio Effects', 'Bass, reverb and other processing', const AudioEffectsScreen()),
+          _route(context, Icons.compare_arrows, 'Crossfade', 'Smooth transitions between tracks', const CrossfadeScreen()),
+          _route(context, Icons.graphic_eq, 'Visualization', 'Customize the lightweight Now Playing visualizer', const AudioVisualizationSettingsScreen()),
+          const Divider(),
+          _section(context, 'Library'),
+          _route(context, Icons.folder_open_outlined, 'Library Management', 'Choose folders Resonate is allowed to scan', const LibraryManagementScreen()),
+          const Divider(),
+          _section(context, 'Intelligence'),
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_outlined),
+            title: const Text('Resonate Intelligence'),
+            subtitle: const Text('What to expect from the recommendation engine'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showIntelligence(context),
+          ),
+          const Divider(),
+          _section(context, 'About'),
+          const ListTile(title: Text('App Version'), subtitle: Text('0.1.0')),
+          ListTile(
+            title: const Text('About Resonate'),
+            subtitle: const Text('A local-first intelligent music player by Aetherion LLC'),
+            onTap: () => _showAbout(context),
+          ),
+        ],
+      )),
     );
+  }
+
+  Widget _section(BuildContext context, String title) => Padding(padding: const EdgeInsets.fromLTRB(16, 20, 16, 8), child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)));
+  Widget _route(BuildContext context, IconData icon, String title, String subtitle, Widget page) => ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(subtitle), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)));
+
+  void _showAbout(BuildContext context) {
+    showAboutDialog(context: context, applicationName: 'Resonate', applicationVersion: '0.1.0', applicationLegalese: '© 2026 Aetherion LLC. Licensed under MIT.', children: const [SizedBox(height: 16), Text('Resonate is an offline-first music experience built to understand how you listen and help decide what should play next — without channels, feeds, or unnecessary background processing.')]);
+  }
+
+  void _showIntelligence(BuildContext context) {
+    showDialog<void>(context: context, builder: (_) => AlertDialog(
+      title: const Row(children: [Icon(Icons.auto_awesome), SizedBox(width: 10), Text('Resonate Intelligence')]),
+      content: const SingleChildScrollView(child: Text('Resonate Intelligence is being built as a local-first recommendation system.\n\n• It learns from your listening history, skips, completions, favorites and transitions.\n• It builds a personal map of what you tend to play together.\n• It ranks candidates instead of blindly shuffling your library.\n• It will explain why a song was suggested.\n• It is designed to run locally and stay lightweight.\n\nThe long-term goal is a self-sustaining music experience: you open Resonate, and the Home page continuously proposes what fits your listening session — like a personal video platform without channels, subscriptions or a CPU-hungry feed.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Got it'))],
+    ));
   }
 }
