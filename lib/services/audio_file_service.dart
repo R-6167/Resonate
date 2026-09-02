@@ -1,25 +1,63 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 
 class AudioFileService {
   static const MethodChannel _channel =
       MethodChannel('com.example.resonate/media_store');
+  static const _foldersKey = 'resonate_library_folders';
 
   static Future<bool> requestAudioPermission() async {
     if (!Platform.isAndroid) return true;
     return await _channel.invokeMethod<bool>('requestAudioPermission') ?? false;
   }
 
-  static Future<List<String>> getMusicDirectories() async {
-    if (!Platform.isAndroid) return const [];
-    return const ['Device audio (MediaStore)', 'Music', 'Download', 'Documents', 'DCIM'];
+  static Future<List<Map<String, String>>> getSelectedFolders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_foldersKey) ?? const [];
+    return raw.map((value) {
+      final parts = value.split('|');
+      return {
+        'uri': parts.first,
+        'name': parts.length > 1 ? parts.sublist(1).join('|') : 'Selected folder',
+      };
+    }).toList();
   }
 
-  static Future<List<Song>> scanAudioFiles() async {
+  static Future<bool> addFolder() async {
+    if (!Platform.isAndroid) return false;
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>('pickFolder');
+    if (result == null || result['uri'] == null) return false;
+    final uri = result['uri'].toString();
+    final name = (result['name'] ?? 'Selected folder').toString();
+    final prefs = await SharedPreferences.getInstance();
+    final folders = prefs.getStringList(_foldersKey) ?? <String>[];
+    if (!folders.any((item) => item.split('|').first == uri)) {
+      folders.add('$uri|$name');
+      await prefs.setStringList(_foldersKey, folders);
+    }
+    return true;
+  }
+
+  static Future<void> removeFolder(String uri) async {
+    final prefs = await SharedPreferences.getInstance();
+    final folders = prefs.getStringList(_foldersKey) ?? <String>[];
+    folders.removeWhere((item) => item.split('|').first == uri);
+    await prefs.setStringList(_foldersKey, folders);
+  }
+
+  static Future<List<Song>> scanAudioFiles({List<String>? folderUris}) async {
     if (!await requestAudioPermission()) return [];
+    final folders = folderUris ??
+        (await getSelectedFolders()).map((folder) => folder['uri']!).toList();
+    if (folders.isEmpty) return [];
+
     try {
-      final result = await _channel.invokeMethod<List<dynamic>>('scanAudio');
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'scanAudio',
+        {'folders': folders},
+      );
       final songs = <Song>[];
       for (final raw in result ?? const []) {
         if (raw is! Map) continue;
@@ -40,7 +78,7 @@ class AudioFileService {
           albumArt: null,
         ));
       }
-      print('🎵 AudioFileService: Found ${songs.length} audio files');
+      print('🎵 AudioFileService: Found ${songs.length} audio files in selected folders');
       return songs;
     } catch (e) {
       print('❌ MediaStore scan failed: $e');
@@ -53,7 +91,9 @@ class AudioFileService {
   static Future<Map<String, dynamic>> getStorageInfo() async {
     try {
       final songs = await scanAudioFiles();
-      final size = await _channel.invokeMethod<int>('getAudioSize') ?? 0;
+      final size = await _channel.invokeMethod<int>('getAudioSize', {
+        'folders': (await getSelectedFolders()).map((folder) => folder['uri']!).toList(),
+      }) ?? 0;
       return {'totalSize': size, 'formattedSize': formatBytes(size), 'fileCount': songs.length};
     } catch (_) {
       return {'totalSize': 0, 'formattedSize': '0 B', 'fileCount': 0};
