@@ -1,45 +1,102 @@
-name: Build Android APK
+name: Build Resonate APK
 
 on:
   push:
-    branches: [ "Intelligence", "main", "master" ]
-  pull_request:
-    branches: [ "Intelligence", "main", "master" ]
+    branches:
+      - Intelligence
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          flutter-version: '3.47.2'
+          channel: stable
           cache: true
 
-      - name: Install Dependencies
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android components
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-36"
+          sdkmanager "build-tools;36.0.0"
+          sdkmanager "ndk;28.2.13676358"
+
+      - name: Create Android local.properties
+        run: |
+          cat > android/local.properties <<EOF
+          sdk.dir=${ANDROID_SDK_ROOT}
+          flutter.sdk=${FLUTTER_ROOT}
+          EOF
+
+          echo "Created android/local.properties:"
+          cat android/local.properties
+
+      - name: Install Gradle 8.14
+        run: |
+          curl -fL \
+            -o /tmp/gradle-8.14-bin.zip \
+            https://services.gradle.org/distributions/gradle-8.14-bin.zip
+
+          unzip -q /tmp/gradle-8.14-bin.zip -d /opt
+
+          echo "/opt/gradle-8.14/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: |
+          gradle wrapper \
+            --gradle-version 8.14 \
+            --distribution-type bin
+
+          chmod +x gradlew
+
+          echo "Gradle wrapper generated successfully."
+          ./gradlew --version
+
+      - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Force Compatible Gradle Version (8.3)
+      - name: Build release APK
         run: |
-          cd android
-          gradle wrapper --gradle-version 8.3
+          set -o pipefail
+          flutter clean
+          flutter build apk --release --verbose 2>&1 | tee build.log
 
-      - name: Build Debug APK
-        run: flutter build apk --debug
+      - name: Show build log on failure
+        if: failure()
+        run: |
+          echo "===== LAST 200 LINES OF BUILD LOG ====="
+          tail -200 build.log || true
 
-      - name: Upload APK Artifact
+      - name: Verify APK
+        run: |
+          if [ ! -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            echo "ERROR: Release APK was not created."
+            exit 1
+          fi
+
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: resonate-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: resonate-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
