@@ -4,106 +4,69 @@ on:
   push:
     branches:
       - Intelligence
+      - debug-splash-hang
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
           channel: stable
           cache: true
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Install required Android components
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
           sdkmanager "ndk;28.2.13676358"
-
       - name: Create Android local.properties
         run: |
           cat > android/local.properties <<EOF
           sdk.dir=${ANDROID_SDK_ROOT}
           flutter.sdk=${FLUTTER_ROOT}
           EOF
-
-          echo "Created android/local.properties:"
-          cat android/local.properties
-
       - name: Install Gradle 8.14
         run: |
-          curl -fL \
-            -o /tmp/gradle-8.14-bin.zip \
-            https://services.gradle.org/distributions/gradle-8.14-bin.zip
-
+          curl -fL -o /tmp/gradle-8.14-bin.zip https://services.gradle.org/distributions/gradle-8.14-bin.zip
           unzip -q /tmp/gradle-8.14-bin.zip -d /opt
-
           echo "/opt/gradle-8.14/bin" >> "$GITHUB_PATH"
-
       - name: Generate Gradle wrapper
         working-directory: android
         run: |
-          gradle wrapper \
-            --gradle-version 8.14 \
-            --distribution-type bin
-
+          gradle wrapper --gradle-version 8.14 --distribution-type bin
           chmod +x gradlew
-
-          echo "Gradle wrapper generated successfully."
           ./gradlew --version
-
       - name: Get Flutter dependencies
         run: flutter pub get
-
       - name: Build release APK
         run: |
           set -o pipefail
           flutter clean
           flutter build apk --release --no-shrink --verbose 2>&1 | tee build.log
-
       - name: Verify APK exists
         run: |
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: Release APK was not created."
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
       - name: Verify APK signature
         run: |
-          APK="build/app/outputs/flutter-apk/app-release.apk"
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
-
-          echo "Verifying APK signature with: $APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
       - name: Show build log on failure
         if: failure()
-        run: |
-          echo "===== LAST 200 LINES OF BUILD LOG ====="
-          tail -200 build.log || true
-
+        run: tail -200 build.log || true
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
