@@ -28,6 +28,7 @@ class PlayerScreen extends StatelessWidget {
             final duration = music.currentDuration ?? song.duration;
             final max = duration.inMilliseconds.toDouble().clamp(1.0, double.infinity).toDouble();
             final value = music.currentPosition.inMilliseconds.toDouble().clamp(0.0, max).toDouble();
+            final scheme = Theme.of(context).colorScheme;
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
@@ -36,15 +37,11 @@ class PlayerScreen extends StatelessWidget {
                   height: 250,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(26),
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                    color: scheme.surfaceContainerHighest,
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Center(
-                    child: Icon(
-                      Icons.album_rounded,
-                      size: 110,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                    child: Icon(Icons.album_rounded, size: 110, color: scheme.primary),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -64,7 +61,7 @@ class PlayerScreen extends StatelessWidget {
                   child: Container(
                     height: 105,
                     padding: const EdgeInsets.all(8),
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: scheme.surfaceContainerHighest,
                     child: const AudioVisualizationWidget(),
                   ),
                 ),
@@ -87,11 +84,11 @@ class PlayerScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(22),
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                    color: scheme.surfaceContainerHighest,
+                    border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -105,14 +102,13 @@ class PlayerScreen extends StatelessWidget {
                         tooltip: 'Back 10 seconds',
                         icon: Icons.replay_10_rounded,
                         onPressed: () => music.seek(
-                          Duration(
-                            milliseconds: (music.currentPosition.inMilliseconds - 10000)
-                                .clamp(0, max.toInt()),
-                          ),
+                          Duration(milliseconds: (music.currentPosition.inMilliseconds - 10000).clamp(0, max.toInt())),
                         ),
                       ),
                       FloatingActionButton.large(
                         heroTag: 'resonate-play',
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
                         tooltip: music.isPlaying ? 'Pause' : 'Play',
                         onPressed: music.togglePlayPause,
                         child: Icon(
@@ -124,10 +120,7 @@ class PlayerScreen extends StatelessWidget {
                         tooltip: 'Forward 10 seconds',
                         icon: Icons.forward_10_rounded,
                         onPressed: () => music.seek(
-                          Duration(
-                            milliseconds: (music.currentPosition.inMilliseconds + 10000)
-                                .clamp(0, max.toInt()),
-                          ),
+                          Duration(milliseconds: (music.currentPosition.inMilliseconds + 10000).clamp(0, max.toInt())),
                         ),
                       ),
                       _ControlButton(
@@ -146,7 +139,7 @@ class PlayerScreen extends StatelessWidget {
                       children: [
                         Icon(
                           music.volume == 0 ? Icons.volume_off : Icons.volume_up,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: scheme.primary,
                         ),
                         Expanded(
                           child: Slider(
@@ -176,11 +169,20 @@ class _ControlButton extends StatelessWidget {
   const _ControlButton({required this.tooltip, required this.icon, required this.onPressed});
 
   @override
-  Widget build(BuildContext context) => IconButton.filledTonal(
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer,
+      shape: const CircleBorder(),
+      child: IconButton(
         tooltip: tooltip,
         iconSize: 30,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
+        constraints: const BoxConstraints(minWidth: 58, minHeight: 58),
+        color: scheme.onPrimaryContainer,
         onPressed: onPressed,
         icon: Icon(icon),
-      );
+      ),
+    );
+  }
 }
