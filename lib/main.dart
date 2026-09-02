@@ -9,29 +9,20 @@ import 'providers/crossfade_provider.dart';
 import 'providers/audio_visualization_provider.dart';
 import 'providers/library_provider.dart';
 import 'screens/home_screen.dart';
-import 'services/audio_service_handler.dart'; // our handler
+import 'services/audio_service_handler.dart';
 import 'package:audio_service/audio_service.dart';
 
-// Global audio handler to be initialized in the background
 AudioHandler? _audioHandler;
 
 Future<void> main() async {
-  print('🚀 [MAIN] App starting...');
   WidgetsFlutterBinding.ensureInitialized();
-  print('🚀 [MAIN] Widgets binding initialized');
+  print('🚀 [MAIN] App starting...');
 
-  // Initialize audio_service in background WITHOUT AWAITING
-  print('🚀 [MAIN] Scheduling audio service initialization in background...');
-  _initializeAudioServiceAsync();
-
-  print('✅ [MAIN] Main complete - launching app');
-  runApp(const MyApp());
-}
-
-/// Initialize audio service in the background without blocking the UI
-Future<void> _initializeAudioServiceAsync() async {
   try {
-    print('🎵 [AUDIO_SERVICE] Initializing in background...');
+    // AudioService MUST be ready before MusicProvider is created. Previously
+    // this ran in the background, which left MusicProvider permanently bound
+    // to its local fallback player on a fast launch.
+    print('🎵 [AUDIO_SERVICE] Initializing...');
     _audioHandler = await AudioService.init(
       builder: () => AudioServiceHandler(),
       config: const AudioServiceConfig(
@@ -41,9 +32,12 @@ Future<void> _initializeAudioServiceAsync() async {
       ),
     );
     print('✅ [AUDIO_SERVICE] Initialization complete');
-  } catch (e) {
+  } catch (e, stack) {
     print('❌ [AUDIO_SERVICE] Initialization failed: $e');
+    print(stack);
   }
+
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -51,57 +45,20 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    print('🎨 [MyApp] Building app...');
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
-          create: (_) {
-            print('📱 [Provider] Creating ThemeProvider');
-            return ThemeProvider();
-          },
+          create: (_) => MusicProvider(audioHandler: _audioHandler),
         ),
-        // Audio handler will be initialized in background
-        // Pass null initially, MusicProvider should handle null gracefully
-        ChangeNotifierProvider(
-          create: (_) {
-            print('🎵 [Provider] Creating MusicProvider');
-            return MusicProvider(audioHandler: _audioHandler);
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('🎚️ [Provider] Creating EqualizerProvider');
-            return EqualizerProvider();
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('🔊 [Provider] Creating AudioEffectsProvider');
-            return AudioEffectsProvider();
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('➡️ [Provider] Creating CrossfadeProvider');
-            return CrossfadeProvider();
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('📊 [Provider] Creating AudioVisualizationProvider');
-            return AudioVisualizationProvider();
-          },
-        ),
-        ChangeNotifierProvider(
-          create: (_) {
-            print('📚 [Provider] Creating LibraryProvider (NON-BLOCKING)');
-            return LibraryProvider();
-          },
-        ),
+        ChangeNotifierProvider(create: (_) => EqualizerProvider()),
+        ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
+        ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
+        ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
+        ChangeNotifierProvider(create: (_) => LibraryProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
-          print('🎨 [Builder] Building MaterialApp with theme');
           return MaterialApp(
             title: 'Resonate',
             debugShowCheckedModeBanner: false,
@@ -123,7 +80,9 @@ class MyApp extends StatelessWidget {
                 ThemeData(brightness: Brightness.dark).textTheme,
               ),
             ),
-            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            themeMode: themeProvider.isDarkMode
+                ? ThemeMode.dark
+                : ThemeMode.light,
             home: const HomeScreen(),
           );
         },
