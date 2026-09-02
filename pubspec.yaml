@@ -24,6 +24,10 @@ dependencies:
   sqflite: ^2.4.2
   path: ^1.9.1
 
+  # File & Storage
+  permission_handler: ^11.4.4
+  flutter_audio_query: ^0.3.5+2
+
   # Utilities
   uuid: ^4.5.1
 
