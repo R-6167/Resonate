@@ -91,49 +91,54 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> setSongQueue(List<Song> songs, {int startIndex = 0}) async {
-    final validSongs = songs.where((song) => song.filePath.trim().isNotEmpty).toList();
-    _items
-      ..clear()
-      ..addAll(validSongs.map(songToMediaItem));
-    queue.add(List.unmodifiable(_items));
-
-    if (validSongs.isEmpty) {
+    final sourceSongs = songs.where((song) => song.filePath.trim().isNotEmpty).toList();
+    if (sourceSongs.isEmpty) {
+      _items.clear();
+      queue.add(const []);
       _playlist = null;
       await _player.stop();
       mediaItem.add(null);
       return;
     }
 
-    final safeIndex = startIndex.clamp(0, validSongs.length - 1);
-    final selected = validSongs[safeIndex];
-    final selectedSource = AudioSource.uri(
-      _audioUri(selected.filePath),
-      tag: songToMediaItem(selected),
-    );
+    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);
+    // Put the requested song first so the player can prepare it in isolation.
+    // Keep the rest of the queue in their original order after it.
+    final orderedSongs = <Song>[
+      sourceSongs[requestedIndex],
+      ...sourceSongs.take(requestedIndex),
+      ...sourceSongs.skip(requestedIndex + 1),
+    ];
+
+    _items
+      ..clear()
+      ..addAll(orderedSongs.map(songToMediaItem));
+    queue.add(List.unmodifiable(_items));
 
     try {
-      // Prepare only the requested track first. This prevents one corrupt or
-      // inaccessible library entry from blocking playback of every song.
       await _player.stop();
-      final newPlaylist = ConcatenatingAudioSource(
-        children: [selectedSource],
+      _playlist = ConcatenatingAudioSource(
+        children: [
+          AudioSource.uri(
+            _audioUri(orderedSongs.first.filePath),
+            tag: songToMediaItem(orderedSongs.first),
+          ),
+        ],
         useLazyPreparation: true,
       );
-      _playlist = newPlaylist;
       await _player.setAudioSource(_playlist!, initialIndex: 0);
-      mediaItem.add(_items[safeIndex]);
+      mediaItem.add(_items.first);
 
-      // Add the remaining tracks lazily after the selected track is prepared.
-      // A bad secondary entry must never make the selected song unplayable.
-      for (var i = 0; i < validSongs.length; i++) {
-        if (i == safeIndex) continue;
+      // Append secondary tracks lazily. If an entry is malformed, it is skipped
+      // without affecting the already prepared selected track.
+      for (final song in orderedSongs.skip(1)) {
         try {
           await _playlist!.add(AudioSource.uri(
-            _audioUri(validSongs[i].filePath),
-            tag: songToMediaItem(validSongs[i]),
+            _audioUri(song.filePath),
+            tag: songToMediaItem(song),
           ));
         } catch (_) {
-          // Keep playback alive even if an additional source cannot be added.
+          // Ignore an unusable secondary source.
         }
       }
     } catch (e) {
