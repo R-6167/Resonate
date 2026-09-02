@@ -5,20 +5,10 @@ import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
 
-/// AudioHandler used by Resonate.
-///
-/// Bridges just_audio with audio_service so playback can continue
-/// while the app is in the background and media controls can be
-/// displayed by Android.
-class AudioServiceHandler extends BaseAudioHandler
-    with
-        SeekHandler {
+class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
-
   final List<MediaItem> _items = [];
-
   ConcatenatingAudioSource? _playlist;
-
   StreamSubscription<PlaybackEvent>? _playbackSubscription;
   StreamSubscription<int?>? _currentIndexSubscription;
 
@@ -26,32 +16,15 @@ class AudioServiceHandler extends BaseAudioHandler
     _initializeListeners();
   }
 
-  // ---------------------------------------------------------------------------
-  // INITIALIZATION
-  // ---------------------------------------------------------------------------
-
   void _initializeListeners() {
-    // Initial queue.
     queue.add(List.unmodifiable(_items));
 
-    // Playback state.
-    _playbackSubscription =
-        _player.playbackEventStream.listen((event) {
-      final playing = _player.playing;
-
-      final processingState =
-          _transformProcessingState(
-        _player.processingState,
-      );
-
+    _playbackSubscription = _player.playbackEventStream.listen((event) {
       playbackState.add(
         playbackState.value.copyWith(
           controls: [
             MediaControl.skipToPrevious,
-            if (playing)
-              MediaControl.pause
-            else
-              MediaControl.play,
+            _player.playing ? MediaControl.pause : MediaControl.play,
             MediaControl.stop,
             MediaControl.skipToNext,
           ],
@@ -60,13 +33,9 @@ class AudioServiceHandler extends BaseAudioHandler
             MediaAction.seekForward,
             MediaAction.seekBackward,
           },
-          androidCompactActionIndices: const [
-            0,
-            1,
-            3,
-          ],
-          processingState: processingState,
-          playing: playing,
+          androidCompactActionIndices: const [0, 1, 3],
+          processingState: _transformProcessingState(_player.processingState),
+          playing: _player.playing,
           updatePosition: _player.position,
           bufferedPosition: _player.bufferedPosition,
           speed: _player.speed,
@@ -74,100 +43,65 @@ class AudioServiceHandler extends BaseAudioHandler
       );
     });
 
-    // Current media item.
-    _currentIndexSubscription =
-        _player.currentIndexStream.listen((index) {
-      if (index != null &&
-          index >= 0 &&
-          index < _items.length) {
+    _currentIndexSubscription = _player.currentIndexStream.listen((index) {
+      if (index != null && index >= 0 && index < _items.length) {
         mediaItem.add(_items[index]);
       }
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // PROCESSING STATE
-  // ---------------------------------------------------------------------------
-
-  AudioProcessingState _transformProcessingState(
-    ProcessingState state,
-  ) {
+  AudioProcessingState _transformProcessingState(ProcessingState state) {
     switch (state) {
       case ProcessingState.idle:
         return AudioProcessingState.idle;
-
       case ProcessingState.loading:
         return AudioProcessingState.loading;
-
       case ProcessingState.buffering:
         return AudioProcessingState.buffering;
-
       case ProcessingState.ready:
         return AudioProcessingState.ready;
-
       case ProcessingState.completed:
         return AudioProcessingState.completed;
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // SONG -> MEDIA ITEM
-  // ---------------------------------------------------------------------------
+  MediaItem songToMediaItem(Song song) => MediaItem(
+        id: song.id,
+        album: song.album,
+        title: song.title,
+        artist: song.artist,
+        duration: song.duration,
+        extras: {
+          'filePath': song.filePath,
+          'albumArt': song.albumArt,
+        },
+      );
 
-  MediaItem songToMediaItem(Song song) {
-    return MediaItem(
-      id: song.id,
-      album: song.album,
-      title: song.title,
-      artist: song.artist,
-      duration: song.duration,
-      extras: {
-        'filePath': song.filePath,
-        'albumArt': song.albumArt,
-      },
-    );
+  Uri _audioUri(String value) {
+    if (value.startsWith('content://') || value.startsWith('http://') || value.startsWith('https://')) {
+      return Uri.parse(value);
+    }
+    return Uri.file(value);
   }
 
-  // ---------------------------------------------------------------------------
-  // SONG QUEUE
-  // ---------------------------------------------------------------------------
-
-  /// Custom Resonate method for adding Song objects.
-  ///
-  /// This is deliberately NOT named addQueueItems because
-  /// BaseAudioHandler already defines addQueueItems(List<MediaItem>).
   Future<void> addSongsToQueue(List<Song> songs) async {
-    final mediaItems =
-        songs.map(songToMediaItem).toList();
-
-    for (final item in mediaItems) {
-      await addQueueItem(item);
+    for (final song in songs) {
+      await addQueueItem(songToMediaItem(song));
     }
   }
 
-  /// Sets the entire Resonate queue.
-  Future<void> setSongQueue(
-    List<Song> songs, {
-    int startIndex = 0,
-  }) async {
+  Future<void> setSongQueue(List<Song> songs, {int startIndex = 0}) async {
     _items
       ..clear()
-      ..addAll(
-        songs.map(songToMediaItem),
-      );
+      ..addAll(songs.map(songToMediaItem));
+    queue.add(List.unmodifiable(_items));
 
-    queue.add(
-      List.unmodifiable(_items),
-    );
-
-    final sources = songs.map(
-      (song) {
-        return AudioSource.uri(
-          Uri.file(song.filePath),
-          tag: songToMediaItem(song),
-        );
-      },
-    ).toList();
+    final sources = songs
+        .map((song) => AudioSource.uri(
+              _audioUri(song.filePath),
+              tag: songToMediaItem(song),
+            ))
+        .toList();
 
     if (sources.isEmpty) {
       _playlist = null;
@@ -176,158 +110,83 @@ class AudioServiceHandler extends BaseAudioHandler
       return;
     }
 
-    _playlist = ConcatenatingAudioSource(
-      children: sources,
-    );
-
-    final safeStartIndex =
-        startIndex.clamp(0, sources.length - 1);
-
-    await _player.setAudioSource(
-      _playlist!,
-      initialIndex: safeStartIndex,
-    );
-
-    mediaItem.add(
-      _items[safeStartIndex],
-    );
+    _playlist = ConcatenatingAudioSource(children: sources);
+    final safeIndex = startIndex.clamp(0, sources.length - 1);
+    await _player.setAudioSource(_playlist!, initialIndex: safeIndex);
+    mediaItem.add(_items[safeIndex]);
   }
 
-  // ---------------------------------------------------------------------------
-  // AUDIO SERVICE QUEUE API
-  // ---------------------------------------------------------------------------
-
   @override
-  Future<void> addQueueItem(
-    MediaItem mediaItem,
-  ) async {
-    _items.add(mediaItem);
+  Future<void> addQueueItem(MediaItem item) async {
+    _items.add(item);
+    queue.add(List.unmodifiable(_items));
 
-    queue.add(
-      List.unmodifiable(_items),
-    );
+    final filePath = item.extras?['filePath']?.toString();
+    if (filePath == null || filePath.isEmpty) return;
 
-    final filePath =
-        mediaItem.extras?['filePath']?.toString();
-
-    if (filePath == null || filePath.isEmpty) {
-      return;
-    }
-
-    final source = AudioSource.uri(
-      Uri.file(filePath),
-      tag: mediaItem,
-    );
-
+    final source = AudioSource.uri(_audioUri(filePath), tag: item);
     if (_playlist == null) {
-      _playlist = ConcatenatingAudioSource(
-        children: [source],
-      );
-
-      await _player.setAudioSource(
-        _playlist!,
-      );
+      _playlist = ConcatenatingAudioSource(children: [source]);
+      await _player.setAudioSource(_playlist!);
+      mediaItem.add(item);
     } else {
       await _playlist!.add(source);
     }
   }
 
   @override
-  Future<void> addQueueItems(
-    List<MediaItem> mediaItems,
-  ) async {
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
     for (final item in mediaItems) {
       await addQueueItem(item);
     }
   }
 
   @override
-  Future<void> removeQueueItem(
-    MediaItem mediaItem,
-  ) async {
-    final index = _items.indexWhere(
-      (item) => item.id == mediaItem.id,
-    );
-
-    if (index < 0) {
-      return;
-    }
-
+  Future<void> removeQueueItem(MediaItem item) async {
+    final index = _items.indexWhere((candidate) => candidate.id == item.id);
+    if (index < 0) return;
     _items.removeAt(index);
-
-    queue.add(
-      List.unmodifiable(_items),
-    );
-
-    if (_playlist != null &&
-        index < _playlist!.length) {
+    queue.add(List.unmodifiable(_items));
+    if (_playlist != null && index < _playlist!.length) {
       await _playlist!.removeAt(index);
     }
-
-    if (_items.isEmpty) {
-      mediaItem = mediaItem;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // PLAYBACK CONTROLS
-  // ---------------------------------------------------------------------------
-
-  @override
-  Future<void> play() async {
-    await _player.play();
   }
 
   @override
-  Future<void> pause() async {
-    await _player.pause();
-  }
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
 
   @override
   Future<void> stop() async {
     await _player.stop();
-
     playbackState.add(
       playbackState.value.copyWith(
         playing: false,
-        processingState:
-            AudioProcessingState.idle,
+        processingState: AudioProcessingState.idle,
         updatePosition: Duration.zero,
       ),
     );
-
     await super.stop();
   }
 
   @override
-  Future<void> seek(
-    Duration position,
-  ) async {
-    await _player.seek(position);
-  }
+  Future<void> seek(Duration position) => _player.seek(position);
 
   @override
   Future<void> skipToNext() async {
-    if (_playlist == null ||
-        _playlist!.length == 0) {
-      return;
-    }
-
+    if (_playlist == null || _playlist!.length == 0) return;
     try {
       await _player.seekToNext();
     } catch (e) {
-      // Nothing to do if already at the last track.
       print('Unable to skip to next: $e');
     }
   }
 
   @override
   Future<void> skipToPrevious() async {
-    if (_playlist == null ||
-        _playlist!.length == 0) {
-      return;
-    }
-
+    if (_playlist == null || _playlist!.length == 0) return;
     try {
       await _player.seekToPrevious();
     } catch (e) {
@@ -335,22 +194,8 @@ class AudioServiceHandler extends BaseAudioHandler
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // VOLUME
-  // ---------------------------------------------------------------------------
+  Future<void> setVolume(double volume) => _player.setVolume(volume.clamp(0.0, 1.0));
 
-  Future<void> setVolume(double volume) async {
-    await _player.setVolume(
-      volume.clamp(0.0, 1.0),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // DISPOSE
-  // ---------------------------------------------------------------------------
-
-  /// BaseAudioHandler does not expose dispose(), so this
-  /// must NOT use @override or super.dispose().
   Future<void> dispose() async {
     await _playbackSubscription?.cancel();
     await _currentIndexSubscription?.cancel();
