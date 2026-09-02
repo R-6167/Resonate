@@ -104,23 +104,38 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
 
-    final sources = validSongs
-        .map((song) => AudioSource.uri(
-              _audioUri(song.filePath),
-              tag: songToMediaItem(song),
-            ))
-        .toList();
-    final safeIndex = startIndex.clamp(0, sources.length - 1);
-    final newPlaylist = ConcatenatingAudioSource(
-      children: sources,
-      useLazyPreparation: true,
+    final safeIndex = startIndex.clamp(0, validSongs.length - 1);
+    final selected = validSongs[safeIndex];
+    final selectedSource = AudioSource.uri(
+      _audioUri(selected.filePath),
+      tag: songToMediaItem(selected),
     );
 
     try {
+      // Prepare only the requested track first. This prevents one corrupt or
+      // inaccessible library entry from blocking playback of every song.
       await _player.stop();
+      final newPlaylist = ConcatenatingAudioSource(
+        children: [selectedSource],
+        useLazyPreparation: true,
+      );
       _playlist = newPlaylist;
-      await _player.setAudioSource(_playlist!, initialIndex: safeIndex);
+      await _player.setAudioSource(_playlist!, initialIndex: 0);
       mediaItem.add(_items[safeIndex]);
+
+      // Add the remaining tracks lazily after the selected track is prepared.
+      // A bad secondary entry must never make the selected song unplayable.
+      for (var i = 0; i < validSongs.length; i++) {
+        if (i == safeIndex) continue;
+        try {
+          await _playlist!.add(AudioSource.uri(
+            _audioUri(validSongs[i].filePath),
+            tag: songToMediaItem(validSongs[i]),
+          ));
+        } catch (_) {
+          // Keep playback alive even if an additional source cannot be added.
+        }
+      }
     } catch (e) {
       _playlist = null;
       playbackState.add(playbackState.value.copyWith(
@@ -175,7 +190,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+  }
 
   @override
   Future<void> stop() async {
