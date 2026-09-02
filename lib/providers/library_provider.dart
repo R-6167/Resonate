@@ -28,28 +28,19 @@ class LibraryProvider extends ChangeNotifier {
   bool get isScanning => _isScanning;
 
   LibraryProvider() {
-    print('📚 LibraryProvider: Initializing...');
     _initializeLibraryAsync();
   }
 
   Future<void> _initializeLibraryAsync() async {
     try {
-      print('📚 LibraryProvider: Loading preferences and database');
       await _loadPreferences();
       await loadAllSongs();
       await loadFavoriteSongs();
       await loadStatistics();
-
-      // Always refresh the local library from Android MediaStore. The query is
-      // lightweight and insertSongs is conflict-safe, so this also catches
-      // music added since the previous launch.
-      await scanDeviceAudio();
-
       _isInitialized = true;
       notifyListeners();
-      print('✅ LibraryProvider: Initialization complete');
     } catch (e) {
-      print('❌ LibraryProvider: Initialization error: $e');
+      print('❌ LibraryProvider initialization error: $e');
       _isInitialized = true;
       notifyListeners();
     }
@@ -57,22 +48,23 @@ class LibraryProvider extends ChangeNotifier {
 
   Future<void> scanDeviceAudio() async {
     if (_isScanning) return;
+    final folders = await AudioFileService.getSelectedFolders();
+    if (folders.isEmpty) return;
+
     _isScanning = true;
     notifyListeners();
-
     try {
-      final songs = await AudioFileService.scanAudioFiles();
+      final songs = await AudioFileService.scanAudioFiles(
+        folderUris: folders.map((folder) => folder['uri']!).toList(),
+      );
       if (songs.isNotEmpty) {
         await _db.insertSongs(songs);
         await loadAllSongs();
         await loadFavoriteSongs();
         await loadStatistics();
-        print('🎵 LibraryProvider: Indexed ${songs.length} device songs');
-      } else {
-        print('📚 LibraryProvider: MediaStore returned no songs');
       }
     } catch (e) {
-      print('❌ LibraryProvider: Device scan failed: $e');
+      print('❌ LibraryProvider device scan failed: $e');
     } finally {
       _isScanning = false;
       notifyListeners();
@@ -110,8 +102,7 @@ class LibraryProvider extends ChangeNotifier {
 
   Future<void> addSongs(List<Song> songs) async {
     try {
-      final count = await _db.insertSongs(songs);
-      print('Added $count songs to library');
+      await _db.insertSongs(songs);
       await loadAllSongs();
       await loadStatistics();
     } catch (e) {
@@ -148,23 +139,8 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<Song>> getSongsByArtist(String artist) async {
-    try {
-      return await _db.getSongsByArtist(artist);
-    } catch (e) {
-      print('Error getting songs by artist: $e');
-      return [];
-    }
-  }
-
-  Future<List<Song>> getSongsByAlbum(String album) async {
-    try {
-      return await _db.getSongsByAlbum(album);
-    } catch (e) {
-      print('Error getting songs by album: $e');
-      return [];
-    }
-  }
+  Future<List<Song>> getSongsByArtist(String artist) async => await _db.getSongsByArtist(artist);
+  Future<List<Song>> getSongsByAlbum(String album) async => await _db.getSongsByAlbum(album);
 
   Future<void> addFavorite(Song song) async {
     try {
@@ -184,14 +160,7 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> isFavorite(String songId) async {
-    try {
-      return await _db.isFavorite(songId);
-    } catch (e) {
-      print('Error checking if song is favorite: $e');
-      return false;
-    }
-  }
+  Future<bool> isFavorite(String songId) async => await _db.isFavorite(songId);
 
   Future<void> updatePlayCount(String songId) async {
     try {
@@ -216,26 +185,18 @@ class LibraryProvider extends ChangeNotifier {
     _filteredSongs = List.from(_allSongs);
     switch (_filterBy) {
       case 'favorites':
-        _filteredSongs = _filteredSongs
-            .where((song) => _favoriteSongs.any((fav) => fav.id == song.id))
-            .toList();
+        _filteredSongs = _filteredSongs.where((song) => _favoriteSongs.any((fav) => fav.id == song.id)).toList();
         break;
       case 'recent':
         _filteredSongs.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
         break;
-      case 'all':
-      default:
-        break;
     }
-
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
-      _filteredSongs = _filteredSongs
-          .where((song) =>
-              song.title.toLowerCase().contains(query) ||
-              song.artist.toLowerCase().contains(query) ||
-              song.album.toLowerCase().contains(query))
-          .toList();
+      _filteredSongs = _filteredSongs.where((song) =>
+        song.title.toLowerCase().contains(query) ||
+        song.artist.toLowerCase().contains(query) ||
+        song.album.toLowerCase().contains(query)).toList();
     }
     _applySorting();
   }
@@ -258,30 +219,18 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   Future<void> _saveSortPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('library_sort_by', _sortBy);
-    } catch (e) {
-      print('Error saving sort preference: $e');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('library_sort_by', _sortBy);
   }
 
   Future<void> _saveFilterPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('library_filter_by', _filterBy);
-    } catch (e) {
-      print('Error saving filter preference: $e');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('library_filter_by', _filterBy);
   }
 
   Future<void> _loadPreferences() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _sortBy = prefs.getString('library_sort_by') ?? 'title';
-      _filterBy = prefs.getString('library_filter_by') ?? 'all';
-    } catch (e) {
-      print('Error loading preferences: $e');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    _sortBy = prefs.getString('library_sort_by') ?? 'title';
+    _filterBy = prefs.getString('library_filter_by') ?? 'all';
   }
 }
