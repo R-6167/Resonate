@@ -25,8 +25,7 @@ dependencies:
   path: ^1.9.1
 
   # File & Storage
-  permission_handler: ^11.10.0
-  
+  permission_handler: ^11.4.3
 
   # Utilities
   uuid: ^4.5.1
