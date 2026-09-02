@@ -9,11 +9,11 @@ import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     private val channelName = "com.example.resonate/media_store"
     private val permissionRequestCode = 6167
     private val folderRequestCode = 6168
@@ -135,7 +135,6 @@ class MainActivity : FlutterActivity() {
                 if (includeSize) { total += if (size >= 0) cursor.getLong(size) else 0L; continue }
                 val mediaId = cursor.getLong(id)
                 val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId).toString()
-                // Encode the row in a temporary packed count is not useful; this method is only for size.
                 @Suppress("UNUSED_VARIABLE") val unused = arrayOf(title, artist, album, duration, dateAdded, uri)
             }
         }
