@@ -13,10 +13,12 @@ import 'services/audio_service_handler.dart'; // our handler
 import 'package:audio_service/audio_service.dart';
 
 Future<void> main() async {
+  print('🚀 [MAIN] App starting...');
   WidgetsFlutterBinding.ensureInitialized();
-
+  print('🚀 [MAIN] Widgets binding initialized');
 
   // Initialize audio_service with our handler so background controls work
+  print('🚀 [MAIN] Initializing audio service...');
   final audioHandler = await AudioService.init(
     builder: () => AudioServiceHandler(),
     config: const AudioServiceConfig(
@@ -25,6 +27,7 @@ Future<void> main() async {
       androidNotificationOngoing: true,
     ),
   );
+  print('✅ [MAIN] Audio service initialized');
 
   runApp(MyApp(audioHandler: audioHandler));
 }
@@ -35,19 +38,56 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    print('🎨 [MyApp] Building app...');
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('📱 [Provider] Creating ThemeProvider');
+            return ThemeProvider();
+          },
+        ),
         // Provide the audio handler to the MusicProvider if you want it to control background
-        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
-        ChangeNotifierProvider(create: (_) => EqualizerProvider()),
-        ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
-        ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
-        ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
-        ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('🎵 [Provider] Creating MusicProvider');
+            return MusicProvider(audioHandler: audioHandler);
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('🎚️ [Provider] Creating EqualizerProvider');
+            return EqualizerProvider();
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('🔊 [Provider] Creating AudioEffectsProvider');
+            return AudioEffectsProvider();
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('➡️ [Provider] Creating CrossfadeProvider');
+            return CrossfadeProvider();
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('📊 [Provider] Creating AudioVisualizationProvider');
+            return AudioVisualizationProvider();
+          },
+        ),
+        ChangeNotifierProvider(
+          create: (_) {
+            print('📚 [Provider] Creating LibraryProvider (NON-BLOCKING)');
+            return LibraryProvider(); // Now runs in background
+          },
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
+          print('🎨 [Builder] Building MaterialApp with theme');
           return MaterialApp(
             title: 'Resonate',
             debugShowCheckedModeBanner: false,
