@@ -1,3 +1,4 @@
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -16,7 +17,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final audioHandler = await AudioService.init(
-    builder: () => AudioPlayerHandler(),
+    builder: () => AudioServiceHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.example.resonate.audio',
       androidNotificationChannelName: 'Resonate Playback',
@@ -29,7 +30,7 @@ Future<void> main() async {
 }
 
 class ResonateApp extends StatelessWidget {
-  final AudioPlayerHandler audioHandler;
+  final AudioHandler audioHandler;
 
   const ResonateApp({super.key, required this.audioHandler});
 
