@@ -3,9 +3,12 @@ name: Build Resonate APK
 on:
   push:
     branches:
-      - Intelligence
       - debug-splash-hang
   workflow_dispatch:
+
+concurrency:
+  group: resonate-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
