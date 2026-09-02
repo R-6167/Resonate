@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
@@ -17,17 +16,8 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     _initializeListeners();
   }
 
-  Future<void> _configureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
-      await session.setActive(true);
-    } catch (_) {}
-  }
-
   void _initializeListeners() {
     queue.add(List.unmodifiable(_items));
-    _configureAudioSession();
 
     _playbackSubscription = _player.playbackEventStream.listen((event) {
       playbackState.add(playbackState.value.copyWith(
@@ -135,7 +125,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
-    await _configureAudioSession();
     await _player.play();
   }
 
