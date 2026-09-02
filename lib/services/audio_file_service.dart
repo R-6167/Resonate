@@ -1,179 +1,129 @@
 import 'dart:io';
-import 'package:flutter_audio_query/flutter_audio_query.dart';
+
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+
 import '../models/song.dart';
 
+/// Android media-library access for Resonate.
+/// Android 10+ uses MediaStore to work correctly with scoped storage.
 class AudioFileService {
-  static const _audioExtensions = {'.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg'};
+  static const MethodChannel _channel =
+      MethodChannel('com.example.resonate/media_store');
 
-  /// Get all music directories on the device
+  static Future<bool> requestAudioPermission() async {
+    if (!Platform.isAndroid) return true;
+
+    if (await Permission.audio.request().isGranted) return true;
+    return (await Permission.storage.request()).isGranted;
+  }
+
   static Future<List<String>> getMusicDirectories() async {
-    final directories = <String>{};
-
-    // Add standard music directories
-    if (Platform.isAndroid) {
-      directories.add('/storage/emulated/0/Music');
-      directories.add('/storage/emulated/0/Download');
-      directories.add('/storage/emulated/0/Documents');
-      directories.add('/storage/emulated/0/DCIM');
-      
-      // Add external storage if available
-      try {
-        final externalDir = Directory('/sdcard/Music');
-        if (await externalDir.exists()) {
-          directories.add(externalDir.path);
-        }
-      } catch (e) {
-        print('Error accessing external storage: $e');
-      }
-    }
-
-    return directories.toList();
+    if (!Platform.isAndroid) return const [];
+    return const [
+      'Device audio (MediaStore)',
+      'Music',
+      'Download',
+      'Documents',
+      'DCIM',
+    ];
   }
 
-  /// Get total music files count
-  static Future<int> getMusicFileCount() async {
-    int count = 0;
-    final dirs = await getMusicDirectories();
-
-    for (final dir in dirs) {
-      try {
-        final directory = Directory(dir);
-        if (await directory.exists()) {
-          await directory.list(recursive: true).listen((entity) {
-            if (entity is File && _isAudioFile(entity.path)) {
-              count++;
-            }
-          }).asFuture();
-        }
-      } catch (e) {
-        print('Error counting files in $dir: $e');
-      }
-    }
-
-    return count;
-  }
-
-  /// Get storage usage info
-  static Future<Map<String, dynamic>> getStorageInfo() async {
-    try {
-      int totalSize = 0;
-      final dirs = await getMusicDirectories();
-
-      for (final dir in dirs) {
-        try {
-          final directory = Directory(dir);
-          if (await directory.exists()) {
-            await directory.list(recursive: true).listen((entity) {
-              if (entity is File && _isAudioFile(entity.path)) {
-                totalSize += entity.lengthSync();
-              }
-            }).asFuture();
-          }
-        } catch (e) {
-          print('Error calculating size in $dir: $e');
-        }
-      }
-
-      return {
-        'totalSize': totalSize,
-        'formattedSize': _formatBytes(totalSize),
-      };
-    } catch (e) {
-      print('Error getting storage info: $e');
-      return {'totalSize': 0, 'formattedSize': '0 B'};
-    }
-  }
-
-  /// Scan for audio files in all music directories
   static Future<List<Song>> scanAudioFiles() async {
-    print('🔍 AudioFileService: Starting audio file scan...');
-    
-    // Request permissions
-    final status = await Permission.storage.request();
-    if (!status.isGranted) {
-      print('❌ Storage permission denied');
+    print('🔍 AudioFileService: Starting MediaStore audio scan...');
+
+    if (!await requestAudioPermission()) {
+      print('❌ Audio permission denied');
       return [];
     }
 
-    final songs = <Song>[];
-    final dirs = await getMusicDirectories();
-
-    for (final dir in dirs) {
-      try {
-        final directory = Directory(dir);
-        if (await directory.exists()) {
-          print('📂 Scanning: $dir');
-          
-          await directory.list(recursive: true).forEach((entity) {
-            if (entity is File && _isAudioFile(entity.path)) {
-              try {
-                final song = _fileToSong(entity);
-                if (song != null) {
-                  songs.add(song);
-                  print('✅ Found: ${song.title}');
-                }
-              } catch (e) {
-                print('Error processing file ${entity.path}: $e');
-              }
-            }
-          });
-        }
-      } catch (e) {
-        print('Error scanning directory $dir: $e');
-      }
-    }
-
-    print('🎵 AudioFileService: Found ${songs.length} audio files');
-    return songs;
-  }
-
-  /// Check if file is audio format
-  static bool _isAudioFile(String path) {
-    final ext = path.toLowerCase();
-    return _audioExtensions.any((extension) => ext.endsWith(extension));
-  }
-
-  /// Convert file to Song object
-  static Song? _fileToSong(File file) {
     try {
-      final name = file.path.split('/').last;
-      final nameWithoutExt = name.replaceAll(RegExp(r'\.[^.]*$'), '');
-      
-      return Song(
-        id: file.path.hashCode.toString(),
-        title: nameWithoutExt,
-        artist: 'Unknown Artist',
-        album: 'Unknown Album',
-        filePath: file.path,
-        duration: Duration.zero, // Would need metadata reading for accurate duration
-        dateAdded: file.lastModifiedSync(),
-        albumArt: null,
-      );
+      final result = await _channel.invokeMethod<List<dynamic>>('scanAudio');
+      final songs = <Song>[];
+
+      for (final raw in result ?? const []) {
+        if (raw is! Map) continue;
+        final map = Map<String, dynamic>.from(raw);
+        final uri = (map['filePath'] ?? '').toString();
+        if (uri.isEmpty) continue;
+
+        final dateAdded = _toInt(map['dateAdded']);
+        songs.add(
+          Song(
+            // The MediaStore content URI is stable for the indexed item.
+            id: uri,
+            title: _text(map['title'], 'Unknown Title'),
+            artist: _text(map['artist'], 'Unknown Artist'),
+            album: _text(map['album'], 'Unknown Album'),
+            filePath: uri,
+            duration: Duration(milliseconds: _toInt(map['duration'])),
+            dateAdded: dateAdded > 0
+                ? DateTime.fromMillisecondsSinceEpoch(dateAdded * 1000)
+                : DateTime.now(),
+            albumArt: null,
+          ),
+        );
+      }
+
+      print('🎵 AudioFileService: Found ${songs.length} audio files');
+      return songs;
+    } on PlatformException catch (e) {
+      print('❌ MediaStore scan failed: ${e.code}: ${e.message}');
+      return [];
     } catch (e) {
-      print('Error converting file to song: $e');
-      return null;
+      print('❌ MediaStore scan failed: $e');
+      return [];
     }
   }
 
-  /// Format bytes to human readable format
+  static Future<int> getMusicFileCount() async {
+    return (await scanAudioFiles()).length;
+  }
+
+  static Future<Map<String, dynamic>> getStorageInfo() async {
+    try {
+      final songs = await scanAudioFiles();
+      final totalSize = await _channel.invokeMethod<int>('getAudioSize') ?? 0;
+      return {
+        'totalSize': totalSize,
+        'formattedSize': formatBytes(totalSize),
+        'fileCount': songs.length,
+      };
+    } catch (e) {
+      print('❌ Error getting storage info: $e');
+      return {'totalSize': 0, 'formattedSize': '0 B', 'fileCount': 0};
+    }
+  }
+
   static String formatBytes(int bytes) {
     if (bytes <= 0) return '0 B';
-    const suffixes = ['B', 'KB', 'MB', 'GB'];
-    int i = (bytes.toString().length / 3).ceil();
-    double size = bytes / (1000 * (i - 1));
-    return '${size.toStringAsFixed(2)} ${suffixes[i - 1]}';
+    const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    double value = bytes.toDouble();
+    var index = 0;
+    while (value >= 1024 && index < suffixes.length - 1) {
+      value /= 1024;
+      index++;
+    }
+    return '${value.toStringAsFixed(index == 0 ? 0 : 2)} ${suffixes[index]}';
   }
 
-  /// Format duration
   static String formatDuration(Duration duration) {
     final hours = duration.inHours;
     final minutes = duration.inMinutes % 60;
     final seconds = duration.inSeconds % 60;
-
     if (hours > 0) {
       return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     }
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  static String _text(dynamic value, String fallback) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty || text == '<unknown>' ? fallback : text;
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
