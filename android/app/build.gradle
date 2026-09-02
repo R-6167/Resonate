@@ -30,6 +30,10 @@ android {
         release {
             minifyEnabled false
             shrinkResources false
+
+            // Temporary test signing so the GitHub Actions APK is installable.
+            // A private production release keystore should replace this before publishing.
+            signingConfig = signingConfigs.debug
         }
     }
 }
