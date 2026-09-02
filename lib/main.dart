@@ -13,6 +13,33 @@ import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
 
+ThemeData _theme(Brightness brightness) {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF315B9A),
+    brightness: brightness,
+  );
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: scheme.surface,
+    textTheme: GoogleFonts.interTextTheme(
+      ThemeData(brightness: brightness).textTheme,
+    ),
+    cardTheme: CardThemeData(
+      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
+      ),
+      elevation: 0,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      filled: true,
+    ),
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ResonateBootstrap());
@@ -109,33 +136,6 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
 
     return ResonateApp(audioHandler: handler);
   }
-
-  static ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF315B9A),
-      brightness: brightness,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.surface,
-      textTheme: GoogleFonts.interTextTheme(
-        ThemeData(brightness: brightness).textTheme,
-      ),
-      cardTheme: CardThemeData(
-        margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
-        ),
-        elevation: 0,
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        filled: true,
-      ),
-    );
-  }
 }
 
 class ResonateApp extends StatelessWidget {
@@ -148,7 +148,9 @@ class ResonateApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
+        ChangeNotifierProvider(
+          create: (_) => MusicProvider(audioHandler: audioHandler),
+        ),
         ChangeNotifierProvider(create: (_) => EqualizerProvider()),
         ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
         ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
@@ -162,7 +164,9 @@ class ResonateApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: _theme(Brightness.light),
             darkTheme: _theme(Brightness.dark),
-            themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+            themeMode: themeProvider.isDarkMode
+                ? ThemeMode.dark
+                : ThemeMode.light,
             home: const HomeScreen(),
           );
         },
