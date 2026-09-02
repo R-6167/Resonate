@@ -19,6 +19,7 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> wit
       if (!settings.enabled) return const Center(child: Text('Visualization Disabled'));
       return AnimatedBuilder(animation: _controller, builder: (_, __) => CustomPaint(
         painter: _VisualizationPainter(
+          color: Theme.of(context).colorScheme.primary,
           phase: _controller.value * math.pi * 2,
           position: music.currentPosition.inMilliseconds / 1000.0,
           playing: music.isPlaying,
@@ -34,14 +35,14 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> wit
 }
 
 class _VisualizationPainter extends CustomPainter {
+  final Color color;
   final double phase, position, sensitivity;
   final bool playing, mirror, bass;
   final String type;
-  _VisualizationPainter({required this.phase, required this.position, required this.playing, required this.type, required this.sensitivity, required this.mirror, required this.bass});
+  _VisualizationPainter({required this.color, required this.phase, required this.position, required this.playing, required this.type, required this.sensitivity, required this.mirror, required this.bass});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final color = Theme.of(canvasContext!).colorScheme.primary;
     final bars = type == 'waveform' ? 48 : 28;
     final values = List<double>.generate(bars, (i) {
       final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0;
@@ -55,7 +56,8 @@ class _VisualizationPainter extends CustomPainter {
       final radius = math.min(size.width, size.height) * .20;
       for (var i = 0; i < values.length; i++) {
         final angle = i / values.length * math.pi * 2;
-        canvas.drawLine(Offset(center.dx + math.cos(angle) * radius, center.dy + math.sin(angle) * radius), Offset(center.dx + math.cos(angle) * (radius + values[i] * radius * 1.6), center.dy + math.sin(angle) * (radius + values[i] * radius * 1.6)), paint..strokeWidth = 3);
+        final r2 = radius + values[i] * radius * 1.6;
+        canvas.drawLine(Offset(center.dx + math.cos(angle) * radius, center.dy + math.sin(angle) * radius), Offset(center.dx + math.cos(angle) * r2, center.dy + math.sin(angle) * r2), paint..strokeWidth = 3);
       }
       canvas.drawCircle(center, radius * .42, Paint()..color = color.withOpacity(.12));
       return;
@@ -68,9 +70,7 @@ class _VisualizationPainter extends CustomPainter {
         if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
       }
       canvas.drawPath(path, paint..style = PaintingStyle.stroke..strokeWidth = 2.5);
-      if (mirror) {
-        canvas.save(); canvas.translate(0, size.height); canvas.scale(1, -1); canvas.drawPath(path, paint..color = color.withOpacity(.25)); canvas.restore();
-      }
+      if (mirror) { canvas.save(); canvas.translate(0, size.height); canvas.scale(1, -1); canvas.drawPath(path, paint..color = color.withOpacity(.25)); canvas.restore(); }
       return;
     }
     final width = size.width / values.length;
@@ -81,7 +81,5 @@ class _VisualizationPainter extends CustomPainter {
     }
   }
 
-  // Painter needs a theme color supplied by the widget tree; this is replaced in build below.
-  BuildContext? get canvasContext => null;
   @override bool shouldRepaint(covariant _VisualizationPainter old) => true;
 }
