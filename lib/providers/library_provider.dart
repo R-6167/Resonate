@@ -13,6 +13,7 @@ class LibraryProvider extends ChangeNotifier {
   String _filterBy = 'all'; // all, favorites, recent
   String _searchQuery = '';
   Map<String, dynamic> _statistics = {};
+  bool _isInitialized = false;
 
   // Getters
   List<Song> get allSongs => _allSongs;
@@ -22,10 +23,28 @@ class LibraryProvider extends ChangeNotifier {
   String get filterBy => _filterBy;
   String get searchQuery => _searchQuery;
   Map<String, dynamic> get statistics => _statistics;
+  bool get isInitialized => _isInitialized;
 
   LibraryProvider() {
+    print('📚 LibraryProvider: Initializing...');
     _loadPreferences();
-    _initializeLibrary();
+    // Don't await initialization - let it run in background
+    _initializeLibraryAsync();
+  }
+
+  /// Runs library initialization in the background without blocking the UI
+  Future<void> _initializeLibraryAsync() async {
+    try {
+      print('📚 LibraryProvider: Starting background initialization');
+      await loadAllSongs();
+      await loadFavoriteSongs();
+      await loadStatistics();
+      _isInitialized = true;
+      print('✅ LibraryProvider: Background initialization complete');
+      notifyListeners();
+    } catch (e) {
+      print('❌ LibraryProvider: Initialization error: $e');
+    }
   }
 
   Future<void> _initializeLibrary() async {
@@ -37,31 +56,37 @@ class LibraryProvider extends ChangeNotifier {
   // Load all songs from database
   Future<void> loadAllSongs() async {
     try {
+      print('📚 LibraryProvider: Loading all songs...');
       _allSongs = await _db.getAllSongs();
       _applyFiltersAndSort();
       notifyListeners();
+      print('📚 LibraryProvider: Loaded ${_allSongs.length} songs');
     } catch (e) {
-      print('Error loading all songs: $e');
+      print('❌ Error loading all songs: $e');
     }
   }
 
   // Load favorite songs
   Future<void> loadFavoriteSongs() async {
     try {
+      print('📚 LibraryProvider: Loading favorite songs...');
       _favoriteSongs = await _db.getFavoriteSongs();
       notifyListeners();
+      print('📚 LibraryProvider: Loaded ${_favoriteSongs.length} favorites');
     } catch (e) {
-      print('Error loading favorite songs: $e');
+      print('❌ Error loading favorite songs: $e');
     }
   }
 
   // Load statistics
   Future<void> loadStatistics() async {
     try {
+      print('📚 LibraryProvider: Loading statistics...');
       _statistics = await _db.getStatistics();
       notifyListeners();
+      print('📚 LibraryProvider: Statistics loaded');
     } catch (e) {
-      print('Error loading statistics: $e');
+      print('❌ Error loading statistics: $e');
     }
   }
 
