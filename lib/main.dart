@@ -6,8 +6,10 @@ import 'package:provider/provider.dart';
 
 import 'providers/audio_effects_provider.dart';
 import 'providers/audio_visualization_provider.dart';
+import 'providers/bluetooth_provider.dart';
 import 'providers/crossfade_provider.dart';
 import 'providers/equalizer_provider.dart';
+import 'providers/intelligence_provider.dart';
 import 'providers/library_provider.dart';
 import 'providers/music_provider.dart';
 import 'providers/playback_features_provider.dart';
@@ -16,18 +18,84 @@ import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
 
 ThemeData _theme(Brightness brightness) {
-  final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF315B9A), brightness: brightness);
-  return ThemeData(
-    useMaterial3: true,
+  final dark = brightness == Brightness.dark;
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF9A7BFF),
+    brightness: brightness,
+    surface: dark ? const Color(0xFF101016) : const Color(0xFFF8F7FC),
+    surfaceContainerLowest: dark ? const Color(0xFF0A0A0F) : Colors.white,
+    surfaceContainerLow: dark ? const Color(0xFF15151D) : const Color(0xFFF1EFF7),
+    surfaceContainer: dark ? const Color(0xFF1B1A23) : const Color(0xFFECEAF3),
+  );
+  final base = ThemeData(brightness: brightness, useMaterial3: true);
+  final text = GoogleFonts.interTextTheme(base.textTheme).copyWith(
+    displaySmall: GoogleFonts.inter(fontSize: 30, fontWeight: FontWeight.w700, letterSpacing: -0.8),
+    headlineSmall: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w700, letterSpacing: -0.5),
+    titleLarge: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700),
+    titleMedium: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+    bodyLarge: GoogleFonts.inter(fontSize: 16, height: 1.35),
+    labelLarge: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+  );
+  return base.copyWith(
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
-    textTheme: GoogleFonts.interTextTheme(ThemeData(brightness: brightness).textTheme),
+    canvasColor: scheme.surface,
+    textTheme: text,
+    appBarTheme: AppBarTheme(
+      backgroundColor: scheme.surface,
+      foregroundColor: scheme.onSurface,
+      elevation: 0,
+      centerTitle: false,
+      titleTextStyle: text.titleLarge?.copyWith(color: scheme.onSurface),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: scheme.surfaceContainerLow,
+      indicatorColor: scheme.primaryContainer,
+      elevation: 0,
+      labelTextStyle: WidgetStatePropertyAll(text.labelMedium),
+    ),
     cardTheme: CardThemeData(
-      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: scheme.outlineVariant.withOpacity(.55))),
+      margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+      color: scheme.surfaceContainerLow,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       elevation: 0,
     ),
-    inputDecorationTheme: InputDecorationTheme(border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)), filled: true),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: scheme.surfaceContainer,
+      modalBackgroundColor: scheme.surfaceContainer,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      showDragHandle: true,
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surfaceContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+      elevation: 20,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: scheme.surfaceContainerLow,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.outlineVariant.withOpacity(.55))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: scheme.primary, width: 1.5)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    ),
+    dividerTheme: DividerThemeData(color: scheme.outlineVariant.withOpacity(.45), thickness: 1, space: 1),
+    chipTheme: base.chipTheme.copyWith(
+      backgroundColor: scheme.surfaceContainerLow,
+      selectedColor: scheme.secondaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      side: BorderSide(color: scheme.outlineVariant.withOpacity(.45)),
+    ),
+    sliderTheme: base.sliderTheme.copyWith(
+      trackHeight: 4,
+      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbIcon: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? const Icon(Icons.check, size: 15) : const Icon(Icons.remove, size: 15)),
+    ),
+    iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
   );
 }
 
@@ -97,6 +165,8 @@ class ResonateApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
+        ChangeNotifierProvider(create: (context) => IntelligenceProvider(music: context.read<MusicProvider>())),
+        ChangeNotifierProvider(create: (_) => BluetoothProvider()),
         ChangeNotifierProvider(create: (context) => EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer)),
         ChangeNotifierProvider(create: (context) => AudioEffectsProvider(player: context.read<MusicProvider>().audioPlayer, loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer)),
         ChangeNotifierProvider(create: (context) => CrossfadeProvider(music: context.read<MusicProvider>())),
