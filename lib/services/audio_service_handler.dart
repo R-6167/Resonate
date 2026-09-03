@@ -11,7 +11,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   ConcatenatingAudioSource? _playlist;
   StreamSubscription<PlaybackEvent>? _playbackSubscription;
   StreamSubscription<int?>? _currentIndexSubscription;
-  StreamSubscription<PlayerException>? _errorSubscription;
 
   AudioServiceHandler() {
     _initializeListeners();
@@ -45,12 +44,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       if (index != null && index >= 0 && index < _items.length) {
         mediaItem.add(_items[index]);
       }
-    });
-    _errorSubscription = _player.errorStream.listen((error) {
-      playbackState.add(playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.error,
-      ));
     });
   }
 
@@ -102,8 +95,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     }
 
     final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);
-    // Put the requested song first so the player can prepare it in isolation.
-    // Keep the rest of the queue in their original order after it.
     final orderedSongs = <Song>[
       sourceSongs[requestedIndex],
       ...sourceSongs.take(requestedIndex),
@@ -129,8 +120,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       await _player.setAudioSource(_playlist!, initialIndex: 0);
       mediaItem.add(_items.first);
 
-      // Append secondary tracks lazily. If an entry is malformed, it is skipped
-      // without affecting the already prepared selected track.
       for (final song in orderedSongs.skip(1)) {
         try {
           await _playlist!.add(AudioSource.uri(
@@ -237,7 +226,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> dispose() async {
     await _playbackSubscription?.cancel();
     await _currentIndexSubscription?.cancel();
-    await _errorSubscription?.cancel();
     await _player.dispose();
   }
 }
