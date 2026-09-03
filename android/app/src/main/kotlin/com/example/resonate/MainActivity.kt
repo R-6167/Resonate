@@ -25,7 +25,6 @@ class MainActivity : AudioServiceActivity() {
     private var permissionResult: MethodChannel.Result? = null
     private var folderResult: MethodChannel.Result? = null
     private var notificationPermissionResult: MethodChannel.Result? = null
-
     private var effectSessionId: Int = 0
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
@@ -33,31 +32,28 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestAudioPermission" -> requestAudioPermission(result)
+                "requestNotificationPermission" -> requestNotificationPermission(result)
+                "pickFolder" -> pickFolder(result)
+                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList()))
+                "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName).setMethodCallHandler { call, result ->
+            try {
                 when (call.method) {
-                    "requestAudioPermission" -> requestAudioPermission(result)
-                    "requestNotificationPermission" -> requestNotificationPermission(result)
-                    "pickFolder" -> pickFolder(result)
-                    "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList()))
-                    "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
+                    "attachToSession" -> { attachEffects(call.argument<Int>("sessionId") ?: 0); result.success(true) }
+                    "setBassBoost" -> { bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
+                    "setVirtualizer" -> { virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
+                    "setReverb" -> { reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort(); result.success(true) }
+                    "release" -> { releaseEffects(); result.success(true) }
                     else -> result.notImplemented()
                 }
-            }
-
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName)
-            .setMethodCallHandler { call, result ->
-                try {
-                    when (call.method) {
-                        "attachToSession" -> { attachEffects(call.argument<Int>("sessionId") ?: 0); result.success(true) }
-                        "setBassBoost" -> { bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
-                        "setVirtualizer" -> { virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
-                        "setReverb" -> { reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort(); result.success(true) }
-                        "release" -> { releaseEffects(); result.success(true) }
-                        else -> result.notImplemented()
-                    }
-                } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
-            }
+            } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
+        }
     }
 
     private fun attachEffects(sessionId: Int) {
@@ -85,8 +81,7 @@ class MainActivity : AudioServiceActivity() {
 
     private fun requestNotificationPermission(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) { result.success(true); return }
-        notificationPermissionResult = result
-        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), notificationPermissionRequestCode)
+        notificationPermissionResult = result; requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), notificationPermissionRequestCode)
     }
 
     private fun pickFolder(result: MethodChannel.Result) {
@@ -137,48 +132,54 @@ class MainActivity : AudioServiceActivity() {
         return prefixes.any { prefix -> normalized.contains("/$prefix") || normalized.startsWith(prefix) }
     }
 
+    private fun projection(includeSize: Boolean = false): MutableList<String> {
+        val fields = mutableListOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.MIME_TYPE)
+        if (includeSize) fields.add(MediaStore.Audio.Media.SIZE)
+        if (Build.VERSION.SDK_INT >= 29) fields.add(MediaStore.Audio.Media.RELATIVE_PATH)
+        if (Build.VERSION.SDK_INT <= 28) fields.add(MediaStore.Audio.Media.DATA)
+        return fields
+    }
+
     private fun querySelectedAudio(folders: List<String>, includeSize: Boolean = false): Long {
-        if (!hasAudioPermission() || folders.isEmpty()) return 0L
-        val prefixes = selectedPrefixes(folders); if (prefixes.isEmpty()) return 0L
-        val projection = mutableListOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.MIME_TYPE)
-        if (includeSize) projection.add(MediaStore.Audio.Media.SIZE)
-        if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH)
-        if (Build.VERSION.SDK_INT <= 28) projection.add(MediaStore.Audio.Media.DATA)
+        if (!hasAudioPermission()) return 0L
+        val prefixes = selectedPrefixes(folders)
+        val restrict = folders.isNotEmpty()
+        if (restrict && prefixes.isEmpty()) return 0L
         var total = 0L
-        contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection.toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
-            val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID); val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
-            val size = if (includeSize) cursor.getColumnIndex(MediaStore.Audio.Media.SIZE) else -1; val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1; val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
+        contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection(includeSize).toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
+            val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+            val size = if (includeSize) cursor.getColumnIndex(MediaStore.Audio.Media.SIZE) else -1
+            val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1
+            val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
             while (cursor.moveToNext()) {
-                val type = cursor.getString(mime) ?: ""
-                if (!type.startsWith("audio/")) continue
-                val relativePath = if (relative >= 0) cursor.getString(relative) else null
-                val dataPath = if (data >= 0) cursor.getString(data) else null
-                if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue
-                if (includeSize) total += if (size >= 0) cursor.getLong(size) else 0L
+                if (!(cursor.getString(mime) ?: "").startsWith("audio/")) continue
+                if (restrict && !isInSelectedFolder(if (relative >= 0) cursor.getString(relative) else null, if (data >= 0) cursor.getString(data) else null, prefixes)) continue
+                if (includeSize && size >= 0) total += cursor.getLong(size)
             }
         }
         return total
     }
 
     private fun scanAudio(folders: List<String>): List<Map<String, Any?>> {
-        if (!hasAudioPermission() || folders.isEmpty()) return emptyList()
-        val prefixes = selectedPrefixes(folders); if (prefixes.isEmpty()) return emptyList()
+        if (!hasAudioPermission()) return emptyList()
+        val prefixes = selectedPrefixes(folders)
+        val restrict = folders.isNotEmpty()
+        if (restrict && prefixes.isEmpty()) return emptyList()
         val songs = mutableListOf<Map<String, Any?>>()
-        val projection = mutableListOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.MIME_TYPE)
-        if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH)
-        if (Build.VERSION.SDK_INT <= 28) projection.add(MediaStore.Audio.Media.DATA)
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        // Do not require IS_MUSIC. Many legitimate local files (mixes, podcasts,
-        // DJ sets and downloaded audio) are indexed as audio but not as music.
-        contentResolver.query(collection, projection.toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
-            val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID); val title = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE); val artist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST); val album = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM); val duration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION); val dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED); val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
-            val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1; val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
+        contentResolver.query(collection, projection().toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
+            val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val title = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val album = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val duration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+            val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1
+            val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
             while (cursor.moveToNext()) {
-                val type = cursor.getString(mime) ?: ""
-                if (!type.startsWith("audio/")) continue
-                val relativePath = if (relative >= 0) cursor.getString(relative) else null
-                val dataPath = if (data >= 0) cursor.getString(data) else null
-                if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue
+                if (!(cursor.getString(mime) ?: "").startsWith("audio/")) continue
+                if (restrict && !isInSelectedFolder(if (relative >= 0) cursor.getString(relative) else null, if (data >= 0) cursor.getString(data) else null, prefixes)) continue
                 val mediaId = cursor.getLong(id)
                 songs.add(mapOf("filePath" to ContentUris.withAppendedId(collection, mediaId).toString(), "title" to cursor.getString(title), "artist" to cursor.getString(artist), "album" to cursor.getString(album), "duration" to cursor.getLong(duration), "dateAdded" to cursor.getLong(dateAdded)))
             }
