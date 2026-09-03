@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
@@ -35,6 +36,8 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<double>? _volumeSubscription;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
+  StreamSubscription<void>? _noisySubscription;
 
   double get volume => _volume;
   List<Song> get queue => List.unmodifiable(_queue);
@@ -59,6 +62,26 @@ class MusicProvider extends ChangeNotifier {
       );
     }
     _bindActivePlayerStreams();
+    unawaited(_configureAudioSession());
+  }
+
+  Future<void> _configureAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      _interruptionSubscription = session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          if (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck) {
+            unawaited(pause());
+          }
+        }
+      });
+      _noisySubscription = session.becomingNoisyEventStream.listen((_) {
+        if (isPlaying) unawaited(pause());
+      });
+    } catch (e) {
+      debugPrint('Audio session setup failed: $e');
+    }
   }
 
   void _publishServiceState() {
@@ -278,6 +301,8 @@ class MusicProvider extends ChangeNotifier {
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();
     _volumeSubscription?.cancel();
+    _interruptionSubscription?.cancel();
+    _noisySubscription?.cancel();
     _playerA.dispose();
     _playerB.dispose();
     super.dispose();
