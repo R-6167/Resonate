@@ -91,42 +91,52 @@ class PlayerScreen extends StatelessWidget {
                     border: Border.all(color: scheme.outlineVariant),
                   ),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _ControlButton(
-                        tooltip: 'Previous song',
-                        icon: Icons.skip_previous_rounded,
-                        onPressed: music.previousSong,
-                      ),
-                      _ControlButton(
-                        tooltip: 'Back 10 seconds',
-                        icon: Icons.replay_10_rounded,
-                        onPressed: () => music.seek(
-                          Duration(milliseconds: (music.currentPosition.inMilliseconds - 10000).clamp(0, max.toInt())),
+                      Expanded(
+                        child: _PlayerControl(
+                          tooltip: 'Previous song',
+                          icon: Icons.skip_previous_rounded,
+                          onPressed: music.previousSong,
                         ),
                       ),
-                      FloatingActionButton.large(
-                        heroTag: 'resonate-play',
-                        backgroundColor: scheme.primary,
-                        foregroundColor: scheme.onPrimary,
-                        tooltip: music.isPlaying ? 'Pause' : 'Play',
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _PlayerControl(
+                          tooltip: 'Back 10 seconds',
+                          icon: Icons.replay_10_rounded,
+                          onPressed: () => music.seek(
+                            Duration(
+                              milliseconds: (music.currentPosition.inMilliseconds - 10000)
+                                  .clamp(0, max.toInt()),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _PlayPauseControl(
+                        isPlaying: music.isPlaying,
                         onPressed: music.togglePlayPause,
-                        child: Icon(
-                          music.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                          size: 42,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _PlayerControl(
+                          tooltip: 'Forward 10 seconds',
+                          icon: Icons.forward_10_rounded,
+                          onPressed: () => music.seek(
+                            Duration(
+                              milliseconds: (music.currentPosition.inMilliseconds + 10000)
+                                  .clamp(0, max.toInt()),
+                            ),
+                          ),
                         ),
                       ),
-                      _ControlButton(
-                        tooltip: 'Forward 10 seconds',
-                        icon: Icons.forward_10_rounded,
-                        onPressed: () => music.seek(
-                          Duration(milliseconds: (music.currentPosition.inMilliseconds + 10000).clamp(0, max.toInt())),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _PlayerControl(
+                          tooltip: 'Next song',
+                          icon: Icons.skip_next_rounded,
+                          onPressed: music.nextSong,
                         ),
-                      ),
-                      _ControlButton(
-                        tooltip: 'Next song',
-                        icon: Icons.skip_next_rounded,
-                        onPressed: music.nextSong,
                       ),
                     ],
                   ),
@@ -161,27 +171,77 @@ class PlayerScreen extends StatelessWidget {
       );
 }
 
-class _ControlButton extends StatelessWidget {
+class _PlayerControl extends StatelessWidget {
   final String tooltip;
   final IconData icon;
   final VoidCallback onPressed;
 
-  const _ControlButton({required this.tooltip, required this.icon, required this.onPressed});
+  const _PlayerControl({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primaryContainer,
-      shape: const CircleBorder(),
-      child: IconButton(
-        tooltip: tooltip,
-        iconSize: 30,
-        padding: const EdgeInsets.all(14),
-        constraints: const BoxConstraints(minWidth: 58, minHeight: 58),
-        color: scheme.onPrimaryContainer,
-        onPressed: onPressed,
-        icon: Icon(icon),
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        height: 58,
+        child: Material(
+          color: scheme.primaryContainer,
+          shape: const StadiumBorder(),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onPressed,
+            child: Center(
+              child: Icon(
+                icon,
+                size: 30,
+                color: scheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlayPauseControl extends StatelessWidget {
+  final bool isPlaying;
+  final VoidCallback onPressed;
+
+  const _PlayPauseControl({
+    required this.isPlaying,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: isPlaying ? 'Pause' : 'Play',
+      child: Material(
+        color: scheme.primary,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: SizedBox(
+            width: 68,
+            height: 68,
+            child: Center(
+              child: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                size: 42,
+                color: scheme.onPrimary,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
