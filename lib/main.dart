@@ -151,15 +151,10 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => MusicProvider(audioHandler: audioHandler),
         ),
-        ChangeNotifierProxyProvider<MusicProvider, EqualizerProvider>(
-          create: (_) => EqualizerProvider(),
-          update: (_, music, equalizer) {
-            final provider = equalizer ?? EqualizerProvider(equalizer: music.equalizer);
-            if (equalizer != null && !equalizer.isAvailable) {
-              return EqualizerProvider(equalizer: music.equalizer);
-            }
-            return provider;
-          },
+        ChangeNotifierProvider(
+          create: (context) => EqualizerProvider(
+            equalizer: context.read<MusicProvider>().equalizer,
+          ),
         ),
         ChangeNotifierProvider(create: (_) => AudioEffectsProvider()),
         ChangeNotifierProvider(create: (_) => CrossfadeProvider()),
