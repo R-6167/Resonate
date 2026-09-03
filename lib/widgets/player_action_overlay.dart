@@ -9,7 +9,6 @@ class PlayerActionOverlay {
       barrierLabel: 'Close',
       barrierColor: Colors.black.withOpacity(.42),
       transitionDuration: const Duration(milliseconds: 280),
-      reverseTransitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (_, __, ___) => child,
       transitionBuilder: (_, animation, __, child) {
         final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
