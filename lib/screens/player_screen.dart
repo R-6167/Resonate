@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
+import '../providers/equalizer_provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/playback_features_provider.dart';
+import '../screens/equalizer_screen.dart';
 import '../services/audio_file_service.dart';
 import '../widgets/audio_visualization_widget.dart';
 
@@ -144,27 +146,15 @@ class _PlaybackControlsCard extends StatelessWidget {
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Speed'),
-              subtitle: Slider(
-                value: playback.speed,
-                min: 0.25,
-                max: 2.0,
-                divisions: 35,
-                label: '${playback.speed.toStringAsFixed(2)}×',
-                onChanged: playback.setSpeed,
-              ),
+              subtitle: Slider(value: playback.speed, min: 0.25, max: 2.0, divisions: 35,
+                  label: '${playback.speed.toStringAsFixed(2)}×', onChanged: playback.setSpeed),
               trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Pitch'),
-              subtitle: Slider(
-                value: playback.pitch,
-                min: 0.5,
-                max: 2.0,
-                divisions: 30,
-                label: '${playback.pitch.toStringAsFixed(2)}×',
-                onChanged: playback.setPitch,
-              ),
+              subtitle: Slider(value: playback.pitch, min: 0.5, max: 2.0, divisions: 30,
+                  label: '${playback.pitch.toStringAsFixed(2)}×', onChanged: playback.setPitch),
               trailing: Text('${playback.pitch.toStringAsFixed(2)}×'),
             ),
             SwitchListTile(
@@ -175,42 +165,27 @@ class _PlaybackControlsCard extends StatelessWidget {
               onChanged: playback.setNormalizationEnabled,
             ),
             if (playback.normalizationEnabled)
-              Slider(
-                value: playback.targetLoudness,
-                min: -20,
-                max: -8,
-                divisions: 24,
-                label: '${playback.targetLoudness.toStringAsFixed(0)} LUFS',
-                onChanged: playback.setTargetLoudness,
-              ),
+              Slider(value: playback.targetLoudness, min: -20, max: -8, divisions: 24,
+                  label: '${playback.targetLoudness.toStringAsFixed(0)} LUFS', onChanged: playback.setTargetLoudness),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.bedtime_outlined),
               title: const Text('Sleep timer'),
               subtitle: Text(playback.sleepTimerLabel),
-              trailing: IconButton(
-                tooltip: 'Set sleep timer',
-                icon: const Icon(Icons.timer_outlined),
-                onPressed: () => _showSleepTimer(context, playback),
-              ),
+              trailing: IconButton(tooltip: 'Set sleep timer', icon: const Icon(Icons.timer_outlined),
+                  onPressed: () => _showSleepTimer(context, playback)),
               onTap: () => _showSleepTimer(context, playback),
             ),
             if (playback.sleepTimerActive)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: playback.cancelSleepTimer,
-                  icon: const Icon(Icons.close),
-                  label: const Text('Cancel timer'),
-                ),
-              ),
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                onPressed: playback.cancelSleepTimer, icon: const Icon(Icons.close), label: const Text('Cancel timer'))),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.equalizer_rounded),
               title: const Text('Per-song EQ profile'),
-              subtitle: const Text('Open Equalizer to save a profile for this track'),
+              subtitle: const Text('Save or load a custom EQ curve for this track'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pushNamed(context, '/equalizer'),
+              onTap: () => _openSongEq(context, songId),
             ),
           ],
         ),
@@ -218,38 +193,44 @@ class _PlaybackControlsCard extends StatelessWidget {
     );
   }
 
+  Future<void> _openSongEq(BuildContext context, String songId) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()));
+    if (!context.mounted) return;
+    final eq = context.read<EqualizerProvider>();
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save current EQ for this song'),
+            onTap: () => Navigator.pop(sheetContext, 'save')),
+        ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Load saved EQ for this song'),
+            onTap: () => Navigator.pop(sheetContext, 'load')),
+      ])),
+    );
+    if (action == 'save') {
+      await eq.saveSongProfile(songId);
+    } else if (action == 'load') {
+      final found = await eq.loadSongProfile(songId);
+      if (context.mounted && !found) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No saved EQ profile for this song.')));
+      }
+    }
+  }
+
   Future<void> _showSleepTimer(BuildContext context, PlaybackFeaturesProvider playback) async {
-    final options = <Duration>[
-      const Duration(minutes: 15),
-      const Duration(minutes: 30),
-      const Duration(minutes: 45),
-      const Duration(minutes: 60),
-      const Duration(minutes: 90),
-      const Duration(hours: 2),
-    ];
+    final options = <Duration>[const Duration(minutes: 15), const Duration(minutes: 30), const Duration(minutes: 45),
+      const Duration(minutes: 60), const Duration(minutes: 90), const Duration(hours: 2)];
     final selected = await showModalBottomSheet<Duration>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            const ListTile(title: Text('Sleep timer', style: TextStyle(fontWeight: FontWeight.bold))),
-            ...options.map((duration) => ListTile(
-                  title: Text(_format(duration)),
-                  leading: const Icon(Icons.timer_outlined),
-                  onTap: () => Navigator.pop(sheetContext, duration),
-                )),
-          ],
-        ),
-      ),
+      builder: (sheetContext) => SafeArea(child: ListView(shrinkWrap: true, children: [
+        const ListTile(title: Text('Sleep timer', style: TextStyle(fontWeight: FontWeight.bold))),
+        ...options.map((duration) => ListTile(title: Text(_format(duration)), leading: const Icon(Icons.timer_outlined),
+            onTap: () => Navigator.pop(sheetContext, duration))),
+      ])),
     );
     if (selected != null) await playback.startSleepTimer(selected);
   }
 
-  String _format(Duration value) {
-    if (value.inHours > 0) return '${value.inHours} hours';
-    return '${value.inMinutes} minutes';
-  }
+  String _format(Duration value) => value.inHours > 0 ? '${value.inHours} hours' : '${value.inMinutes} minutes';
 }
 
 class _PlayerControl extends StatelessWidget {
@@ -260,21 +241,12 @@ class _PlayerControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
-      child: SizedBox(
-        height: 58,
-        child: Material(
-          color: scheme.primaryContainer,
-          shape: const StadiumBorder(),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: onPressed,
-            child: Center(child: Icon(icon, size: 30, color: scheme.onPrimaryContainer)),
-          ),
-        ),
+    return Tooltip(message: tooltip, child: SizedBox(height: 58, child: Material(
+      color: scheme.primaryContainer, shape: const StadiumBorder(), child: InkWell(
+        customBorder: const StadiumBorder(), onTap: onPressed,
+        child: Center(child: Icon(icon, size: 30, color: scheme.onPrimaryContainer)),
       ),
-    );
+    )));
   }
 }
 
@@ -285,22 +257,12 @@ class _PlayPauseControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: isPlaying ? 'Pause' : 'Play',
-      child: Material(
-        color: scheme.primary,
-        shape: const CircleBorder(),
-        elevation: 2,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onPressed,
-          child: SizedBox(
-            width: 68,
-            height: 68,
-            child: Center(child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 42, color: scheme.onPrimary)),
-          ),
+    return Tooltip(message: isPlaying ? 'Pause' : 'Play', child: Material(
+      color: scheme.primary, shape: const CircleBorder(), elevation: 2, child: InkWell(
+        customBorder: const CircleBorder(), onTap: onPressed, child: SizedBox(width: 68, height: 68,
+          child: Center(child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 42, color: scheme.onPrimary)),
         ),
       ),
-    );
+    ));
   }
 }
