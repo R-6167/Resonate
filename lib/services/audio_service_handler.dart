@@ -18,7 +18,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     queue.add(List.unmodifiable(_items));
     _playbackSubscription = _player.playbackEventStream.listen((event) {
       playbackState.add(playbackState.value.copyWith(
-        controls: [_player.playing ? MediaControl.skipToPrevious : MediaControl.skipToPrevious, _player.playing ? MediaControl.pause : MediaControl.play, MediaControl.stop, MediaControl.skipToNext],
+        controls: [MediaControl.skipToPrevious, _player.playing ? MediaControl.pause : MediaControl.play, MediaControl.stop, MediaControl.skipToNext],
         systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward},
         androidCompactActionIndices: const [0, 1, 3],
         processingState: _transformProcessingState(_player.processingState),
@@ -80,14 +80,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  @override Future<void> addQueueItem(MediaItem item) async {
-    final filePath = item.extras?['filePath']?.toString().trim();
-    if (filePath == null || filePath.isEmpty) return;
-    _items.add(item); queue.add(List.unmodifiable(_items));
-    final source = AudioSource.uri(_audioUri(filePath), tag: item);
-    if (_playlist == null) { _playlist = ConcatenatingAudioSource(children: [source], useLazyPreparation: true); await _player.setAudioSource(_playlist!); mediaItem.add(item); } else await _playlist!.add(source);
-  }
-
+  @override Future<void> addQueueItem(MediaItem item) async { final filePath = item.extras?['filePath']?.toString().trim(); if (filePath == null || filePath.isEmpty) return; _items.add(item); queue.add(List.unmodifiable(_items)); final source = AudioSource.uri(_audioUri(filePath), tag: item); if (_playlist == null) { _playlist = ConcatenatingAudioSource(children: [source], useLazyPreparation: true); await _player.setAudioSource(_playlist!); mediaItem.add(item); } else await _playlist!.add(source); }
   @override Future<void> addQueueItems(List<MediaItem> mediaItems) async { for (final item in mediaItems) { await addQueueItem(item); } }
   @override Future<void> removeQueueItem(MediaItem item) async { final index = _items.indexWhere((candidate) => candidate.id == item.id); if (index < 0) return; _items.removeAt(index); queue.add(List.unmodifiable(_items)); if (_playlist != null && index < _playlist!.length) await _playlist!.removeAt(index); }
   @override Future<void> play() async { if (_playlist == null || _playlist!.length == 0) return; await _player.play(); }
