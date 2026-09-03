@@ -9,6 +9,7 @@ import 'providers/crossfade_provider.dart';
 import 'providers/equalizer_provider.dart';
 import 'providers/library_provider.dart';
 import 'providers/music_provider.dart';
+import 'providers/playback_features_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
@@ -166,6 +167,11 @@ class ResonateApp extends StatelessWidget {
           create: (context) => CrossfadeProvider(
             player: context.read<MusicProvider>().audioPlayer,
             onNext: context.read<MusicProvider>().nextSong,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => PlaybackFeaturesProvider(
+            player: context.read<MusicProvider>().audioPlayer,
           ),
         ),
         ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
