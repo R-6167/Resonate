@@ -3,6 +3,7 @@ import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../providers/equalizer_provider.dart';
+import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/playback_features_provider.dart';
 import '../screens/equalizer_screen.dart';
@@ -33,10 +34,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           const SizedBox(height: 8),
           Row(children: [
             Icon(value <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded, size: 28),
-            Expanded(child: Slider(min: 0, max: 1, value: value, onChanged: (next) async {
-              _systemVolume.value = next;
-              await FlutterVolumeController.setVolume(next);
-            })),
+            Expanded(child: Slider(min: 0, max: 1, value: value, onChanged: (next) async { _systemVolume.value = next; await FlutterVolumeController.setVolume(next); })),
             SizedBox(width: 52, child: Text('${(value * 100).round()}%', textAlign: TextAlign.end)),
           ]),
           const SizedBox(height: 8),
@@ -47,9 +45,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Now Playing'), actions: [Consumer<MusicProvider>(builder: (_, music, __) => IconButton(
-      tooltip: 'Stop', icon: const Icon(Icons.stop_rounded), onPressed: music.currentSong == null ? null : music.stop,
-    ))]),
+    appBar: AppBar(title: const Text('Now Playing'), actions: [Consumer2<MusicProvider, IntelligenceProvider>(builder: (_, music, intelligence, __) => Row(mainAxisSize: MainAxisSize.min, children: [
+      if (music.currentSong != null) IconButton(tooltip: intelligence.isEnabled ? 'Intelligence on' : 'Intelligence off', icon: Icon(intelligence.isEnabled ? Icons.auto_awesome : Icons.auto_awesome_outlined), onPressed: () => intelligence.setEnabled(!intelligence.isEnabled)),
+      IconButton(tooltip: 'Stop', icon: const Icon(Icons.stop_rounded), onPressed: music.currentSong == null ? null : music.stop),
+    ]))]),
     body: Consumer<MusicProvider>(builder: (context, music, _) {
       final song = music.currentSong;
       if (song == null) return const Center(child: Text('No song selected'));
@@ -91,6 +90,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
           IconButton(tooltip: 'Per-song EQ', icon: const Icon(Icons.equalizer_rounded), onPressed: () => _openSongEq(context, song.id)),
           IconButton(tooltip: 'More playback options', icon: const Icon(Icons.more_vert_rounded), onPressed: () => _showMoreOptions(context)),
         ]),
+        const SizedBox(height: 20),
+        Consumer<IntelligenceProvider>(builder: (context, intelligence, _) {
+          if (!intelligence.isEnabled || intelligence.recommendations.isEmpty) return const SizedBox.shrink();
+          final next = intelligence.recommendations.first;
+          return _IntelligenceNextCard(item: next);
+        }),
       ]);
     }),
   );
@@ -137,12 +142,40 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final options = <Duration>[const Duration(minutes: 15), const Duration(minutes: 30), const Duration(minutes: 45), const Duration(minutes: 60), const Duration(minutes: 90), const Duration(hours: 2)];
     await PlayerActionOverlay.show<void>(context: context, icon: Icons.timer_outlined, title: 'Sleep timer', child: Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => Column(mainAxisSize: MainAxisSize.min, children: [
       if (current.sleepTimerActive) ...[Text(current.sleepTimerLabel, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)), const SizedBox(height: 4), const Text('Playback will pause when the timer reaches zero.'), const SizedBox(height: 8)],
-      ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration),), onTap: () { current.startSleepTimer(duration); Navigator.pop(context); })),
+      ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration)), onTap: () { current.startSleepTimer(duration); Navigator.pop(context); })),
       if (current.sleepTimerActive) ListTile(dense: true, title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { current.cancelSleepTimer(); Navigator.pop(context); }),
     ])));
   }
 
   String _format(Duration value) => value.inHours > 0 ? '${value.inHours} hours' : '${value.inMinutes} minutes';
+}
+
+class _IntelligenceNextCard extends StatelessWidget {
+  final dynamic item;
+  const _IntelligenceNextCard({required this.item});
+  @override
+  Widget build(BuildContext context) {
+    final music = context.read<MusicProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 15, 12, 15),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: scheme.primaryContainer.withOpacity(.65), border: Border.all(color: scheme.primary.withOpacity(.18))),
+      child: Row(children: [
+        Icon(Icons.auto_awesome, color: scheme.primary),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Intelligence suggests next', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary)),
+          const SizedBox(height: 3),
+          Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(item.reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+        ])),
+        IconButton(tooltip: 'Play suggestion', icon: const Icon(Icons.play_circle_fill_rounded, size: 34), onPressed: () async {
+          await music.playSong(item.song, queue: [item.song], startIndex: 0);
+        }),
+      ]),
+    );
+  }
 }
 
 class _IconControl extends StatelessWidget {
