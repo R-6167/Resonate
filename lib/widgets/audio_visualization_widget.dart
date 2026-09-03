@@ -10,8 +10,36 @@ class AudioVisualizationWidget extends StatefulWidget {
 }
 
 class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat();
-  @override void dispose() { _controller.dispose(); super.dispose(); }
+  late final AnimationController _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+  MusicProvider? _music;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final music = context.read<MusicProvider>();
+    if (_music != music) {
+      _music?.removeListener(_syncPlaybackAnimation);
+      _music = music;
+      _music!.addListener(_syncPlaybackAnimation);
+      _syncPlaybackAnimation();
+    }
+  }
+
+  void _syncPlaybackAnimation() {
+    if (!mounted) return;
+    if (_music?.isPlaying == true) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else if (_controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _music?.removeListener(_syncPlaybackAnimation);
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
