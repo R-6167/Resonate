@@ -5,6 +5,9 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.audiofx.BassBoost
+import android.media.audiofx.EnvironmentalReverb
+import android.media.audiofx.Virtualizer
 import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
@@ -15,10 +18,16 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : AudioServiceActivity() {
     private val channelName = "com.example.resonate/media_store"
+    private val effectsChannelName = "com.example.resonate/audio_effects"
     private val permissionRequestCode = 6167
     private val folderRequestCode = 6168
     private var permissionResult: MethodChannel.Result? = null
     private var folderResult: MethodChannel.Result? = null
+
+    private var effectSessionId: Int = 0
+    private var bassBoost: BassBoost? = null
+    private var virtualizer: Virtualizer? = null
+    private var reverb: EnvironmentalReverb? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -32,6 +41,63 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "attachToSession" -> {
+                            val sessionId = call.argument<Int>("sessionId") ?: 0
+                            attachEffects(sessionId)
+                            result.success(true)
+                        }
+                        "setBassBoost" -> {
+                            bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                            result.success(true)
+                        }
+                        "setVirtualizer" -> {
+                            virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                            result.success(true)
+                        }
+                        "setReverb" -> {
+                            reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort()
+                            result.success(true)
+                        }
+                        "release" -> {
+                            releaseEffects()
+                            result.success(true)
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (e: Exception) {
+                    result.error("AUDIO_EFFECT_ERROR", e.message, null)
+                }
+            }
+    }
+
+    private fun attachEffects(sessionId: Int) {
+        if (sessionId <= 0 || sessionId == effectSessionId) return
+        releaseEffects()
+        effectSessionId = sessionId
+        try {
+            bassBoost = BassBoost(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) { bassBoost = null }
+        try {
+            virtualizer = Virtualizer(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) { virtualizer = null }
+        try {
+            reverb = EnvironmentalReverb(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) { reverb = null }
+    }
+
+    private fun releaseEffects() {
+        try { bassBoost?.release() } catch (_: Exception) { }
+        try { virtualizer?.release() } catch (_: Exception) { }
+        try { reverb?.release() } catch (_: Exception) { }
+        bassBoost = null
+        virtualizer = null
+        reverb = null
+        effectSessionId = 0
     }
 
     private fun audioPermission(): String = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -189,4 +255,9 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun getAudioSize(folders: List<String>): Long = querySelectedAudio(folders, includeSize = true)
+
+    override fun onDestroy() {
+        releaseEffects()
+        super.onDestroy()
+    }
 }
