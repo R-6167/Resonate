@@ -12,7 +12,59 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   StreamSubscription<PlaybackEvent>? _playbackSubscription;
   StreamSubscription<int?>? _currentIndexSubscription;
 
+  Future<void> Function()? _onPlay;
+  Future<void> Function()? _onPause;
+  Future<void> Function()? _onStop;
+  Future<void> Function(Duration)? _onSeek;
+  Future<void> Function()? _onNext;
+  Future<void> Function()? _onPrevious;
+
   AudioServiceHandler() { _initializeListeners(); }
+
+  /// Connects Android notification/media-button commands to Resonate's
+  /// foreground MusicProvider. This avoids maintaining a second playback path.
+  void bindPlaybackController({
+    required Future<void> Function() onPlay,
+    required Future<void> Function() onPause,
+    required Future<void> Function() onStop,
+    required Future<void> Function(Duration) onSeek,
+    required Future<void> Function() onNext,
+    required Future<void> Function() onPrevious,
+  }) {
+    _onPlay = onPlay;
+    _onPause = onPause;
+    _onStop = onStop;
+    _onSeek = onSeek;
+    _onNext = onNext;
+    _onPrevious = onPrevious;
+  }
+
+  void publishPlayback({
+    required Song? song,
+    required bool playing,
+    required Duration position,
+    required Duration? duration,
+    required double speed,
+  }) {
+    if (song != null) {
+      final item = songToMediaItem(song);
+      mediaItem.add(item);
+      if (_items.isEmpty || _items.first.id != item.id) {
+        _items..clear()..add(item);
+        queue.add(List.unmodifiable(_items));
+      }
+    }
+    playbackState.add(playbackState.value.copyWith(
+      controls: [MediaControl.skipToPrevious, playing ? MediaControl.pause : MediaControl.play, MediaControl.stop, MediaControl.skipToNext],
+      systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward},
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: song == null ? AudioProcessingState.idle : AudioProcessingState.ready,
+      playing: playing,
+      updatePosition: position,
+      bufferedPosition: position,
+      speed: speed,
+    ));
+  }
 
   void _initializeListeners() {
     queue.add(List.unmodifiable(_items));
@@ -83,12 +135,12 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   @override Future<void> addQueueItem(MediaItem item) async { final filePath = item.extras?['filePath']?.toString().trim(); if (filePath == null || filePath.isEmpty) return; _items.add(item); queue.add(List.unmodifiable(_items)); final source = AudioSource.uri(_audioUri(filePath), tag: item); if (_playlist == null) { _playlist = ConcatenatingAudioSource(children: [source], useLazyPreparation: true); await _player.setAudioSource(_playlist!); mediaItem.add(item); } else await _playlist!.add(source); }
   @override Future<void> addQueueItems(List<MediaItem> mediaItems) async { for (final item in mediaItems) { await addQueueItem(item); } }
   @override Future<void> removeQueueItem(MediaItem item) async { final index = _items.indexWhere((candidate) => candidate.id == item.id); if (index < 0) return; _items.removeAt(index); queue.add(List.unmodifiable(_items)); if (_playlist != null && index < _playlist!.length) await _playlist!.removeAt(index); }
-  @override Future<void> play() async { if (_playlist == null || _playlist!.length == 0) return; await _player.play(); }
-  @override Future<void> pause() async { await _player.pause(); }
-  @override Future<void> stop() async { await _player.stop(); playbackState.add(playbackState.value.copyWith(playing: false, processingState: AudioProcessingState.idle, updatePosition: Duration.zero)); await super.stop(); }
-  @override Future<void> seek(Duration position) async { if (_playlist == null || _playlist!.length == 0) return; await _player.seek(position); }
-  @override Future<void> skipToNext() async { final index = _player.currentIndex; if (_playlist == null || index == null || index >= _playlist!.length - 1) return; await _player.seekToNext(); }
-  @override Future<void> skipToPrevious() async { final index = _player.currentIndex; if (_playlist == null || index == null || index <= 0) return; await _player.seekToPrevious(); }
+  @override Future<void> play() async { if (_onPlay != null) return _onPlay!(); if (_playlist == null || _playlist!.length == 0) return; await _player.play(); }
+  @override Future<void> pause() async { if (_onPause != null) return _onPause!(); await _player.pause(); }
+  @override Future<void> stop() async { if (_onStop != null) return _onStop!(); await _player.stop(); playbackState.add(playbackState.value.copyWith(playing: false, processingState: AudioProcessingState.idle, updatePosition: Duration.zero)); await super.stop(); }
+  @override Future<void> seek(Duration position) async { if (_onSeek != null) return _onSeek!(position); if (_playlist == null || _playlist!.length == 0) return; await _player.seek(position); }
+  @override Future<void> skipToNext() async { if (_onNext != null) return _onNext!(); final index = _player.currentIndex; if (_playlist == null || index == null || index >= _playlist!.length - 1) return; await _player.seekToNext(); }
+  @override Future<void> skipToPrevious() async { if (_onPrevious != null) return _onPrevious!(); final index = _player.currentIndex; if (_playlist == null || index == null || index <= 0) return; await _player.seekToPrevious(); }
   Future<void> setVolume(double volume) => _player.setVolume(volume.clamp(0.0, 1.0));
   Stream<double> get volumeStream => _player.volumeStream;
   Stream<int?> get audioSessionIdStream => _player.androidAudioSessionIdStream;
