@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:just_audio/just_audio.dart';
@@ -125,30 +124,89 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _showMoreOptions(BuildContext context) async {
     final playback = context.read<PlaybackFeaturesProvider>();
-    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(18, 0, 18, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const ListTile(title: Text('Playback options', style: TextStyle(fontWeight: FontWeight.bold))),
-      ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () => _showSpeed(sheetContext, playback)),
-      ListTile(leading: const Icon(Icons.tune_rounded), title: const Text('Pitch'), trailing: Text('${playback.pitch.toStringAsFixed(2)}×'), onTap: () => _showPitch(sheetContext, playback)),
-      SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
-    ]))));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(title: Text('Playback options', style: TextStyle(fontWeight: FontWeight.bold))),
+              ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () => _showSpeed(sheetContext, playback)),
+              ListTile(leading: const Icon(Icons.tune_rounded), title: const Text('Pitch'), trailing: Text('${playback.pitch.toStringAsFixed(2)}×'), onTap: () => _showPitch(sheetContext, playback)),
+              SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _showSpeed(BuildContext context, PlaybackFeaturesProvider playback) async {
-    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (_) => Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: StatefulBuilder(builder: (_, setState) => Column(mainAxisSize: MainAxisSize.min, children: [Text('Playback speed: ${playback.speed.toStringAsFixed(2)}×'), Slider(min: .25, max: 2, divisions: 35, value: playback.speed, onChanged: (v) { playback.setSpeed(v); setState(() {}); })]))));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+        child: StatefulBuilder(
+          builder: (_, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Playback speed: ${playback.speed.toStringAsFixed(2)}×'),
+              Slider(min: .25, max: 2, divisions: 35, value: playback.speed, onChanged: (v) { playback.setSpeed(v); setState(() {}); }),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _showPitch(BuildContext context, PlaybackFeaturesProvider playback) async {
-    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (_) => Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: StatefulBuilder(builder: (_, setState) => Column(mainAxisSize: MainAxisSize.min, children: [Text('Pitch: ${playback.pitch.toStringAsFixed(2)}×'), Slider(min: .5, max: 2, divisions: 30, value: playback.pitch, onChanged: (v) { playback.setPitch(v); setState(() {}); })]))));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+        child: StatefulBuilder(
+          builder: (_, setState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Pitch: ${playback.pitch.toStringAsFixed(2)}×'),
+              Slider(min: .5, max: 2, divisions: 30, value: playback.pitch, onChanged: (v) { playback.setPitch(v); setState(() {}); }),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openSongEq(BuildContext context, String songId) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()));
     if (!context.mounted) return;
     final eq = context.read<EqualizerProvider>();
-    final action = await showModalBottomSheet<String>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save EQ for this song'), onTap: () => Navigator.pop(sheetContext, 'save')),
-      ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Load saved EQ'), onTap: () => Navigator.pop(sheetContext, 'load')),
-    ])));
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save EQ for this song'), onTap: () => Navigator.pop(sheetContext, 'save')),
+            ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Load saved EQ'), onTap: () => Navigator.pop(sheetContext, 'load')),
+          ],
+        ),
+      ),
+    );
     if (action == 'save') await eq.saveSongProfile(songId);
     if (action == 'load') {
       final found = await eq.loadSongProfile(songId);
@@ -158,13 +216,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _showSleepTimer(BuildContext context, PlaybackFeaturesProvider playback) async {
     final options = <Duration>[const Duration(minutes: 15), const Duration(minutes: 30), const Duration(minutes: 45), const Duration(minutes: 60), const Duration(minutes: 90), const Duration(hours: 2)];
-    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => Padding(padding: const EdgeInsets.fromLTRB(18, 0, 18, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Sleep timer', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)), if (current.sleepTimerActive) Text(current.sleepTimerLabel, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]))]),
-      if (current.sleepTimerActive) ...[const SizedBox(height: 4), const Text('Playback will pause when the timer reaches zero.')],
-      const SizedBox(height: 8),
-      ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration)), onTap: () { current.startSleepTimer(duration); Navigator.pop(sheetContext); })),
-      if (current.sleepTimerActive) ListTile(dense: true, title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { current.cancelSleepTimer(); Navigator.pop(sheetContext); }),
-    ]))));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Consumer<PlaybackFeaturesProvider>(
+          builder: (_, current, __) => Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Sleep timer', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    if (current.sleepTimerActive) Text(current.sleepTimerLabel, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+                  ],
+                ),
+                if (current.sleepTimerActive) ...[const SizedBox(height: 4), const Text('Playback will pause when the timer reaches zero.')],
+                const SizedBox(height: 8),
+                ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration)), onTap: () { current.startSleepTimer(duration); Navigator.pop(sheetContext); })),
+                if (current.sleepTimerActive) ListTile(dense: true, title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { current.cancelSleepTimer(); Navigator.pop(sheetContext); }),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _format(Duration value) => value.inHours > 0 ? '${value.inHours} hours' : '${value.inMinutes} minutes';
