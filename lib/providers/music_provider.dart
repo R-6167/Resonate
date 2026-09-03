@@ -48,7 +48,10 @@ class MusicProvider extends ChangeNotifier {
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
     if (audioHandler is AudioServiceHandler) {
-      (audioHandler! as AudioServiceHandler).bindPlaybackController(onPlay: () => togglePlayPause(), onPause: pause, onStop: stop, onSeek: seek, onNext: nextSong, onPrevious: previousSong);
+      (audioHandler! as AudioServiceHandler).bindPlaybackController(
+        onPlay: () => togglePlayPause(), onPause: pause, onStop: stop,
+        onSeek: seek, onNext: nextSong, onPrevious: previousSong,
+      );
     }
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
@@ -59,33 +62,71 @@ class MusicProvider extends ChangeNotifier {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
       _interruptionSubscription = session.interruptionEventStream.listen((event) {
-        if (event.begin && (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck)) unawaited(pause());
+        if (event.begin && (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck)) {
+          unawaited(pause());
+        }
       });
-      _noisySubscription = session.becomingNoisyEventStream.listen((_) { if (isPlaying) unawaited(pause()); });
-    } catch (e) { debugPrint('Audio session setup failed: $e'); }
+      _noisySubscription = session.becomingNoisyEventStream.listen((_) {
+        if (isPlaying) unawaited(pause());
+      });
+    } catch (e) {
+      debugPrint('Audio session setup failed: $e');
+    }
   }
 
   void _publishServiceState() {
     final handler = audioHandler;
-    if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0);
+    if (handler is AudioServiceHandler) {
+      handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0);
+    }
   }
 
   void _bindActivePlayerStreams() {
-    _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
+    _playerStateSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStateSubscription = player.playerStateStream.listen((state) {
       final playing = state.playing && state.processingState != ProcessingState.completed;
-      if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
-      if (state.processingState == ProcessingState.completed) { isPlaying = false; notifyListeners(); _publishServiceState(); }
+      if (isPlaying != playing) {
+        isPlaying = playing;
+        notifyListeners();
+        _publishServiceState();
+      }
+      if (state.processingState == ProcessingState.completed) {
+        isPlaying = false;
+        notifyListeners();
+        _publishServiceState();
+      }
     });
-    _positionSubscription = player.positionStream.listen((position) { if (currentPosition != position) { currentPosition = position; notifyListeners(); _publishServiceState(); } });
-    _durationSubscription = player.durationStream.listen((duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
-    _volumeSubscription = player.volumeStream.listen((value) { if (_volume != value) { _volume = value; notifyListeners(); } });
+    _positionSubscription = player.positionStream.listen((position) {
+      if (currentPosition != position) {
+        currentPosition = position;
+        notifyListeners();
+        _publishServiceState();
+      }
+    });
+    _durationSubscription = player.durationStream.listen((duration) {
+      if (duration != null && currentDuration != duration) {
+        currentDuration = duration;
+        notifyListeners();
+        _publishServiceState();
+      }
+    });
+    _volumeSubscription = player.volumeStream.listen((value) {
+      if (_volume != value) {
+        _volume = value;
+        notifyListeners();
+      }
+    });
   }
 
   Uri _audioUri(String value) {
     final path = value.trim();
-    if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path);
+    if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) {
+      return Uri.parse(path);
+    }
     return Uri.file(path);
   }
 
@@ -99,14 +140,13 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-    // Effects are optional on Android. A device without a working audio-effect
-    // implementation must never prevent a local song from starting.
     try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); }
     try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); }
   }
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) async {
-    if (song.filePath.trim().isEmpty) return false;
+    final path = song.filePath.trim();
+    if (path.isEmpty) return false;
     try {
       _crossfadeInProgress = false;
       await _stopBoth();
@@ -124,13 +164,14 @@ class MusicProvider extends ChangeNotifier {
       _bindActivePlayerStreams();
       notifyListeners();
 
+      // The selected song is the only source prepared before playback. The
+      // remaining queue is appended after play starts. This avoids mutating
+      // the active ConcatenatingAudioSource while it is starting, which can
+      // crash some just_audio/Android combinations.
       final playlist = ConcatenatingAudioSource(
         children: [AudioSource.uri(_audioUri(currentSong!.filePath), tag: currentSong)],
         useLazyPreparation: true,
       );
-      // Prepare only the requested song before calling play. Remaining tracks
-      // are inserted after playback starts, which prevents one stale/corrupt
-      // queue entry from crashing the initial tap-to-play path.
       await audioPlayer.setAudioSource(playlist, initialIndex: 0);
       await _enableEffects(audioPlayer, equalizer, loudnessEnhancer);
       await audioPlayer.setVolume(_volume);
@@ -139,15 +180,15 @@ class MusicProvider extends ChangeNotifier {
       _publishServiceState();
       notifyListeners();
 
-      // Restore the original queue order without making every source part of
-      // the initial preparation. Each insert is isolated so one bad entry is
-      // skipped rather than taking down playback.
-      for (var i = 0; i < _queue.length; i++) {
-        if (i == _queueIndex) continue;
+      // The logical queue keeps the user's selected position. The audio
+      // source starts at index zero intentionally; next/previous are driven
+      // by MusicProvider's logical queue, not by just_audio's source index.
+      for (final queuedSong in _queue) {
+        if (queuedSong.id == currentSong!.id) continue;
         try {
-          await playlist.insert(i, AudioSource.uri(_audioUri(_queue[i].filePath), tag: _queue[i]));
+          await playlist.add(AudioSource.uri(_audioUri(queuedSong.filePath), tag: queuedSong));
         } catch (e) {
-          debugPrint('Skipping unavailable queued song ${_queue[i].title}: $e');
+          debugPrint('Skipping unavailable queued song ${queuedSong.title}: $e');
         }
       }
       return true;
@@ -193,17 +234,50 @@ class MusicProvider extends ChangeNotifier {
     _crossfadeInProgress = true;
     final outgoing = audioPlayer, incoming = inactivePlayer, incomingEq = inactiveEqualizer, incomingLoud = inactiveLoudnessEnhancer, master = _volume;
     try {
-      await outgoing.setLoopMode(LoopMode.one); await incoming.stop(); await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false); await incoming.setLoopMode(LoopMode.one); await incoming.setVolume(0.0); await incoming.play();
+      await outgoing.setLoopMode(LoopMode.one);
+      await incoming.stop();
+      await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false);
+      await incoming.setLoopMode(LoopMode.one);
+      await incoming.setVolume(0.0);
+      await incoming.play();
       final total = milliseconds.clamp(500, 12000), steps = (total / 50).round().clamp(10, 240);
       for (var i = 1; i <= steps; i++) {
         if (!outgoing.playing) break;
         final linear = i / steps;
-        final t = switch (fadeType) { 'ease_in' => linear * linear, 'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)), 'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0, _ => linear };
-        await outgoing.setVolume(master * (1.0 - t)); await incoming.setVolume(master * t); await Future<void>.delayed(Duration(milliseconds: (total / steps).round()));
+        final t = switch (fadeType) {
+          'ease_in' => linear * linear,
+          'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
+          'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0,
+          _ => linear,
+        };
+        await outgoing.setVolume(master * (1.0 - t));
+        await incoming.setVolume(master * t);
+        await Future<void>.delayed(Duration(milliseconds: (total / steps).round()));
       }
-      await outgoing.pause(); await outgoing.setVolume(master); await incoming.setVolume(master); _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing; _bindActivePlayerStreams(); _publishServiceState(); notifyListeners(); await outgoing.stop(); return true;
-    } catch (e, stack) { debugPrint('True crossfade failed: $e'); debugPrint('$stack'); try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
-    finally { _crossfadeInProgress = false; notifyListeners(); }
+      await outgoing.pause();
+      await outgoing.setVolume(master);
+      await incoming.setVolume(master);
+      _activeIsA = !_activeIsA;
+      _queueIndex = nextIndex;
+      currentSong = nextSong;
+      currentDuration = nextSong.duration;
+      currentPosition = incoming.position;
+      isPlaying = incoming.playing;
+      _bindActivePlayerStreams();
+      _publishServiceState();
+      notifyListeners();
+      await outgoing.stop();
+      return true;
+    } catch (e, stack) {
+      debugPrint('True crossfade failed: $e');
+      debugPrint('$stack');
+      try { await incoming.stop(); } catch (_) {}
+      try { await outgoing.setVolume(master); } catch (_) {}
+      return false;
+    } finally {
+      _crossfadeInProgress = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
@@ -213,7 +287,18 @@ class MusicProvider extends ChangeNotifier {
     if (start) await player.play();
   }
 
-  Future<void> togglePlayPause() async { try { if (audioPlayer.playing) await audioPlayer.pause(); else if (audioPlayer.audioSource != null) await audioPlayer.play(); else if (currentSong != null) await playSong(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex); } catch (e) { debugPrint('Playback toggle failed: $e'); } }
+  Future<void> togglePlayPause() async {
+    try {
+      if (audioPlayer.playing) {
+        await audioPlayer.pause();
+      } else if (audioPlayer.audioSource != null) {
+        await audioPlayer.play();
+      } else if (currentSong != null) {
+        await playSong(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex);
+      }
+    } catch (e) { debugPrint('Playback toggle failed: $e'); }
+  }
+
   Future<void> pause() async { try { await audioPlayer.pause(); _publishServiceState(); } catch (_) {} }
   Future<void> stop() async { await _stopBoth(); isPlaying = false; currentPosition = Duration.zero; _publishServiceState(); notifyListeners(); }
   Future<void> nextSong() async { if (_queueIndex >= _queue.length - 1) return; await playSong(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1); }
