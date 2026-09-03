@@ -201,7 +201,10 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToNext() async {
     if (_onNext != null) return _onNext!();
     final index = _player.currentIndex;
-    if (index == null || index >= _player.sequence.length - 1) return;
+    final sequence = _player.sequence;
+    if (index == null || sequence.length <= 1 || index >= sequence.length - 1) {
+      return;
+    }
     await _player.seekToNext();
   }
 
@@ -209,7 +212,8 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToPrevious() async {
     if (_onPrevious != null) return _onPrevious!();
     final index = _player.currentIndex;
-    if (index == null || index <= 0) return;
+    final sequence = _player.sequence;
+    if (index == null || sequence.isEmpty || index <= 0) return;
     await _player.seekToPrevious();
   }
 
