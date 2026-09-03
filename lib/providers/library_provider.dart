@@ -39,6 +39,11 @@ class LibraryProvider extends ChangeNotifier {
       await loadStatistics();
       _isInitialized = true;
       notifyListeners();
+
+      // Resonate should remember that permission is enough to keep the
+      // library alive. On startup, ask for audio access and immediately scan
+      // the device if access is already granted (or the user grants it now).
+      await _autoScanOnStartup();
     } catch (e) {
       print('❌ LibraryProvider initialization error: $e');
       _isInitialized = true;
@@ -46,16 +51,26 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _autoScanOnStartup() async {
+    try {
+      final granted = await AudioFileService.requestAudioPermission();
+      if (!granted) return;
+      await scanDeviceAudio();
+    } catch (e) {
+      print('❌ Startup audio scan failed: $e');
+    }
+  }
+
   Future<void> scanDeviceAudio() async {
     if (_isScanning) return;
-    final folders = await AudioFileService.getSelectedFolders();
-    if (folders.isEmpty) return;
-
     _isScanning = true;
     notifyListeners();
     try {
+      final folders = await AudioFileService.getSelectedFolders();
       final songs = await AudioFileService.scanAudioFiles(
-        folderUris: folders.map((folder) => folder['uri']!).toList(),
+        folderUris: folders.isEmpty
+            ? null
+            : folders.map((folder) => folder['uri']!).toList(),
       );
       if (songs.isNotEmpty) {
         await _db.insertSongs(songs);
