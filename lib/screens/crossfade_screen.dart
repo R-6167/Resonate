@@ -8,337 +8,134 @@ class CrossfadeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Crossfade'),
-        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Reset to Default?'),
-                  content: const Text('This will reset crossfade to default settings.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        context.read<CrossfadeProvider>().reset();
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Crossfade reset to default')),
-                        );
-                      },
-                      child: const Text('Reset'),
-                    ),
-                  ],
-                ),
-              );
-            },
+            tooltip: 'Reset',
+            icon: const Icon(Icons.restart_alt_rounded),
+            onPressed: () => _confirmReset(context),
           ),
         ],
       ),
       body: Consumer<CrossfadeProvider>(
-        builder: (context, crossfadeProvider, _) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                // Enable/Disable Toggle
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Crossfade',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          Text(
-                            'Smooth transitions between songs',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                      Switch(
-                        value: crossfadeProvider.isEnabled,
-                        onChanged: (value) {
-                          crossfadeProvider.toggleCrossfade(value);
-                        },
-                      ),
-                    ],
+        builder: (context, crossfade, _) {
+          final enabled = crossfade.isEnabled;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+            children: [
+              Text('Transition', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('Blend the end of one track into the beginning of the next.', style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 24),
+              Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                clipBehavior: Clip.antiAlias,
+                child: Column(children: [
+                  SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.fromLTRB(18, 8, 14, 8),
+                    secondary: Icon(enabled ? Icons.multitrack_audio_rounded : Icons.multitrack_audio_rounded),
+                    title: const Text('Crossfade', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(enabled ? 'Transitions are active' : 'Tracks play normally'),
+                    value: enabled,
+                    onChanged: crossfade.toggleCrossfade,
                   ),
-                ),
-                const Divider(),
-
-                // Status Display
-                if (crossfadeProvider.isEnabled)
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Theme.of(context).primaryColor.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Crossfade Enabled',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      color: Theme.of(context).primaryColor,
-                                    ),
-                              ),
-                              Text(
-                                'Duration: ${crossfadeProvider.getDurationString()}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // Duration Control
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '⏱️ Duration',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Slider(
-                        value: crossfadeProvider.duration,
-                        min: 0,
-                        max: 5000,
-                        divisions: 50,
-                        label: crossfadeProvider.getDurationString(),
-                        onChanged: (value) {
-                          crossfadeProvider.setDuration(value);
-                        },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Off'),
-                            Text(
-                              crossfadeProvider.getDurationString(),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(
-                                    color: Theme.of(context).primaryColor,
-                                  ),
-                            ),
-                            const Text('5s'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(),
-
-                // Presets
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '⚡ Quick Presets',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: CrossfadePresets.presets.entries
-                            .map(
-                              (entry) => GestureDetector(
-                                onTap: () {
-                                  crossfadeProvider.applyPreset(entry.value);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Crossfade set to ${entry.key}'),
-                                      duration: const Duration(seconds: 1),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: crossfadeProvider.duration ==
-                                            entry.value
-                                        ? Theme.of(context).primaryColor
-                                        : Theme.of(context)
-                                            .primaryColor
-                                            .withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: crossfadeProvider.duration ==
-                                              entry.value
-                                          ? Theme.of(context).primaryColor
-                                          : Colors.transparent,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    entry.key,
-                                    style: TextStyle(
-                                      color: crossfadeProvider.duration ==
-                                              entry.value
-                                          ? Colors.white
-                                          : Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium
-                                              ?.color,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(),
-
-                // Fade Type
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '📈 Fade Curve',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Theme.of(context)
-                                .primaryColor
-                                .withOpacity(0.3),
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: DropdownButton<String>(
-                          value: crossfadeProvider.fadeType,
-                          isExpanded: true,
-                          underline: const SizedBox.shrink(),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'linear',
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('Linear'),
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'ease_in',
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('Ease In (gradual start)'),
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'ease_out',
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('Ease Out (gradual end)'),
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'ease_in_out',
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: Text('Ease In Out (smooth both ends)'),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              crossfadeProvider.setFadeType(value);
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(),
-
-                // Info Section
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'ℹ️ How Crossfade Works',
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
+                  if (enabled) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                          Text('Duration', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+                          Text(crossfade.getDurationString(), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: scheme.primary)),
+                        ]),
                         const SizedBox(height: 8),
-                        Text(
-                          '• Crossfade gradually reduces the volume of the current song while increasing the volume of the next song\n'
-                          '• Duration: How long the fade should take (0.5s - 5s)\n'
-                          '• Fade Curve: How the volume changes:\n'
-                          '  - Linear: Constant speed\n'
-                          '  - Ease In: Slow start, then faster\n'
-                          '  - Ease Out: Fast start, then slower\n'
-                          '  - Ease In Out: Slow start and end\n'
-                          '• Creates smooth, professional transitions between tracks',
-                          style: Theme.of(context).textTheme.bodySmall,
+                        Slider(
+                          value: crossfade.duration.clamp(0.0, 5000.0),
+                          min: 0,
+                          max: 5000,
+                          divisions: 50,
+                          label: crossfade.getDurationString(),
+                          onChanged: crossfade.setDuration,
                         ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('0'), Text('5 sec')]),
+                        ),
+                      ]),
+                    ),
+                  ],
+                ]),
+              ),
+              if (enabled) ...[
+                const SizedBox(height: 18),
+                Text('Presets', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                Card(
+                  margin: EdgeInsets.zero,
+                  elevation: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(children: CrossfadePresets.presets.entries.where((e) => e.value > 0).map((entry) {
+                      final selected = crossfade.duration == entry.value;
+                      return ListTile(
+                        dense: true,
+                        leading: Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? scheme.primary : null),
+                        title: Text(entry.key),
+                        selected: selected,
+                        onTap: () => crossfade.applyPreset(entry.value),
+                      );
+                    }).toList()),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text('Fade curve', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 10),
+                Card(
+                  margin: EdgeInsets.zero,
+                  elevation: 0,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: DropdownButtonFormField<String>(
+                      value: crossfade.fadeType,
+                      decoration: const InputDecoration(border: InputBorder.none),
+                      items: const [
+                        DropdownMenuItem(value: 'linear', child: Text('Linear')),
+                        DropdownMenuItem(value: 'ease_in', child: Text('Ease in')),
+                        DropdownMenuItem(value: 'ease_out', child: Text('Ease out')),
+                        DropdownMenuItem(value: 'ease_in_out', child: Text('Ease in & out')),
                       ],
+                      onChanged: (value) { if (value != null) crossfade.setFadeType(value); },
                     ),
                   ),
                 ),
                 const SizedBox(height: 24),
+                Text('About crossfade', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Text('When a track approaches its end, Resonate starts the next track and blends their volumes over the selected duration.', style: Theme.of(context).textTheme.bodyMedium),
               ],
-            ),
+            ],
           );
         },
       ),
     );
+  }
+
+  Future<void> _confirmReset(BuildContext context) async {
+    final reset = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset crossfade?'),
+        content: const Text('Crossfade will be turned off and the fade curve will return to Linear.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Reset')),
+        ],
+      ),
+    );
+    if (reset == true && context.mounted) await context.read<CrossfadeProvider>().reset();
   }
 }

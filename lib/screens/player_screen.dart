@@ -174,6 +174,28 @@ class _PlayPauseControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(message: isPlaying ? 'Pause' : 'Play', child: Material(color: scheme.primary, shape: const CircleBorder(), elevation: 2, child: InkWell(customBorder: const CircleBorder(), onTap: onPressed, child: SizedBox(width: 68, height: 68, child: Center(child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 42, color: scheme.onPrimary)))));
+    return Tooltip(
+      message: isPlaying ? 'Pause' : 'Play',
+      child: Material(
+        color: scheme.primary,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onPressed,
+          child: SizedBox(
+            width: 68,
+            height: 68,
+            child: Center(
+              child: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                size: 42,
+                color: scheme.onPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
