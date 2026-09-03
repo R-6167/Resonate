@@ -24,10 +24,7 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
     if (added && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Folder added. Scanning it now…')));
       await context.read<LibraryProvider>().scanDeviceAudio();
-      if (mounted) {
-        final count = context.read<LibraryProvider>().allSongs.length;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scan complete — $count songs indexed.')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scan complete — ${context.read<LibraryProvider>().allSongs.length} songs indexed.')));
     }
   }
 
@@ -37,35 +34,32 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
   @override Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
     final text = Theme.of(context).textTheme;
+    final hasFolders = _folders.isNotEmpty;
     return Scaffold(
-      appBar: AppBar(title: const Text('Library Management')),
+      appBar: AppBar(title: const Text('Library')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Music folders', style: text.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 6),
-          Text('Resonate only scans folders you explicitly choose. Nothing else on the device is indexed.', style: text.bodyMedium),
+        Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [Icon(Icons.library_music_rounded, size: 30, color: Theme.of(context).colorScheme.primary), const SizedBox(width: 12), Expanded(child: Text('Your music', style: text.headlineSmall))]),
+          const SizedBox(height: 10),
+          Text(hasFolders ? 'Resonate is using the folders you selected below.' : 'On first startup, Resonate scans the audio Android makes available to the app. You do not need to choose a folder first.', style: text.bodyMedium),
           const SizedBox(height: 16),
-          FilledButton.icon(onPressed: _addFolder, icon: const Icon(Icons.create_new_folder_outlined), label: const Text('Add folder')),
+          FilledButton.icon(onPressed: library.isScanning ? null : _scan, icon: library.isScanning ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync_rounded), label: Text(library.isScanning ? 'Scanning…' : 'Scan music now')),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(onPressed: _addFolder, icon: const Icon(Icons.create_new_folder_outlined), label: const Text('Choose folders to scan')),
         ]))),
-        const SizedBox(height: 16),
-        if (_loading) const Center(child: CircularProgressIndicator())
-        else if (_folders.isEmpty) Card(child: Padding(padding: const EdgeInsets.all(24), child: Column(children: [
-          Icon(Icons.folder_open_outlined, size: 52, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 12), Text('No music folders selected', textAlign: TextAlign.center, style: text.titleMedium),
-          const SizedBox(height: 6), Text('Add your Music, Downloads, or another folder to get started.', textAlign: TextAlign.center, style: text.bodyMedium),
-        ])))
-        else ..._folders.map((folder) => Card(child: ListTile(
-          leading: const Icon(Icons.folder_outlined), title: Text(folder['name'] ?? 'Selected folder'), subtitle: Text('Included in music scans', style: text.bodyMedium),
-          trailing: IconButton(tooltip: 'Remove folder', icon: const Icon(Icons.remove_circle_outline), onPressed: () => _removeFolder(folder['uri']!)),
-        ))),
-        const SizedBox(height: 20),
-        Card(child: ListTile(
-          leading: const Icon(Icons.library_music_outlined), title: const Text('Scan selected folders'),
-          subtitle: Text(library.isScanning ? 'Scanning…' : '${library.allSongs.length} songs currently indexed', style: text.bodyMedium),
-          trailing: library.isScanning ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : FilledButton(onPressed: _folders.isEmpty ? null : _scan, child: const Text('Scan')),
-        )),
+        const SizedBox(height: 14),
+        Card(child: ListTile(leading: const Icon(Icons.music_note_rounded), title: Text('${library.allSongs.length} songs indexed', style: text.titleMedium), subtitle: Text(hasFolders ? 'Restricted to your selected folders' : 'Discovered from local Android audio', style: text.bodyMedium))),
         const SizedBox(height: 12),
-        Text('Tip: Select a parent folder and Resonate will include its music subfolders.', style: text.bodySmall),
+        if (_loading) const Center(child: CircularProgressIndicator())
+        else if (hasFolders) ...[
+          Text('Selected folders', style: text.titleLarge),
+          const SizedBox(height: 6),
+          ..._folders.map((folder) => Card(child: ListTile(leading: const Icon(Icons.folder_outlined), title: Text(folder['name'] ?? 'Selected folder'), subtitle: const Text('Included in future scans'), trailing: IconButton(tooltip: 'Remove folder', icon: const Icon(Icons.remove_circle_outline), onPressed: () => _removeFolder(folder['uri']!))))),
+        ] else Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [Icon(Icons.auto_awesome, size: 44, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 10), Text('No folder restriction', style: text.titleMedium), const SizedBox(height: 6), Text('This is the easiest setup for a new user. If you later want tighter control, choose one or more folders above.', textAlign: TextAlign.center, style: text.bodyMedium)]))),
+        const SizedBox(height: 16),
+        Text('How it works', style: text.titleLarge),
+        const SizedBox(height: 8),
+        Text('1. Allow audio access when Android asks.\n2. Resonate scans available local audio automatically.\n3. If you want to narrow the library, choose folders here.\n4. Scan again whenever you add new music.', style: text.bodyMedium),
       ]),
     );
   }
