@@ -17,45 +17,50 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  double _systemVolume = 0.0;
+  final ValueNotifier<double> _systemVolume = ValueNotifier<double>(0.0);
 
   @override
   void initState() {
     super.initState();
     FlutterVolumeController.setAndroidAudioStream(stream: AudioStream.music);
     FlutterVolumeController.addListener((volume) {
-      if (mounted) setState(() => _systemVolume = volume.clamp(0.0, 1.0));
+      _systemVolume.value = volume.clamp(0.0, 1.0).toDouble();
     }, emitOnStart: true);
   }
 
   @override
   void dispose() {
     FlutterVolumeController.removeListener();
+    _systemVolume.dispose();
     super.dispose();
   }
 
   Future<void> _showVolume(BuildContext context) async {
-    final volume = await FlutterVolumeController.getVolume() ?? _systemVolume;
+    final volume = await FlutterVolumeController.getVolume();
+    if (volume != null) _systemVolume.value = volume.clamp(0.0, 1.0).toDouble();
     if (!mounted) return;
-    _systemVolume = volume.clamp(0.0, 1.0);
     await showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (_, setSheetState) => Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-          child: Row(children: [
-            Icon(_systemVolume <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded),
-            Expanded(child: Slider(
-              min: 0, max: 1, value: _systemVolume,
-              onChanged: (value) async {
-                await FlutterVolumeController.setVolume(value);
-                if (mounted) setState(() => _systemVolume = value);
-                setSheetState(() {});
-              },
-            )),
-            SizedBox(width: 48, child: Text('${(_systemVolume * 100).round()}%', textAlign: TextAlign.end)),
-          ]),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+          child: ValueListenableBuilder<double>(
+            valueListenable: _systemVolume,
+            builder: (_, value, __) => Row(children: [
+              Icon(value <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded),
+              Expanded(child: Slider(
+                min: 0, max: 1, value: value,
+                onChanged: (next) async {
+                  _systemVolume.value = next;
+                  await FlutterVolumeController.setVolume(next);
+                },
+              )),
+              SizedBox(width: 48, child: Text('${(value * 100).round()}%', textAlign: TextAlign.end)),
+            ]),
+          ),
         ),
       ),
     );
@@ -105,8 +110,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ]),
           const SizedBox(height: 8),
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            IconButton(tooltip: 'Volume', icon: Icon(_systemVolume <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded), onPressed: () => _showVolume(context)),
-            IconButton(tooltip: 'Sleep timer', icon: Icon(Icons.timer_outlined, color: context.watch<PlaybackFeaturesProvider>().sleepTimerActive ? scheme.primary : null), onPressed: () => _showSleepTimer(context, context.read<PlaybackFeaturesProvider>())),
+            ValueListenableBuilder<double>(valueListenable: _systemVolume, builder: (_, volume, __) => IconButton(tooltip: 'Volume', icon: Icon(volume <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded), onPressed: () => _showVolume(context))),
+            Consumer<PlaybackFeaturesProvider>(builder: (_, playback, __) => IconButton(tooltip: playback.sleepTimerActive ? 'Sleep timer: ${playback.sleepTimerLabel}' : 'Sleep timer', icon: Icon(Icons.timer_outlined, color: playback.sleepTimerActive ? scheme.primary : null), onPressed: () => _showSleepTimer(context, playback))),
             IconButton(tooltip: 'Per-song EQ', icon: const Icon(Icons.equalizer_rounded), onPressed: () => _openSongEq(context, song.id)),
             IconButton(tooltip: 'More playback options', icon: const Icon(Icons.more_vert_rounded), onPressed: () => _showMoreOptions(context)),
           ]),
@@ -117,27 +122,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _showMoreOptions(BuildContext context) async {
     final playback = context.read<PlaybackFeaturesProvider>();
-    await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(18, 4, 18, 20), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const ListTile(title: Text('Playback options', style: TextStyle(fontWeight: FontWeight.bold))),
-      ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () => _showSpeed(sheetContext, playback)),
-      ListTile(leading: const Icon(Icons.tune_rounded), title: const Text('Pitch'), trailing: Text('${playback.pitch.toStringAsFixed(2)}×'), onTap: () => _showPitch(sheetContext, playback)),
-      SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
-    ]))));
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const ListTile(title: Text('Playback options', style: TextStyle(fontWeight: FontWeight.bold))),
+          ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () => _showSpeed(sheetContext, playback)),
+          ListTile(leading: const Icon(Icons.tune_rounded), title: const Text('Pitch'), trailing: Text('${playback.pitch.toStringAsFixed(2)}×'), onTap: () => _showPitch(sheetContext, playback)),
+          SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
+        ]),
+      )),
+    );
   }
 
   Future<void> _showSpeed(BuildContext context, PlaybackFeaturesProvider playback) async {
-    await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => StatefulBuilder(builder: (_, setState) => Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 28), child: Column(mainAxisSize: MainAxisSize.min, children: [Text('Playback speed: ${playback.speed.toStringAsFixed(2)}×'), Slider(min: .25, max: 2, divisions: 35, value: playback.speed, onChanged: (v) { playback.setSpeed(v); setState(() {}); })]))));
+    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (_) => Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: StatefulBuilder(builder: (_, setState) => Column(mainAxisSize: MainAxisSize.min, children: [Text('Playback speed: ${playback.speed.toStringAsFixed(2)}×'), Slider(min: .25, max: 2, divisions: 35, value: playback.speed, onChanged: (v) { playback.setSpeed(v); setState(() {}); })]))));
   }
 
   Future<void> _showPitch(BuildContext context, PlaybackFeaturesProvider playback) async {
-    await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => StatefulBuilder(builder: (_, setState) => Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 28), child: Column(mainAxisSize: MainAxisSize.min, children: [Text('Pitch: ${playback.pitch.toStringAsFixed(2)}×'), Slider(min: .5, max: 2, divisions: 30, value: playback.pitch, onChanged: (v) { playback.setPitch(v); setState(() {}); })]))));
+    await showModalBottomSheet<void>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (_) => Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 28), child: StatefulBuilder(builder: (_, setState) => Column(mainAxisSize: MainAxisSize.min, children: [Text('Pitch: ${playback.pitch.toStringAsFixed(2)}×'), Slider(min: .5, max: 2, divisions: 30, value: playback.pitch, onChanged: (v) { playback.setPitch(v); setState(() {}); })]))));
   }
 
   Future<void> _openSongEq(BuildContext context, String songId) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()));
     if (!context.mounted) return;
     final eq = context.read<EqualizerProvider>();
-    final action = await showModalBottomSheet<String>(context: context, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    final action = await showModalBottomSheet<String>(context: context, backgroundColor: Colors.transparent, elevation: 0, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(leading: const Icon(Icons.save_outlined), title: const Text('Save EQ for this song'), onTap: () => Navigator.pop(sheetContext, 'save')),
       ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Load saved EQ'), onTap: () => Navigator.pop(sheetContext, 'load')),
     ])));
@@ -150,12 +164,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _showSleepTimer(BuildContext context, PlaybackFeaturesProvider playback) async {
     final options = <Duration>[const Duration(minutes: 15), const Duration(minutes: 30), const Duration(minutes: 45), const Duration(minutes: 60), const Duration(minutes: 90), const Duration(hours: 2)];
-    final selected = await showModalBottomSheet<Duration>(context: context, showDragHandle: true, builder: (sheetContext) => SafeArea(child: ListView(shrinkWrap: true, children: [
-      ListTile(title: Text(playback.sleepTimerActive ? 'Timer: ${playback.sleepTimerLabel}' : 'Sleep timer', style: const TextStyle(fontWeight: FontWeight.bold))),
-      ...options.map((duration) => ListTile(title: Text(_format(duration)), leading: const Icon(Icons.timer_outlined), onTap: () => Navigator.pop(sheetContext, duration))),
-      if (playback.sleepTimerActive) ListTile(title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { playback.cancelSleepTimer(); Navigator.pop(sheetContext); }),
-    ])));
-    if (selected != null) await playback.startSleepTimer(selected);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(child: Consumer<PlaybackFeaturesProvider>(
+        builder: (_, current, __) => Padding(
+          padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Sleep timer', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              if (current.sleepTimerActive) Text(current.sleepTimerLabel, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+            ]),
+            if (current.sleepTimerActive) ...[
+              const SizedBox(height: 4),
+              Text('Playback will pause when the timer reaches zero.'),
+            ],
+            const SizedBox(height: 8),
+            ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration)), onTap: () { current.startSleepTimer(duration); Navigator.pop(sheetContext); })),
+            if (current.sleepTimerActive) ListTile(dense: true, title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { current.cancelSleepTimer(); Navigator.pop(sheetContext); }),
+          ]),
+        ),
+      )),
+    );
   }
 
   String _format(Duration value) => value.inHours > 0 ? '${value.inHours} hours' : '${value.inMinutes} minutes';
@@ -174,28 +206,6 @@ class _PlayPauseControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: isPlaying ? 'Pause' : 'Play',
-      child: Material(
-        color: scheme.primary,
-        shape: const CircleBorder(),
-        elevation: 2,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onPressed,
-          child: SizedBox(
-            width: 68,
-            height: 68,
-            child: Center(
-              child: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: 42,
-                color: scheme.onPrimary,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return Tooltip(message: isPlaying ? 'Pause' : 'Play', child: Material(color: scheme.primary, shape: const CircleBorder(), elevation: 2, child: InkWell(customBorder: const CircleBorder(), onTap: onPressed, child: SizedBox(width: 68, height: 68, child: Center(child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 42, color: scheme.onPrimary))))));
   }
 }
