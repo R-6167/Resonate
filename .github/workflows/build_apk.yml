@@ -5,6 +5,7 @@ on:
     branches:
       - debug-splash-hang
       - Audio_Update
+      - Audio_Update.2
   workflow_dispatch:
 
 concurrency:
