@@ -1,5 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -37,16 +38,14 @@ Future<void> main() async {
 
 class ResonateBootstrap extends StatefulWidget {
   const ResonateBootstrap({super.key});
-  @override
-  State<ResonateBootstrap> createState() => _ResonateBootstrapState();
+  @override State<ResonateBootstrap> createState() => _ResonateBootstrapState();
 }
 
 class _ResonateBootstrapState extends State<ResonateBootstrap> {
   AudioHandler? _audioHandler;
   Object? _startupError;
 
-  @override
-  void initState() { super.initState(); _initializeAudioService(); }
+  @override void initState() { super.initState(); _initializeAudioService(); }
 
   Future<void> _initializeAudioService() async {
     try {
@@ -59,6 +58,7 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
           androidStopForegroundOnPause: true,
         ),
       ).timeout(const Duration(seconds: 10));
+      try { await const MethodChannel('com.example.resonate/media_store').invokeMethod<bool>('requestNotificationPermission'); } catch (_) {}
       if (!mounted) return;
       setState(() => _audioHandler = handler);
     } catch (e) {
@@ -98,10 +98,7 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
         ChangeNotifierProvider(create: (context) => EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer)),
-        ChangeNotifierProvider(create: (context) => AudioEffectsProvider(
-          player: context.read<MusicProvider>().audioPlayer,
-          loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
-        )),
+        ChangeNotifierProvider(create: (context) => AudioEffectsProvider(player: context.read<MusicProvider>().audioPlayer, loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer)),
         ChangeNotifierProvider(create: (context) => CrossfadeProvider(music: context.read<MusicProvider>())),
         ChangeNotifierProvider(create: (context) => PlaybackFeaturesProvider(player: context.read<MusicProvider>().audioPlayer)),
         ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
