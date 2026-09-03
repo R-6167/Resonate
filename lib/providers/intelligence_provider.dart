@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/intelligence_recommendation.dart';
@@ -20,6 +21,7 @@ class IntelligenceProvider extends ChangeNotifier {
   bool _autoDecisionInFlight = false;
   String? _lastRecommendationId;
   DateTime? _sessionStartedAt;
+  Map<String, double> _feedback = <String, double>{};
   List<IntelligenceRecommendation> _recommendations = const [];
 
   IntelligenceProvider({required this.music}) {
@@ -41,6 +43,15 @@ class IntelligenceProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _enabled = prefs.getBool('intelligence_enabled') ?? true;
       _autonomy = (prefs.getInt('intelligence_autonomy') ?? 1).clamp(0, 2);
+      final rawFeedback = prefs.getString('intelligence_feedback');
+      if (rawFeedback != null && rawFeedback.isNotEmpty) {
+        final decoded = jsonDecode(rawFeedback);
+        if (decoded is Map) {
+          _feedback = decoded.map(
+            (key, value) => MapEntry(key.toString(), (value as num).toDouble()),
+          );
+        }
+      }
       if (_enabled) await refreshRecommendations(notify: false);
       notifyListeners();
     } catch (e) {
@@ -73,6 +84,36 @@ class IntelligenceProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Intelligence autonomy save failed: $e');
     }
+    notifyListeners();
+  }
+
+  /// Records a direct user correction to a recommendation without changing
+  /// the listening database. Positive values reinforce; negative values repel.
+  Future<void> rateRecommendation(String songId, bool liked) async {
+    if (songId.trim().isEmpty) return;
+    final previous = _feedback[songId] ?? 0.0;
+    _feedback[songId] = (previous + (liked ? 1.0 : -1.0)).clamp(-3.0, 3.0).toDouble();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('intelligence_feedback', jsonEncode(_feedback));
+    } catch (e) {
+      debugPrint('Intelligence feedback save failed: $e');
+    }
+    await refreshRecommendations(notify: false);
+    notifyListeners();
+  }
+
+  double feedbackFor(String songId) => _feedback[songId] ?? 0.0;
+
+  Future<void> clearRecommendationFeedback() async {
+    _feedback = <String, double>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('intelligence_feedback');
+    } catch (e) {
+      debugPrint('Intelligence feedback reset failed: $e');
+    }
+    await refreshRecommendations(notify: false);
     notifyListeners();
   }
 
@@ -111,7 +152,6 @@ class IntelligenceProvider extends ChangeNotifier {
       await refreshRecommendations(notify: false);
       final next = anticipatedNext;
       if (next == null || next.confidence < .65) return;
-      // Existing user queues are respected. Autopilot only fills the empty end.
       await music.playSong(next.song, queue: [next.song], startIndex: 0);
     } catch (e) {
       debugPrint('Intelligence automatic decision failed: $e');
@@ -157,9 +197,7 @@ class IntelligenceProvider extends ChangeNotifier {
     final total = event.songDurationMs > 0
         ? event.songDurationMs
         : (music.currentDuration?.inMilliseconds ?? 0);
-    final ratio = total <= 0
-        ? 0.0
-        : (duration / total).clamp(0.0, 1.0).toDouble();
+    final ratio = total <= 0 ? 0.0 : (duration / total).clamp(0.0, 1.0).toDouble();
     final updated = ListeningEvent(
       id: event.id,
       songId: event.songId,
@@ -202,9 +240,7 @@ class IntelligenceProvider extends ChangeNotifier {
       if (current != null) {
         for (final row in await _database.getTransitionCounts(current.id)) {
           final id = row['next_song_id']?.toString();
-          if (id != null) {
-            transitions[id] = (row['transition_count'] as num?)?.toInt() ?? 0;
-          }
+          if (id != null) transitions[id] = (row['transition_count'] as num?)?.toInt() ?? 0;
         }
       }
 
@@ -219,7 +255,6 @@ class IntelligenceProvider extends ChangeNotifier {
       final currentHourBucket = now.hour ~/ 3;
       var recentRank = 0;
 
-      // Build a small, explainable session model from local history.
       for (final e in events) {
         plays[e.songId] = (plays[e.songId] ?? 0) + 1;
         if (e.completed) completes[e.songId] = (completes[e.songId] ?? 0) + 1;
@@ -231,12 +266,9 @@ class IntelligenceProvider extends ChangeNotifier {
               (e.completed ? 1 : e.skipped ? -.8 : e.completionRatio * .5);
         }
         final age = now.difference(e.startedAt).inHours;
-        if (age < 48) {
-          final bucket = e.startedAt.hour ~/ 3;
-          if (bucket == currentHourBucket) {
-            songHourAffinity[e.songId] = (songHourAffinity[e.songId] ?? 0) +
-                (e.completed ? 1.0 : e.completionRatio * .5);
-          }
+        if (age < 48 && e.startedAt.hour ~/ 3 == currentHourBucket) {
+          songHourAffinity[e.songId] = (songHourAffinity[e.songId] ?? 0) +
+              (e.completed ? 1.0 : e.completionRatio * .5);
         }
         if (recentRank < 12) recentSongIds.add(e.songId);
         recentRank++;
@@ -253,32 +285,36 @@ class IntelligenceProvider extends ChangeNotifier {
         final artist = artistAffinity[song.artist.trim()] ?? 0;
         final timeAffinity = songHourAffinity[song.id] ?? 0;
         final recencyPenalty = recentSongIds.contains(song.id) ? 1.5 : 0.0;
+        final feedback = _feedback[song.id] ?? 0.0;
         final sameArtistBoost = current != null &&
                 song.artist.trim().isNotEmpty &&
                 song.artist.trim().toLowerCase() == current.artist.trim().toLowerCase()
             ? .75
             : 0.0;
 
-        final score =
-            t * 5.0 +
+        final score = t * 5.0 +
             completion * 4.0 +
             artist * 1.5 +
             timeAffinity * 1.25 +
+            feedback * 3.0 +
             sameArtistBoost -
             s * 2.0 -
             recencyPenalty;
 
-        final evidence =
-            t * 2.0 +
+        final evidence = t * 2.0 +
             completion * 2.0 +
             artist.abs() +
             timeAffinity +
+            feedback.abs() +
             (p > 0 ? 1.0 : 0.0);
-        final confidence =
-            (evidence / (evidence + 4.0)).clamp(.08, .97).toDouble();
+        final confidence = (evidence / (evidence + 4.0)).clamp(.08, .97).toDouble();
 
         String reason;
-        if (t > 0) {
+        if (feedback >= 1) {
+          reason = 'You told me you like this.';
+        } else if (feedback <= -1) {
+          reason = 'Kept low because you previously passed on it.';
+        } else if (t > 0) {
           reason = 'You often move to this after ${current?.title ?? 'your current track'}.';
         } else if (timeAffinity > 0) {
           reason = 'You tend to enjoy this around this time.';
@@ -295,11 +331,7 @@ class IntelligenceProvider extends ChangeNotifier {
           score: score,
           confidence: confidence,
           reason: reason,
-          decision: _autonomy == 2
-              ? 'autopilot'
-              : _autonomy == 1
-                  ? 'assist'
-                  : 'suggest',
+          decision: _autonomy == 2 ? 'autopilot' : _autonomy == 1 ? 'assist' : 'suggest',
         ));
       }
 
