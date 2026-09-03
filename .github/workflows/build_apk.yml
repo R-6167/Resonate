@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - debug-splash-hang
+      - Audio_Update
   workflow_dispatch:
 
 concurrency:
