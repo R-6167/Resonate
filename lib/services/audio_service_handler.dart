@@ -45,7 +45,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   MediaItem songToMediaItem(Song song) {
-    final art = song.albumArt.trim();
+    final art = song.albumArt?.trim() ?? '';
     Uri? artUri;
     if (art.isNotEmpty) {
       if (art.startsWith('content://') || art.startsWith('file://') || art.startsWith('http://') || art.startsWith('https://')) artUri = Uri.parse(art);
