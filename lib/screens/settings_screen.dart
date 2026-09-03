@@ -12,76 +12,99 @@ import 'about_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({Key? key}) : super(key: key);
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Settings')), body: ListView(padding: const EdgeInsets.only(bottom: 32), children: [
-    _header(context, 'Playback', 'How Resonate behaves while you listen', Icons.play_circle_outline),
-    _item(context, 'Playback behaviour', 'Play, pause, next and previous', Icons.play_arrow_rounded, () => _info(context, 'Playback behaviour', 'Playback remains controlled by the player. Bluetooth, notifications and Intelligence all route commands through the same playback engine.')),
-    _item(context, 'Queue behaviour', 'Queue, anticipation and next-track handling', Icons.queue_music_rounded, () => _info(context, 'Queue behaviour', 'Your current queue remains authoritative. Intelligence can prepare additions in Autopilot, but never becomes the owner of playback.')),
-    _item(context, 'Crossfade', 'Duration, curve and transition behavior', Icons.compare_arrows, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrossfadeScreen()))),
-    _item(context, 'Gapless playback', 'Continuous playback between queued tracks', Icons.all_inclusive, () => _info(context, 'Gapless playback', 'Resonate prepares the next local source in advance where possible so queued tracks can continue without an intentional gap.')),
-    _item(context, 'Replay gain / loudness', 'Loudness enhancement and level control', Icons.volume_up_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen()))),
-    _item(context, 'Volume behaviour', 'Master volume and output level', Icons.volume_down_rounded, () => _info(context, 'Volume behaviour', 'Resonate keeps the app volume synchronized with its active playback deck.')),
-    _item(context, 'Resume behaviour', 'Resume after interruption or reopening', Icons.restore_rounded, () => _info(context, 'Resume behaviour', 'Audio interruptions and becoming-noisy events pause playback safely.')),
-    _divider(),
-    _header(context, 'Audio', 'Sound shaping and output', Icons.equalizer_rounded),
-    _item(context, 'Equalizer', 'Main and per-song sound profiles', Icons.equalizer, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()))),
-    _item(context, 'Per-song EQ', 'Keep individual song profiles', Icons.music_note_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()))),
-    _item(context, 'Effects', 'Bass, reverb and processing', Icons.tune, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen()))),
-    _item(context, 'Audio output', 'Android audio session and device routing', Icons.speaker_rounded, () => _info(context, 'Audio output', 'Android manages the physical output route. Resonate configures a music audio session and follows device changes.')),
-    _item(context, 'Audio focus', 'Handle calls, navigation and interruptions', Icons.hearing_rounded, () => _info(context, 'Audio focus', 'Audio focus and becoming-noisy events are handled through the Android audio session.')),
-    _divider(),
-    _header(context, 'Intelligence', 'Your local companion and its authority', Icons.auto_awesome),
-    Consumer<IntelligenceProvider>(builder: (_, intelligence, __) => _item(context, 'Master switch & Authority', intelligence.isEnabled ? intelligence.autonomyLabel : 'Off', Icons.auto_awesome, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen())))),
-    _item(context, 'Suggestions', 'Recommendations without taking control', Icons.lightbulb_outline, () => _info(context, 'Suggestions', 'Intelligence recommends local songs with a reason and confidence score.')),
-    _item(context, 'Automatic queue', 'Prepare likely next tracks before silence', Icons.playlist_add_rounded, () => _info(context, 'Automatic queue', 'Autopilot can prepare high-confidence recommendations near the end of a track so playback can continue smoothly.')),
-    _item(context, 'Exploration', 'Balance familiar choices with discovery', Icons.explore_outlined, () => _info(context, 'Exploration', 'Exploration stays local and confidence-aware as the recommendation graph matures.')),
-    _item(context, 'Explanations', 'See why a recommendation was chosen', Icons.question_mark_rounded, () => _info(context, 'Explanations', 'Current predictions carry a human-readable reason and confidence instead of hiding the decision.')),
-    _item(context, 'Learning', 'Listening memory and feedback', Icons.insights_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen()))),
-    _item(context, 'Session intelligence', 'Learn the direction of the current listening session', Icons.timeline_rounded, () => _info(context, 'Session intelligence', 'The session layer uses recent listening behavior to understand the direction of the current session.')),
-    _item(context, 'Reset Intelligence', 'Clear recommendation feedback and relearn', Icons.restart_alt_rounded, () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback())),
-    _divider(),
-    _header(context, 'Bluetooth & Devices', 'Media buttons and connection behavior', Icons.bluetooth_audio_rounded),
-    Consumer<BluetoothProvider>(builder: (_, bt, __) => _item(context, 'Media buttons', bt.getButtonBehaviorDescription(bt.settings.mediaButtonBehavior), Icons.headset_rounded, () => _showBluetooth(context))),
-    _item(context, 'Connection behaviour', 'Respond to connected audio devices', Icons.devices_other_rounded, () => _showBluetooth(context)),
-    _item(context, 'Resume on connect', 'Continue when a device connects', Icons.play_arrow_rounded, () => _showBluetooth(context)),
-    _item(context, 'Pause on disconnect', 'Pause when an audio route disappears', Icons.pause_circle_outline, () => _showBluetooth(context)),
-    _item(context, 'Device behaviour', 'Android audio route and media controls', Icons.settings_input_component_rounded, () => _showBluetooth(context)),
-    _divider(),
-    _header(context, 'Library', 'What Resonate can see locally', Icons.library_music_rounded),
-    _item(context, 'Scan', 'Find local audio files', Icons.search_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()))),
-    _item(context, 'Folders', 'Choose scan locations', Icons.folder_open_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()))),
-    _item(context, 'Metadata', 'Song and artist information', Icons.text_fields_rounded, () => _info(context, 'Metadata', 'Library metadata remains local to the device.')),
-    _item(context, 'Artwork', 'Album artwork handling', Icons.image_outlined, () => _info(context, 'Artwork', 'Artwork is kept as local media metadata and artwork paths where available.')),
-    _item(context, 'Library exclusions', 'Keep folders out of scanning', Icons.block_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()))),
-    _divider(),
-    _header(context, 'Appearance', 'Make Resonate feel like yours', Icons.palette_outlined),
-    Consumer<ThemeProvider>(builder: (_, theme, __) => Column(children: [SwitchListTile.adaptive(title: const Text('Dark theme'), subtitle: Text(theme.isDarkMode ? 'Dark interface' : 'Light interface'), value: theme.isDarkMode, onChanged: (_) => theme.toggleTheme()), SwitchListTile.adaptive(title: const Text('Use system theme'), subtitle: const Text('Follow Android light/dark preference'), value: theme.useSystemTheme, onChanged: theme.toggleSystemTheme)])),
-    _item(context, 'Accent', 'Resonate violet accent', Icons.color_lens_outlined, () => _info(context, 'Accent', 'Resonate uses a violet accent with layered surfaces and theme-aware contrast.')),
-    _item(context, 'Player layout', 'Player presentation and controls', Icons.dashboard_customize_outlined, () => _info(context, 'Player layout', 'Player layout remains stable while Intelligence features are layered around it.')),
-    _item(context, 'Artwork style', 'Album-art presentation', Icons.album_outlined, () => _info(context, 'Artwork style', 'Artwork styling remains compatible with the existing player.')),
-    _item(context, 'Animations', 'Motion and transition feel', Icons.animation_rounded, () => _info(context, 'Animations', 'Resonate keeps the polished player action animation and lightweight UI motion.')),
-    _item(context, 'Compact/full controls', 'Choose how much playback UI is visible', Icons.view_agenda_outlined, () => _info(context, 'Compact/full controls', 'Control density remains part of the player presentation layer.')),
-    _divider(),
-    _header(context, 'Privacy', 'Your listening data stays yours', Icons.lock_outline_rounded),
-    _item(context, 'Local-only learning', 'No cloud recommendation profile required', Icons.phone_android_rounded, () => _info(context, 'Local-only learning', 'Intelligence uses local listening events and on-device recommendation logic.')),
-    _item(context, 'Listening history', 'Playback events used for learning', Icons.history_rounded, () => _info(context, 'Listening history', 'Listening events include completion, skips and transitions so the companion can learn your habits.')),
-    _item(context, 'Export Intelligence data', 'Export learned signals', Icons.ios_share_rounded, () => _info(context, 'Export Intelligence data', 'Export is planned as a portable local data feature.')),
-    _item(context, 'Delete Intelligence history', 'Erase listening-learning history', Icons.delete_outline_rounded, () => _confirm(context, 'Delete Intelligence history', 'Clear recommendation feedback now?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback())),
-    _item(context, 'Reset everything', 'Return Resonate to a clean state', Icons.delete_forever_rounded, () => _info(context, 'Reset everything', 'A full reset will be added only when every persistent provider has a safe reset path.')),
-    _divider(),
-    _header(context, 'About', 'Resonate • Aetherion', Icons.info_outline_rounded),
-    _item(context, 'About & How to use', 'Guide, privacy notes and copyright', Icons.menu_book_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()))),
-  ]));
 
-  Widget _header(BuildContext c, String title, String subtitle, IconData icon) => Padding(padding: const EdgeInsets.fromLTRB(18, 22, 18, 8), child: Row(children: [Icon(icon, color: Theme.of(c).colorScheme.primary), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(c).textTheme.titleLarge), Text(subtitle, style: Theme.of(c).textTheme.bodySmall)]))]));
-  Widget _item(BuildContext c, String title, String subtitle, IconData icon, VoidCallback onTap) => ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(subtitle, style: Theme.of(c).textTheme.bodyMedium), trailing: const Icon(Icons.chevron_right), onTap: onTap);
-  Widget _divider() => const Divider(indent: 18, endIndent: 18);
-  void _info(BuildContext c, String title, String text) => showModalBottomSheet<void>(context: c, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(22, 8, 22, 28), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(sheetContext).textTheme.headlineSmall), const SizedBox(height: 12), Text(text, style: Theme.of(sheetContext).textTheme.bodyLarge), const SizedBox(height: 20)]))));
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Settings')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 32),
+      children: [
+        _category(context, 'Playback', 'How Resonate behaves while you listen', Icons.play_circle_outline, [
+          _entry('Playback behaviour', 'Play, pause, next and previous', Icons.play_arrow_rounded, () => _info(context, 'Playback behaviour', 'Playback remains controlled by the player. Bluetooth, notifications and Intelligence route commands through the same playback engine.')),
+          _entry('Queue behaviour', 'Queue, anticipation and next-track handling', Icons.queue_music_rounded, () => _info(context, 'Queue behaviour', 'Your current queue remains authoritative. Intelligence can prepare additions, but never becomes the owner of playback.')),
+          _entry('Crossfade', 'Duration, curve and transition behavior', Icons.compare_arrows, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CrossfadeScreen()))),
+          _entry('Gapless playback', 'Continuous playback between queued tracks', Icons.all_inclusive, () => _info(context, 'Gapless playback', 'Resonate prepares local audio as safely as possible for continuous playback.')),
+          _entry('Replay gain / loudness', 'Loudness enhancement and level control', Icons.volume_up_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen()))),
+          _entry('Volume behaviour', 'Master volume and output level', Icons.volume_down_rounded, () => _info(context, 'Volume behaviour', 'Resonate keeps the app volume synchronized with its active playback deck.')),
+          _entry('Resume behaviour', 'Resume after interruption or reopening', Icons.restore_rounded, () => _info(context, 'Resume behaviour', 'Audio interruptions and becoming-noisy events are handled safely through the audio session.')),
+        ]),
+        _category(context, 'Audio', 'Sound shaping and output', Icons.equalizer_rounded, [
+          _entry('Equalizer', 'Main sound profile', Icons.equalizer, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()))),
+          _entry('Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen()))),
+          _entry('Effects', 'Bass, reverb and processing', Icons.tune, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen()))),
+          _entry('Audio output', 'Android audio session and device routing', Icons.speaker_rounded, () => _info(context, 'Audio output', 'Android manages the physical output route. Resonate follows the active device route.')),
+          _entry('Audio focus', 'Calls, navigation and interruptions', Icons.hearing_rounded, () => _info(context, 'Audio focus', 'Audio focus and becoming-noisy events are handled through the Android audio session.')),
+        ]),
+        _category(context, 'Intelligence', 'Your local companion and its authority', Icons.auto_awesome, [
+          _entry('Master switch & Authority', 'Suggestions, Assist or Autopilot', Icons.auto_awesome, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen()))),
+          _entry('Suggestions', 'Recommendations without taking control', Icons.lightbulb_outline, () => _info(context, 'Suggestions', 'Intelligence recommends local songs with a reason and confidence score.')),
+          _entry('Automatic queue', 'Prepare likely next tracks', Icons.playlist_add_rounded, () => _info(context, 'Automatic queue', 'Autopilot can prepare high-confidence recommendations near the end of a track.')),
+          _entry('Exploration', 'Balance familiar choices with discovery', Icons.explore_outlined, () => _info(context, 'Exploration', 'Exploration stays local and confidence-aware as the recommendation graph matures.')),
+          _entry('Explanations', 'See why a recommendation was chosen', Icons.question_mark_rounded, () => _info(context, 'Explanations', 'Predictions carry a human-readable reason and confidence.')),
+          _entry('Learning', 'Listening memory and feedback', Icons.insights_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen()))),
+          _entry('Session intelligence', 'Understand the direction of the current session', Icons.timeline_rounded, () => _info(context, 'Session intelligence', 'The session layer uses recent listening behavior to understand the direction of the current session.')),
+          _entry('Reset Intelligence', 'Clear recommendation feedback and relearn', Icons.restart_alt_rounded, () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback())),
+        ]),
+        _category(context, 'Bluetooth & Devices', 'Media buttons and connection behavior', Icons.bluetooth_audio_rounded, [
+          _entry('Media buttons', 'Headset and Bluetooth button behavior', Icons.headset_rounded, () => _showBluetooth(context)),
+          _entry('Connection behaviour', 'Respond to connected audio devices', Icons.devices_other_rounded, () => _showBluetooth(context)),
+          _entry('Resume on connect', 'Continue when a device connects', Icons.play_arrow_rounded, () => _showBluetooth(context)),
+          _entry('Pause on disconnect', 'Pause when an audio route disappears', Icons.pause_circle_outline, () => _showBluetooth(context)),
+          _entry('Device behaviour', 'Android route and media controls', Icons.settings_input_component_rounded, () => _showBluetooth(context)),
+        ]),
+        _category(context, 'Library', 'Find, scan and manage your local music', Icons.library_music_rounded, [
+          _entry('Scan & folders', 'Scan now or choose folders to include', Icons.folder_open_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()))),
+          _entry('Metadata', 'Song and artist information', Icons.text_fields_rounded, () => _info(context, 'Metadata', 'Library metadata remains local to the device.')),
+          _entry('Artwork', 'Album artwork handling', Icons.image_outlined, () => _info(context, 'Artwork', 'Artwork is kept as local media metadata where available.')),
+          _entry('Library exclusions', 'Keep folders out of scanning', Icons.block_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()))),
+        ]),
+        _category(context, 'Appearance', 'Make Resonate feel like yours', Icons.palette_outlined, [
+          _entry('Theme', 'Light, dark and system appearance', Icons.brightness_6_outlined, () => _showTheme(context)),
+          _entry('Accent', 'Resonate violet accent', Icons.color_lens_outlined, () => _info(context, 'Accent', 'Resonate currently uses a violet accent with theme-aware contrast.')),
+          _entry('Player layout', 'Player presentation and controls', Icons.dashboard_customize_outlined, () => _info(context, 'Player layout', 'Player layout remains stable while Intelligence features are layered around it.')),
+          _entry('Artwork style', 'Album-art presentation', Icons.album_outlined, () => _info(context, 'Artwork style', 'Artwork styling remains compatible with the existing player.')),
+          _entry('Animations', 'Motion and transition feel', Icons.animation_rounded, () => _info(context, 'Animations', 'Resonate keeps lightweight UI motion and the polished player action animation.')),
+          _entry('Compact/full controls', 'Playback control density', Icons.view_agenda_outlined, () => _info(context, 'Compact/full controls', 'Control density remains part of the player presentation layer.')),
+        ]),
+        _category(context, 'Privacy', 'Keep your listening data yours', Icons.lock_outline_rounded, [
+          _entry('Local-only learning', 'No cloud recommendation profile required', Icons.phone_android_rounded, () => _info(context, 'Local-only learning', 'Intelligence uses local listening events and on-device recommendation logic.')),
+          _entry('Listening history', 'Playback events used for learning', Icons.history_rounded, () => _info(context, 'Listening history', 'Listening events include completion, skips and transitions.')),
+          _entry('Export Intelligence data', 'Export learned signals', Icons.ios_share_rounded, () => _info(context, 'Export Intelligence data', 'Portable local export is planned.')),
+          _entry('Delete Intelligence history', 'Erase listening-learning history', Icons.delete_outline_rounded, () => _confirm(context, 'Delete Intelligence history', 'Clear recommendation feedback now?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback())),
+          _entry('Reset everything', 'Return Resonate to a clean state', Icons.delete_forever_rounded, () => _info(context, 'Reset everything', 'A full reset will be added when every persistent provider has a safe reset path.')),
+        ]),
+        _category(context, 'About', 'Resonate • Aetherion', Icons.info_outline_rounded, [
+          _entry('About & How to use', 'Guide, privacy notes and copyright', Icons.menu_book_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()))),
+        ]),
+      ],
+    ),
+  );
+
+  static _SettingEntry _entry(String title, String subtitle, IconData icon, VoidCallback onTap) => _SettingEntry(title, subtitle, icon, onTap);
+
+  Widget _category(BuildContext context, String title, String subtitle, IconData icon, List<_SettingEntry> entries) => Card(
+    margin: const EdgeInsets.only(bottom: 10),
+    child: ExpansionTile(
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+      title: Text(title, style: Theme.of(context).textTheme.titleMedium),
+      subtitle: Text(subtitle),
+      children: [for (final entry in entries) ListTile(contentPadding: const EdgeInsets.only(left: 24, right: 16), leading: Icon(entry.icon), title: Text(entry.title), subtitle: Text(entry.subtitle), trailing: const Icon(Icons.chevron_right), onTap: entry.onTap)],
+    ),
+  );
+
+  Future<void> _showTheme(BuildContext context) async {
+    await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (sheet) => Consumer<ThemeProvider>(builder: (_, theme, __) => SafeArea(child: ListView(shrinkWrap: true, children: [RadioListTile<String>(title: const Text('System'), value: 'system', groupValue: theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light'), onChanged: (_) => theme.toggleSystemTheme()), RadioListTile<String>(title: const Text('Light'), value: 'light', groupValue: theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light'), onChanged: (_) { if (theme.useSystemTheme) theme.toggleSystemTheme(); if (theme.isDarkMode) theme.toggleTheme(); }), RadioListTile<String>(title: const Text('Dark'), value: 'dark', groupValue: theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light'), onChanged: (_) { if (theme.useSystemTheme) theme.toggleSystemTheme(); if (!theme.isDarkMode) theme.toggleTheme(); })]))));
+  }
+
+  void _info(BuildContext c, String title, String text) => showModalBottomSheet<void>(context: c, showDragHandle: true, builder: (sheetContext) => SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(22, 8, 22, 28), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(sheetContext).textTheme.headlineSmall), const SizedBox(height: 12), Text(text, style: Theme.of(sheetContext).textTheme.bodyLarge)]))));
   Future<void> _confirm(BuildContext c, String title, String text, Future<void> Function() action) async { final yes = await showDialog<bool>(context: c, builder: (dialogContext) => AlertDialog(title: Text(title), content: Text(text), actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Continue'))])); if (yes == true) await action(); }
   void _showBluetooth(BuildContext c) => showModalBottomSheet<void>(context: c, showDragHandle: true, builder: (_) => const _BluetoothControls());
 }
 
+class _SettingEntry { final String title, subtitle; final IconData icon; final VoidCallback onTap; const _SettingEntry(this.title, this.subtitle, this.icon, this.onTap); }
+
 class _BluetoothControls extends StatelessWidget {
   const _BluetoothControls();
-  @override Widget build(BuildContext context) => Consumer<BluetoothProvider>(builder: (_, bt, __) => SafeArea(child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: 20), children: [ListTile(title: Text('Bluetooth & media controls', style: Theme.of(context).textTheme.titleLarge), subtitle: Text('Android owns the Bluetooth radio. Resonate handles playback and media commands from connected audio devices.', style: Theme.of(context).textTheme.bodyMedium)), SwitchListTile(title: const Text('Bluetooth controls'), value: bt.isEnabled, onChanged: bt.toggleBluetooth), SwitchListTile(title: const Text('Playback notification'), value: bt.showNotification, onChanged: bt.toggleNotification), SwitchListTile(title: const Text('Resume when device connects'), value: bt.resumeOnConnect, onChanged: bt.toggleResumeOnConnect), SwitchListTile(title: const Text('Pause when device disconnects'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect), ListTile(title: const Text('Media button behavior'), subtitle: Text(bt.getButtonBehaviorDescription(bt.settings.mediaButtonBehavior), style: Theme.of(context).textTheme.bodyMedium), trailing: const Icon(Icons.chevron_right), onTap: () => _chooseBehavior(context, bt))])));
+  @override Widget build(BuildContext context) => Consumer<BluetoothProvider>(builder: (_, bt, __) => SafeArea(child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: 20), children: [ListTile(title: Text('Bluetooth & media controls', style: Theme.of(context).textTheme.titleLarge), subtitle: Text('Android owns the Bluetooth radio. Resonate handles playback and media commands from connected audio devices.')), SwitchListTile(title: const Text('Bluetooth controls'), value: bt.isEnabled, onChanged: bt.toggleBluetooth), SwitchListTile(title: const Text('Playback notification'), value: bt.showNotification, onChanged: bt.toggleNotification), SwitchListTile(title: const Text('Resume when device connects'), value: bt.resumeOnConnect, onChanged: bt.toggleResumeOnConnect), SwitchListTile(title: const Text('Pause when device disconnects'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect), ListTile(title: const Text('Media button behavior'), subtitle: Text(bt.getButtonBehaviorDescription(bt.settings.mediaButtonBehavior)), trailing: const Icon(Icons.chevron_right), onTap: () => _chooseBehavior(context, bt))])));
   Future<void> _chooseBehavior(BuildContext context, BluetoothProvider bt) async { final selected = await showDialog<int>(context: context, builder: (dialogContext) => SimpleDialog(title: const Text('Media button behavior'), children: [for (final value in [0, 1, 2]) SimpleDialogOption(onPressed: () => Navigator.pop(dialogContext, value), child: Text(bt.getButtonBehaviorDescription(value)))])); if (selected != null) await bt.setMediaButtonBehavior(selected); }
 }
