@@ -6,8 +6,6 @@ import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 
 class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
-  // MusicProvider owns the real playback engines. Keep the fallback player lazy
-  // so AudioService initialization does not create a competing native player.
   AudioPlayer? _fallbackPlayer;
   AudioPlayer get _player => _fallbackPlayer ??= AudioPlayer();
   final List<MediaItem> _items = [];
@@ -201,7 +199,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToNext() async {
     if (_onNext != null) return _onNext!();
     final index = _player.currentIndex;
-    final sequence = _player.sequence;
+    final sequence = _player.sequence ?? const <IndexedAudioSource>[];
     if (index == null || sequence.length <= 1 || index >= sequence.length - 1) {
       return;
     }
@@ -212,7 +210,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToPrevious() async {
     if (_onPrevious != null) return _onPrevious!();
     final index = _player.currentIndex;
-    final sequence = _player.sequence;
+    final sequence = _player.sequence ?? const <IndexedAudioSource>[];
     if (index == null || sequence.isEmpty || index <= 0) return;
     await _player.seekToPrevious();
   }
@@ -222,7 +220,6 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     if (filePath == null || filePath.isEmpty) return;
     _items.add(item);
     queue.add(List.unmodifiable(_items));
-    // The fallback path is only used when MusicProvider has not bound itself.
     await _player.setAudioSource(AudioSource.uri(_audioUri(filePath), tag: item));
     mediaItem.add(item);
   }
