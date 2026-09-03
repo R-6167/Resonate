@@ -15,29 +15,18 @@ import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
 
 ThemeData _theme(Brightness brightness) {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF315B9A),
-    brightness: brightness,
-  );
+  final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF315B9A), brightness: brightness);
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
-    textTheme: GoogleFonts.interTextTheme(
-      ThemeData(brightness: brightness).textTheme,
-    ),
+    textTheme: GoogleFonts.interTextTheme(ThemeData(brightness: brightness).textTheme),
     cardTheme: CardThemeData(
       margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: scheme.outlineVariant.withOpacity(.55)),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: scheme.outlineVariant.withOpacity(.55))),
       elevation: 0,
     ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-      filled: true,
-    ),
+    inputDecorationTheme: InputDecorationTheme(border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)), filled: true),
   );
 }
 
@@ -48,7 +37,6 @@ Future<void> main() async {
 
 class ResonateBootstrap extends StatefulWidget {
   const ResonateBootstrap({super.key});
-
   @override
   State<ResonateBootstrap> createState() => _ResonateBootstrapState();
 }
@@ -58,10 +46,7 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
   Object? _startupError;
 
   @override
-  void initState() {
-    super.initState();
-    _initializeAudioService();
-  }
+  void initState() { super.initState(); _initializeAudioService(); }
 
   Future<void> _initializeAudioService() async {
     try {
@@ -74,7 +59,6 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
           androidStopForegroundOnPause: true,
         ),
       ).timeout(const Duration(seconds: 10));
-
       if (!mounted) return;
       setState(() => _audioHandler = handler);
     } catch (e) {
@@ -86,62 +70,25 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
   @override
   Widget build(BuildContext context) {
     final handler = _audioHandler;
-
     if (handler == null) {
       return MaterialApp(
-        title: 'Resonate',
-        debugShowCheckedModeBanner: false,
-        theme: _theme(Brightness.dark),
-        home: Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: _startupError == null
-                  ? const Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 20),
-                        Text('Starting Resonate...'),
-                      ],
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, size: 48),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Audio service could not start.',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Resonate startup timed out or failed.\n$_startupError',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton(
-                          onPressed: () {
-                            setState(() => _startupError = null);
-                            _initializeAudioService();
-                          },
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
+        title: 'Resonate', debugShowCheckedModeBanner: false, theme: _theme(Brightness.dark),
+        home: Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(24), child: _startupError == null
+          ? const Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 20), Text('Starting Resonate...')])
+          : Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.warning_amber_rounded, size: 48), const SizedBox(height: 16),
+              const Text('Audio service could not start.', textAlign: TextAlign.center), const SizedBox(height: 8),
+              Text('Resonate startup timed out or failed.\n$_startupError', textAlign: TextAlign.center), const SizedBox(height: 20),
+              FilledButton(onPressed: () { setState(() => _startupError = null); _initializeAudioService(); }, child: const Text('Retry')),
+            ])))),
       );
     }
-
     return ResonateApp(audioHandler: handler);
   }
 }
 
 class ResonateApp extends StatelessWidget {
   final AudioHandler audioHandler;
-
   const ResonateApp({super.key, required this.audioHandler});
 
   @override
@@ -149,47 +96,24 @@ class ResonateApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(
-          create: (_) => MusicProvider(audioHandler: audioHandler),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => EqualizerProvider(
-            equalizer: context.read<MusicProvider>().equalizer,
-          ),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => AudioEffectsProvider(
-            player: context.read<MusicProvider>().audioPlayer,
-            loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
-          ),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => CrossfadeProvider(
-            player: context.read<MusicProvider>().audioPlayer,
-            onNext: context.read<MusicProvider>().nextSong,
-          ),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => PlaybackFeaturesProvider(
-            player: context.read<MusicProvider>().audioPlayer,
-          ),
-        ),
+        ChangeNotifierProvider(create: (_) => MusicProvider(audioHandler: audioHandler)),
+        ChangeNotifierProvider(create: (context) => EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer)),
+        ChangeNotifierProvider(create: (context) => AudioEffectsProvider(
+          player: context.read<MusicProvider>().audioPlayer,
+          loudnessEnhancer: context.read<MusicProvider>().loudnessEnhancer,
+        )),
+        ChangeNotifierProvider(create: (context) => CrossfadeProvider(music: context.read<MusicProvider>())),
+        ChangeNotifierProvider(create: (context) => PlaybackFeaturesProvider(player: context.read<MusicProvider>().audioPlayer)),
         ChangeNotifierProvider(create: (_) => AudioVisualizationProvider()),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
       ],
       child: Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
-          return MaterialApp(
-            title: 'Resonate',
-            debugShowCheckedModeBanner: false,
-            theme: _theme(Brightness.light),
-            darkTheme: _theme(Brightness.dark),
-            themeMode: themeProvider.isDarkMode
-                ? ThemeMode.dark
-                : ThemeMode.light,
-            home: const HomeScreen(),
-          );
-        },
+        builder: (context, themeProvider, _) => MaterialApp(
+          title: 'Resonate', debugShowCheckedModeBanner: false,
+          theme: _theme(Brightness.light), darkTheme: _theme(Brightness.dark),
+          themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          home: const HomeScreen(),
+        ),
       ),
     );
   }
