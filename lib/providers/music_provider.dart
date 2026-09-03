@@ -81,6 +81,8 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _stopBoth() async {
     try { await _playerA.stop(); } catch (_) {}
     try { await _playerB.stop(); } catch (_) {}
+    try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {}
+    try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {}
     try { await _playerA.setVolume(_volume); } catch (_) {}
     try { await _playerB.setVolume(_volume); } catch (_) {}
   }
@@ -143,8 +145,10 @@ class MusicProvider extends ChangeNotifier {
     final incomingLoud = inactiveLoudnessEnhancer;
     final master = _volume;
     try {
+      await outgoing.setLoopMode(LoopMode.one);
       await incoming.stop();
       await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false);
+      await incoming.setLoopMode(LoopMode.one);
       await incoming.setVolume(0.0);
       await incoming.play();
       final total = milliseconds.clamp(500, 12000);
