@@ -6,6 +6,7 @@ import '../services/audio_effects_bridge.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
   final AudioPlayer? player;
+  final AndroidLoudnessEnhancer? loudnessEnhancer;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
@@ -13,7 +14,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   bool effectsEnabled = true;
   StreamSubscription<int?>? _sessionSubscription;
 
-  AudioEffectsProvider({this.player}) {
+  AudioEffectsProvider({this.player, this.loudnessEnhancer}) {
     _load();
     if (player != null) {
       _sessionSubscription = player!.androidAudioSessionIdStream.listen((sessionId) {
@@ -54,41 +55,26 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   Future<void> setLoudness(double value) async {
     loudness = value.clamp(0.0, 1.0).toDouble();
-    if (player != null) {
-      try {
-        await player!.loudnessEnhancer.setTargetGain(loudness * 6.0);
-        await player!.loudnessEnhancer.setEnabled(effectsEnabled && loudness > 0);
-      } catch (e) {
-        debugPrint('Loudness effect failed: $e');
-      }
-    }
+    await _applyNative();
     await _save();
     notifyListeners();
   }
 
   Future<void> _applyNative() async {
-    if (!effectsEnabled) {
-      await AudioEffectsBridge.setBassBoost(0);
-      await AudioEffectsBridge.setVirtualizer(0);
-      await AudioEffectsBridge.setReverb(0);
-      if (player != null) {
-        try { await player!.loudnessEnhancer.setEnabled(false); } catch (_) {}
-      }
-      return;
-    }
+    final enabled = effectsEnabled;
 
     try {
-      await AudioEffectsBridge.setBassBoost(bassBoost);
-      await AudioEffectsBridge.setVirtualizer(virtualizer);
-      await AudioEffectsBridge.setReverb(reverb);
+      await AudioEffectsBridge.setBassBoost(enabled ? bassBoost : 0.0);
+      await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
+      await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
     } catch (e) {
       debugPrint('Native audio effects failed: $e');
     }
 
-    if (player != null) {
+    if (loudnessEnhancer != null) {
       try {
-        await player!.loudnessEnhancer.setTargetGain(loudness * 6.0);
-        await player!.loudnessEnhancer.setEnabled(loudness > 0);
+        await loudnessEnhancer!.setTargetGain(enabled ? loudness * 600.0 : 0.0);
+        await loudnessEnhancer!.setEnabled(enabled && loudness > 0);
       } catch (e) {
         debugPrint('Loudness effect failed: $e');
       }
