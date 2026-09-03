@@ -30,9 +30,13 @@ class CrossfadeProvider extends ChangeNotifier {
   Future<void> _performTransition() async {
     if (_transitionRunning) return;
     _transitionRunning = true;
-    try { await music.performTrueCrossfade(milliseconds: duration.round()); }
-    catch (e) { debugPrint('True crossfade transition failed: $e'); }
-    finally { _transitionRunning = false; }
+    try {
+      await music.performTrueCrossfade(milliseconds: duration.round(), fadeType: fadeType);
+    } catch (e) {
+      debugPrint('True crossfade transition failed: $e');
+    } finally {
+      _transitionRunning = false;
+    }
   }
 
   Future<void> setDuration(double value) async {
@@ -84,6 +88,7 @@ class CrossfadeProvider extends ChangeNotifier {
       isEnabled = prefs.getBool('crossfade_enabled') ?? false;
       duration = prefs.getDouble('crossfade_duration') ?? 0.0;
       fadeType = prefs.getString('crossfade_fade_type') ?? 'linear';
+      if (!['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(fadeType)) fadeType = 'linear';
       await _syncLoopMode();
       notifyListeners();
     } catch (e) { debugPrint('Crossfade settings load failed: $e'); }
