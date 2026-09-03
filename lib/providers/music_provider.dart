@@ -6,7 +6,10 @@ import '../models/song.dart';
 
 class MusicProvider extends ChangeNotifier {
   final AudioHandler? audioHandler;
-  final AudioPlayer audioPlayer = AudioPlayer();
+
+  late final AndroidEqualizer equalizer;
+  late final AndroidLoudnessEnhancer loudnessEnhancer;
+  late final AudioPlayer audioPlayer;
 
   Song? currentSong;
   bool isPlaying = false;
@@ -24,6 +27,13 @@ class MusicProvider extends ChangeNotifier {
   double get volume => _volume;
 
   MusicProvider({this.audioHandler}) {
+    equalizer = AndroidEqualizer();
+    loudnessEnhancer = AndroidLoudnessEnhancer();
+    audioPlayer = AudioPlayer(
+      audioPipeline: AudioPipeline(
+        androidAudioEffects: [equalizer, loudnessEnhancer],
+      ),
+    );
     _initialize();
   }
 
@@ -93,9 +103,6 @@ class MusicProvider extends ChangeNotifier {
           ? startIndex.clamp(0, _queue.length - 1)
           : 0;
 
-      // Use the in-process just_audio player for the actual file playback.
-      // This avoids the AudioService bridge being able to crash the Flutter UI
-      // when a MediaStore content:// URI is selected.
       if (_queue.length > 1) {
         final sources = _queue
             .where((item) => item.filePath.trim().isNotEmpty)
@@ -117,6 +124,11 @@ class MusicProvider extends ChangeNotifier {
           AudioSource.uri(_audioUri(path), tag: song),
         );
       }
+
+      // Effects are attached to the player pipeline. They are harmless at
+      // zero gain and can then be adjusted live from the settings screens.
+      await equalizer.setEnabled(true);
+      await loudnessEnhancer.setEnabled(true);
 
       await audioPlayer.play();
       isPlaying = true;
