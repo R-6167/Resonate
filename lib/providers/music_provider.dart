@@ -70,10 +70,8 @@ class MusicProvider extends ChangeNotifier {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
       _interruptionSubscription = session.interruptionEventStream.listen((event) {
-        if (event.begin) {
-          if (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck) {
-            unawaited(pause());
-          }
+        if (event.begin && (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck)) {
+          unawaited(pause());
         }
       });
       _noisySubscription = session.becomingNoisyEventStream.listen((_) {
@@ -87,13 +85,7 @@ class MusicProvider extends ChangeNotifier {
   void _publishServiceState() {
     final handler = audioHandler;
     if (handler is AudioServiceHandler) {
-      handler.publishPlayback(
-        song: currentSong,
-        playing: isPlaying,
-        position: currentPosition,
-        duration: currentDuration,
-        speed: 1.0,
-      );
+      handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0);
     }
   }
 
@@ -105,17 +97,36 @@ class MusicProvider extends ChangeNotifier {
     final player = audioPlayer;
     _playerStateSubscription = player.playerStateStream.listen((state) {
       final playing = state.playing && state.processingState != ProcessingState.completed;
-      if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
-      if (state.processingState == ProcessingState.completed) { isPlaying = false; notifyListeners(); _publishServiceState(); }
+      if (isPlaying != playing) {
+        isPlaying = playing;
+        notifyListeners();
+        _publishServiceState();
+      }
+      if (state.processingState == ProcessingState.completed) {
+        isPlaying = false;
+        notifyListeners();
+        _publishServiceState();
+      }
     });
     _positionSubscription = player.positionStream.listen((position) {
-      if (currentPosition != position) { currentPosition = position; notifyListeners(); _publishServiceState(); }
+      if (currentPosition != position) {
+        currentPosition = position;
+        notifyListeners();
+        _publishServiceState();
+      }
     });
     _durationSubscription = player.durationStream.listen((duration) {
-      if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); }
+      if (duration != null && currentDuration != duration) {
+        currentDuration = duration;
+        notifyListeners();
+        _publishServiceState();
+      }
     });
     _volumeSubscription = player.volumeStream.listen((value) {
-      if (_volume != value) { _volume = value; notifyListeners(); }
+      if (_volume != value) {
+        _volume = value;
+        notifyListeners();
+      }
     });
   }
 
@@ -157,16 +168,12 @@ class MusicProvider extends ChangeNotifier {
       _bindActivePlayerStreams();
       notifyListeners();
 
-      if (_queue.length > 1) {
-        final sources = _queue.where((s) => s.filePath.trim().isNotEmpty).map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s)).toList();
-        if (sources.isEmpty) return false;
-        await audioPlayer.setAudioSource(ConcatenatingAudioSource(children: sources, useLazyPreparation: true), initialIndex: _queueIndex.clamp(0, sources.length - 1));
-        await equalizer.setEnabled(true);
-        await loudnessEnhancer.setEnabled(true);
-        await audioPlayer.setVolume(_volume);
-      } else {
-        await _loadSingle(audioPlayer, equalizer, loudnessEnhancer, song);
-      }
+      final sources = _queue.where((s) => s.filePath.trim().isNotEmpty).map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s)).toList();
+      if (sources.isEmpty) return false;
+      await audioPlayer.setAudioSource(ConcatenatingAudioSource(children: sources, useLazyPreparation: true), initialIndex: _queueIndex.clamp(0, sources.length - 1));
+      await equalizer.setEnabled(true);
+      await loudnessEnhancer.setEnabled(true);
+      await audioPlayer.setVolume(_volume);
       await audioPlayer.play();
       isPlaying = true;
       _publishServiceState();
@@ -178,6 +185,41 @@ class MusicProvider extends ChangeNotifier {
       debugPrint('$stack');
       _publishServiceState();
       notifyListeners();
+      return false;
+    }
+  }
+
+  /// Appends songs to the active queue without interrupting playback.
+  /// Intelligence uses this to prepare the next part of a session ahead of time.
+  Future<bool> enqueueSongs(List<Song> songs) async {
+    final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList();
+    if (additions.isEmpty) return false;
+    try {
+      final source = audioPlayer.audioSource;
+      if (source is ConcatenatingAudioSource) {
+        await source.addAll(additions.map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s)).toList());
+      } else if (currentSong != null) {
+        final existing = _queue.isEmpty ? [currentSong!] : _queue;
+        final rebuilt = [...existing, ...additions];
+        final index = _queueIndex.clamp(0, rebuilt.length - 1);
+        final position = audioPlayer.position;
+        final wasPlaying = audioPlayer.playing;
+        await audioPlayer.setAudioSource(
+          ConcatenatingAudioSource(children: rebuilt.map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s)).toList(), useLazyPreparation: true),
+          initialIndex: index,
+          initialPosition: position,
+        );
+        _queue = rebuilt;
+        _queueIndex = index;
+        if (wasPlaying) await audioPlayer.play();
+      } else {
+        return false;
+      }
+      _queue.addAll(additions);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Queue extension failed: $e');
       return false;
     }
   }
