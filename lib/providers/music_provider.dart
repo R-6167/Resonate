@@ -3,6 +3,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
+import '../services/audio_service_handler.dart';
 
 class MusicProvider extends ChangeNotifier {
   final AudioHandler? audioHandler;
@@ -47,7 +48,30 @@ class MusicProvider extends ChangeNotifier {
     _loudnessB = AndroidLoudnessEnhancer();
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
+    if (audioHandler is AudioServiceHandler) {
+      (audioHandler! as AudioServiceHandler).bindPlaybackController(
+        onPlay: () => togglePlayPause(),
+        onPause: pause,
+        onStop: stop,
+        onSeek: seek,
+        onNext: nextSong,
+        onPrevious: previousSong,
+      );
+    }
     _bindActivePlayerStreams();
+  }
+
+  void _publishServiceState() {
+    final handler = audioHandler;
+    if (handler is AudioServiceHandler) {
+      handler.publishPlayback(
+        song: currentSong,
+        playing: isPlaying,
+        position: currentPosition,
+        duration: currentDuration,
+        speed: 1.0,
+      );
+    }
   }
 
   void _bindActivePlayerStreams() {
@@ -58,14 +82,14 @@ class MusicProvider extends ChangeNotifier {
     final player = audioPlayer;
     _playerStateSubscription = player.playerStateStream.listen((state) {
       final playing = state.playing && state.processingState != ProcessingState.completed;
-      if (isPlaying != playing) { isPlaying = playing; notifyListeners(); }
-      if (state.processingState == ProcessingState.completed) { isPlaying = false; notifyListeners(); }
+      if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
+      if (state.processingState == ProcessingState.completed) { isPlaying = false; notifyListeners(); _publishServiceState(); }
     });
     _positionSubscription = player.positionStream.listen((position) {
-      if (currentPosition != position) { currentPosition = position; notifyListeners(); }
+      if (currentPosition != position) { currentPosition = position; notifyListeners(); _publishServiceState(); }
     });
     _durationSubscription = player.durationStream.listen((duration) {
-      if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); }
+      if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); }
     });
     _volumeSubscription = player.volumeStream.listen((value) {
       if (_volume != value) { _volume = value; notifyListeners(); }
@@ -122,18 +146,20 @@ class MusicProvider extends ChangeNotifier {
       }
       await audioPlayer.play();
       isPlaying = true;
+      _publishServiceState();
       notifyListeners();
       return true;
     } catch (e, stack) {
       isPlaying = false;
       debugPrint('Error playing song: $e');
       debugPrint('$stack');
+      _publishServiceState();
       notifyListeners();
       return false;
     }
   }
 
-  Future<bool> performTrueCrossfade({required int milliseconds}) async {
+  Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) async {
     if (!canCrossfadeNext || currentSong == null || !audioPlayer.playing) return false;
     final nextIndex = _queueIndex + 1;
     final nextSong = _queue[nextIndex];
@@ -155,7 +181,13 @@ class MusicProvider extends ChangeNotifier {
       final steps = (total / 50).round().clamp(10, 240);
       for (var i = 1; i <= steps; i++) {
         if (!outgoing.playing) break;
-        final t = i / steps;
+        final linear = i / steps;
+        final t = switch (fadeType) {
+          'ease_in' => linear * linear,
+          'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
+          'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0,
+          _ => linear,
+        };
         await outgoing.setVolume(master * (1.0 - t));
         await incoming.setVolume(master * t);
         await Future<void>.delayed(Duration(milliseconds: (total / steps).round()));
@@ -170,6 +202,7 @@ class MusicProvider extends ChangeNotifier {
       currentPosition = incoming.position;
       isPlaying = incoming.playing;
       _bindActivePlayerStreams();
+      _publishServiceState();
       notifyListeners();
       await outgoing.stop();
       return true;
@@ -193,12 +226,13 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Playback toggle failed: $e'); }
   }
 
-  Future<void> pause() async { try { await audioPlayer.pause(); } catch (_) {} }
+  Future<void> pause() async { try { await audioPlayer.pause(); _publishServiceState(); } catch (_) {} }
 
   Future<void> stop() async {
     await _stopBoth();
     isPlaying = false;
     currentPosition = Duration.zero;
+    _publishServiceState();
     notifyListeners();
   }
 
@@ -217,6 +251,7 @@ class MusicProvider extends ChangeNotifier {
       final duration = audioPlayer.duration ?? currentDuration ?? Duration.zero;
       final safe = Duration(milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds));
       await audioPlayer.seek(safe);
+      _publishServiceState();
     } catch (_) {}
   }
 
