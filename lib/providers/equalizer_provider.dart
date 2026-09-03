@@ -9,13 +9,7 @@ class EqualizerBandState {
   final double maxGain;
   double gain;
 
-  EqualizerBandState({
-    required this.index,
-    required this.centerFrequency,
-    required this.minGain,
-    required this.maxGain,
-    required this.gain,
-  });
+  EqualizerBandState({required this.index, required this.centerFrequency, required this.minGain, required this.maxGain, required this.gain});
 }
 
 class EqualizerProvider extends ChangeNotifier {
@@ -26,11 +20,9 @@ class EqualizerProvider extends ChangeNotifier {
   bool isEnabled = true;
   String preset = 'Flat';
   double preamp = 0.0;
+  String? activeSongId;
 
-  EqualizerProvider({AndroidEqualizer? equalizer})
-      : _androidEqualizer = equalizer {
-    _initialize();
-  }
+  EqualizerProvider({AndroidEqualizer? equalizer}) : _androidEqualizer = equalizer { _initialize(); }
 
   bool get isAvailable => _androidEqualizer != null && bandStates.isNotEmpty;
 
@@ -50,14 +42,11 @@ class EqualizerProvider extends ChangeNotifier {
         for (final band in bandStates) {
           bands[_labelForFrequency(band.centerFrequency)] = band.gain;
         }
-        await _androidEqualizer.setEnabled(true);
       }
-
       final prefs = await SharedPreferences.getInstance();
       isEnabled = prefs.getBool('equalizer_enabled') ?? true;
       preset = prefs.getString('equalizer_preset') ?? 'Flat';
       preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
-
       for (final band in bandStates) {
         final saved = prefs.getDouble('eq_band_${band.index}');
         if (saved != null) {
@@ -65,10 +54,7 @@ class EqualizerProvider extends ChangeNotifier {
           await _setNativeBand(band);
         }
       }
-
-      if (_androidEqualizer != null) {
-        await _androidEqualizer.setEnabled(isEnabled);
-      }
+      await _androidEqualizer?.setEnabled(isEnabled);
       notifyListeners();
     } catch (e) {
       debugPrint('Equalizer initialization failed: $e');
@@ -95,8 +81,9 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setBandGain(int index, double gain) async {
-    final match = bandStates.where((band) => band.index == index).firstOrNull;
-    if (match == null) return;
+    final matches = bandStates.where((band) => band.index == index);
+    if (matches.isEmpty) return;
+    final match = matches.first;
     match.gain = gain.clamp(match.minGain, match.maxGain).toDouble();
     bands[_labelForFrequency(match.centerFrequency)] = match.gain;
     preset = 'Custom';
@@ -106,28 +93,17 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setGain(String band, double gain) async {
-    final match = bandStates.firstWhere(
-      (item) => _labelForFrequency(item.centerFrequency) == band,
-      orElse: () => EqualizerBandState(
-        index: -1,
-        centerFrequency: 0,
-        minGain: -12,
-        maxGain: 12,
-        gain: 0,
-      ),
-    );
-    if (match.index >= 0) await setBandGain(match.index, gain);
+    for (final item in bandStates) {
+      if (_labelForFrequency(item.centerFrequency) == band) {
+        await setBandGain(item.index, gain);
+        return;
+      }
+    }
   }
 
   Future<void> setEnabled(bool value) async {
     isEnabled = value;
-    if (_androidEqualizer != null) {
-      try {
-        await _androidEqualizer.setEnabled(value);
-      } catch (e) {
-        debugPrint('Equalizer enable failed: $e');
-      }
-    }
+    try { await _androidEqualizer?.setEnabled(value); } catch (e) { debugPrint('Equalizer enable failed: $e'); }
     await _save();
     notifyListeners();
   }
@@ -139,7 +115,7 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> applyPreset(String name) async {
-    final presets = <String, List<double>>{
+    const presets = <String, List<double>>{
       'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       'Bass Boost': [5, 4, 3, 2, 1, 0, 0, 0, 0, 0],
       'Treble Boost': [0, 0, 0, 0, 0, 1, 2, 3, 4, 5],
@@ -150,18 +126,54 @@ class EqualizerProvider extends ChangeNotifier {
       'Classical': [3, 2, 1, 0, -1, -1, 0, 2, 3, 4],
       'Electronic': [4, 3, 1, 0, -2, 1, 3, 2, 3, 4],
     };
-
     final values = presets[name] ?? presets['Flat']!;
     for (var i = 0; i < bandStates.length; i++) {
-      final sourceIndex = bandStates.length == 1
-          ? 0
-          : ((i * (values.length - 1)) / (bandStates.length - 1)).round();
+      final sourceIndex = bandStates.length == 1 ? 0 : ((i * (values.length - 1)) / (bandStates.length - 1)).round();
       final gain = values[sourceIndex];
       await setBandGain(bandStates[i].index, gain);
     }
     preset = name;
     await _save();
     notifyListeners();
+  }
+
+  Future<void> saveSongProfile(String songId) async {
+    activeSongId = songId;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('eq_song_preset_$songId', preset);
+      await prefs.setDouble('eq_song_preamp_$songId', preamp);
+      for (final band in bandStates) {
+        await prefs.setDouble('eq_song_${songId}_band_${band.index}', band.gain);
+      }
+    } catch (e) {
+      debugPrint('Song EQ profile save failed: $e');
+    }
+    notifyListeners();
+  }
+
+  Future<bool> loadSongProfile(String songId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final marker = prefs.getString('eq_song_preset_$songId');
+      if (marker == null) return false;
+      activeSongId = songId;
+      preset = marker;
+      preamp = prefs.getDouble('eq_song_preamp_$songId') ?? 0.0;
+      for (final band in bandStates) {
+        final saved = prefs.getDouble('eq_song_${songId}_band_${band.index}');
+        if (saved != null) {
+          band.gain = saved.clamp(band.minGain, band.maxGain).toDouble();
+          await _setNativeBand(band);
+        }
+      }
+      await _save();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Song EQ profile load failed: $e');
+      return false;
+    }
   }
 
   Future<void> reset() async {
