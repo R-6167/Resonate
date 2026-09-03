@@ -51,9 +51,9 @@ class _HomeDashboard extends StatelessWidget {
         if (intelligence.isEnabled && intelligence.recommendations.length > 1)
           ...intelligence.recommendations.skip(1).map((item) => _RecommendationTile(item: item, songs: songs))
         else if (!intelligence.isEnabled)
-          const Card(child: ListTile(leading: Icon(Icons.auto_awesome_outlined), title: Text('Intelligence is off'), subtitle: Text('Your player remains fully manual. Enable it from Settings when you want local anticipation.')))
+          Card(child: ListTile(leading: const Icon(Icons.auto_awesome_outlined), title: const Text('Intelligence is off'), subtitle: Text('Your player remains fully manual. Enable it from Settings when you want local anticipation.', style: Theme.of(context).textTheme.bodyMedium)))
         else
-          Card(child: ListTile(leading: const Icon(Icons.headphones_rounded), title: Text(songs.length < 5 ? 'Let Resonate learn you' : 'Building your first prediction'), subtitle: const Text('Finishes, skips and song-to-song choices become local signals for future decisions.'))),
+          Card(child: ListTile(leading: const Icon(Icons.headphones_rounded), title: Text(songs.length < 5 ? 'Let Resonate learn you' : 'Building your first prediction'), subtitle: Text('Finishes, skips and song-to-song choices become local signals for future decisions.', style: Theme.of(context).textTheme.bodyMedium))),
       ])),
     );
   }
@@ -62,7 +62,10 @@ class _HomeDashboard extends StatelessWidget {
 
 class _ResonateWordmark extends StatelessWidget {
   const _ResonateWordmark();
-  @override Widget build(BuildContext context) => ShaderMask(shaderCallback: (bounds) => LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.secondary]).createShader(bounds), child: Text('Resonate', style: TextStyle(fontFamily: 'serif', fontSize: 27, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: -1.4, color: Colors.white, shadows: const [Shadow(blurRadius: 10, offset: Offset(1, 2))])));
+  @override Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ShaderMask(shaderCallback: (bounds) => LinearGradient(colors: [scheme.primary, scheme.secondary]).createShader(bounds), child: Text('Resonate', style: TextStyle(fontFamily: 'serif', fontSize: 27, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic, letterSpacing: -1.4, color: Colors.white)));
+  }
 }
 
 class _IntelligenceHero extends StatelessWidget {
@@ -75,7 +78,7 @@ class _IntelligenceHero extends StatelessWidget {
       const SizedBox(height: 16),
       Text(intelligence.isEnabled ? 'I think I know what you want next.' : 'Your player is fully manual.', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 7),
-      Text(intelligence.isEnabled ? 'I watch your local listening patterns and make one strongest prediction instead of asking you to browse a wall of recommendations.' : 'Intelligence is disabled. Nothing will learn, predict or alter your playback.'),
+      Text(intelligence.isEnabled ? 'I watch your local listening patterns and make one strongest prediction instead of asking you to browse a wall of recommendations.' : 'Intelligence is disabled. Nothing will learn, predict or alter your playback.', style: Theme.of(context).textTheme.bodyMedium),
       const SizedBox(height: 14),
       Wrap(spacing: 8, runSpacing: 8, children: [_Tag(label: 'Local-first'), _Tag(label: 'Explainable'), _Tag(label: '$songCount songs')]),
     ]));
@@ -86,10 +89,10 @@ class _Tag extends StatelessWidget { final String label; const _Tag({required th
 class _AnticipationCard extends StatelessWidget {
   final IntelligenceRecommendation item; final List<dynamic> songs;
   const _AnticipationCard({required this.item, required this.songs});
-  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); final scheme = Theme.of(context).colorScheme; return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]), const SizedBox(height: 9), Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), const SizedBox(height: 8), Text(item.reason), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play this next')))]))); }
+  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); final scheme = Theme.of(context).colorScheme; return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]), const SizedBox(height: 9), Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), const SizedBox(height: 8), Text(item.reason, style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play this next')))]))); }
 }
 class _RecommendationTile extends StatelessWidget {
   final IntelligenceRecommendation item; final List<dynamic> songs;
   const _RecommendationTile({required this.item, required this.songs});
-  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); return Card(margin: const EdgeInsets.only(bottom: 9), child: ListTile(leading: CircleAvatar(radius: 25, child: const Icon(Icons.music_note_rounded)), title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${item.song.artist}\n${item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis), trailing: IconButton(tooltip: 'Play', icon: const Icon(Icons.play_arrow_rounded), onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }))); }
+  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); return Card(margin: const EdgeInsets.only(bottom: 9), child: ListTile(leading: CircleAvatar(radius: 25, child: const Icon(Icons.music_note_rounded)), title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${item.song.artist}\n${item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium), trailing: IconButton(tooltip: 'Play', icon: const Icon(Icons.play_arrow_rounded), onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }))); }
 }
