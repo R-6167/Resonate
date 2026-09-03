@@ -8,10 +8,7 @@ import '../services/database_helper.dart';
 import 'music_provider.dart';
 
 /// Lightweight, on-device listening memory for Resonate.
-///
-/// Intelligence is deliberately best-effort: database failures never affect
-/// playback, and recommendations fall back to the library when there is not
-/// enough listening history yet.
+/// Intelligence is best-effort: database failures never affect playback.
 class IntelligenceProvider extends ChangeNotifier {
   final MusicProvider music;
   final DatabaseHelper _database = DatabaseHelper();
@@ -22,7 +19,6 @@ class IntelligenceProvider extends ChangeNotifier {
   bool _lastPlaying = false;
   String? _lastRecommendationId;
   List<Song> _recommendations = const [];
-  StreamSubscription<void>? _noop;
 
   IntelligenceProvider({required this.music}) {
     music.addListener(_observePlayback);
@@ -43,7 +39,6 @@ class IntelligenceProvider extends ChangeNotifier {
 
   void _observePlayback() {
     if (!_enabled) return;
-
     final song = music.currentSong;
     final songId = song?.id;
     final playing = music.isPlaying;
@@ -58,24 +53,29 @@ class IntelligenceProvider extends ChangeNotifier {
     } else if (!playing && _lastPlaying) {
       unawaited(_finishActiveEvent());
     }
-
     _lastPlaying = playing;
   }
 
   Future<void> _startEvent(Song song) async {
     if (!_enabled || _activeEvent?.songId == song.id) return;
     await _finishActiveEvent();
-
-    final previous = _previousSongId(song.id);
     final event = ListeningEvent(
       id: '${DateTime.now().microsecondsSinceEpoch}_${song.id}',
       songId: song.id,
-      previousSongId: previous,
+      previousSongId: _previousSongId(song.id),
       startedAt: DateTime.now(),
+      durationPlayedMs: 0,
       songDurationMs: song.duration.inMilliseconds,
+      completionRatio: 0.0,
+      completed: false,
+      skipped: false,
     );
     _activeEvent = event;
-    await _database.insertListeningEvent(event);
+    try {
+      await _database.insertListeningEvent(event);
+    } catch (e) {
+      debugPrint('Intelligence event insert failed: $e');
+    }
   }
 
   String? _previousSongId(String currentId) {
@@ -89,16 +89,13 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> _finishActiveEvent() async {
     final event = _activeEvent;
     if (event == null) return;
-
     final duration = music.currentSong?.id == event.songId
         ? music.currentPosition.inMilliseconds
         : event.durationPlayedMs;
     final songDuration = event.songDurationMs > 0
         ? event.songDurationMs
         : music.currentDuration?.inMilliseconds ?? 0;
-    final ratio = songDuration <= 0
-        ? 0.0
-        : (duration / songDuration).clamp(0.0, 1.0).toDouble();
+    final ratio = songDuration <= 0 ? 0.0 : (duration / songDuration).clamp(0.0, 1.0).toDouble();
     final completed = ratio >= 0.90;
     final updated = event.copyWith(
       endedAt: DateTime.now(),
@@ -110,7 +107,11 @@ class IntelligenceProvider extends ChangeNotifier {
       skipPositionMs: !completed && duration > 0 ? duration : null,
     );
     _activeEvent = null;
-    await _database.updateListeningEvent(updated);
+    try {
+      await _database.updateListeningEvent(updated);
+    } catch (e) {
+      debugPrint('Intelligence event update failed: $e');
+    }
     _lastRecommendationId = event.songId;
   }
 
@@ -127,7 +128,6 @@ class IntelligenceProvider extends ChangeNotifier {
     if (!_enabled || music.currentSong == null) return null;
     try {
       final counts = await _database.getTransitionCounts(music.currentSong!.id);
-      if (counts.isEmpty) return null;
       final songs = await _database.getAllSongs();
       final byId = {for (final song in songs) song.id: song};
       for (final row in counts) {
@@ -184,7 +184,6 @@ class IntelligenceProvider extends ChangeNotifier {
   void dispose() {
     music.removeListener(_observePlayback);
     _activeEvent = null;
-    _noop?.cancel();
     super.dispose();
   }
 }
