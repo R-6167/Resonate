@@ -6,6 +6,7 @@ on:
       - debug-splash-hang
       - Audio_Update
       - Audio_Update.2
+      - Intelligence
   workflow_dispatch:
 
 concurrency:
