@@ -1,10 +1,22 @@
 #!/usr/bin/env sh
+
+# Gradle wrapper launcher generated for Resonate.
+# Gradle's wrapper JAR is a Java program and must be launched with Java;
+# executing the JAR directly causes exit 126 (Exec format error) on CI.
 set -e
-BASEDIR=$(dirname "$0")
+
+BASEDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 CLASSPATH="$BASEDIR/gradle/wrapper/gradle-wrapper.jar"
+
 if [ ! -f "$CLASSPATH" ]; then
-  echo "Warning: gradle wrapper jar not found. Attempting to use system gradle if available."
-  exec gradle "$@"
-else
-  exec "$CLASSPATH" "$@"
+  echo "Error: Gradle wrapper JAR not found: $CLASSPATH" >&2
+  echo "Install Gradle or regenerate the wrapper before building." >&2
+  exit 1
 fi
+
+if command -v java >/dev/null 2>&1; then
+  exec java -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
+fi
+
+echo "Error: Java is required to run the Gradle wrapper." >&2
+exit 1
