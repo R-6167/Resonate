@@ -92,7 +92,9 @@ class MainActivity : AudioServiceActivity() {
     private fun pickFolder(result: MethodChannel.Result) {
         folderResult = result
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
         }
         startActivityForResult(intent, folderRequestCode)
     }
@@ -118,16 +120,21 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun selectedPrefixes(folders: List<String>): Set<String> = folders.mapNotNull { value ->
-        try { val id = DocumentsContract.getTreeDocumentId(Uri.parse(value)); val path = id.substringAfter(':', "").trim('/'); if (path.isEmpty()) "" else "$path/" } catch (_: Exception) { null }
+        try {
+            val id = DocumentsContract.getTreeDocumentId(Uri.parse(value))
+            val path = id.substringAfter(':', "").trim('/')
+            if (path.isEmpty()) "" else "$path/"
+        } catch (_: Exception) { null }
     }.toSet()
 
     private fun isInSelectedFolder(relativePath: String?, dataPath: String?, prefixes: Set<String>): Boolean {
         if (prefixes.isEmpty()) return false
         if (prefixes.contains("")) return true
         val relative = (relativePath ?: "").trim('/') + "/"
-        if (prefixes.any { relative == it || relative.startsWith(it) }) return true
+        if (prefixes.any { relative.startsWith(it) || it.startsWith(relative) }) return true
         val absolute = dataPath ?: return false
-        return prefixes.any { prefix -> absolute.contains("/$prefix") || absolute.contains(prefix) }
+        val normalized = absolute.replace('\\', '/').trim('/') + "/"
+        return prefixes.any { prefix -> normalized.contains("/$prefix") || normalized.startsWith(prefix) }
     }
 
     private fun querySelectedAudio(folders: List<String>, includeSize: Boolean = false): Long {
@@ -138,10 +145,17 @@ class MainActivity : AudioServiceActivity() {
         if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH)
         if (Build.VERSION.SDK_INT <= 28) projection.add(MediaStore.Audio.Media.DATA)
         var total = 0L
-        contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection.toTypedArray(), "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
-            val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID); val title = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE); val artist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST); val album = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM); val duration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION); val dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED); val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
+        contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection.toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
+            val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID); val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
             val size = if (includeSize) cursor.getColumnIndex(MediaStore.Audio.Media.SIZE) else -1; val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1; val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
-            while (cursor.moveToNext()) { val type = cursor.getString(mime) ?: ""; if (!type.startsWith("audio/")) continue; val relativePath = if (relative >= 0) cursor.getString(relative) else null; val dataPath = if (data >= 0) cursor.getString(data) else null; if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue; if (includeSize) { total += if (size >= 0) cursor.getLong(size) else 0L; continue }; val mediaId = cursor.getLong(id); val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, mediaId).toString(); @Suppress("UNUSED_VARIABLE") val unused = arrayOf(title, artist, album, duration, dateAdded, uri) }
+            while (cursor.moveToNext()) {
+                val type = cursor.getString(mime) ?: ""
+                if (!type.startsWith("audio/")) continue
+                val relativePath = if (relative >= 0) cursor.getString(relative) else null
+                val dataPath = if (data >= 0) cursor.getString(data) else null
+                if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue
+                if (includeSize) total += if (size >= 0) cursor.getLong(size) else 0L
+            }
         }
         return total
     }
@@ -154,10 +168,20 @@ class MainActivity : AudioServiceActivity() {
         if (Build.VERSION.SDK_INT >= 29) projection.add(MediaStore.Audio.Media.RELATIVE_PATH)
         if (Build.VERSION.SDK_INT <= 28) projection.add(MediaStore.Audio.Media.DATA)
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        contentResolver.query(collection, projection.toTypedArray(), "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
+        // Do not require IS_MUSIC. Many legitimate local files (mixes, podcasts,
+        // DJ sets and downloaded audio) are indexed as audio but not as music.
+        contentResolver.query(collection, projection.toTypedArray(), null, null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { cursor ->
             val id = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID); val title = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE); val artist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST); val album = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM); val duration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION); val dateAdded = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED); val mime = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
             val relative = if (Build.VERSION.SDK_INT >= 29) cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH) else -1; val data = if (Build.VERSION.SDK_INT <= 28) cursor.getColumnIndex(MediaStore.Audio.Media.DATA) else -1
-            while (cursor.moveToNext()) { val type = cursor.getString(mime) ?: ""; if (!type.startsWith("audio/")) continue; val relativePath = if (relative >= 0) cursor.getString(relative) else null; val dataPath = if (data >= 0) cursor.getString(data) else null; if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue; val mediaId = cursor.getLong(id); songs.add(mapOf("filePath" to ContentUris.withAppendedId(collection, mediaId).toString(), "title" to cursor.getString(title), "artist" to cursor.getString(artist), "album" to cursor.getString(album), "duration" to cursor.getLong(duration), "dateAdded" to cursor.getLong(dateAdded))) }
+            while (cursor.moveToNext()) {
+                val type = cursor.getString(mime) ?: ""
+                if (!type.startsWith("audio/")) continue
+                val relativePath = if (relative >= 0) cursor.getString(relative) else null
+                val dataPath = if (data >= 0) cursor.getString(data) else null
+                if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue
+                val mediaId = cursor.getLong(id)
+                songs.add(mapOf("filePath" to ContentUris.withAppendedId(collection, mediaId).toString(), "title" to cursor.getString(title), "artist" to cursor.getString(artist), "album" to cursor.getString(album), "duration" to cursor.getLong(duration), "dateAdded" to cursor.getLong(dateAdded)))
+            }
         }
         return songs
     }
