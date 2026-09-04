@@ -108,10 +108,35 @@ class _FeedbackButtons extends StatelessWidget {
 class _AnticipationCard extends StatelessWidget {
   final IntelligenceRecommendation item; final List<dynamic> songs; final bool autopilot;
   const _AnticipationCard({required this.item, required this.songs, this.autopilot = false});
-  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); final scheme = Theme.of(context).colorScheme; return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(autopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(autopilot ? 'Next-track decision' : item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]), const SizedBox(height: 9), Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), const SizedBox(height: 8), Text(item.reason, style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: 10), Row(children: [Expanded(child: Text('Teach Intelligence', style: Theme.of(context).textTheme.labelMedium)), _FeedbackButtons(songId: item.song.id)]), Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: Text(autopilot ? 'Play now' : 'Play this next')))]))); }
+  @override Widget build(BuildContext context) {
+    final music = context.read<MusicProvider>();
+    final scheme = Theme.of(context).colorScheme;
+    return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(autopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(autopilot ? 'Next-track decision' : item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]),
+      const SizedBox(height: 9),
+      Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+      Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+      const SizedBox(height: 8),
+      Text(item.reason, style: Theme.of(context).textTheme.bodyMedium),
+      const SizedBox(height: 10),
+      Row(children: [Expanded(child: Text('Teach Intelligence', style: Theme.of(context).textTheme.labelMedium)), _FeedbackButtons(songId: item.song.id)]),
+      Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: Text(autopilot ? 'Play now' : 'Play this next'))),
+    ])));
+  }
 }
 class _RecommendationTile extends StatelessWidget {
   final IntelligenceRecommendation item; final List<dynamic> songs;
   const _RecommendationTile({required this.item, required this.songs});
-  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); return Card(margin: const EdgeInsets.only(bottom: 9), child: ListTile(leading: CircleAvatar(radius: 25, child: const Icon(Icons.music_note_rounded)), title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${item.song.artist}\n${item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium), trailing: Row(mainAxisSize: MainAxisSize.min, children: [_FeedbackButtons(songId: item.song.id), IconButton(tooltip: 'Play', icon: const Icon(Icons.play_arrow_rounded), onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); })])); }
+  @override Widget build(BuildContext context) {
+    final music = context.read<MusicProvider>();
+    return Card(margin: const EdgeInsets.only(bottom: 9), child: ListTile(
+      leading: CircleAvatar(radius: 25, child: const Icon(Icons.music_note_rounded)),
+      title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text('${item.song.artist}\n${item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        _FeedbackButtons(songId: item.song.id),
+        IconButton(tooltip: 'Play', icon: const Icon(Icons.play_arrow_rounded), onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }),
+      ]),
+    ));
+  }
 }
