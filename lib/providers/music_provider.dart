@@ -39,6 +39,7 @@ class MusicProvider extends ChangeNotifier {
   double get volume => _volume;
   List<Song> get queue => List.unmodifiable(_queue);
   int get queueIndex => _queueIndex;
+  List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
   bool get canCrossfadeNext => _queueIndex < _queue.length - 1 && !_crossfadeInProgress;
 
   MusicProvider({this.audioHandler}) {
@@ -76,12 +77,8 @@ class MusicProvider extends ChangeNotifier {
       final playing = state.playing && state.processingState != ProcessingState.completed;
       if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
       if (state.processingState == ProcessingState.completed) {
-        isPlaying = false;
-        notifyListeners();
-        _publishServiceState();
-        if (!_completionAdvanceInProgress && !_crossfadeInProgress && _queueIndex < _queue.length - 1) {
-          unawaited(_advanceAfterCompletion());
-        }
+        isPlaying = false; notifyListeners(); _publishServiceState();
+        if (!_completionAdvanceInProgress && !_crossfadeInProgress && _queueIndex < _queue.length - 1) unawaited(_advanceAfterCompletion());
       }
     });
     _positionSubscription = player.positionStream.listen((position) { if (currentPosition != position) { currentPosition = position; notifyListeners(); _publishServiceState(); } });
@@ -89,116 +86,74 @@ class MusicProvider extends ChangeNotifier {
     _volumeSubscription = player.volumeStream.listen((value) { if (_volume != value) { _volume = value; notifyListeners(); } });
   }
 
-  Future<void> _advanceAfterCompletion() async {
-    if (_completionAdvanceInProgress) return;
-    _completionAdvanceInProgress = true;
-    try {
-      await nextSong();
-    } finally {
-      _completionAdvanceInProgress = false;
-    }
-  }
+  Future<void> _advanceAfterCompletion() async { if (_completionAdvanceInProgress) return; _completionAdvanceInProgress = true; try { await nextSong(); } finally { _completionAdvanceInProgress = false; } }
 
-  Uri _audioUri(String value) {
-    final path = value.trim();
-    if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path);
-    return Uri.file(path);
-  }
+  Uri _audioUri(String value) { final path = value.trim(); if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path); return Uri.file(path); }
 
-  Future<void> _stopBoth() async {
-    try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {}
-    try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {}
-    try { await _playerA.setVolume(_volume); } catch (_) {} try { await _playerB.setVolume(_volume); } catch (_) {}
-  }
+  Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(_volume); } catch (_) {} try { await _playerB.setVolume(_volume); } catch (_) {} }
 
-  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-    try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); }
-    try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); }
-  }
+  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) async {
     if (song.filePath.trim().isEmpty) return false;
     try {
-      _crossfadeInProgress = false;
-      await _stopBoth();
-      _activeIsA = true;
+      _crossfadeInProgress = false; await _stopBoth(); _activeIsA = true;
       final requested = queue != null && queue.isNotEmpty ? List<Song>.from(queue) : [song];
-      final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList();
-      if (normalized.isEmpty) return false;
+      final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList(); if (normalized.isEmpty) return false;
       final selectedIndex = normalized.indexWhere((s) => s.id == song.id);
-      _queue = normalized;
-      _queueIndex = selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1);
+      _queue = normalized; _queueIndex = selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1);
       currentSong = _queue[_queueIndex]; currentDuration = currentSong!.duration; currentPosition = Duration.zero; isPlaying = false;
       _bindActivePlayerStreams(); notifyListeners();
-
-      // Keep the playback source deliberately simple: one AudioSource per
-      // play request. The logical queue is maintained by MusicProvider, so
-      // selecting a song never mutates a live ConcatenatingAudioSource.
       await audioPlayer.setAudioSource(AudioSource.uri(_audioUri(currentSong!.filePath), tag: currentSong));
-      await _enableEffects(audioPlayer, equalizer, loudnessEnhancer);
-      await audioPlayer.setVolume(_volume);
-      await audioPlayer.play();
-      isPlaying = true; _publishServiceState(); notifyListeners();
-      return true;
-    } catch (e, stack) {
-      isPlaying = false;
-      debugPrint('Error playing song: $e'); debugPrint('$stack');
-      _publishServiceState(); notifyListeners();
-      return false;
-    }
+      await _enableEffects(audioPlayer, equalizer, loudnessEnhancer); await audioPlayer.setVolume(_volume); await audioPlayer.play();
+      isPlaying = true; _publishServiceState(); notifyListeners(); return true;
+    } catch (e, stack) { isPlaying = false; debugPrint('Error playing song: $e'); debugPrint('$stack'); _publishServiceState(); notifyListeners(); return false; }
   }
 
   Future<bool> enqueueSongs(List<Song> songs) async {
     final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList();
-    if (additions.isEmpty) return false;
-    _queue.addAll(additions);
+    if (additions.isEmpty) return false; _queue.addAll(additions); notifyListeners(); return true;
+  }
+  Future<bool> addToQueue(Song song) => enqueueSongs([song]);
+
+  Future<bool> removeFromQueue(int index) async {
+    if (index <= _queueIndex || index >= _queue.length) return false;
+    _queue.removeAt(index);
     notifyListeners();
     return true;
   }
 
-  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
-    await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song));
-    await _enableEffects(player, eq, loud); await player.setVolume(start ? _volume : 0.0); if (start) await player.play();
+  Future<bool> reorderQueue(int oldIndex, int newIndex) async {
+    if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false;
+    if (newIndex > oldIndex) newIndex--;
+    newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1);
+    final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); notifyListeners(); return true;
   }
+
+  void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; notifyListeners(); }
+
+  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? _volume : 0.0); if (start) await player.play(); }
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) async {
     if (!canCrossfadeNext || currentSong == null || !audioPlayer.playing) return false;
-    final nextIndex = _queueIndex + 1, nextSong = _queue[nextIndex];
-    if (nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true;
-    final outgoing = audioPlayer, incoming = inactivePlayer, incomingEq = inactiveEqualizer, incomingLoud = inactiveLoudnessEnhancer, master = _volume;
+    final nextIndex = _queueIndex + 1, nextSong = _queue[nextIndex]; if (nextSong.filePath.trim().isEmpty) return false;
+    _crossfadeInProgress = true; final outgoing = audioPlayer, incoming = inactivePlayer, incomingEq = inactiveEqualizer, incomingLoud = inactiveLoudnessEnhancer, master = _volume;
     try {
-      await outgoing.setLoopMode(LoopMode.one); await incoming.stop();
-      await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false); await incoming.setLoopMode(LoopMode.one); await incoming.setVolume(0.0); await incoming.play();
+      await outgoing.setLoopMode(LoopMode.one); await incoming.stop(); await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false); await incoming.setLoopMode(LoopMode.one); await incoming.setVolume(0.0); await incoming.play();
       final total = milliseconds.clamp(500, 12000), steps = (total / 50).round().clamp(10, 240);
-      for (var i = 1; i <= steps; i++) {
-        if (!outgoing.playing) break;
-        final linear = i / steps;
-        final t = switch (fadeType) { 'ease_in' => linear * linear, 'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)), 'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0, _ => linear };
-        await outgoing.setVolume(master * (1.0 - t)); await incoming.setVolume(master * t); await Future<void>.delayed(Duration(milliseconds: (total / steps).round()));
-      }
-      await outgoing.pause(); await outgoing.setVolume(master); await incoming.setVolume(master);
-      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
-      _bindActivePlayerStreams(); _publishServiceState(); notifyListeners(); await outgoing.stop(); return true;
-    } catch (e, stack) {
-      debugPrint('True crossfade failed: $e'); debugPrint('$stack'); try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false;
-    } finally { _crossfadeInProgress = false; notifyListeners(); }
+      for (var i = 1; i <= steps; i++) { if (!outgoing.playing) break; final linear = i / steps; final t = switch (fadeType) { 'ease_in' => linear * linear, 'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)), 'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0, _ => linear }; await outgoing.setVolume(master * (1.0 - t)); await incoming.setVolume(master * t); await Future<void>.delayed(Duration(milliseconds: (total / steps).round())); }
+      await outgoing.pause(); await outgoing.setVolume(master); await incoming.setVolume(master); _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing; _bindActivePlayerStreams(); _publishServiceState(); notifyListeners(); await outgoing.stop(); return true;
+    } catch (e, stack) { debugPrint('True crossfade failed: $e'); debugPrint('$stack'); try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; } finally { _crossfadeInProgress = false; notifyListeners(); }
   }
 
-  Future<void> togglePlayPause() async {
-    try {
-      if (audioPlayer.playing) await audioPlayer.pause();
-      else if (audioPlayer.audioSource != null) await audioPlayer.play();
-      else if (currentSong != null) await playSong(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex);
-    } catch (e) { debugPrint('Playback toggle failed: $e'); }
-  }
+  Future<void> togglePlayPause() async { try { if (audioPlayer.playing) await audioPlayer.pause(); else if (audioPlayer.audioSource != null) await audioPlayer.play(); else if (currentSong != null) await playSong(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex); } catch (e) { debugPrint('Playback toggle failed: $e'); } }
   Future<void> pause() async { try { await audioPlayer.pause(); _publishServiceState(); } catch (_) {} }
   Future<void> stop() async { await _stopBoth(); isPlaying = false; currentPosition = Duration.zero; _publishServiceState(); notifyListeners(); }
   Future<void> nextSong() async { if (_queueIndex >= _queue.length - 1) return; await playSong(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1); }
   Future<void> previousSong() async { if (_queueIndex > 0) await playSong(_queue[_queueIndex - 1], queue: _queue, startIndex: _queueIndex - 1); else await audioPlayer.seek(Duration.zero); }
   Future<void> seek(Duration position) async { try { final duration = audioPlayer.duration ?? currentDuration ?? Duration.zero; final safe = Duration(milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds)); await audioPlayer.seek(safe); _publishServiceState(); } catch (_) {} }
   Future<void> setVolume(double volume) async { _volume = volume.clamp(0.0, 1.0).toDouble(); try { await audioPlayer.setVolume(_volume); if (!inactivePlayer.playing) await inactivePlayer.setVolume(_volume); notifyListeners(); } catch (_) {} }
-  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { _queue = []; _queueIndex = 0; return; } final index = startIndex.clamp(0, songs.length - 1); await playSong(songs[index], queue: songs, startIndex: index); }
+  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { _queue = []; _queueIndex = 0; notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1); await playSong(songs[index], queue: songs, startIndex: index); }
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
   @override void dispose() { _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel(); _interruptionSubscription?.cancel(); _noisySubscription?.cancel(); _playerA.dispose(); _playerB.dispose(); super.dispose(); }
 }
