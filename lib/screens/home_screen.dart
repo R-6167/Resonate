@@ -36,7 +36,11 @@ class _HomeDashboard extends StatelessWidget {
         Text('Your library, with a little intuition.', style: Theme.of(context).textTheme.bodyLarge),
         const SizedBox(height: 20),
         _IntelligenceHero(intelligence: intelligence, songCount: songs.length),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+        if (intelligence.isEnabled) ...[
+          _SessionCard(intelligence: intelligence),
+          const SizedBox(height: 24),
+        ],
         if (music.currentSong != null) ...[
           _sectionTitle(context, 'Now playing'),
           Card(child: ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), leading: CircleAvatar(radius: 24, child: Icon(music.isPlaying ? Icons.graphic_eq : Icons.pause_rounded)), title: Text(music.currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(music.currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis), trailing: FilledButton.tonalIcon(onPressed: music.togglePlayPause, icon: Icon(music.isPlaying ? Icons.pause : Icons.play_arrow), label: Text(music.isPlaying ? 'Pause' : 'Play')), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())))),
@@ -90,6 +94,25 @@ class _IntelligenceHero extends StatelessWidget {
     ]));
   }
 }
+
+class _SessionCard extends StatelessWidget {
+  final IntelligenceProvider intelligence;
+  const _SessionCard({required this.intelligence});
+  @override Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final artists = intelligence.sessionArtists.take(3).join(' • ');
+    return Card(child: Padding(padding: const EdgeInsets.fromLTRB(18, 16, 18, 17), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(Icons.timeline_rounded, color: scheme.primary), const SizedBox(width: 9), Expanded(child: Text('Session Intelligence', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))), Chip(label: Text(intelligence.sessionMode), visualDensity: VisualDensity.compact)]),
+      const SizedBox(height: 8),
+      Text(intelligence.sessionSummary, style: Theme.of(context).textTheme.bodyMedium),
+      if (artists.isNotEmpty) ...[
+        const SizedBox(height: 9),
+        Text('Current flow: $artists', style: Theme.of(context).textTheme.labelMedium),
+      ],
+    ])));
+  }
+}
+
 class _Tag extends StatelessWidget { final String label; const _Tag({required this.label}); @override Widget build(BuildContext context) => Chip(label: Text(label), visualDensity: VisualDensity.compact); }
 
 class _FeedbackButtons extends StatelessWidget {
@@ -118,6 +141,10 @@ class _AnticipationCard extends StatelessWidget {
       Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
       const SizedBox(height: 8),
       Text(item.reason, style: Theme.of(context).textTheme.bodyMedium),
+      if (item.sessionReason.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text(item.sessionReason, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.primary)),
+      ],
       const SizedBox(height: 10),
       Row(children: [Expanded(child: Text('Teach Intelligence', style: Theme.of(context).textTheme.labelMedium)), _FeedbackButtons(songId: item.song.id)]),
       Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: Text(autopilot ? 'Play now' : 'Play this next'))),
