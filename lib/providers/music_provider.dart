@@ -87,11 +87,8 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _advanceAfterCompletion() async { if (_completionAdvanceInProgress) return; _completionAdvanceInProgress = true; try { await nextSong(); } finally { _completionAdvanceInProgress = false; } }
-
   Uri _audioUri(String value) { final path = value.trim(); if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path); return Uri.file(path); }
-
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(_volume); } catch (_) {} try { await _playerB.setVolume(_volume); } catch (_) {} }
-
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) async {
@@ -114,13 +111,21 @@ class MusicProvider extends ChangeNotifier {
     final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList();
     if (additions.isEmpty) return false; _queue.addAll(additions); notifyListeners(); return true;
   }
+
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
+
+  Future<bool> playNext(Song song) async {
+    if (song.filePath.trim().isEmpty || currentSong?.id == song.id) return false;
+    if (_queue.any((queued) => queued.id == song.id)) return false;
+    final insertAt = (_queueIndex + 1).clamp(0, _queue.length);
+    _queue.insert(insertAt, song);
+    notifyListeners();
+    return true;
+  }
 
   Future<bool> removeFromQueue(int index) async {
     if (index <= _queueIndex || index >= _queue.length) return false;
-    _queue.removeAt(index);
-    notifyListeners();
-    return true;
+    _queue.removeAt(index); notifyListeners(); return true;
   }
 
   Future<bool> reorderQueue(int oldIndex, int newIndex) async {
@@ -131,7 +136,6 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; notifyListeners(); }
-
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? _volume : 0.0); if (start) await player.play(); }
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) async {
