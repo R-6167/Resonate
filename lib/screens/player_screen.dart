@@ -20,6 +20,19 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final ValueNotifier<double> _systemVolume = ValueNotifier<double>(0.0);
 
+  @override
+  void initState() {
+    super.initState();
+    _loadSystemVolume();
+  }
+
+  Future<void> _loadSystemVolume() async {
+    try {
+      final volume = await FlutterVolumeController.getVolume();
+      if (volume != null) _systemVolume.value = volume.clamp(0.0, 1.0).toDouble();
+    } catch (_) {}
+  }
+
   @override void dispose() { _systemVolume.dispose(); super.dispose(); }
 
   Future<void> _showVolume(BuildContext context) async {
