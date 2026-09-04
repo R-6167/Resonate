@@ -69,100 +69,136 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children) => Card(
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ExpansionTile(leading: Icon(icon, color: Theme.of(context).colorScheme.primary), title: Text(title), children: children),
-      );
-
-  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget screen) => ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-        leading: Icon(icon),
+  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ExpansionTile(
+        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
         title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
-      );
+        children: children,
+      ),
+    );
+  }
 
-  Widget _infoItem(BuildContext context, String title, String text, IconData icon) => ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(text),
-        trailing: const Icon(Icons.info_outline),
-        onTap: () => _info(context, title, text),
-      );
+  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget screen) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      leading: Icon(icon), title: Text(title), subtitle: Text(subtitle), trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+    );
+  }
 
-  Widget _confirmItem(BuildContext context, String title, String subtitle, IconData icon, String text, Future<void> Function() action) => ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        onTap: () => _confirm(context, title, text, action),
-      );
+  Widget _infoItem(BuildContext context, String title, String text, IconData icon) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      leading: Icon(icon), title: Text(title), subtitle: Text(text), trailing: const Icon(Icons.info_outline),
+      onTap: () => _info(context, title, text),
+    );
+  }
+
+  Widget _confirmItem(BuildContext context, String title, String subtitle, IconData icon, String text, Future<void> Function() action) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: Icon(icon), title: Text(title), subtitle: Text(subtitle),
+      onTap: () => _confirm(context, title, text, action),
+    );
+  }
 
   Future<void> _showTheme(BuildContext context) async {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => Consumer<ThemeProvider>(
-        builder: (_, theme, __) {
-          final selected = theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light');
-          return SafeArea(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              ListTile(title: const Text('Theme'), subtitle: const Text('Choose how Resonate looks.')),
-              RadioGroup<String>(
-                groupValue: selected,
-                onChanged: (value) async {
-                  if (value == null) return;
-                  if (value == 'system') {
-                    await theme.toggleSystemTheme(true);
-                  } else {
-                    if (theme.useSystemTheme) await theme.toggleSystemTheme(false);
-                    final wantsDark = value == 'dark';
-                    if (theme.isDarkMode != wantsDark) await theme.toggleTheme();
-                  }
-                  if (sheetContext.mounted) Navigator.pop(sheetContext);
-                },
-                child: Column(children: const [
-                  RadioListTile<String>(value: 'system', title: Text('System')),
-                  RadioListTile<String>(value: 'light', title: Text('Light')),
-                  RadioListTile<String>(value: 'dark', title: Text('Dark')),
-                ]),
+      builder: (sheetContext) {
+        return Consumer<ThemeProvider>(
+          builder: (_, theme, __) {
+            final selected = theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light');
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ListTile(title: Text('Theme'), subtitle: Text('Choose how Resonate looks.')),
+                  RadioGroup<String>(
+                    groupValue: selected,
+                    onChanged: (value) async {
+                      if (value == null) return;
+                      if (value == 'system') {
+                        await theme.toggleSystemTheme(true);
+                      } else {
+                        if (theme.useSystemTheme) await theme.toggleSystemTheme(false);
+                        final wantsDark = value == 'dark';
+                        if (theme.isDarkMode != wantsDark) await theme.toggleTheme();
+                      }
+                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    },
+                    child: const Column(
+                      children: [
+                        RadioListTile<String>(value: 'system', title: Text('System')),
+                        RadioListTile<String>(value: 'light', title: Text('Light')),
+                        RadioListTile<String>(value: 'dark', title: Text('Dark')),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ]),
-          );
-        },
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
-  void _info(BuildContext context, String title, String text) => showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (sheet) => SafeArea(child: Padding(padding: const EdgeInsets.all(22), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(sheet).textTheme.headlineSmall), const SizedBox(height: 12), Text(text)]))),
-      );
+  void _info(BuildContext context, String title, String text) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(sheetContext).textTheme.headlineSmall),
+                const SizedBox(height: 12),
+                Text(text),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Future<void> _confirm(BuildContext context, String title, String text, Future<void> Function() action) async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(title: Text(title), content: Text(text), actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
-      ]),
+      builder: (_) => AlertDialog(
+        title: Text(title), content: Text(text),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
+        ],
+      ),
     );
     if (yes == true) await action();
   }
 
-  void _showBluetooth(BuildContext context) => showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => const _BluetoothControls());
+  void _showBluetooth(BuildContext context) {
+    showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => const _BluetoothControls());
+  }
 }
 
 class _BluetoothControls extends StatelessWidget {
   const _BluetoothControls();
 
   @override
-  Widget build(BuildContext context) => Consumer<BluetoothProvider>(
-        builder: (_, bt, __) => SafeArea(
-          child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(bottom: 20), children: [
+  Widget build(BuildContext context) {
+    return Consumer<BluetoothProvider>(
+      builder: (_, bt, __) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 20),
+          children: [
             ListTile(title: Text('Bluetooth & media controls', style: Theme.of(context).textTheme.titleLarge), subtitle: const Text('Resonate handles media commands from connected audio devices.')),
             SwitchListTile(title: const Text('Bluetooth controls'), value: bt.isEnabled, onChanged: bt.toggleBluetooth),
             SwitchListTile(title: const Text('Playback notification'), value: bt.showNotification, onChanged: bt.toggleNotification),
@@ -170,5 +206,7 @@ class _BluetoothControls extends StatelessWidget {
             SwitchListTile(title: const Text('Pause when device disconnects'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
