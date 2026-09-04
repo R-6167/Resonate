@@ -9,12 +9,13 @@ import '../services/database_helper.dart';
 import 'music_provider.dart';
 
 /// Local-first listening memory and decision engine. Intelligence never
-/// interferes with normal playback unless the user explicitly selects Autopilot.
+/// interferes with normal playback unless enabled and sufficiently trained.
 class IntelligenceProvider extends ChangeNotifier {
   final MusicProvider music;
   final DatabaseHelper _database = DatabaseHelper();
   bool _enabled = true;
   int _autonomy = 1; // 0 suggest, 1 assist, 2 autopilot
+  bool _autopilotGraduated = false;
   ListeningEvent? _activeEvent;
   String? _observedSongId;
   bool _lastPlaying = false;
@@ -24,6 +25,12 @@ class IntelligenceProvider extends ChangeNotifier {
   DateTime? _sessionStartedAt;
   Map<String, double> _feedback = <String, double>{};
   List<IntelligenceRecommendation> _recommendations = const [];
+
+  // Graduation is deliberately conservative. Intelligence must have enough
+  // real listening evidence before it takes over automatically.
+  static const int _minimumLearningEvents = 40;
+  static const int _minimumDistinctSongs = 12;
+  static const double _graduationConfidence = .72;
 
   IntelligenceProvider({required this.music}) {
     music.addListener(_observePlayback);
@@ -35,6 +42,7 @@ class IntelligenceProvider extends ChangeNotifier {
   bool get isEnabled => _enabled;
   int get autonomy => _autonomy;
   bool get isAutopilot => _enabled && _autonomy == 2;
+  bool get isAutopilotGraduated => _autopilotGraduated;
   String get autonomyLabel => const ['Suggestions only', 'Assist me', 'Autopilot'][_autonomy.clamp(0, 2)];
   List<IntelligenceRecommendation> get recommendations => List.unmodifiable(_recommendations);
   IntelligenceRecommendation? get anticipatedNext => _recommendations.isEmpty ? null : _recommendations.first;
@@ -44,6 +52,7 @@ class IntelligenceProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _enabled = prefs.getBool('intelligence_enabled') ?? true;
       _autonomy = (prefs.getInt('intelligence_autonomy') ?? 1).clamp(0, 2);
+      _autopilotGraduated = prefs.getBool('intelligence_autopilot_graduated') ?? false;
       final rawFeedback = prefs.getString('intelligence_feedback');
       if (rawFeedback != null && rawFeedback.isNotEmpty) {
         final decoded = jsonDecode(rawFeedback);
@@ -58,18 +67,52 @@ class IntelligenceProvider extends ChangeNotifier {
 
   Future<void> setEnabled(bool enabled) async {
     _enabled = enabled;
-    try { final prefs = await SharedPreferences.getInstance(); await prefs.setBool('intelligence_enabled', enabled); }
-    catch (e) { debugPrint('Intelligence settings save failed: $e'); }
-    if (!enabled) { await _finishActiveEvent(); _recommendations = const []; }
-    else await refreshRecommendations(notify: false);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('intelligence_enabled', enabled);
+    } catch (e) { debugPrint('Intelligence settings save failed: $e'); }
+    if (!enabled) {
+      await _finishActiveEvent();
+      _recommendations = const [];
+    } else {
+      await refreshRecommendations(notify: false);
+    }
     notifyListeners();
   }
 
+  /// Manual autonomy changes remain available, but returning to Suggest or
+  /// Assist means Intelligence must earn Autopilot again from fresh evidence.
   Future<void> setAutonomy(int value) async {
     _autonomy = value.clamp(0, 2);
-    try { final prefs = await SharedPreferences.getInstance(); await prefs.setInt('intelligence_autonomy', _autonomy); }
-    catch (e) { debugPrint('Intelligence autonomy save failed: $e'); }
+    if (_autonomy < 2) _autopilotGraduated = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('intelligence_autonomy', _autonomy);
+      await prefs.setBool('intelligence_autopilot_graduated', _autopilotGraduated);
+    } catch (e) { debugPrint('Intelligence autonomy save failed: $e'); }
     notifyListeners();
+  }
+
+  /// Lets the intelligence system graduate itself once its evidence is strong
+  /// enough. This is automatic; the user only needs to keep Intelligence ON.
+  Future<void> _evaluateAutopilotGraduation() async {
+    if (!_enabled || _autopilotGraduated || _autonomy == 2) return;
+    try {
+      final events = await _database.getRecentListeningEvents(limit: 200);
+      if (events.length < _minimumLearningEvents) return;
+      final distinctSongs = events.map((e) => e.songId).toSet().length;
+      if (distinctSongs < _minimumDistinctSongs) return;
+      final confident = _recommendations.where((r) => r.confidence >= _graduationConfidence).length;
+      if (confident < 2) return;
+
+      _autonomy = 2;
+      _autopilotGraduated = true;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('intelligence_autonomy', 2);
+      await prefs.setBool('intelligence_autopilot_graduated', true);
+      debugPrint('Intelligence graduated to Autopilot: events=${events.length}, songs=$distinctSongs, confident=$confident');
+      notifyListeners();
+    } catch (e) { debugPrint('Intelligence graduation check failed: $e'); }
   }
 
   /// Records a direct user correction to a recommendation without changing
@@ -90,8 +133,10 @@ class IntelligenceProvider extends ChangeNotifier {
 
   Future<void> clearRecommendationFeedback() async {
     _feedback = <String, double>{};
-    try { final prefs = await SharedPreferences.getInstance(); await prefs.remove('intelligence_feedback'); }
-    catch (e) { debugPrint('Intelligence feedback reset failed: $e'); }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('intelligence_feedback');
+    } catch (e) { debugPrint('Intelligence feedback reset failed: $e'); }
     await refreshRecommendations(notify: false);
     notifyListeners();
   }
@@ -256,6 +301,7 @@ class IntelligenceProvider extends ChangeNotifier {
       }
       ranked.sort((a, b) => b.score.compareTo(a.score));
       _recommendations = ranked.take(limit).toList(growable: false);
+      await _evaluateAutopilotGraduation();
       if (notify) notifyListeners();
     } catch (e) { debugPrint('Intelligence refresh failed: $e'); }
   }
@@ -263,7 +309,7 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> analyzeCurrentSession() async {
     final events = await _database.getRecentListeningEvents(limit: 30);
     final completed = events.where((e) => e.completed).length;
-    return {'events': events.length, 'completed': completed, 'skipped': events.where((e) => e.skipped).length, 'completionRate': events.isEmpty ? 0.0 : completed / events.length, 'sessionStartedAt': _sessionStartedAt?.toIso8601String(), 'autonomy': autonomyLabel};
+    return {'events': events.length, 'completed': completed, 'skipped': events.where((e) => e.skipped).length, 'completionRate': events.isEmpty ? 0.0 : completed / events.length, 'sessionStartedAt': _sessionStartedAt?.toIso8601String(), 'autonomy': autonomyLabel, 'autopilotGraduated': _autopilotGraduated};
   }
 
   Future<void> recordListeningEvent(ListeningEvent event) async {
