@@ -14,10 +14,7 @@ class AboutScreen extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [scheme.primaryContainer, scheme.surfaceContainerHighest]),
-            ),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(28), gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [scheme.primaryContainer, scheme.surfaceContainerHighest])),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Resonate', style: theme.textTheme.displaySmall?.copyWith(fontFamily: 'serif', fontStyle: FontStyle.italic, fontWeight: FontWeight.w900)),
               const SizedBox(height: 6),
@@ -32,9 +29,9 @@ class AboutScreen extends StatelessWidget {
           _section(context, 'Intelligence explained', 'Resonate Intelligence starts as a local recommendation companion. It scores songs using listening history, transitions, completion behavior, artist affinity, time patterns, explicit feedback and freshness. Recommendations include an explanation and confidence. Explicit thumbs-up and thumbs-down feedback is stored locally and changes future ranking. After enough local evidence has accumulated, Intelligence can graduate to Autopilot and automatically prepare the next part of a session. You can turn Intelligence off at any time and return to manual playback.'),
           _section(context, 'Implemented', 'Playback with background audio and media notifications\n\n• Android foreground playback notification\n• Bluetooth/media-button command routing\n• Queue and next/previous playback\n• Crossfade controls\n• Main equalizer and audio effects\n• Per-song EQ entry point\n• Local music library and folder management\n• Listening-event storage for Intelligence\n• Explainable local recommendations\n• Intelligence enable/disable control\n• Suggest / Assist / Autopilot authority levels\n• Automatic Autopilot graduation after sufficient learning\n• Session-aware Autopilot queue selection\n• Behavioral learning from completion and skip signals\n• Explicit thumbs-up / thumbs-down recommendation feedback\n• Persistent local Intelligence feedback\n• Theme controls\n• Companion-style Settings organization\n• Local-first privacy model\n• MIT license'),
           _section(context, 'In progress', '• Deeper Intelligence session learning and feedback loops\n• Stronger automatic sequencing and exploration decisions\n• Automatic local mixtape / playlist generation\n• Long-mix analysis and detection of the sections a listener repeatedly enjoys\n• More complete per-song EQ behavior under Intelligence\n• Dedicated sub-settings pages for major Settings categories\n• More advanced library scanning and folder handling\n• Intelligence data export and broader privacy controls\n• Additional Bluetooth/device refinements\n• Broader playback behavior refinements as device testing continues'),
-          _section(context, 'Testing status', 'The latest Android APK has been tested successfully on Android 13 with playback, notifications, background playback and continued playback after leaving the app. Older Android versions remain part of ongoing compatibility testing.'),
           _section(context, 'Privacy', 'Resonate is designed around local-first operation. Listening signals and explicit feedback used by Intelligence are stored and processed on the device. The current design does not require a remote recommendation profile.'),
-          _section(context, 'Open-source license', 'Resonate is distributed under the MIT License. The complete license text is included in the project LICENSE file.'),
+          _section(context, 'Open-source licenses', 'Resonate is distributed under the MIT License. The complete license text is shown below. Third-party package license notices will be added as each dependency license is verified.'),
+          _licenseSection(context),
           const SizedBox(height: 24),
           const Divider(),
           const SizedBox(height: 18),
@@ -46,12 +43,11 @@ class AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _section(BuildContext context, String title, String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 24),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: Theme.of(context).textTheme.headlineSmall),
-      const SizedBox(height: 9),
-      Text(text, style: Theme.of(context).textTheme.bodyMedium),
-    ]),
-  );
+  Widget _section(BuildContext context, String title, String text) => Padding(padding: const EdgeInsets.only(bottom: 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: Theme.of(context).textTheme.headlineSmall), const SizedBox(height: 9), Text(text, style: Theme.of(context).textTheme.bodyMedium)]));
+
+  Widget _licenseSection(BuildContext context) => Container(padding: const EdgeInsets.all(16), margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), color: Theme.of(context).colorScheme.surfaceContainerHighest, border: Border.all(color: Theme.of(context).colorScheme.outlineVariant)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text('MIT License', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    const SizedBox(height: 10),
+    SelectableText('MIT License\n\nCopyright (c) 2026 Aetherion\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.', style: Theme.of(context).textTheme.bodySmall),
+  ]));
 }
