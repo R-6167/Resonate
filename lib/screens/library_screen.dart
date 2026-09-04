@@ -37,6 +37,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
       builder: (sheetContext) => SafeArea(
         child: ListView(shrinkWrap: true, children: [
           const ListTile(title: Text('Add to playlist'), subtitle: Text('Choose where to save this song.')),
+          ListTile(
+            leading: const Icon(Icons.add_rounded), title: const Text('Create new playlist'),
+            onTap: () async {
+              final name = TextEditingController();
+              final description = TextEditingController();
+              final result = await showDialog<List<String>>(
+                context: sheetContext,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('New playlist'),
+                  content: Column(mainAxisSize: MainAxisSize.min, children: [
+                    TextField(controller: name, autofocus: true, decoration: const InputDecoration(labelText: 'Name')),
+                    const SizedBox(height: 12),
+                    TextField(controller: description, decoration: const InputDecoration(labelText: 'Description (optional)')),
+                  ]),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(dialogContext, [name.text, description.text]), child: const Text('Create')),
+                  ],
+                ),
+              );
+              name.dispose();
+              description.dispose();
+              if (result == null || result.first.trim().isEmpty || !sheetContext.mounted) return;
+              final created = await provider.createPlaylist(result.first, description: result.length > 1 ? result[1] : null);
+              if (created != null && sheetContext.mounted) Navigator.pop(sheetContext, created);
+            },
+          ),
           ...provider.playlists.map((playlist) => ListTile(
             leading: const Icon(Icons.queue_music_rounded), title: Text(playlist.name), subtitle: Text('${playlist.songIds.length} songs'),
             onTap: () => Navigator.pop(sheetContext, playlist),
