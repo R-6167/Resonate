@@ -30,8 +30,9 @@ class AutopilotController extends ChangeNotifier {
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
 
-    // Keep a short runway of predicted tracks so the decision is made well
-    // before the current song ends.
+    // Keep a short runway of predicted tracks so the next decision is made
+    // well before the current song ends. Replenishment deliberately ignores
+    // tracks that have already been consumed from the logical queue.
     if (remaining == null || remaining <= const Duration(seconds: 25)) {
       await _ensurePredictedQueue();
     }
@@ -63,9 +64,19 @@ class AutopilotController extends ChangeNotifier {
     _queueDecisionInFlight = true;
     try {
       await intelligence.refreshRecommendations(notify: false);
-      final queued = music.queue.map((song) => song.id).toSet();
+
+      // Only future queue entries should block a new recommendation. Songs
+      // behind queueIndex have already played and may legitimately be chosen
+      // again later when Intelligence has enough evidence for them.
+      final futureQueued = music.queue
+          .skip(music.queueIndex + 1)
+          .map((song) => song.id)
+          .toSet();
+      final currentId = music.currentSong?.id;
       final candidates = intelligence.recommendations
-          .where((r) => r.confidence >= .45 && !queued.contains(r.song.id))
+          .where((r) => r.confidence >= .45)
+          .where((r) => r.song.id != currentId)
+          .where((r) => !futureQueued.contains(r.song.id))
           .take(2)
           .map((r) => r.song)
           .toList(growable: false);
