@@ -34,12 +34,16 @@ class AutopilotController {
       await _ensurePredictedQueue();
     }
 
-    if (!music.isPlaying || _crossfadeInFlight || remaining == null) return;
-    if (remaining > const Duration(seconds: 6)) return;
+    if (!music.isPlaying || _crossfadeInFlight) return;
+    final currentDuration = music.currentDuration;
+    if (currentDuration == null) return;
+    final currentRemaining = currentDuration - music.currentPosition;
+    if (currentRemaining > const Duration(seconds: 6)) return;
     if (music.queueIndex >= music.queue.length - 1) return;
 
     final next = music.queue[music.queueIndex + 1];
-    final recommendation = intelligence.recommendations.where((r) => r.song.id == next.id).cast().firstOrNull;
+    final matching = intelligence.recommendations.where((r) => r.song.id == next.id);
+    final recommendation = matching.isEmpty ? null : matching.first;
     if (recommendation == null || recommendation.confidence < .65) return;
     if (_transitionSongId == music.currentSong?.id) return;
 
