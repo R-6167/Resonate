@@ -43,8 +43,8 @@ class _HomeDashboard extends StatelessWidget {
           const SizedBox(height: 24),
         ],
         if (intelligence.isEnabled && next != null) ...[
-          _sectionTitle(context, 'What should play next?'),
-          _AnticipationCard(item: next, songs: songs),
+          _sectionTitle(context, intelligence.isAutopilot ? 'Autopilot is choosing next' : 'What should play next?'),
+          _AnticipationCard(item: next, songs: songs, autopilot: intelligence.isAutopilot),
           const SizedBox(height: 24),
         ],
         _sectionTitle(context, intelligence.isEnabled ? 'Other good bets' : 'Suggested from your library'),
@@ -73,23 +73,29 @@ class _IntelligenceHero extends StatelessWidget {
   const _IntelligenceHero({required this.intelligence, required this.songCount});
   @override Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final autopilot = intelligence.isAutopilot;
+    final graduated = intelligence.isAutopilotGraduated;
+    final title = autopilot ? 'Autopilot is active.' : graduated ? 'I have learned enough to take the wheel.' : 'I think I know what you want next.';
+    final description = autopilot
+        ? 'I will keep your session moving with local predictions while you listen. Turn Intelligence off any time to return to normal manual playback.'
+        : 'I watch your local listening patterns and make one strongest prediction instead of asking you to browse a wall of recommendations.';
     return Container(padding: const EdgeInsets.all(22), decoration: BoxDecoration(borderRadius: BorderRadius.circular(28), gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [scheme.primaryContainer, scheme.surfaceContainerHighest]), border: Border.all(color: scheme.outlineVariant.withOpacity(.45))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Container(padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(16)), child: Icon(Icons.auto_awesome, color: scheme.onPrimary)), const SizedBox(width: 12), Expanded(child: Text('Resonate Intelligence', style: Theme.of(context).textTheme.titleLarge)), Text(intelligence.isEnabled ? intelligence.autonomyLabel : 'OFF', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))]),
+      Row(children: [Container(padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(16)), child: Icon(autopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, color: scheme.onPrimary)), const SizedBox(width: 12), Expanded(child: Text('Resonate Intelligence', style: Theme.of(context).textTheme.titleLarge)), Text(intelligence.isEnabled ? intelligence.autonomyLabel : 'OFF', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))]),
       const SizedBox(height: 16),
-      Text(intelligence.isEnabled ? 'I think I know what you want next.' : 'Your player is fully manual.', style: Theme.of(context).textTheme.headlineSmall),
+      Text(intelligence.isEnabled ? title : 'Your player is fully manual.', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 7),
-      Text(intelligence.isEnabled ? 'I watch your local listening patterns and make one strongest prediction instead of asking you to browse a wall of recommendations.' : 'Intelligence is disabled. Nothing will learn, predict or alter your playback.', style: Theme.of(context).textTheme.bodyMedium),
+      Text(intelligence.isEnabled ? description : 'Intelligence is disabled. Nothing will learn, predict or alter your playback.', style: Theme.of(context).textTheme.bodyMedium),
       const SizedBox(height: 14),
-      Wrap(spacing: 8, runSpacing: 8, children: [_Tag(label: 'Local-first'), _Tag(label: 'Explainable'), _Tag(label: '$songCount songs')]),
+      Wrap(spacing: 8, runSpacing: 8, children: [if (autopilot) const _Tag(label: 'Autopilot active') else if (graduated) const _Tag(label: 'Graduated'), const _Tag(label: 'Local-first'), const _Tag(label: 'Explainable'), _Tag(label: '$songCount songs')]),
     ]));
   }
 }
 class _Tag extends StatelessWidget { final String label; const _Tag({required this.label}); @override Widget build(BuildContext context) => Chip(label: Text(label), visualDensity: VisualDensity.compact); }
 
 class _AnticipationCard extends StatelessWidget {
-  final IntelligenceRecommendation item; final List<dynamic> songs;
-  const _AnticipationCard({required this.item, required this.songs});
-  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); final scheme = Theme.of(context).colorScheme; return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]), const SizedBox(height: 9), Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), const SizedBox(height: 8), Text(item.reason, style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play this next')))]))); }
+  final IntelligenceRecommendation item; final List<dynamic> songs; final bool autopilot;
+  const _AnticipationCard({required this.item, required this.songs, this.autopilot = false});
+  @override Widget build(BuildContext context) { final music = context.read<MusicProvider>(); final scheme = Theme.of(context).colorScheme; return Card(color: scheme.primaryContainer.withOpacity(.72), child: Padding(padding: const EdgeInsets.fromLTRB(16, 16, 10, 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(autopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, color: scheme.primary), const SizedBox(width: 8), Expanded(child: Text(autopilot ? 'Next-track decision' : item.confidenceLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary))), Text('${(item.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelLarge)]), const SizedBox(height: 9), Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text(item.song.artist, maxLines: 1, overflow: TextOverflow.ellipsis), const SizedBox(height: 8), Text(item.reason, style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton.icon(onPressed: () async { final i = songs.indexWhere((s) => s.id == item.song.id); await music.playSong(item.song, queue: songs.cast(), startIndex: i < 0 ? 0 : i); }, icon: const Icon(Icons.play_arrow_rounded), label: Text(autopilot ? 'Play now' : 'Play this next')))]))); }
 }
 class _RecommendationTile extends StatelessWidget {
   final IntelligenceRecommendation item; final List<dynamic> songs;
