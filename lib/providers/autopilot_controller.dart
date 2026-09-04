@@ -1,12 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. Playback remains owned by MusicProvider; this controller only
 /// decides when Autopilot should extend or transition the queue.
-class AutopilotController {
+class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
   bool _queueDecisionInFlight = false;
@@ -73,8 +75,10 @@ class AutopilotController {
     }
   }
 
+  @override
   void dispose() {
     music.removeListener(_onPlaybackChanged);
     intelligence.removeListener(_onIntelligenceChanged);
+    super.dispose();
   }
 }
