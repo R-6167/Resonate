@@ -108,10 +108,7 @@ class IntelligenceProvider extends ChangeNotifier {
     if (songId.trim().isEmpty) return;
     final previous = _feedback[songId] ?? 0.0;
     _feedback[songId] = (previous + (liked ? 1.0 : -1.0)).clamp(-3.0, 3.0).toDouble();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('intelligence_feedback', jsonEncode(_feedback));
-    } catch (e) { debugPrint('Intelligence feedback save failed: $e'); }
+    await _persistFeedback();
     await refreshRecommendations(notify: false);
     notifyListeners();
   }
@@ -126,6 +123,24 @@ class IntelligenceProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Intelligence feedback reset failed: $e'); }
     await refreshRecommendations(notify: false);
     notifyListeners();
+  }
+
+  Future<void> _persistFeedback() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('intelligence_feedback', jsonEncode(_feedback));
+    } catch (e) { debugPrint('Intelligence behavioral feedback save failed: $e'); }
+  }
+
+  Future<void> _learnFromFinishedEvent(ListeningEvent event, double ratio) async {
+    // A pause is not a dislike. Feedback is only learned when a song actually
+    // changes/stops, so ordinary pause/resume actions do not create a skip signal.
+    final previous = _feedback[event.songId] ?? 0.0;
+    final delta = ratio >= .90 ? .35 : ratio >= .55 ? .08 : -.30;
+    final next = (previous + delta).clamp(-3.0, 3.0).toDouble();
+    if (next == previous) return;
+    _feedback[event.songId] = next;
+    await _persistFeedback();
   }
 
   void _observePlayback() {
@@ -145,8 +160,13 @@ class IntelligenceProvider extends ChangeNotifier {
       final total = music.currentDuration?.inMilliseconds ?? 0;
       final position = music.currentPosition.inMilliseconds;
       final completedNaturally = total > 0 && position >= (total * .98).round();
-      unawaited(_finishActiveEvent());
-      if (isAutopilot && completedNaturally && music.queueIndex >= music.queue.length - 1) unawaited(_chooseNextAutomatically());
+      // Do not finish an event merely because playback was paused. The event
+      // remains open across pause/resume and is finalized by a song change,
+      // natural completion, or Intelligence being disabled.
+      if (completedNaturally) {
+        unawaited(_finishActiveEvent());
+        if (isAutopilot && music.queueIndex >= music.queue.length - 1) unawaited(_chooseNextAutomatically());
+      }
     }
     if (isAutopilot && playing && music.queue.length - music.queueIndex <= 2) {
       final duration = music.currentDuration;
@@ -156,20 +176,19 @@ class IntelligenceProvider extends ChangeNotifier {
     _lastPlaying = playing;
   }
 
-  /// Builds a short session-aware sequence rather than repeatedly selecting
-  /// the same top-ranked track. Artist repetition is gently penalized so the
-  /// session retains continuity without becoming a one-artist loop.
-  List<Song> _selectAutopilotSequence({required Set<String> queuedIds, int count = 2}) {
+  /// Returns the selected recommendations themselves so Autopilot can apply
+  /// its confidence gate to the exact first track it intends to play.
+  List<IntelligenceRecommendation> _selectAutopilotSequence({required Set<String> queuedIds, int count = 2}) {
     final candidates = _recommendations.where((r) => r.confidence >= .45 && !queuedIds.contains(r.song.id)).toList(growable: false);
     if (candidates.isEmpty) return const [];
-    final selected = <Song>[];
+    final selected = <IntelligenceRecommendation>[];
     final usedArtists = <String>{};
     String lastArtist = music.queue.isNotEmpty ? music.queue.last.artist.trim().toLowerCase() : (music.currentSong?.artist.trim().toLowerCase() ?? '');
     while (selected.length < count && selected.length < candidates.length) {
       IntelligenceRecommendation? best;
       var bestAdjustedScore = double.negativeInfinity;
       for (final recommendation in candidates) {
-        if (selected.any((song) => song.id == recommendation.song.id)) continue;
+        if (selected.any((item) => item.song.id == recommendation.song.id)) continue;
         final artist = recommendation.song.artist.trim().toLowerCase();
         var adjusted = recommendation.score;
         if (artist.isNotEmpty && artist == lastArtist) adjusted -= 1.5;
@@ -178,7 +197,7 @@ class IntelligenceProvider extends ChangeNotifier {
         if (adjusted > bestAdjustedScore) { bestAdjustedScore = adjusted; best = recommendation; }
       }
       if (best == null) break;
-      selected.add(best.song);
+      selected.add(best);
       final artist = best.song.artist.trim().toLowerCase();
       if (artist.isNotEmpty) usedArtists.add(artist);
       lastArtist = artist;
@@ -192,7 +211,7 @@ class IntelligenceProvider extends ChangeNotifier {
     try {
       await refreshRecommendations(notify: false);
       final queuedIds = music.queue.map((song) => song.id).toSet();
-      final candidates = _selectAutopilotSequence(queuedIds: queuedIds, count: 2);
+      final candidates = _selectAutopilotSequence(queuedIds: queuedIds, count: 2).map((r) => r.song).toList(growable: false);
       if (candidates.isNotEmpty) await music.enqueueSongs(candidates);
     } catch (e) { debugPrint('Intelligence queue decision failed: $e'); }
     finally { _queueDecisionInFlight = false; }
@@ -204,8 +223,8 @@ class IntelligenceProvider extends ChangeNotifier {
     try {
       await refreshRecommendations(notify: false);
       final sequence = _selectAutopilotSequence(queuedIds: music.queue.map((song) => song.id).toSet(), count: 2);
-      if (sequence.isEmpty || (anticipatedNext?.confidence ?? 0) < .65) return;
-      await music.playSong(sequence.first, queue: sequence, startIndex: 0);
+      if (sequence.isEmpty || sequence.first.confidence < .65) return;
+      await music.playSong(sequence.first.song, queue: sequence.map((r) => r.song).toList(growable: false), startIndex: 0);
     } catch (e) { debugPrint('Intelligence automatic decision failed: $e'); }
     finally { _autoDecisionInFlight = false; }
   }
@@ -233,6 +252,7 @@ class IntelligenceProvider extends ChangeNotifier {
     final updated = ListeningEvent(id: event.id, songId: event.songId, previousSongId: event.previousSongId, startedAt: event.startedAt, endedAt: DateTime.now(), durationPlayedMs: duration, songDurationMs: total, completionRatio: ratio, completed: ratio >= .90, skipped: ratio < .90 && duration > 0, skipPositionMs: ratio < .90 && duration > 0 ? duration : null);
     _activeEvent = null;
     try { await _database.updateListeningEvent(updated); } catch (e) { debugPrint('Intelligence event update failed: $e'); }
+    await _learnFromFinishedEvent(updated, ratio);
     _lastRecommendationId = event.songId;
   }
 
