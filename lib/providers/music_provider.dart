@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,8 @@ import '../models/song.dart';
 import '../models/listening_event.dart';
 import '../services/audio_service_handler.dart';
 import '../services/database_helper.dart';
+
+enum PlaybackRepeatMode { off, all, one }
 
 class MusicProvider extends ChangeNotifier {
   final AudioHandler? audioHandler;
@@ -33,6 +36,8 @@ class MusicProvider extends ChangeNotifier {
   double _volume = 1.0;
   List<Song> _queue = <Song>[];
   int _queueIndex = 0;
+  bool _shuffleEnabled = false;
+  PlaybackRepeatMode _repeatMode = PlaybackRepeatMode.off;
   bool _crossfadeInProgress = false;
   bool _completionAdvanceInProgress = false;
   bool _queueRestoreInProgress = false;
@@ -60,6 +65,8 @@ class MusicProvider extends ChangeNotifier {
   List<Song> get queue => List.unmodifiable(_queue);
   int get queueIndex => _queueIndex;
   List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
+  bool get shuffleEnabled => _shuffleEnabled;
+  PlaybackRepeatMode get repeatMode => _repeatMode;
   bool get canCrossfadeNext => _queueIndex >= 0 && _queueIndex < _queue.length - 1 && !_crossfadeInProgress;
   bool get crossfadeEnabled => _crossfadeEnabled;
   int get crossfadeDurationMs => _crossfadeDurationMs;
@@ -67,6 +74,8 @@ class MusicProvider extends ChangeNotifier {
 
   static const _savedQueueIdsKey = 'playback_queue_song_ids';
   static const _savedQueueIndexKey = 'playback_queue_index';
+  static const _shuffleEnabledKey = 'playback_shuffle_enabled';
+  static const _repeatModeKey = 'playback_repeat_mode';
   static const _crossfadeEnabledKey = 'crossfade_enabled';
   static const _crossfadeDurationKey = 'crossfade_duration';
   static const _crossfadeFadeTypeKey = 'crossfade_fade_type';
@@ -99,6 +108,13 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _loadPlaybackSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
+      final repeat = prefs.getString(_repeatModeKey) ?? 'off';
+      _repeatMode = switch (repeat) {
+        'all' => PlaybackRepeatMode.all,
+        'one' => PlaybackRepeatMode.one,
+        _ => PlaybackRepeatMode.off,
+      };
       _crossfadeEnabled = prefs.getBool(_crossfadeEnabledKey) ?? false;
       _crossfadeDurationMs = ((prefs.getDouble(_crossfadeDurationKey) ?? 3000).round().clamp(500, 12000)).toInt();
       _crossfadeFadeType = prefs.getString(_crossfadeFadeTypeKey) ?? 'linear';
@@ -108,6 +124,39 @@ class MusicProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Playback settings load failed: $e');
+    }
+  }
+
+  Future<void> setShuffleEnabled(bool enabled) async {
+    _shuffleEnabled = enabled;
+    if (enabled && _queue.length > 1 && _queueIndex < _queue.length - 1) {
+      final current = _queue[_queueIndex];
+      final upcoming = _queue.sublist(_queueIndex + 1)..shuffle(Random());
+      _queue = [..._queue.take(_queueIndex + 1), ...upcoming];
+      _queueIndex = _queue.indexWhere((song) => song.id == current.id);
+    }
+    await _persistPlaybackModes();
+    await _persistQueue();
+    notifyListeners();
+  }
+
+  Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
+    _repeatMode = mode;
+    await _persistPlaybackModes();
+    notifyListeners();
+  }
+
+  Future<void> _persistPlaybackModes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_shuffleEnabledKey, _shuffleEnabled);
+      await prefs.setString(_repeatModeKey, switch (_repeatMode) {
+        PlaybackRepeatMode.all => 'all',
+        PlaybackRepeatMode.one => 'one',
+        PlaybackRepeatMode.off => 'off',
+      });
+    } catch (e) {
+      debugPrint('Playback mode save failed: $e');
     }
   }
 
@@ -148,12 +197,18 @@ class MusicProvider extends ChangeNotifier {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
       _interruptionSubscription = session.interruptionEventStream.listen((event) {
-        if (event.begin && (event.type == AudioInterruptionType.pause || event.type == AudioInterruptionType.duck)) unawaited(pause());
+        if (event.begin && event.type == AudioInterruptionType.pause) unawaited(pause());
+        if (event.begin && event.type == AudioInterruptionType.duck) unawaited(_duckForInterruption());
+        if (!event.begin && event.type == AudioInterruptionType.duck && isPlaying) unawaited(setVolume(_volume));
       });
       _noisySubscription = session.becomingNoisyEventStream.listen((_) { if (isPlaying) unawaited(pause()); });
     } catch (e) {
       debugPrint('Audio session setup failed: $e');
     }
+  }
+
+  Future<void> _duckForInterruption() async {
+    try { await audioPlayer.setVolume(_volume * .35); } catch (_) {}
   }
 
   Future<void> _restoreQueue() async {
@@ -223,9 +278,7 @@ class MusicProvider extends ChangeNotifier {
         isPlaying = false;
         notifyListeners();
         _publishServiceState();
-        if (!_completionAdvanceInProgress && !_crossfadeInProgress && _queueIndex < _queue.length - 1) {
-          unawaited(_advanceAfterCompletion());
-        }
+        if (!_completionAdvanceInProgress && !_crossfadeInProgress) unawaited(_advanceAfterCompletion());
       }
     });
     _positionSubscription = player.positionStream.listen((position) {
@@ -265,9 +318,7 @@ class MusicProvider extends ChangeNotifier {
     unawaited(SharedPreferences.getInstance().then((prefs) async {
       await prefs.setInt(_resumePositionKey, position);
       await prefs.setString(_resumeSongIdKey, song.id);
-    }).catchError((error) {
-      debugPrint('Playback resume save failed: $error');
-    }));
+    }).catchError((error) { debugPrint('Playback resume save failed: $error'); }));
   }
 
   void _maybeStartAutomaticCrossfade(Duration position) {
@@ -281,11 +332,8 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _runAutomaticCrossfade() async {
-    try {
-      await performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType);
-    } finally {
-      _automaticCrossfadeInFlight = false;
-    }
+    try { await performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType); }
+    finally { _automaticCrossfadeInFlight = false; }
   }
 
   Future<void> _advanceAfterCompletion() async {
@@ -293,7 +341,30 @@ class MusicProvider extends ChangeNotifier {
     _completionAdvanceInProgress = true;
     try {
       await _finishHistoryEvent(completed: true);
-      await nextSong();
+      if (_repeatMode == PlaybackRepeatMode.one) {
+        currentPosition = Duration.zero;
+        await audioPlayer.seek(Duration.zero);
+        await audioPlayer.play();
+        isPlaying = true;
+        await _startHistoryEvent(currentSong!);
+        _publishServiceState();
+        notifyListeners();
+        return;
+      }
+      if (_queueIndex < _queue.length - 1) {
+        await _playSongInternal(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1);
+        return;
+      }
+      if (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty) {
+        final targetIndex = _shuffleEnabled && _queue.length > 1 ? 0 : 0;
+        await _playSongInternal(_queue[targetIndex], queue: _queue, startIndex: targetIndex);
+        return;
+      }
+      isPlaying = false;
+      currentPosition = currentDuration ?? currentPosition;
+      await _persistQueue();
+      _publishServiceState();
+      notifyListeners();
     } finally {
       _completionAdvanceInProgress = false;
     }
@@ -339,9 +410,17 @@ class MusicProvider extends ChangeNotifier {
       final requested = queue != null && queue.isNotEmpty ? List<Song>.from(queue) : <Song>[song];
       final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList();
       if (normalized.isEmpty) return false;
-      final selectedIndex = normalized.indexWhere((s) => s.id == song.id);
-      _queue = normalized;
-      _queueIndex = selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1).toInt();
+      var selectedIndex = normalized.indexWhere((s) => s.id == song.id);
+      if (selectedIndex < 0) selectedIndex = startIndex.clamp(0, normalized.length - 1).toInt();
+      if (_shuffleEnabled && normalized.length > 1) {
+        final selected = normalized[selectedIndex];
+        final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(Random());
+        _queue = [selected, ...upcoming];
+        _queueIndex = 0;
+      } else {
+        _queue = normalized;
+        _queueIndex = selectedIndex;
+      }
       currentSong = _queue[_queueIndex];
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
@@ -396,9 +475,7 @@ class MusicProvider extends ChangeNotifier {
       try {
         await _database.insertListeningEvent(event);
         await _database.updateSongPlayCount(song.id);
-      } catch (e) {
-        debugPrint('Listening history start failed: $e');
-      }
+      } catch (e) { debugPrint('Listening history start failed: $e'); }
     });
   }
 
@@ -428,20 +505,12 @@ class MusicProvider extends ChangeNotifier {
       if (wasCompleted) {
         _resumePositionMs = 0;
         _resumeSongId = null;
-        unawaited(SharedPreferences.getInstance().then((prefs) async {
-          await prefs.remove(_resumePositionKey);
-          await prefs.remove(_resumeSongIdKey);
-        }).catchError((error) {
-          debugPrint('Playback resume clear failed: $error');
-        }));
+        unawaited(SharedPreferences.getInstance().then((prefs) async { await prefs.remove(_resumePositionKey); await prefs.remove(_resumeSongIdKey); }).catchError((error) { debugPrint('Playback resume clear failed: $error'); }));
       } else {
         _persistResumePosition(force: true);
       }
-      try {
-        await _database.updateListeningEvent(updated);
-      } catch (e) {
-        debugPrint('Listening history finish failed: $e');
-      }
+      try { await _database.updateListeningEvent(updated); }
+      catch (e) { debugPrint('Listening history finish failed: $e'); }
     });
   }
 
@@ -449,11 +518,7 @@ class MusicProvider extends ChangeNotifier {
     if (_historyOperationActive) return operation();
     final next = _historySerial.then((_) async {
       _historyOperationActive = true;
-      try {
-        await operation();
-      } finally {
-        _historyOperationActive = false;
-      }
+      try { await operation(); } finally { _historyOperationActive = false; }
     });
     _historySerial = next.then<void>((_) {}, onError: (_, __) {});
     return next;
@@ -462,6 +527,7 @@ class MusicProvider extends ChangeNotifier {
   Future<bool> enqueueSongs(List<Song> songs) async {
     final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList();
     if (additions.isEmpty) return false;
+    if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random());
     _queue.addAll(additions);
     await _persistQueue();
     notifyListeners();
@@ -574,10 +640,7 @@ class MusicProvider extends ChangeNotifier {
         await outgoing.stop();
         await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex);
         return true;
-      } catch (fallbackError) {
-        debugPrint('Crossfade fallback failed: $fallbackError');
-        return false;
-      }
+      } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); return false; }
     } finally {
       _crossfadeInProgress = false;
       notifyListeners();
@@ -589,7 +652,10 @@ class MusicProvider extends ChangeNotifier {
       try {
         if (audioPlayer.playing) {
           await audioPlayer.pause();
+          isPlaying = false;
+          _persistResumePosition(force: true);
           _publishServiceState();
+          notifyListeners();
           return;
         }
         if (audioPlayer.audioSource != null) {
@@ -600,9 +666,7 @@ class MusicProvider extends ChangeNotifier {
         } else if (currentSong != null) {
           await _playSongInternal(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex, resume: true);
         }
-      } catch (e) {
-        debugPrint('Playback toggle failed: $e');
-      }
+      } catch (e) { debugPrint('Playback toggle failed: $e'); }
     });
   }
 
@@ -631,7 +695,15 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> nextSong() {
     return _serializePlayback(() async {
-      if (_queueIndex < 0 || _queueIndex >= _queue.length - 1) return;
+      if (_queue.isEmpty) return;
+      if (_queueIndex >= _queue.length - 1) {
+        if (_repeatMode == PlaybackRepeatMode.all) {
+          await _playSongInternal(_queue.first, queue: _queue, startIndex: 0);
+        } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
+          await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex);
+        }
+        return;
+      }
       final nextIndex = _queueIndex + 1;
       if (_crossfadeEnabled && canCrossfadeNext && audioPlayer.playing) {
         final didCrossfade = await _performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType);
