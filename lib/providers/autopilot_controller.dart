@@ -2,19 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../services/intelligence_settings_store.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
-import '../services/intelligence_settings_store.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
-/// engine. Playback remains owned by MusicProvider; this controller only
-/// decides when Autopilot should extend or transition the queue.
+/// engine. MusicProvider remains authoritative for playback and queue state.
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
   bool _queueDecisionInFlight = false;
-  bool _crossfadeInFlight = false;
+  bool _transitionInFlight = false;
   String? _transitionSongId;
+  String? _pendingSongId;
+  bool _pendingTakeover = false;
 
   AutopilotController({required this.music, required this.intelligence}) {
     music.addListener(_onPlaybackChanged);
@@ -22,16 +23,35 @@ class AutopilotController extends ChangeNotifier {
     unawaited(_evaluate());
   }
 
+  bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
+  String? get pendingSongId => _pendingSongId;
+
   void _onPlaybackChanged() => unawaited(_evaluate());
   void _onIntelligenceChanged() => unawaited(_evaluate());
 
-  Future<void> _evaluate() async {
+  Future<void> allowPendingTakeover() async {
+    if (!hasPendingTakeover) return;
+    _pendingTakeover = false;
+    notifyListeners();
+    await _evaluate(forceTransition: true);
+  }
+
+  Future<void> denyPendingTakeover() async {
+    final pending = _pendingSongId;
+    _pendingTakeover = false;
+    _pendingSongId = null;
+    notifyListeners();
+    if (pending == null) return;
+    final index = music.queue.indexWhere((song) => song.id == pending);
+    if (index > music.queueIndex) await music.removeFromQueue(index);
+  }
+
+  Future<void> _evaluate({bool forceTransition = false}) async {
     if (!intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
     final useCrossfade = await IntelligenceSettingsStore.autopilotCrossfade();
-
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
 
@@ -39,12 +59,11 @@ class AutopilotController extends ChangeNotifier {
       await _ensurePredictedQueue(threshold);
     }
 
-    if (!useCrossfade || !music.isPlaying || _crossfadeInFlight) return;
+    if (_transitionInFlight || music.queueIndex >= music.queue.length - 1) return;
     final currentDuration = music.currentDuration;
     if (currentDuration == null) return;
     final currentRemaining = currentDuration - music.currentPosition;
-    if (currentRemaining > const Duration(seconds: 6)) return;
-    if (music.queueIndex >= music.queue.length - 1) return;
+    if (!forceTransition && currentRemaining > const Duration(seconds: 8)) return;
 
     final next = music.queue[music.queueIndex + 1];
     final matching = intelligence.recommendations.where((r) => r.song.id == next.id);
@@ -52,13 +71,27 @@ class AutopilotController extends ChangeNotifier {
     if (recommendation == null || recommendation.confidence < threshold) return;
     if (_transitionSongId == music.currentSong?.id) return;
 
+    if (!forceTransition && !_pendingTakeover) {
+      _pendingTakeover = true;
+      _pendingSongId = next.id;
+      notifyListeners();
+      return;
+    }
+
+    _pendingTakeover = false;
+    _pendingSongId = null;
     _transitionSongId = music.currentSong?.id;
-    _crossfadeInFlight = true;
+    _transitionInFlight = true;
     try {
-      final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
-      await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+      if (useCrossfade) {
+        final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
+        await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+      } else {
+        await music.nextSong();
+      }
     } finally {
-      _crossfadeInFlight = false;
+      _transitionInFlight = false;
+      unawaited(_ensurePredictedQueue(threshold));
     }
   }
 
@@ -67,10 +100,7 @@ class AutopilotController extends ChangeNotifier {
     _queueDecisionInFlight = true;
     try {
       await intelligence.refreshRecommendations(notify: false);
-      final futureQueued = music.queue
-          .skip(music.queueIndex + 1)
-          .map((song) => song.id)
-          .toSet();
+      final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final currentId = music.currentSong?.id;
       final candidates = intelligence.recommendations
           .where((r) => r.confidence >= threshold)
