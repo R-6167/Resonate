@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/song.dart';
 import '../providers/autopilot_controller.dart';
 import '../providers/music_provider.dart';
 
@@ -13,7 +14,13 @@ class AutopilotTakeoverCard extends StatelessWidget {
     if (!controller.hasPendingTakeover) return const SizedBox.shrink();
 
     final music = context.read<MusicProvider>();
-    final song = music.queue.where((item) => item.id == controller.pendingSongId).cast<dynamic>().firstOrNull;
+    Song? song;
+    for (final item in music.queue) {
+      if (item.id == controller.pendingSongId) {
+        song = item;
+        break;
+      }
+    }
     if (song == null) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
 
@@ -31,7 +38,7 @@ class AutopilotTakeoverCard extends StatelessWidget {
                 children: [
                   Text('Autopilot is ready', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary)),
                   const SizedBox(height: 2),
-                  Text('Next: ${song.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
+                  Text('Next: ${song!.title}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
                   Text('I chose this from your listening pattern.', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
                 ],
               ),
