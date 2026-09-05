@@ -3,6 +3,7 @@ import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../models/intelligence_recommendation.dart';
+import '../providers/autopilot_controller.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
@@ -11,6 +12,7 @@ import '../screens/equalizer_screen.dart';
 import '../screens/queue_screen.dart';
 import '../services/audio_file_service.dart';
 import '../widgets/audio_visualization_widget.dart';
+import '../widgets/autopilot_takeover_card.dart';
 import '../widgets/player_action_overlay.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -56,7 +58,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [_IconControl(tooltip: 'Previous song', icon: Icons.skip_previous_rounded, onPressed: music.previousSong), _IconControl(tooltip: 'Back 10 seconds', icon: Icons.replay_10_rounded, onPressed: () => music.seek(Duration(milliseconds: (music.currentPosition.inMilliseconds - 10000).clamp(0, max.toInt())))), StreamBuilder<PlayerState>(stream: music.audioPlayer.playerStateStream, initialData: music.audioPlayer.playerState, builder: (_, snapshot) { final state = snapshot.data ?? music.audioPlayer.playerState; final playing = state.playing && state.processingState != ProcessingState.completed; return _PlayPauseControl(isPlaying: playing, onPressed: music.togglePlayPause); }), _IconControl(tooltip: 'Forward 10 seconds', icon: Icons.forward_10_rounded, onPressed: () => music.seek(Duration(milliseconds: (music.currentPosition.inMilliseconds + 10000).clamp(0, max.toInt())))), _IconControl(tooltip: 'Next song', icon: Icons.skip_next_rounded, onPressed: music.nextSong)]),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [ValueListenableBuilder<double>(valueListenable: _systemVolume, builder: (_, volume, __) => IconButton(tooltip: 'Volume', icon: Icon(volume <= 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded), onPressed: () => _showVolume(context))), Consumer<PlaybackFeaturesProvider>(builder: (_, playback, __) => Row(mainAxisSize: MainAxisSize.min, children: [IconButton(tooltip: playback.sleepTimerActive ? 'Sleep timer: ${playback.sleepTimerLabel}' : 'Sleep timer', icon: Icon(Icons.timer_outlined, color: playback.sleepTimerActive ? scheme.primary : null), onPressed: () => _showSleepTimer(context, playback)), if (playback.sleepTimerActive) Text(playback.sleepTimerLabel, style: Theme.of(context).textTheme.labelMedium)])), IconButton(tooltip: 'Queue', icon: const Icon(Icons.queue_music_rounded), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const QueueScreen()))), IconButton(tooltip: 'Per-song EQ', icon: const Icon(Icons.equalizer_rounded), onPressed: () => _openSongEq(context, song.id)), IconButton(tooltip: 'More playback options', icon: const Icon(Icons.more_vert_rounded), onPressed: () => _showMoreOptions(context))]),
-        const SizedBox(height: 20), Consumer<IntelligenceProvider>(builder: (context, intelligence, _) { final item = intelligence.anticipatedNext; if (!intelligence.isEnabled || item == null) return const SizedBox.shrink(); return _IntelligenceNextCard(item: item); }),
+        const SizedBox(height: 14),
+        const AutopilotTakeoverCard(),
+        const SizedBox(height: 8),
+        Consumer<IntelligenceProvider>(builder: (context, intelligence, _) { final item = intelligence.anticipatedNext; if (!intelligence.isEnabled || item == null) return const SizedBox.shrink(); return _IntelligenceNextCard(item: item); }),
       ]);
     }),
   );
