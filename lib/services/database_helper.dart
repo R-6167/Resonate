@@ -66,7 +66,24 @@ class DatabaseHelper {
       for (final sql in ['CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
     }
   }
-  Future<int> insertListeningEvent(ListeningEvent event) async { try { return await (await database).insert(tableListeningEvents, event.toMap(), conflictAlgorithm: ConflictAlgorithm.replace); } catch (e) { print('Error inserting listening event: $e'); return -1; } }
+  Future<int> insertListeningEvent(ListeningEvent event) async {
+    try {
+      final db = await database;
+      final startedAt = DateTime.tryParse(event.startedAt.toIso8601String()) ?? DateTime.now();
+      final duplicate = await db.query(
+        tableListeningEvents,
+        columns: [columnEventId],
+        where: '$columnEventSongId = ? AND $columnEventEndedAt IS NULL AND $columnEventStartedAt >= ?',
+        whereArgs: [event.songId, startedAt.subtract(const Duration(seconds: 5)).toIso8601String()],
+        limit: 1,
+      );
+      if (duplicate.isNotEmpty) return 0;
+      return await db.insert(tableListeningEvents, event.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (e) {
+      print('Error inserting listening event: $e');
+      return -1;
+    }
+  }
   Future<int> updateListeningEvent(ListeningEvent event) async { try { return await (await database).update(tableListeningEvents, event.toMap(), where: '$columnEventId = ?', whereArgs: [event.id]); } catch (e) { print('Error updating listening event: $e'); return -1; } }
   Future<List<ListeningEvent>> getRecentListeningEvents({int limit = 100}) async { try { final maps = await (await database).query(tableListeningEvents, orderBy: '$columnEventStartedAt DESC', limit: limit); return maps.map(ListeningEvent.fromMap).toList(); } catch (e) { print('Error fetching listening events: $e'); return []; } }
   Future<List<ListeningEvent>> getListeningHistory({int limit = 200, int offset = 0}) async { try { final maps = await (await database).query(tableListeningEvents, orderBy: '$columnEventStartedAt DESC', limit: limit, offset: offset); return maps.map(ListeningEvent.fromMap).toList(); } catch (e) { print('Error fetching listening history: $e'); return []; } }
@@ -78,7 +95,7 @@ class DatabaseHelper {
   Future<List<Song>> getAllSongs() async { try { return (await (await database).query(tableSongs,orderBy:'$columnSongTitle ASC')).map(_songFromMap).toList(); } catch(e){print('Error fetching all songs: $e');return [];} }
   Future<List<Song>> searchSongs(String query) async { try { final q='%$query%'; return (await (await database).query(tableSongs,where:'$columnSongTitle LIKE ? OR $columnSongArtist LIKE ? OR $columnSongAlbum LIKE ?',whereArgs:[q,q,q],orderBy:'$columnSongTitle ASC')).map(_songFromMap).toList(); }catch(e){return [];} }
   Future<List<Song>> getSongsByArtist(String artist) async { try{return (await (await database).query(tableSongs,where:'$columnSongArtist = ?',whereArgs:[artist],orderBy:'$columnSongTitle ASC')).map(_songFromMap).toList();}catch(e){return [];} }
-  Future<List<Song>> getSongsByAlbum(String album) async { try{return (await (await database).query(tableSongs,where:'$columnSongAlbum = ?',whereArgs:[album],orderBy:'$columnSongTitle ASC')).map(_songFromMap).toList();}catch(e){return [];} }
+  Future<List<Song>> getSongsByAlbum(String album) async { try{return (await (await database).query(tableSongs,where:'$columnSongAlbum = ?',whereArgs:[artist],orderBy:'$columnSongTitle ASC')).map(_songFromMap).toList();}catch(e){return [];} }
   Future<int> updateSongPlayCount(String songId) async { try{return await (await database).rawUpdate('UPDATE $tableSongs SET $columnSongPlayCount=COALESCE($columnSongPlayCount,0)+1,$columnSongLastPlayed=? WHERE $columnSongId=?',[DateTime.now().toIso8601String(),songId]);}catch(e){return -1;} }
   Future<int> deleteSong(String songId) async { try{final db=await database;await db.delete(tableListeningEvents,where:'$columnEventSongId = ? OR $columnEventPreviousSongId = ?',whereArgs:[songId,songId]);await db.delete(tablePlaylistSongs,where:'$columnPlaylistSongSongId = ?',whereArgs:[songId]);await db.delete(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId]);return await db.delete(tableSongs,where:'$columnSongId = ?',whereArgs:[songId]);}catch(e){return -1;} }
   Future<int> insertPlaylist(Playlist playlist) async { try{return await (await database).insert(tablePlaylists,{columnPlaylistId:playlist.id,columnPlaylistName:playlist.name,columnPlaylistCreatedAt:playlist.createdAt.toIso8601String(),columnPlaylistDescription:playlist.description},conflictAlgorithm:ConflictAlgorithm.replace);}catch(e){return -1;} }
