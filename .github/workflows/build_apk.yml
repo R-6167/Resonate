@@ -8,6 +8,7 @@ on:
       - Audio_Update.2
       - Intelligence
       - Notification_BugFix
+      - Normal-engine-remastered
   workflow_dispatch:
 
 concurrency:
