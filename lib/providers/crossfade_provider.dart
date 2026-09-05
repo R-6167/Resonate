@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'music_provider.dart';
 
@@ -13,7 +12,7 @@ class CrossfadeProvider extends ChangeNotifier {
   Timer? _watchTimer;
 
   CrossfadeProvider({required this.music}) {
-    _load();
+    unawaited(_load());
     _watchTimer = Timer.periodic(const Duration(milliseconds: 150), (_) => _watchPosition());
   }
 
@@ -43,7 +42,7 @@ class CrossfadeProvider extends ChangeNotifier {
     duration = value.clamp(0.0, 12000.0).toDouble();
     if (duration > 0 && !isEnabled) isEnabled = true;
     if (duration == 0) isEnabled = false;
-    await _syncLoopMode();
+    await _syncPlayerSettings();
     await _save();
     notifyListeners();
   }
@@ -52,18 +51,33 @@ class CrossfadeProvider extends ChangeNotifier {
     isEnabled = value;
     if (!isEnabled) duration = 0.0;
     else if (duration == 0.0) duration = 3000.0;
-    await _syncLoopMode();
+    await _syncPlayerSettings();
     await _save();
     notifyListeners();
   }
 
-  Future<void> _syncLoopMode() async {
-    // Crossfade must never use LoopMode.one. Loop-one prevents just_audio from
-    // reaching completed state and was the cause of tracks repeating after a
-    // crossfade transition on real devices.
-    try {
-      await music.audioPlayer.setLoopMode(LoopMode.off);
-    } catch (_) {}
+  Future<void> _syncPlayerSettings() async {
+    await music.setCrossfadeEnabled(isEnabled);
+    if (duration > 0) await music.setCrossfadeDuration(duration.round());
+    await music.setCrossfadeFadeType(fadeType);
+  }
+
+  Future<void> setFadeType(String value) async {
+    const validTypes = ['linear', 'ease_in', 'ease_out', 'ease_in_out'];
+    if (!validTypes.contains(value)) return;
+    fadeType = value;
+    await music.setCrossfadeFadeType(value);
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> reset() async {
+    duration = 0.0;
+    isEnabled = false;
+    fadeType = 'linear';
+    await _syncPlayerSettings();
+    await _save();
+    notifyListeners();
   }
 
   String getDurationString() {
@@ -75,16 +89,6 @@ class CrossfadeProvider extends ChangeNotifier {
 
   Future<void> applyPreset(double value) => setDuration(value);
 
-  Future<void> setFadeType(String value) async {
-    const validTypes = ['linear', 'ease_in', 'ease_out', 'ease_in_out'];
-    if (validTypes.contains(value)) { fadeType = value; await _save(); notifyListeners(); }
-  }
-
-  Future<void> reset() async {
-    duration = 0.0; isEnabled = false; fadeType = 'linear';
-    await _syncLoopMode(); await _save(); notifyListeners();
-  }
-
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -92,9 +96,11 @@ class CrossfadeProvider extends ChangeNotifier {
       duration = prefs.getDouble('crossfade_duration') ?? 0.0;
       fadeType = prefs.getString('crossfade_fade_type') ?? 'linear';
       if (!['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(fadeType)) fadeType = 'linear';
-      await _syncLoopMode();
+      await _syncPlayerSettings();
       notifyListeners();
-    } catch (e) { debugPrint('Crossfade settings load failed: $e'); }
+    } catch (e) {
+      debugPrint('Crossfade settings load failed: $e');
+    }
   }
 
   Future<void> _save() async {
@@ -103,9 +109,14 @@ class CrossfadeProvider extends ChangeNotifier {
       await prefs.setBool('crossfade_enabled', isEnabled);
       await prefs.setDouble('crossfade_duration', duration);
       await prefs.setString('crossfade_fade_type', fadeType);
-    } catch (e) { debugPrint('Crossfade settings save failed: $e'); }
+    } catch (e) {
+      debugPrint('Crossfade settings save failed: $e');
+    }
   }
 
   @override
-  void dispose() { _watchTimer?.cancel(); super.dispose(); }
+  void dispose() {
+    _watchTimer?.cancel();
+    super.dispose();
+  }
 }
