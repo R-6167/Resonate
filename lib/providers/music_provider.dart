@@ -99,7 +99,7 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _crossfadeEnabled = prefs.getBool(_crossfadeEnabledKey) ?? false;
-      _crossfadeDurationMs = (prefs.getDouble(_crossfadeDurationKey) ?? 3000).round().clamp(500, 12000);
+      _crossfadeDurationMs = ((prefs.getDouble(_crossfadeDurationKey) ?? 3000).round().clamp(500, 12000)).toInt();
       _crossfadeFadeType = prefs.getString(_crossfadeFadeTypeKey) ?? 'linear';
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? 0;
       _resumeSongId = prefs.getString(_resumeSongIdKey);
@@ -118,7 +118,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setCrossfadeDuration(int milliseconds) async {
-    _crossfadeDurationMs = milliseconds.clamp(500, 12000);
+    _crossfadeDurationMs = milliseconds.clamp(500, 12000).toInt();
     _crossfadeEnabled = true;
     await _persistCrossfadeSettings();
     notifyListeners();
@@ -170,7 +170,7 @@ class MusicProvider extends ChangeNotifier {
       final restored = ids.map((id) => byId[id]).whereType<Song>().toList();
       if (restored.isEmpty) return;
       _queue = restored;
-      _queueIndex = savedIndex.clamp(0, restored.length - 1);
+      _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt();
       currentSong = _queue[_queueIndex];
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
@@ -260,7 +260,7 @@ class MusicProvider extends ChangeNotifier {
     final now = DateTime.now();
     if (!force && _lastResumePersist != null && now.difference(_lastResumePersist!) < const Duration(seconds: 3)) return;
     _lastResumePersist = now;
-    final position = _activeHistoryPositionMs.clamp(0, currentDuration?.inMilliseconds ?? 0);
+    final position = _activeHistoryPositionMs.clamp(0, currentDuration?.inMilliseconds ?? 0).toInt();
     unawaited(SharedPreferences.getInstance().then((prefs) async {
       await prefs.setInt(_resumePositionKey, position);
       await prefs.setString(_resumeSongIdKey, song.id);
@@ -276,9 +276,15 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - position;
     if (remaining <= Duration.zero || remaining > Duration(milliseconds: _crossfadeDurationMs)) return;
     _automaticCrossfadeInFlight = true;
-    unawaited(performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType).whenComplete(() {
+    unawaited(_runAutomaticCrossfade());
+  }
+
+  Future<void> _runAutomaticCrossfade() async {
+    try {
+      await performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType);
+    } finally {
       _automaticCrossfadeInFlight = false;
-    }));
+    }
   }
 
   Future<void> _advanceAfterCompletion() async {
@@ -334,7 +340,7 @@ class MusicProvider extends ChangeNotifier {
       if (normalized.isEmpty) return false;
       final selectedIndex = normalized.indexWhere((s) => s.id == song.id);
       _queue = normalized;
-      _queueIndex = selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1);
+      _queueIndex = selectedIndex >= 0 ? selectedIndex : startIndex.clamp(0, normalized.length - 1).toInt();
       currentSong = _queue[_queueIndex];
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
@@ -346,7 +352,7 @@ class MusicProvider extends ChangeNotifier {
       await audioPlayer.setAudioSource(AudioSource.uri(_audioUri(currentSong!.filePath), tag: currentSong));
       if (resume && _resumeSongId == currentSong!.id && _resumePositionMs > 0) {
         final durationMs = currentDuration?.inMilliseconds ?? _resumePositionMs;
-        final safeResume = _resumePositionMs.clamp(0, durationMs);
+        final safeResume = _resumePositionMs.clamp(0, durationMs).toInt();
         await audioPlayer.seek(Duration(milliseconds: safeResume));
         currentPosition = Duration(milliseconds: safeResume);
       }
@@ -401,7 +407,7 @@ class MusicProvider extends ChangeNotifier {
       final event = _activeHistoryEvent;
       if (event == null) return;
       final total = event.songDurationMs > 0 ? event.songDurationMs : (currentDuration?.inMilliseconds ?? 0);
-      final position = _activeHistoryPositionMs.clamp(0, total > 0 ? total : 1);
+      final position = _activeHistoryPositionMs.clamp(0, total > 0 ? total : 1).toInt();
       final ratio = total <= 0 ? 0.0 : (position / total).clamp(0.0, 1.0).toDouble();
       final wasCompleted = completed || ratio >= .90;
       final updated = ListeningEvent(
@@ -458,7 +464,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> playNext(Song song) async {
     if (song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false;
-    final insertAt = (_queueIndex + 1).clamp(0, _queue.length);
+    final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt();
     _queue.insert(insertAt, song);
     await _persistQueue();
     notifyListeners();
@@ -476,7 +482,7 @@ class MusicProvider extends ChangeNotifier {
   Future<bool> reorderQueue(int oldIndex, int newIndex) async {
     if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false;
     if (newIndex > oldIndex) newIndex--;
-    newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1);
+    newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt();
     final item = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, item);
     await _persistQueue();
@@ -520,8 +526,8 @@ class MusicProvider extends ChangeNotifier {
       await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false);
       await incoming.setVolume(0.0);
       await incoming.play();
-      final total = milliseconds.clamp(500, 12000);
-      final steps = (total / 50).round().clamp(10, 240);
+      final total = milliseconds.clamp(500, 12000).toInt();
+      final steps = (total / 50).round().clamp(10, 240).toInt();
       for (var i = 1; i <= steps; i++) {
         final linear = i / steps;
         final t = switch (fadeType) {
@@ -556,7 +562,6 @@ class MusicProvider extends ChangeNotifier {
       debugPrint('True crossfade failed: $e');
       try { await incoming.stop(); } catch (_) {}
       try { await outgoing.setVolume(master); } catch (_) {}
-      // A crossfade is an enhancement, never a reason to stop playback.
       try {
         await outgoing.stop();
         await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex);
@@ -647,7 +652,7 @@ class MusicProvider extends ChangeNotifier {
     return _serializePlayback(() async {
       try {
         final duration = audioPlayer.duration ?? currentDuration ?? Duration.zero;
-        final safe = Duration(milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds));
+        final safe = Duration(milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds).toInt());
         await audioPlayer.seek(safe);
         currentPosition = safe;
         if (_activeHistoryEvent != null) _activeHistoryPositionMs = safe.inMilliseconds;
@@ -676,7 +681,7 @@ class MusicProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final index = startIndex.clamp(0, songs.length - 1);
+    final index = startIndex.clamp(0, songs.length - 1).toInt();
     await playSong(songs[index], queue: songs, startIndex: index);
   }
 
