@@ -58,8 +58,11 @@ class CrossfadeProvider extends ChangeNotifier {
   }
 
   Future<void> _syncLoopMode() async {
+    // Crossfade must never use LoopMode.one. Loop-one prevents just_audio from
+    // reaching completed state and was the cause of tracks repeating after a
+    // crossfade transition on real devices.
     try {
-      await music.audioPlayer.setLoopMode(isEnabled && music.queue.length > 1 ? LoopMode.one : LoopMode.off);
+      await music.audioPlayer.setLoopMode(LoopMode.off);
     } catch (_) {}
   }
 
