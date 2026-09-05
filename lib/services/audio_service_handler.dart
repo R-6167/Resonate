@@ -53,8 +53,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     playbackState.add(playbackState.value.copyWith(
       controls: [
         MediaControl.skipToPrevious,
+        MediaControl.rewind,
         playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.stop,
+        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
@@ -62,7 +63,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
       },
-      androidCompactActionIndices: const [0, 1, 3],
+      androidCompactActionIndices: const [0, 2, 4],
       processingState: song == null
           ? AudioProcessingState.idle
           : AudioProcessingState.ready,
@@ -157,6 +158,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         playbackState.value.copyWith(
           playing: false,
           processingState: AudioProcessingState.error,
+          errorMessage: e.toString(),
         ),
       );
       rethrow;
@@ -193,6 +195,27 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void> seek(Duration position) async {
     if (_onSeek != null) return _onSeek!(position);
     await _player.seek(position);
+  }
+
+  @override
+  Future<void> fastForward() async {
+    final current = playbackState.value.position;
+    final duration = mediaItem.value?.duration;
+    final target = duration == null
+        ? current + const Duration(seconds: 10)
+        : (current + const Duration(seconds: 10)).compareTo(duration) > 0
+            ? duration
+            : current + const Duration(seconds: 10);
+    await seek(target);
+  }
+
+  @override
+  Future<void> rewind() async {
+    final current = playbackState.value.position;
+    final target = current > const Duration(seconds: 10)
+        ? current - const Duration(seconds: 10)
+        : Duration.zero;
+    await seek(target);
   }
 
   @override
