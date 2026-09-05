@@ -53,8 +53,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     playbackState.add(playbackState.value.copyWith(
       controls: [
         MediaControl.skipToPrevious,
+        MediaControl.rewind,
         playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.stop,
+        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
@@ -62,7 +63,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
       },
-      androidCompactActionIndices: const [0, 1, 3],
+      // Compact Android media controls: previous, play/pause, next.
+      // Expanded notifications also expose 10-second rewind/forward.
+      androidCompactActionIndices: const [0, 2, 4],
       processingState: song == null
           ? AudioProcessingState.idle
           : AudioProcessingState.ready,
@@ -157,6 +160,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         playbackState.value.copyWith(
           playing: false,
           processingState: AudioProcessingState.error,
+          errorMessage: e.toString(),
         ),
       );
       rethrow;
