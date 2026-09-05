@@ -54,6 +54,7 @@ class MusicProvider extends ChangeNotifier {
   ListeningEvent? _activeHistoryEvent;
   int _activeHistoryPositionMs = 0;
   Future<void> _historySerial = Future<void>.value();
+  bool _historyOperationActive = false;
 
   double get volume => _volume;
   List<Song> get queue => List.unmodifiable(_queue);
@@ -377,7 +378,6 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _startHistoryEvent(Song song) async {
     await _queueHistoryOperation(() async {
       if (_activeHistoryEvent?.songId == song.id) return;
-      await _finishHistoryEvent();
       final event = ListeningEvent(
         id: '${DateTime.now().microsecondsSinceEpoch}_${song.id}',
         songId: song.id,
@@ -446,7 +446,15 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _queueHistoryOperation(Future<void> Function() operation) {
-    final next = _historySerial.then((_) => operation());
+    if (_historyOperationActive) return operation();
+    final next = _historySerial.then((_) async {
+      _historyOperationActive = true;
+      try {
+        await operation();
+      } finally {
+        _historyOperationActive = false;
+      }
+    });
     _historySerial = next.then<void>((_) {}, onError: (_, __) {});
     return next;
   }
