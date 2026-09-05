@@ -50,7 +50,7 @@ class ListeningHistoryScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
             Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              _Stat(label: 'Sessions', value: '${stats['events'] ?? 0}'),
+              _Stat(label: 'Plays', value: '${stats['events'] ?? 0}'),
               _Stat(label: 'Completed', value: '${stats['completed'] ?? 0}'),
               _Stat(label: 'Skipped', value: '${stats['skipped'] ?? 0}'),
               _Stat(label: 'Time', value: _formatDuration((stats['playedMs'] as num?)?.toInt() ?? 0)),
