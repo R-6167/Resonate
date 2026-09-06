@@ -6,8 +6,21 @@ import '../providers/intelligence_mix_controller.dart';
 
 /// A small Home/For You surface for the latest generated mix journey.
 /// It deliberately exposes evidence rather than inventing personality traits.
-class EvolvingMixCard extends StatelessWidget {
+class EvolvingMixCard extends StatefulWidget {
   const EvolvingMixCard({super.key});
+
+  @override
+  State<EvolvingMixCard> createState() => _EvolvingMixCardState();
+}
+
+class _EvolvingMixCardState extends State<EvolvingMixCard> {
+  Future<List<Map<String, dynamic>>>? _memoryFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _memoryFuture ??= context.read<IntelligenceMixController>().recentGeneratedMixes();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +31,7 @@ class EvolvingMixCard extends StatelessWidget {
     }
 
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: controller.recentGeneratedMixes(),
+      future: _memoryFuture,
       builder: (context, snapshot) {
         final values = snapshot.data ?? const <Map<String, dynamic>>[];
         if (values.isEmpty) return const SizedBox.shrink();
