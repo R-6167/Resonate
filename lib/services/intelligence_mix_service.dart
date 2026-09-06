@@ -3,6 +3,7 @@ import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'intelligence_decision_engine.dart';
+import 'intelligence_mix_memory.dart';
 
 /// Local-only mix intelligence. It does not decode or upload audio. It learns
 /// from playback events already recorded by Resonate and uses the same
@@ -10,12 +11,15 @@ import 'intelligence_decision_engine.dart';
 class IntelligenceMixService {
   final DatabaseHelper _database;
   final IntelligenceDecisionEngine _decisionEngine;
+  final IntelligenceMixMemory _memory;
 
   IntelligenceMixService({
     DatabaseHelper? database,
     IntelligenceDecisionEngine? decisionEngine,
+    IntelligenceMixMemory? memory,
   })  : _database = database ?? DatabaseHelper(),
-        _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine();
+        _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine(),
+        _memory = memory ?? IntelligenceMixMemory();
 
   Future<IntelligenceMixAnalysis?> analyzeLongMix(
     Song source, {
@@ -94,17 +98,9 @@ class IntelligenceMixService {
     final listens = reached.sublist(startBucket, endBucket).fold(0, (a, b) => a + b);
     final span = (endBucket - startBucket).clamp(1, 100000);
     final preference = observations == 0 ? 0.0 : (listens / (observations * span)).clamp(0.0, 1.0).toDouble();
-    return IntelligenceMixSegment(
-      startMs: startMs,
-      endMs: endMs,
-      listens: listens,
-      preference: preference,
-    );
+    return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens, preference: preference);
   }
 
-  /// Generates a fresh local mixtape from Intelligence recommendations.
-  /// Calling it again can produce a different mix as the user's memory and
-  /// current session change.
   Future<IntelligenceMix> generateMix({
     required List<IntelligenceRecommendation> recommendations,
     required Song? currentSong,
@@ -141,17 +137,12 @@ class IntelligenceMixService {
       totalMs += song.duration.inMilliseconds;
     }
 
-    final reason = _mixReason(
-      sessionMode: sessionMode,
-      sessionSkipStreak: sessionSkipStreak,
-      sessionCompletionStreak: sessionCompletionStreak,
-      count: songs.length,
-    );
+    final reason = _mixReason(sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, count: songs.length);
     final description = songs.isEmpty
         ? 'I need a little more listening evidence before I can build this mix.'
         : '${songs.length} tracks shaped by your long-term memory and what you seem to want right now.';
 
-    return IntelligenceMix(
+    final mix = IntelligenceMix(
       id: 'mix_${DateTime.now().microsecondsSinceEpoch}',
       title: title,
       description: description,
@@ -160,14 +151,13 @@ class IntelligenceMixService {
       createdAt: DateTime.now(),
       reason: reason,
     );
+    await _memory.remember(mix);
+    return mix;
   }
 
-  String _mixReason({
-    required String sessionMode,
-    required int sessionSkipStreak,
-    required int sessionCompletionStreak,
-    required int count,
-  }) {
+  Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _memory.recent();
+
+  String _mixReason({required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required int count}) {
     if (count == 0) return 'Not enough confident choices yet.';
     if (sessionSkipStreak >= 2) return 'A little more exploration after your recent skips.';
     if (sessionCompletionStreak >= 2) return 'Keeping the flow because you have been finishing tracks.';
