@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/intelligence_mix.dart';
+import '../models/song.dart';
 import '../services/intelligence_mix_service.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
@@ -37,7 +38,6 @@ class IntelligenceMixController extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final mixTitle = title ?? _defaultTitle();
       final mix = await _service.generateMix(
         recommendations: intelligence.recommendations,
         currentSong: music.currentSong,
@@ -46,7 +46,7 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionCompletionStreak: intelligence.sessionCompletionStreak,
         sessionArtistCounts: intelligence.sessionArtistCounts,
         targetDuration: targetDuration,
-        title: mixTitle,
+        title: title ?? _defaultTitle(),
       );
       _currentMix = mix;
       return mix;
@@ -57,12 +57,9 @@ class IntelligenceMixController extends ChangeNotifier {
   }
 
   Future<IntelligenceMixAnalysis?> analyzeLongMix(
-    dynamic song, {
+    Song song, {
     int minimumDurationMinutes = 20,
   }) async {
-    // Kept dynamic at this boundary so callers can pass the current library
-    // model without coupling the controller to a second song abstraction.
-    if (song is! Song) return null;
     _analyzingSongId = song.id;
     notifyListeners();
     try {
