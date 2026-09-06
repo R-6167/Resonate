@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/intelligence_recommendation.dart';
-import '../models/song.dart';
+import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
@@ -13,6 +12,7 @@ import 'music_provider.dart';
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
+  final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
   bool _queueDecisionInFlight = false;
   bool _transitionInFlight = false;
   String? _transitionSongId;
@@ -110,63 +110,18 @@ class AutopilotController extends ChangeNotifier {
     }
   }
 
-  String _artistKey(String? value) {
-    final raw = value?.trim().toLowerCase() ?? '';
-    const unknown = <String>{
-      '', 'unknown', 'unknown artist', 'unknown_artist', '<unknown>',
-      'n/a', 'na', 'none', 'null', 'various artists', 'various artist',
-    };
-    return unknown.contains(raw) ? '' : raw;
-  }
-
-  List<Song> _selectQueueCandidates(
-    List<IntelligenceRecommendation> recommendations,
-    Set<String> queuedIds, {
-    int count = 2,
-    required bool allowArtistRepeat,
-  }) {
-    final current = music.currentSong;
-    final currentArtist = _artistKey(current?.artist);
-    final selected = <Song>[];
-    final selectedArtists = <String>{};
-
-    final pool = recommendations
-        .where((r) => r.song.id != current?.id)
-        .where((r) => !queuedIds.contains(r.song.id))
-        .toList(growable: false);
-
-    for (final recommendation in pool) {
-      if (selected.length >= count) break;
-      final artist = _artistKey(recommendation.song.artist);
-      final repeatedCurrent = artist.isNotEmpty && artist == currentArtist;
-      final repeatedSelected = artist.isNotEmpty && selectedArtists.contains(artist);
-      if (!allowArtistRepeat && (repeatedCurrent || repeatedSelected)) continue;
-      selected.add(recommendation.song);
-      if (artist.isNotEmpty) selectedArtists.add(artist);
-    }
-
-    if (selected.length < count) {
-      for (final recommendation in pool) {
-        if (selected.length >= count) break;
-        if (selected.any((song) => song.id == recommendation.song.id)) continue;
-        selected.add(recommendation.song);
-      }
-    }
-    return selected;
-  }
-
   Future<void> _ensurePredictedQueue(double threshold) async {
     if (_queueDecisionInFlight) return;
     _queueDecisionInFlight = true;
     try {
       await intelligence.refreshRecommendations(notify: false);
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
-      final allowArtistRepeat = await IntelligenceSettingsStore.artistRepeat();
-      final candidates = _selectQueueCandidates(
-        intelligence.recommendations.where((r) => r.confidence >= threshold).toList(growable: false),
-        futureQueued,
+      final candidates = await _decisionEngine.chooseSequence(
+        recommendations: intelligence.recommendations,
+        queuedIds: futureQueued,
+        currentSong: music.currentSong,
+        sessionMode: intelligence.sessionMode,
         count: 2,
-        allowArtistRepeat: allowArtistRepeat,
       );
       if (candidates.isNotEmpty) await music.enqueueSongs(candidates);
     } finally {
