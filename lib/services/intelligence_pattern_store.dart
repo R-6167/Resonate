@@ -9,9 +9,9 @@ import '../models/song.dart';
 ///
 /// The store intentionally keeps compact aggregates instead of raw listening
 /// history. Each weekday/3-hour bucket remembers outcomes, songs, artists and
-/// a derived behavioral state. A second compact profile learns how often each
-/// behavioral state appears across sessions so Intelligence can recognize a
-/// recurring listening mode rather than only a clock window.
+/// a derived behavioral state. A second compact profile learns recurring
+/// behavioral states across contexts and keeps a small amount of momentum so
+/// Intelligence can recognize a continuing pattern without copying history.
 class IntelligencePatternStore {
   static const _key = 'intelligence_listening_patterns_v1';
   static const _learnedEventsKey = 'intelligence_pattern_learned_events_v1';
@@ -59,9 +59,8 @@ class IntelligencePatternStore {
     return events == 0 ? 'I am still learning this listening window.' : 'I need a few more sessions to recognize this window.';
   }
 
-  /// Returns the learned global behavioral state and confidence. The global
-  /// profile is deliberately small: it captures recurring listening behavior
-  /// across contexts without storing a second copy of the listening history.
+  /// Returns the learned global behavioral state and confidence. The profile
+  /// is intentionally tiny and does not duplicate the listening history.
   static Future<Map<String, dynamic>> readStateProfile() async {
     try {
       final prefs = await _prefs();
@@ -96,6 +95,14 @@ class IntelligencePatternStore {
     return (count / total).clamp(0.0, 1.0).toDouble();
   }
 
+  /// A small measure of whether the most recently learned states are settling
+  /// into one mode. It is intentionally capped and only acts as a tie-breaker
+  /// in the decision engine.
+  static double stateMomentum(Map<String, dynamic> profile) {
+    final streak = (profile['streak'] as num?)?.toInt() ?? 0;
+    return (streak.clamp(0, 4) / 4.0).toDouble();
+  }
+
   static Future<void> _learnState(String state) async {
     if (state == 'Learning') return;
     try {
@@ -104,8 +111,13 @@ class IntelligencePatternStore {
       final decoded = raw == null || raw.isEmpty ? <String, dynamic>{} : jsonDecode(raw);
       final profile = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
       final key = state == 'Familiar flow' ? 'familiar' : state == 'Exploration' ? 'exploration' : 'balanced';
+      final previousState = profile['last_state']?.toString() ?? '';
+      final previousStreak = (profile['streak'] as num?)?.toInt() ?? 0;
       profile['total_events'] = (profile['total_events'] as num? ?? 0).toInt() + 1;
       profile[key] = (profile[key] as num? ?? 0).toInt() + 1;
+      profile['last_state'] = state;
+      profile['streak'] = previousState == state ? previousStreak + 1 : 1;
+      profile['last_learned_at'] = DateTime.now().toIso8601String();
       await prefs.setString(_statesKey, jsonEncode(profile));
     } catch (_) {}
   }
