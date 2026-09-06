@@ -15,12 +15,15 @@ class AutopilotController extends ChangeNotifier {
   bool _transitionInFlight = false;
   String? _transitionSongId;
   String? _pendingSongId;
+  String? _declinedForSongId;
   bool _pendingTakeover = false;
+  bool _consentLoaded = false;
+  bool _consentGranted = false;
 
   AutopilotController({required this.music, required this.intelligence}) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
-    unawaited(_evaluate());
+    unawaited(_loadConsentAndEvaluate());
   }
 
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
@@ -29,9 +32,18 @@ class AutopilotController extends ChangeNotifier {
   void _onPlaybackChanged() => unawaited(_evaluate());
   void _onIntelligenceChanged() => unawaited(_evaluate());
 
+  Future<void> _loadConsentAndEvaluate() async {
+    _consentGranted = await IntelligenceSettingsStore.autopilotConsent();
+    _consentLoaded = true;
+    await _evaluate();
+  }
+
   Future<void> allowPendingTakeover() async {
     if (!hasPendingTakeover) return;
+    _consentGranted = true;
     _pendingTakeover = false;
+    _pendingSongId = null;
+    await IntelligenceSettingsStore.setAutopilotConsent(true);
     notifyListeners();
     await _evaluate(forceTransition: true);
   }
@@ -40,14 +52,12 @@ class AutopilotController extends ChangeNotifier {
     final pending = _pendingSongId;
     _pendingTakeover = false;
     _pendingSongId = null;
+    if (pending != null) _declinedForSongId = pending;
     notifyListeners();
-    if (pending == null) return;
-    final index = music.queue.indexWhere((song) => song.id == pending);
-    if (index > music.queueIndex) await music.removeFromQueue(index);
   }
 
   Future<void> _evaluate({bool forceTransition = false}) async {
-    if (!intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;
+    if (!_consentLoaded || !intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
@@ -71,10 +81,15 @@ class AutopilotController extends ChangeNotifier {
     if (recommendation == null || recommendation.confidence < threshold) return;
     if (_transitionSongId == music.currentSong?.id) return;
 
-    if (!forceTransition && !_pendingTakeover) {
-      _pendingTakeover = true;
-      _pendingSongId = next.id;
-      notifyListeners();
+    // The first autonomous transition asks for consent. Once accepted,
+    // subsequent transitions in Autopilot happen automatically.
+    if (!_consentGranted && !forceTransition) {
+      if (_declinedForSongId == next.id) return;
+      if (!_pendingTakeover) {
+        _pendingTakeover = true;
+        _pendingSongId = next.id;
+        notifyListeners();
+      }
       return;
     }
 
