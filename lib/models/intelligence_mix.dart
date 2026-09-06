@@ -5,16 +5,19 @@ class IntelligenceMixSegment {
   final int endMs;
   final int listens;
   final double preference;
+  final int replayCount;
 
   const IntelligenceMixSegment({
     required this.startMs,
     required this.endMs,
     required this.listens,
     required this.preference,
+    this.replayCount = 0,
   });
 
   Duration get start => Duration(milliseconds: startMs);
   Duration get end => Duration(milliseconds: endMs);
+  bool get hasReplayEvidence => replayCount > 0;
 }
 
 class IntelligenceMixAnalysis {
@@ -24,6 +27,8 @@ class IntelligenceMixAnalysis {
   final double preferredCoverage;
   final List<IntelligenceMixSegment> preferredSegments;
   final Duration? commonExitPoint;
+  final int replayEvents;
+  final int replayedSegments;
 
   const IntelligenceMixAnalysis({
     required this.source,
@@ -32,9 +37,12 @@ class IntelligenceMixAnalysis {
     required this.preferredCoverage,
     required this.preferredSegments,
     this.commonExitPoint,
+    this.replayEvents = 0,
+    this.replayedSegments = 0,
   });
 
   bool get hasEnoughEvidence => observations >= 3 && preferredSegments.isNotEmpty;
+  bool get hasReplayEvidence => replayEvents >= 2 && replayedSegments > 0;
 }
 
 class IntelligenceMix {
