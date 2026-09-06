@@ -7,8 +7,32 @@ import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/intelligence_pattern_store.dart';
 
-class AutopilotTakeoverCard extends StatelessWidget {
+class AutopilotTakeoverCard extends StatefulWidget {
   const AutopilotTakeoverCard({super.key});
+
+  @override
+  State<AutopilotTakeoverCard> createState() => _AutopilotTakeoverCardState();
+}
+
+class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
+  late Future<List<Map<String, dynamic>>> _memoryFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _memoryFuture = _loadMemory();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMemory() async {
+    return Future.wait([
+      IntelligencePatternStore.readBucket(DateTime.now()),
+      IntelligencePatternStore.readStateProfile(),
+    ]);
+  }
+
+  void _refreshMemory() {
+    setState(() => _memoryFuture = _loadMemory());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +55,7 @@ class AutopilotTakeoverCard extends StatelessWidget {
     final next = intelligence.anticipatedNext;
 
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: Future.wait([
-        IntelligencePatternStore.readBucket(DateTime.now()),
-        IntelligencePatternStore.readStateProfile(),
-      ]),
+      future: _memoryFuture,
       builder: (context, snapshot) {
         final bucket = snapshot.data != null && snapshot.data!.isNotEmpty ? snapshot.data![0] : const <String, dynamic>{};
         final profile = snapshot.data != null && snapshot.data!.length > 1 ? snapshot.data![1] : const <String, dynamic>{};
@@ -45,6 +66,7 @@ class AutopilotTakeoverCard extends StatelessWidget {
         final bucketEvents = (bucket['events'] as num?)?.toInt() ?? 0;
         final bucketCompleted = (bucket['completed'] as num?)?.toInt() ?? 0;
         final bucketSkipped = (bucket['skipped'] as num?)?.toInt() ?? 0;
+        final totalLearned = (profile['total_events'] as num?)?.toInt() ?? 0;
 
         return Column(
           children: [
@@ -85,7 +107,12 @@ class AutopilotTakeoverCard extends StatelessWidget {
                         Icon(Icons.psychology_rounded, color: scheme.primary),
                         const SizedBox(width: 9),
                         Expanded(child: Text('Companion memory', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
-                        Chip(label: Text(globalState), visualDensity: VisualDensity.compact),
+                        IconButton(
+                          tooltip: 'Refresh memory',
+                          onPressed: _refreshMemory,
+                          icon: const Icon(Icons.refresh_rounded),
+                          visualDensity: VisualDensity.compact,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 7),
@@ -102,6 +129,7 @@ class AutopilotTakeoverCard extends StatelessWidget {
                         if (bucketEvents > 0) Chip(label: Text('$bucketEvents signals'), visualDensity: VisualDensity.compact),
                         if (bucketCompleted > 0) Chip(label: Text('$bucketCompleted finished'), visualDensity: VisualDensity.compact),
                         if (bucketSkipped > 0) Chip(label: Text('$bucketSkipped skipped'), visualDensity: VisualDensity.compact),
+                        if (totalLearned > 0) Chip(label: Text('$totalLearned learned'), visualDensity: VisualDensity.compact),
                         if (globalConfidence >= .55) Chip(label: Text('${(globalConfidence * 100).round()}% consistent'), visualDensity: VisualDensity.compact),
                         if (momentum >= .5) const Chip(label: Text('Pattern holding'), visualDensity: VisualDensity.compact),
                       ],
@@ -117,6 +145,10 @@ class AutopilotTakeoverCard extends StatelessWidget {
                         const SizedBox(height: 3),
                         Text(next.sessionReason, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
                       ],
+                    ],
+                    if (snapshot.connectionState == ConnectionState.waiting) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(minHeight: 2),
                     ],
                   ],
                 ),
