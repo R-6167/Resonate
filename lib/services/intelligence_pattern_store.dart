@@ -7,13 +7,15 @@ import '../models/song.dart';
 
 /// Small, local-only memory of when and how the user tends to listen.
 ///
-/// The store intentionally keeps aggregates instead of raw listening history:
-/// each weekday/3-hour bucket remembers song outcomes and artist affinity.
-/// It also derives a compact listening state from those outcomes so the
-/// decision engine can recognize recurring contexts across sessions.
+/// The store intentionally keeps compact aggregates instead of raw listening
+/// history. Each weekday/3-hour bucket remembers outcomes, songs, artists and
+/// a derived behavioral state. A second compact profile learns how often each
+/// behavioral state appears across sessions so Intelligence can recognize a
+/// recurring listening mode rather than only a clock window.
 class IntelligencePatternStore {
   static const _key = 'intelligence_listening_patterns_v1';
   static const _learnedEventsKey = 'intelligence_pattern_learned_events_v1';
+  static const _statesKey = 'intelligence_listening_states_v1';
   static const _maxSongsPerBucket = 40;
   static const _maxArtistsPerBucket = 24;
   static const _maxLearnedEventIds = 300;
@@ -37,9 +39,6 @@ class IntelligencePatternStore {
     }
   }
 
-  /// Returns the learned listening state for a recurring weekday/time context.
-  /// States are intentionally behavioral rather than genre labels: they are
-  /// derived only from completion and skip outcomes stored locally.
   static String stateFor(Map<String, dynamic> bucket) {
     final events = (bucket['events'] as num?)?.toInt() ?? 0;
     if (events < 3) return 'Learning';
@@ -58,6 +57,57 @@ class IntelligencePatternStore {
     if (state == 'Exploration') return 'You tend to move through tracks quickly in this time window.';
     if (state == 'Balanced') return 'This time window usually mixes familiar and fresh choices.';
     return events == 0 ? 'I am still learning this listening window.' : 'I need a few more sessions to recognize this window.';
+  }
+
+  /// Returns the learned global behavioral state and confidence. The global
+  /// profile is deliberately small: it captures recurring listening behavior
+  /// across contexts without storing a second copy of the listening history.
+  static Future<Map<String, dynamic>> readStateProfile() async {
+    try {
+      final prefs = await _prefs();
+      final raw = prefs.getString(_statesKey);
+      if (raw == null || raw.isEmpty) return <String, dynamic>{};
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return <String, dynamic>{};
+      return Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      return <String, dynamic>{};
+    }
+  }
+
+  static String globalState(Map<String, dynamic> profile) {
+    final total = (profile['total_events'] as num?)?.toInt() ?? 0;
+    if (total < 12) return 'Learning';
+    final counts = <String, int>{
+      'Familiar flow': (profile['familiar'] as num?)?.toInt() ?? 0,
+      'Exploration': (profile['exploration'] as num?)?.toInt() ?? 0,
+      'Balanced': (profile['balanced'] as num?)?.toInt() ?? 0,
+    };
+    return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+  }
+
+  static double stateConfidence(Map<String, dynamic> profile) {
+    final total = (profile['total_events'] as num?)?.toInt() ?? 0;
+    if (total <= 0) return 0.0;
+    final state = globalState(profile);
+    if (state == 'Learning') return 0.0;
+    final key = state == 'Familiar flow' ? 'familiar' : state == 'Exploration' ? 'exploration' : 'balanced';
+    final count = (profile[key] as num?)?.toInt() ?? 0;
+    return (count / total).clamp(0.0, 1.0).toDouble();
+  }
+
+  static Future<void> _learnState(String state) async {
+    if (state == 'Learning') return;
+    try {
+      final prefs = await _prefs();
+      final raw = prefs.getString(_statesKey);
+      final decoded = raw == null || raw.isEmpty ? <String, dynamic>{} : jsonDecode(raw);
+      final profile = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+      final key = state == 'Familiar flow' ? 'familiar' : state == 'Exploration' ? 'exploration' : 'balanced';
+      profile['total_events'] = (profile['total_events'] as num? ?? 0).toInt() + 1;
+      profile[key] = (profile[key] as num? ?? 0).toInt() + 1;
+      await prefs.setString(_statesKey, jsonEncode(profile));
+    } catch (_) {}
   }
 
   /// Imports newly finished history rows once. Re-running is safe because
@@ -113,9 +163,12 @@ class IntelligencePatternStore {
       final existing = root[key];
       final bucket = existing is Map ? Map<String, dynamic>.from(existing) : <String, dynamic>{};
 
-      bucket['events'] = (bucket['events'] as num? ?? 0).toInt() + 1;
-      bucket['completed'] = (bucket['completed'] as num? ?? 0).toInt() + (completed ? 1 : 0);
-      bucket['skipped'] = (bucket['skipped'] as num? ?? 0).toInt() + (!completed && completionRatio > 0 ? 1 : 0);
+      final wasEvents = (bucket['events'] as num? ?? 0).toInt();
+      final wasCompleted = (bucket['completed'] as num? ?? 0).toInt();
+      final wasSkipped = (bucket['skipped'] as num? ?? 0).toInt();
+      bucket['events'] = wasEvents + 1;
+      bucket['completed'] = wasCompleted + (completed ? 1 : 0);
+      bucket['skipped'] = wasSkipped + (!completed && completionRatio > 0 ? 1 : 0);
       bucket['completion_sum'] = (bucket['completion_sum'] as num? ?? 0).toDouble() + completionRatio;
 
       final songs = _counts(bucket['songs']);
@@ -130,6 +183,14 @@ class IntelligencePatternStore {
 
       root[key] = bucket;
       await prefs.setString(_key, jsonEncode(root));
+      final stateBefore = stateFor({
+        ...bucket,
+        'events': wasEvents,
+        'completed': wasCompleted,
+        'skipped': wasSkipped,
+      });
+      final stateAfter = stateFor(bucket);
+      if (stateAfter != 'Learning' && stateAfter != stateBefore) await _learnState(stateAfter);
     } catch (_) {
       // Pattern memory must never interfere with playback.
     }
@@ -150,6 +211,7 @@ class IntelligencePatternStore {
       final prefs = await _prefs();
       await prefs.remove(_key);
       await prefs.remove(_learnedEventsKey);
+      await prefs.remove(_statesKey);
     } catch (_) {}
   }
 }
