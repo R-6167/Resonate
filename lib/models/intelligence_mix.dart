@@ -45,6 +45,9 @@ class IntelligenceMix {
   final Duration targetDuration;
   final DateTime createdAt;
   final String reason;
+  final String? parentMixId;
+  final int edition;
+  final double? previousContinuityScore;
 
   const IntelligenceMix({
     required this.id,
@@ -54,7 +57,11 @@ class IntelligenceMix {
     required this.targetDuration,
     required this.createdAt,
     required this.reason,
+    this.parentMixId,
+    this.edition = 1,
+    this.previousContinuityScore,
   });
 
+  bool get isEvolving => parentMixId != null || edition > 1;
   Duration get duration => songs.fold(Duration.zero, (total, song) => total + song.duration);
 }
