@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../services/intelligence_settings_store.dart';
 import 'intelligence_provider.dart';
@@ -82,8 +83,6 @@ class AutopilotController extends ChangeNotifier {
     if (recommendation == null || recommendation.confidence < threshold) return;
     if (_transitionSongId == music.currentSong?.id) return;
 
-    // The first autonomous transition asks for consent. Once accepted,
-    // subsequent transitions in Autopilot happen automatically.
     if (!_consentGranted && !forceTransition) {
       if (_declinedForSongId == next.id) return;
       if (!_pendingTakeover) {
@@ -120,7 +119,12 @@ class AutopilotController extends ChangeNotifier {
     return unknown.contains(raw) ? '' : raw;
   }
 
-  List<Song> _selectQueueCandidates(List<IntelligenceRecommendation> recommendations, Set<String> queuedIds, {int count = 2, required bool allowArtistRepeat}) {
+  List<Song> _selectQueueCandidates(
+    List<IntelligenceRecommendation> recommendations,
+    Set<String> queuedIds, {
+    int count = 2,
+    required bool allowArtistRepeat,
+  }) {
     final current = music.currentSong;
     final currentArtist = _artistKey(current?.artist);
     final selected = <Song>[];
@@ -131,8 +135,6 @@ class AutopilotController extends ChangeNotifier {
         .where((r) => !queuedIds.contains(r.song.id))
         .toList(growable: false);
 
-    // First pass favors confidence while avoiding an artist already dominating
-    // the current session. Unknown artists are deliberately not grouped.
     for (final recommendation in pool) {
       if (selected.length >= count) break;
       final artist = _artistKey(recommendation.song.artist);
@@ -143,7 +145,6 @@ class AutopilotController extends ChangeNotifier {
       if (artist.isNotEmpty) selectedArtists.add(artist);
     }
 
-    // Never starve the queue just because diversity rules filtered candidates.
     if (selected.length < count) {
       for (final recommendation in pool) {
         if (selected.length >= count) break;
