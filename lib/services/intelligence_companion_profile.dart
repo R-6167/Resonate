@@ -15,6 +15,11 @@ class IntelligenceCompanionProfile {
   final int windowEvents;
   final int completed;
   final int skipped;
+  final double familiarityAffinity;
+  final double explorationAffinity;
+  final double skipSensitivity;
+  final double artistDiversity;
+  final double feedbackAlignment;
 
   const IntelligenceCompanionProfile({
     required this.primarySignal,
@@ -28,12 +33,51 @@ class IntelligenceCompanionProfile {
     required this.windowEvents,
     required this.completed,
     required this.skipped,
+    required this.familiarityAffinity,
+    required this.explorationAffinity,
+    required this.skipSensitivity,
+    required this.artistDiversity,
+    required this.feedbackAlignment,
   });
+
+  /// Stable, bounded preference signals derived from compact local memory.
+  /// These are priors, not commands: current-session behavior and explicit
+  /// feedback remain stronger than this profile.
+  static Future<Map<String, double>> readPreferenceSignals() async {
+    final bucket = await IntelligencePatternStore.readBucket(DateTime.now());
+    final profile = await IntelligencePatternStore.readStateProfile();
+    final events = (bucket['events'] as num?)?.toInt() ?? 0;
+    final completed = (bucket['completed'] as num?)?.toInt() ?? 0;
+    final skipped = (bucket['skipped'] as num?)?.toInt() ?? 0;
+    final completionRate = events == 0 ? .5 : completed / events;
+    final skipRate = events == 0 ? .0 : skipped / events;
+    final songs = _counts(bucket['songs']);
+    final artists = _counts(bucket['artists']);
+    final totalArtistWeight = artists.values.fold<int>(0, (sum, value) => sum + value);
+    final distinctArtists = artists.keys.length;
+    final concentration = totalArtistWeight == 0 ? 0.0 : (artists.values.fold<int>(0, (sum, value) => sum + value * value) / (totalArtistWeight * totalArtistWeight)).clamp(0.0, 1.0).toDouble();
+    final diversity = (1.0 - concentration).clamp(0.0, 1.0).toDouble();
+    final learned = (profile['total_events'] as num?)?.toInt() ?? 0;
+    final evidence = (events / 12.0).clamp(0.0, 1.0);
+    final familiarity = ((completionRate * .65) + ((songs.length.clamp(0, 12) / 12.0) * .35)) * evidence;
+    final exploration = ((skipRate * .70) + (1.0 - (songs.length.clamp(0, 12) / 12.0)) * .30) * evidence;
+    final skipSensitivity = (skipRate * .75 + (learned >= 12 ? .25 : 0.0)).clamp(0.0, 1.0).toDouble();
+    final feedbackAlignment = ((profile['feedback_alignment'] as num?)?.toDouble() ?? completionRate).clamp(0.0, 1.0).toDouble();
+
+    return <String, double>{
+      'familiarity': familiarity.clamp(0.0, 1.0).toDouble(),
+      'exploration': exploration.clamp(0.0, 1.0).toDouble(),
+      'skipSensitivity': skipSensitivity,
+      'artistDiversity': (diversity * (distinctArtists >= 2 ? 1.0 : .5)).clamp(0.0, 1.0).toDouble(),
+      'feedbackAlignment': feedbackAlignment,
+    };
+  }
 
   static Future<IntelligenceCompanionProfile> build(IntelligenceProvider intelligence) async {
     final now = DateTime.now();
     final bucket = await IntelligencePatternStore.readBucket(now);
     final stateProfile = await IntelligencePatternStore.readStateProfile();
+    final signals = await readPreferenceSignals();
     final bucketState = IntelligencePatternStore.stateFor(bucket);
     final globalState = IntelligencePatternStore.globalState(stateProfile);
     final globalConfidence = IntelligencePatternStore.stateConfidence(stateProfile);
@@ -96,7 +140,17 @@ class IntelligenceCompanionProfile {
       windowEvents: events,
       completed: completed,
       skipped: skipped,
+      familiarityAffinity: signals['familiarity'] ?? 0,
+      explorationAffinity: signals['exploration'] ?? 0,
+      skipSensitivity: signals['skipSensitivity'] ?? 0,
+      artistDiversity: signals['artistDiversity'] ?? 0,
+      feedbackAlignment: signals['feedbackAlignment'] ?? 0,
     );
+  }
+
+  static Map<String, int> _counts(dynamic value) {
+    if (value is! Map) return <String, int>{};
+    return value.map((key, item) => MapEntry(key.toString(), (item as num?)?.toInt() ?? 0));
   }
 
   static String _windowLabel(DateTime time) {
