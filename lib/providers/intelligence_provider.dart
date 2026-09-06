@@ -31,11 +31,16 @@ class IntelligenceProvider extends ChangeNotifier {
   String _sessionMode = 'Fresh session';
   String _sessionSummary = 'Learning the shape of this listening session.';
   double _sessionCompletion = 0.0;
+  int _sessionSkipStreak = 0;
+  int _sessionCompletionStreak = 0;
   final List<String> _sessionArtists = <String>[];
+  final Map<String, int> _sessionArtistCounts = <String, int>{};
 
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
   static const double _graduationConfidence = .72;
+  static const Duration _sessionGap = Duration(minutes: 30);
+  static const int _sessionEventLimit = 12;
 
   IntelligenceProvider({required this.music}) {
     music.addListener(_observePlayback);
@@ -54,7 +59,10 @@ class IntelligenceProvider extends ChangeNotifier {
   String get sessionMode => _sessionMode;
   String get sessionSummary => _sessionSummary;
   double get sessionCompletion => _sessionCompletion;
+  int get sessionSkipStreak => _sessionSkipStreak;
+  int get sessionCompletionStreak => _sessionCompletionStreak;
   List<String> get sessionArtists => List.unmodifiable(_sessionArtists);
+  Map<String, int> get sessionArtistCounts => Map.unmodifiable(_sessionArtistCounts);
 
   Future<void> _loadSettings() async {
     try {
@@ -90,7 +98,10 @@ class IntelligenceProvider extends ChangeNotifier {
       _sessionMode = 'Manual playback';
       _sessionSummary = 'Intelligence is off, so this session stays fully manual.';
       _sessionCompletion = 0.0;
+      _sessionSkipStreak = 0;
+      _sessionCompletionStreak = 0;
       _sessionArtists.clear();
+      _sessionArtistCounts.clear();
     } else {
       await refreshRecommendations(notify: false);
     }
@@ -267,8 +278,39 @@ class IntelligenceProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Intelligence event update failed: $e');
     }
+    _updateSessionFromEvent(updated);
     await _learnFromFinishedEvent(updated, ratio);
     _lastRecommendationId = event.songId;
+  }
+
+  void _updateSessionFromEvent(ListeningEvent event) {
+    final now = event.endedAt ?? DateTime.now();
+    if (_sessionStartedAt == null || now.difference(_sessionStartedAt!) > _sessionGap) {
+      _sessionStartedAt = event.startedAt;
+      _sessionSkipStreak = 0;
+      _sessionCompletionStreak = 0;
+      _sessionArtistCounts.clear();
+    }
+
+    final artist = _artistKey(_songForId(event.songId)?.artist);
+    if (artist.isNotEmpty) {
+      _sessionArtistCounts[artist] = (_sessionArtistCounts[artist] ?? 0) + 1;
+    }
+    if (event.completed) {
+      _sessionCompletionStreak++;
+      _sessionSkipStreak = 0;
+    } else if (event.skipped) {
+      _sessionSkipStreak++;
+      _sessionCompletionStreak = 0;
+    }
+  }
+
+  Song? _songForId(String id) {
+    if (music.currentSong?.id == id) return music.currentSong;
+    for (final song in music.queue) {
+      if (song.id == id) return song;
+    }
+    return null;
   }
 
   Future<void> _learnFromFinishedEvent(ListeningEvent event, double ratio) async {
@@ -285,6 +327,86 @@ class IntelligenceProvider extends ChangeNotifier {
     if (!_enabled || music.currentSong == null) return null;
     await refreshRecommendations(notify: false);
     return anticipatedNext?.song;
+  }
+
+  List<ListeningEvent> _extractCurrentSession(List<ListeningEvent> events) {
+    if (events.isEmpty) return const <ListeningEvent>[];
+    final session = <ListeningEvent>[];
+    DateTime? previousEnd;
+    for (final event in events) {
+      final eventEnd = event.endedAt ?? event.startedAt;
+      if (previousEnd != null && previousEnd.difference(eventEnd) > _sessionGap) break;
+      session.add(event);
+      previousEnd = eventEnd;
+      if (session.length >= _sessionEventLimit) break;
+    }
+    return session;
+  }
+
+  Future<void> _updateSessionContext(List<ListeningEvent> events, Map<String, Song> byId) async {
+    final sessionEnabled = await IntelligenceSettingsStore.sessionIntelligence();
+    if (!sessionEnabled) {
+      _sessionMode = 'Session intelligence off';
+      _sessionSummary = 'Using long-term listening signals without session steering.';
+      _sessionCompletion = 0.0;
+      _sessionSkipStreak = 0;
+      _sessionCompletionStreak = 0;
+      _sessionArtists.clear();
+      _sessionArtistCounts.clear();
+      return;
+    }
+
+    final sessionEvents = _extractCurrentSession(events);
+    if (sessionEvents.isEmpty) {
+      _sessionMode = 'Fresh session';
+      _sessionSummary = 'Learning the shape of this listening session.';
+      _sessionCompletion = 0.0;
+      _sessionSkipStreak = 0;
+      _sessionCompletionStreak = 0;
+      _sessionArtists.clear();
+      _sessionArtistCounts.clear();
+      return;
+    }
+
+    _sessionStartedAt = sessionEvents.last.startedAt;
+    _sessionArtistCounts.clear();
+    for (final event in sessionEvents) {
+      final artist = _artistKey(byId[event.songId]?.artist);
+      if (artist.isNotEmpty) _sessionArtistCounts[artist] = (_sessionArtistCounts[artist] ?? 0) + 1;
+    }
+    _sessionArtists
+      ..clear()
+      ..addAll((_sessionArtistCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((entry) => entry.key));
+
+    final completed = sessionEvents.where((e) => e.completed).length;
+    final skipped = sessionEvents.where((e) => e.skipped).length;
+    _sessionCompletion = completed / sessionEvents.length;
+    _sessionSkipStreak = 0;
+    _sessionCompletionStreak = 0;
+    for (final event in sessionEvents) {
+      if (event.completed) {
+        _sessionCompletionStreak++;
+        _sessionSkipStreak = 0;
+      } else if (event.skipped) {
+        _sessionSkipStreak++;
+        _sessionCompletionStreak = 0;
+      }
+    }
+
+    if (_sessionSkipStreak >= 3 || (skipped >= 3 && skipped > completed)) {
+      _sessionMode = 'Exploring';
+      _sessionSummary = 'You are moving through tracks quickly, so I am widening the search.';
+    } else if (_sessionCompletionStreak >= 3 || (completed >= 3 && completed >= skipped + 2)) {
+      _sessionMode = 'Familiar flow';
+      _sessionSummary = 'The session is settling into a strong flow, so I am favoring proven signals.';
+    } else {
+      _sessionMode = 'Balanced';
+      _sessionSummary = 'The session is mixed, so I am balancing familiar picks with exploration.';
+    }
+  }
+
+  Future<void> _updateSessionArtistAndMode(List<ListeningEvent> events, Map<String, Song> byId) async {
+    await _updateSessionContext(events, byId);
   }
 
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
@@ -318,7 +440,7 @@ class IntelligenceProvider extends ChangeNotifier {
       final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0;
       final familiarity = 1.0 - exploration;
       final explanationsEnabled = await IntelligenceSettingsStore.explanations();
-      final sessionEvents = sessionEnabled ? events.take(8).toList(growable: false) : const <ListeningEvent>[];
+      final sessionEvents = sessionEnabled ? _extractCurrentSession(events) : const <ListeningEvent>[];
       final sessionSongIds = sessionEvents.map((e) => e.songId).toSet();
       final sessionArtistCounts = <String, int>{};
       var recentRank = 0;
@@ -343,27 +465,7 @@ class IntelligenceProvider extends ChangeNotifier {
         final artist = _artistKey(byId[event.songId]?.artist);
         if (artist.isNotEmpty) sessionArtistCounts[artist] = (sessionArtistCounts[artist] ?? 0) + 1;
       }
-
-      final sessionCompleted = sessionEvents.where((e) => e.completed).length;
-      final sessionSkipped = sessionEvents.where((e) => e.skipped).length;
-      _sessionCompletion = sessionEvents.isEmpty ? 0.0 : sessionCompleted / sessionEvents.length;
-      _sessionArtists
-        ..clear()
-        ..addAll((sessionArtistCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((entry) => entry.key));
-
-      if (!sessionEnabled || sessionEvents.isEmpty) {
-        _sessionMode = sessionEnabled ? 'Fresh session' : 'Session intelligence off';
-        _sessionSummary = sessionEnabled ? 'Learning the shape of this listening session.' : 'Using long-term listening signals without session steering.';
-      } else if (sessionSkipped >= 3 && sessionSkipped > sessionCompleted) {
-        _sessionMode = 'Exploring';
-        _sessionSummary = 'You are moving through tracks quickly, so I am widening the search.';
-      } else if (sessionCompleted >= 3 && sessionCompleted >= sessionSkipped + 2) {
-        _sessionMode = 'Familiar flow';
-        _sessionSummary = 'The session is settling into a strong flow, so I am favoring proven signals.';
-      } else {
-        _sessionMode = 'Balanced';
-        _sessionSummary = 'The session is mixed, so I am balancing familiar picks with exploration.';
-      }
+      await _updateSessionContext(events, byId);
 
       final ranked = <IntelligenceRecommendation>[];
       for (final song in songs) {
@@ -385,7 +487,7 @@ class IntelligenceProvider extends ChangeNotifier {
         final sessionContinuity = sessionEnabled && sessionArtistCount > 0 ? sessionArtistCount * .7 * familiarity : 0.0;
         final explorationBonus = sessionEnabled && !inSession && !recentSongIds.contains(song.id) ? .9 * exploration : 0.0;
         final familiarityBonus = (completion >= .65 || feedback > 0) ? .7 * familiarity : 0.0;
-        final repeatPenalty = await IntelligenceSettingsStore.artistRepeat() ? .15 : 0.55;
+        final repeatPenalty = await IntelligenceSettingsStore.artistRepeat() ? .15 : .55;
         final sessionFatiguePenalty = sessionEnabled && sessionArtistCount >= 3 && artistKey.isNotEmpty ? (sessionArtistCount - 2) * repeatPenalty : 0.0;
         final score = t * 5.0 * familiarity + completion * 4.0 * familiarity + artist * 1.5 * familiarity + timeAffinity * 1.25 + feedback * 3.0 + sameArtistBoost + sessionContinuity + explorationBonus + familiarityBonus - s * 2.0 - recencyPenalty - sessionFatiguePenalty;
         final evidence = t * 2.0 + completion * 2.0 + artist.abs() + timeAffinity + feedback.abs() + sessionContinuity + (p > 0 ? 1.0 : 0.0);
@@ -427,35 +529,32 @@ class IntelligenceProvider extends ChangeNotifier {
 
   Future<Map<String, dynamic>> analyzeCurrentSession() async {
     final events = await _database.getRecentListeningEvents(limit: 30);
-    final completed = events.where((e) => e.completed).length;
+    final sessionEvents = _extractCurrentSession(events);
+    final completed = sessionEvents.where((e) => e.completed).length;
+    final skipped = sessionEvents.where((e) => e.skipped).length;
     return {
-      'events': events.length,
+      'events': sessionEvents.length,
       'completed': completed,
-      'skipped': events.where((e) => e.skipped).length,
-      'completionRate': events.isEmpty ? 0.0 : completed / events.length,
-      'listeningMs': events.fold<int>(0, (sum, e) => sum + e.durationPlayedMs),
-      'sessionStartedAt': _sessionStartedAt?.toIso8601String(),
-      'autonomy': autonomyLabel,
+      'skipped': skipped,
+      'completionRate': sessionEvents.isEmpty ? 0.0 : completed / sessionEvents.length,
+      'sessionStartedAt': sessionEvents.isEmpty ? null : sessionEvents.last.startedAt.toIso8601String(),
+      'mode': _sessionMode,
+      'summary': _sessionSummary,
+      'skipStreak': _sessionSkipStreak,
+      'completionStreak': _sessionCompletionStreak,
+      'artists': List<String>.from(_sessionArtists),
+      'autonomy': _autonomy,
       'autopilotGraduated': _autopilotGraduated,
-      'sessionMode': _sessionMode,
-      'sessionSummary': _sessionSummary,
-      'sessionArtists': List<String>.from(_sessionArtists),
     };
   }
 
   Future<void> recordListeningEvent(ListeningEvent event) async {
-    if (!_enabled) return;
-    try {
-      await _database.insertListeningEvent(event);
-    } catch (e) {
-      debugPrint('Intelligence event recording failed: $e');
-    }
+    await _database.insertListeningEvent(event);
   }
 
   @override
   void dispose() {
     music.removeListener(_observePlayback);
-    _activeEvent = null;
     super.dispose();
   }
 }
