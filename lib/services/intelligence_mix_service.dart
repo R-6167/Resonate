@@ -3,6 +3,7 @@ import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'intelligence_decision_engine.dart';
+import 'intelligence_long_mix_memory.dart';
 import 'intelligence_mix_continuity.dart';
 import 'intelligence_mix_memory.dart';
 import 'intelligence_seek_memory.dart';
@@ -16,9 +17,10 @@ class IntelligenceMixService {
   final IntelligenceMixMemory _memory;
   final IntelligenceMixContinuity _continuity;
   final IntelligenceSeekMemory _seekMemory;
+  final IntelligenceLongMixMemory _longMixMemory;
 
-  IntelligenceMixService({DatabaseHelper? database, IntelligenceDecisionEngine? decisionEngine, IntelligenceMixMemory? memory, IntelligenceMixContinuity? continuity, IntelligenceSeekMemory? seekMemory})
-      : _database = database ?? DatabaseHelper(), _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine(), _memory = memory ?? IntelligenceMixMemory(), _continuity = continuity ?? IntelligenceMixContinuity(), _seekMemory = seekMemory ?? IntelligenceSeekMemory();
+  IntelligenceMixService({DatabaseHelper? database, IntelligenceDecisionEngine? decisionEngine, IntelligenceMixMemory? memory, IntelligenceMixContinuity? continuity, IntelligenceSeekMemory? seekMemory, IntelligenceLongMixMemory? longMixMemory})
+      : _database = database ?? DatabaseHelper(), _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine(), _memory = memory ?? IntelligenceMixMemory(), _continuity = continuity ?? IntelligenceMixContinuity(), _seekMemory = seekMemory ?? IntelligenceSeekMemory(), _longMixMemory = longMixMemory ?? IntelligenceLongMixMemory();
 
   Future<IntelligenceMixAnalysis?> analyzeLongMix(Song source, {int minimumDurationMinutes = 20}) async {
     final durationMs = source.duration.inMilliseconds;
@@ -67,7 +69,9 @@ class IntelligenceMixService {
     if (startBucket >= 0) preferred.add(_segment(startBucket, reached.length, reached, replays, relevant.length, bucketMs, durationMs));
     final strongestExit = exits.isEmpty ? null : exits.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
     final coverage = preferred.fold<int>(0, (sum, segment) => sum + (segment.endMs - segment.startMs));
-    return IntelligenceMixAnalysis(source: source, observations: relevant.length, averageCompletion: completionSum / relevant.length, preferredCoverage: (coverage / durationMs).clamp(0.0, 1.0).toDouble(), preferredSegments: preferred, commonExitPoint: strongestExit == null ? null : Duration(milliseconds: strongestExit), replayEvents: replayEvents, replayedSegments: replays.length);
+    final analysis = IntelligenceMixAnalysis(source: source, observations: relevant.length, averageCompletion: completionSum / relevant.length, preferredCoverage: (coverage / durationMs).clamp(0.0, 1.0).toDouble(), preferredSegments: preferred, commonExitPoint: strongestExit == null ? null : Duration(milliseconds: strongestExit), replayEvents: replayEvents, replayedSegments: replays.length);
+    await _longMixMemory.remember(analysis);
+    return analysis;
   }
 
   IntelligenceMixSegment _segment(int startBucket, int endBucket, List<int> reached, Map<int, int> replays, int observations, int bucketMs, int durationMs) {
@@ -92,13 +96,28 @@ class IntelligenceMixService {
     if (assessment != null) await _continuity.remember(assessment);
     final score = (assessment?['score'] as num?)?.toDouble() ?? await _continuity.continuityPrior();
     final priorIds = previousMix.songs.map((song) => song.id).toSet();
-    final adjusted = recommendations.map((item) {
-      final inPrevious = priorIds.contains(item.song.id);
-      final delta = inPrevious ? (score >= .65 ? .10 : score <= .35 ? -.12 : .02) : (score <= .35 ? .06 : 0.0);
-      return IntelligenceRecommendation(song: item.song, score: item.score + delta, confidence: item.confidence, reason: item.reason, decision: item.decision, sessionReason: item.sessionReason);
-    }).toList(growable: false);
+    final adjusted = await _applyLongMixSignals(recommendations, score, priorIds);
     final title = score >= .65 ? '${previousMix.title} • Refined' : score <= .35 ? '${previousMix.title} • Reimagined' : '${previousMix.title} • Evolved';
     return _generateFrom(recommendations: adjusted, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration ?? previousMix.targetDuration, title: title, evolvingFrom: score, parentMixId: previousMix.id, edition: previousMix.edition + 1);
+  }
+
+  Future<List<IntelligenceRecommendation>> _applyLongMixSignals(List<IntelligenceRecommendation> recommendations, double continuityScore, Set<String> priorIds) async {
+    if (recommendations.isEmpty) return recommendations;
+    final adjusted = <IntelligenceRecommendation>[];
+    for (final item in recommendations) {
+      final memory = await _longMixMemory.forSong(item.song.id);
+      var delta = priorIds.contains(item.song.id) ? (continuityScore >= .65 ? .10 : continuityScore <= .35 ? -.12 : .02) : (continuityScore <= .35 ? .06 : 0.0);
+      if (memory != null) {
+        final replayEvents = (memory['replayEvents'] as num?)?.toInt() ?? 0;
+        final replayedSegments = (memory['replayedSegments'] as num?)?.toInt() ?? 0;
+        final coverage = (memory['preferredCoverage'] as num?)?.toDouble() ?? 0.0;
+        if (replayEvents >= 2 && replayedSegments > 0) delta += .05;
+        if (coverage >= .60) delta += .025;
+        if (coverage <= .15 && replayEvents == 0) delta -= .025;
+      }
+      adjusted.add(IntelligenceRecommendation(song: item.song, score: item.score + delta, confidence: item.confidence, reason: item.reason, decision: item.decision, sessionReason: item.sessionReason));
+    }
+    return adjusted;
   }
 
   Future<IntelligenceMix> _generateFrom({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required Map<String, int> sessionArtistCounts, required Duration targetDuration, required String title, required double? evolvingFrom, required String? parentMixId, required int edition}) async {
