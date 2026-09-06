@@ -64,6 +64,19 @@ class IntelligenceProvider extends ChangeNotifier {
   List<String> get sessionArtists => List.unmodifiable(_sessionArtists);
   Map<String, int> get sessionArtistCounts => Map.unmodifiable(_sessionArtistCounts);
 
+  /// Bounded summary of explicit feedback. Positive values mean the user's
+  /// direct likes generally align with the songs Intelligence has been
+  /// recommending; negative values mean the opposite. The raw song map never
+  /// leaves this provider.
+  double get feedbackAlignment {
+    if (_feedback.isEmpty) return 0.0;
+    var total = 0.0;
+    for (final value in _feedback.values) {
+      total += value;
+    }
+    return (0.5 + (total / (_feedback.length * 6.0))).clamp(0.0, 1.0).toDouble();
+  }
+
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
