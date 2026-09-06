@@ -1,6 +1,7 @@
 import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
+import 'intelligence_companion_profile.dart';
 import 'intelligence_pattern_store.dart';
 import 'intelligence_settings_store.dart';
 
@@ -35,6 +36,11 @@ class IntelligenceDecisionEngine {
     await IntelligencePatternStore.learnFromRecentEvents(recentEvents, songsById);
     final pattern = await IntelligencePatternStore.readBucket(DateTime.now());
     final globalProfile = await IntelligencePatternStore.readStateProfile();
+    final companionSignals = await IntelligenceCompanionProfile.readPreferenceSignals();
+    final familiarityAffinity = companionSignals['familiarity'] ?? 0.0;
+    final explorationAffinity = companionSignals['exploration'] ?? 0.0;
+    final skipSensitivity = companionSignals['skipSensitivity'] ?? 0.0;
+    final artistDiversity = companionSignals['artistDiversity'] ?? 0.0;
     final patternSongs = _counts(pattern['songs']);
     final patternArtists = _counts(pattern['artists']);
     final patternEvents = (pattern['events'] as num?)?.toInt() ?? 0;
@@ -65,6 +71,21 @@ class IntelligenceDecisionEngine {
       final historicalArtistBoost = historicalArtistWeight > 0 ? (0.35 + (historicalArtistWeight.clamp(0, 8) / 8.0)) * (1.0 - exploration * .55) : 0.0;
       var value = r.score * (1.0 - exploration) + exploration * (1.0 - rank / pool.length) * 3.0 + r.confidence * 2.0;
       value += historicalSongBoost + historicalArtistBoost;
+
+      // Persistent behavioral identity is a bounded prior. It never replaces
+      // the recommendation score or current-session evidence.
+      if (historicalSongWeight > 0) {
+        value += familiarityAffinity * (1.0 - exploration) * .65;
+      } else {
+        value += explorationAffinity * exploration * .65;
+      }
+      if (artistDiversity > .5 && artist.isNotEmpty) {
+        final repeatedArtist = historicalArtistWeight >= 3 || sessionArtistCount >= 2;
+        if (repeatedArtist) value -= artistDiversity * .45;
+      }
+      if (skipSensitivity > .5 && sessionSkipStreak > 0) {
+        value += skipSensitivity * explorationPressure * (historicalSongWeight == 0 ? .35 : -.10);
+      }
       if (patternCompletionRate >= .70 && patternEvents >= 3) value += historicalSongBoost * .45;
 
       // The local time bucket is the strongest contextual memory. The global
