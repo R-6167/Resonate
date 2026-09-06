@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/intelligence_recommendation.dart';
 import '../providers/intelligence_provider.dart';
+import '../providers/intelligence_mix_controller.dart';
 import '../providers/music_provider.dart';
 import '../providers/library_provider.dart';
+import '../widgets/evolving_mix_card.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -92,7 +94,9 @@ class _HomeDashboardState extends State<_HomeDashboard> with SingleTickerProvide
             const SizedBox(height: 16),
             if (intelligence.isEnabled) ...[
               _SessionCard(intelligence: intelligence),
-              const SizedBox(height: 22),
+              const SizedBox(height: 14),
+              const EvolvingMixCard(),
+              const SizedBox(height: 8),
             ],
             if (music.currentSong != null) ...[
               _sectionTitle(context, 'Now playing'),
@@ -244,7 +248,8 @@ class _Tag extends StatelessWidget { final String label; const _Tag({required th
 class _FeedbackButtons extends StatelessWidget {
   final String songId;
   const _FeedbackButtons({required this.songId});
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     final intelligence = context.read<IntelligenceProvider>();
     final value = intelligence.feedbackFor(songId);
     return Row(mainAxisSize: MainAxisSize.min, children: [
