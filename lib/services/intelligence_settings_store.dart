@@ -14,6 +14,7 @@ class IntelligenceSettingsStore {
   static const _learnedEqKey = 'intelligence_learned_eq';
   static const _crossfadeKey = 'intelligence_autopilot_crossfade';
   static const _crossfadeDurationKey = 'intelligence_autopilot_crossfade_ms';
+  static const _autopilotConsentKey = 'intelligence_autopilot_consent';
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -26,6 +27,7 @@ class IntelligenceSettingsStore {
   static Future<bool> learnedEq() async => (await _prefs()).getBool(_learnedEqKey) ?? false;
   static Future<bool> autopilotCrossfade() async => (await _prefs()).getBool(_crossfadeKey) ?? true;
   static Future<int> autopilotCrossfadeMs() async => (await _prefs()).getInt(_crossfadeDurationKey) ?? 5000;
+  static Future<bool> autopilotConsent() async => (await _prefs()).getBool(_autopilotConsentKey) ?? false;
 
   static Future<void> setExploration(int value) async => (await _prefs()).setInt(_explorationKey, value.clamp(0, 100));
   static Future<void> setConfidenceThreshold(double value) async => (await _prefs()).setDouble(_confidenceKey, value.clamp(.45, .90));
@@ -36,13 +38,14 @@ class IntelligenceSettingsStore {
   static Future<void> setLearnedEq(bool value) async => (await _prefs()).setBool(_learnedEqKey, value);
   static Future<void> setAutopilotCrossfade(bool value) async => (await _prefs()).setBool(_crossfadeKey, value);
   static Future<void> setAutopilotCrossfadeMs(int value) async => (await _prefs()).setInt(_crossfadeDurationKey, value.clamp(1000, 12000));
+  static Future<void> setAutopilotConsent(bool value) async => (await _prefs()).setBool(_autopilotConsentKey, value);
 
   static Future<void> reset() async {
     final prefs = await _prefs();
     for (final key in const [
       _explorationKey, _confidenceKey, _autoQueueKey, _artistRepeatKey,
       _sessionKey, _explanationsKey, _learnedEqKey, _crossfadeKey,
-      _crossfadeDurationKey,
+      _crossfadeDurationKey, _autopilotConsentKey,
     ]) {
       await prefs.remove(key);
     }
