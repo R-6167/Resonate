@@ -9,8 +9,8 @@ import '../models/song.dart';
 ///
 /// The store intentionally keeps aggregates instead of raw listening history:
 /// each weekday/3-hour bucket remembers song outcomes and artist affinity.
-/// This lets Intelligence recognize recurring listening contexts after the
-/// current session has ended without introducing a remote service or model.
+/// It also derives a compact listening state from those outcomes so the
+/// decision engine can recognize recurring contexts across sessions.
 class IntelligencePatternStore {
   static const _key = 'intelligence_listening_patterns_v1';
   static const _learnedEventsKey = 'intelligence_pattern_learned_events_v1';
@@ -35,6 +35,29 @@ class IntelligencePatternStore {
     } catch (_) {
       return <String, dynamic>{};
     }
+  }
+
+  /// Returns the learned listening state for a recurring weekday/time context.
+  /// States are intentionally behavioral rather than genre labels: they are
+  /// derived only from completion and skip outcomes stored locally.
+  static String stateFor(Map<String, dynamic> bucket) {
+    final events = (bucket['events'] as num?)?.toInt() ?? 0;
+    if (events < 3) return 'Learning';
+    final completed = (bucket['completed'] as num?)?.toInt() ?? 0;
+    final skipped = (bucket['skipped'] as num?)?.toInt() ?? 0;
+    final completionRate = completed / events;
+    final skipRate = skipped / events;
+    if (completionRate >= .72 && completed >= skipped + 2) return 'Familiar flow';
+    if (skipRate >= .45 && skipped >= completed) return 'Exploration';
+    return 'Balanced';
+  }
+
+  static String explanationFor(String state, Map<String, dynamic> bucket) {
+    final events = (bucket['events'] as num?)?.toInt() ?? 0;
+    if (state == 'Familiar flow') return 'This time window often settles into tracks you finish.';
+    if (state == 'Exploration') return 'You tend to move through tracks quickly in this time window.';
+    if (state == 'Balanced') return 'This time window usually mixes familiar and fresh choices.';
+    return events == 0 ? 'I am still learning this listening window.' : 'I need a few more sessions to recognize this window.';
   }
 
   /// Imports newly finished history rows once. Re-running is safe because
