@@ -83,7 +83,7 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
                   Text(profile.tendency, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 3),
                   Text(profile.explanation, style: Theme.of(context).textTheme.bodyMedium),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 9),
                   Wrap(spacing: 6, runSpacing: 6, children: [
                     Chip(label: Text('Window: ${profile.primarySignal}'), visualDensity: VisualDensity.compact),
                     if (profile.secondarySignal.isNotEmpty) Chip(label: Text('Long-term: ${profile.secondarySignal}'), visualDensity: VisualDensity.compact),
@@ -93,6 +93,13 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
                     if (profile.learnedEvents > 0) Chip(label: Text('${profile.learnedEvents} learned'), visualDensity: VisualDensity.compact),
                     if (profile.momentum >= .5) const Chip(label: Text('Pattern holding'), visualDensity: VisualDensity.compact),
                   ]),
+                  const SizedBox(height: 10),
+                  Text('How I see your listening', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary)),
+                  const SizedBox(height: 7),
+                  _SignalBar(label: 'Familiarity', value: profile.familiarityAffinity),
+                  _SignalBar(label: 'Exploration', value: profile.explorationAffinity),
+                  _SignalBar(label: 'Artist variety', value: profile.artistDiversity),
+                  _SignalBar(label: 'Feedback alignment', value: profile.feedbackAlignment),
                   const SizedBox(height: 8),
                   Text(profile.context, style: Theme.of(context).textTheme.labelMedium),
                 ],
@@ -113,6 +120,30 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
           ),
         ]);
       },
+    );
+  }
+}
+
+class _SignalBar extends StatelessWidget {
+  final String label;
+  final double value;
+
+  const _SignalBar({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        SizedBox(width: 112, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+        Expanded(child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(value: value.clamp(0.0, 1.0).toDouble(), minHeight: 5, backgroundColor: scheme.surfaceContainerHighest),
+        )),
+        const SizedBox(width: 8),
+        SizedBox(width: 34, child: Text('${(value * 100).round()}%', textAlign: TextAlign.end, style: Theme.of(context).textTheme.labelSmall)),
+      ]),
     );
   }
 }
