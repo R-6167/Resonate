@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/intelligence_mix.dart';
 import '../models/song.dart';
 import '../services/intelligence_mix_service.dart';
+import '../services/intelligence_seek_memory.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 
@@ -13,6 +14,7 @@ class IntelligenceMixController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
   final IntelligenceMixService _service;
+  final IntelligenceSeekMemory _seekMemory;
 
   IntelligenceMix? _currentMix;
   IntelligenceMixAnalysis? _currentAnalysis;
@@ -20,13 +22,18 @@ class IntelligenceMixController extends ChangeNotifier {
   bool _loading = false;
   String? _analyzingSongId;
   String? _lastObservedSongId;
+  int _lastPositionMs = 0;
+  bool _trackingPosition = false;
 
   IntelligenceMixController({
     required this.music,
     required this.intelligence,
     IntelligenceMixService? service,
-  }) : _service = service ?? IntelligenceMixService() {
+    IntelligenceSeekMemory? seekMemory,
+  })  : _service = service ?? IntelligenceMixService(),
+        _seekMemory = seekMemory ?? IntelligenceSeekMemory() {
     music.addListener(_observeMixPlayback);
+    _observeMixPlayback();
   }
 
   IntelligenceMix? get currentMix => _currentMix;
@@ -35,10 +42,7 @@ class IntelligenceMixController extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get analyzingSongId => _analyzingSongId;
 
-  Future<IntelligenceMix?> generateMix({
-    Duration targetDuration = const Duration(minutes: 60),
-    String? title,
-  }) async {
+  Future<IntelligenceMix?> generateMix({Duration targetDuration = const Duration(minutes: 60), String? title}) async {
     if (!intelligence.isEnabled || intelligence.recommendations.isEmpty) return null;
     _loading = true;
     notifyListeners();
@@ -62,17 +66,11 @@ class IntelligenceMixController extends ChangeNotifier {
     }
   }
 
-  Future<IntelligenceMixAnalysis?> analyzeLongMix(
-    Song song, {
-    int minimumDurationMinutes = 20,
-  }) async {
+  Future<IntelligenceMixAnalysis?> analyzeLongMix(Song song, {int minimumDurationMinutes = 20}) async {
     _analyzingSongId = song.id;
     notifyListeners();
     try {
-      final analysis = await _service.analyzeLongMix(
-        song,
-        minimumDurationMinutes: minimumDurationMinutes,
-      );
+      final analysis = await _service.analyzeLongMix(song, minimumDurationMinutes: minimumDurationMinutes);
       _currentAnalysis = analysis;
       return analysis;
     } finally {
@@ -101,14 +99,25 @@ class IntelligenceMixController extends ChangeNotifier {
   }
 
   void _observeMixPlayback() {
-    final mix = _currentMix;
-    final songId = music.currentSong?.id;
-    if (mix == null || songId == null || songId == _lastObservedSongId) return;
-    _lastObservedSongId = songId;
-    if (mix.songs.any((song) => song.id == songId)) {
-      // A generated mix has been entered again. Re-score it from the local
-      // listening history so future mixes can learn from the journey.
-      evaluateCurrentMix();
+    if (_trackingPosition) return;
+    _trackingPosition = true;
+    try {
+      final songId = music.currentSong?.id;
+      final position = music.currentPosition.inMilliseconds.clamp(0, 86400000).toInt();
+      if (songId != _lastObservedSongId) {
+        _lastObservedSongId = songId;
+        _lastPositionMs = position;
+        final mix = _currentMix;
+        if (mix != null && songId != null && mix.songs.any((song) => song.id == songId)) evaluateCurrentMix();
+        return;
+      }
+      final from = _lastPositionMs;
+      _lastPositionMs = position;
+      if (songId != null && from > 0 && from - position >= 5000) {
+        _seekMemory.record(songId: songId, fromMs: from, toMs: position);
+      }
+    } finally {
+      _trackingPosition = false;
     }
   }
 
@@ -122,12 +131,9 @@ class IntelligenceMixController extends ChangeNotifier {
     if (intelligence.sessionSkipStreak >= 2) return 'A Fresh Turn';
     if (intelligence.sessionCompletionStreak >= 2) return 'Keep The Flow';
     switch (intelligence.sessionMode) {
-      case 'Exploring':
-        return 'Open The Search';
-      case 'Familiar flow':
-        return 'Your Familiar Flow';
-      default:
-        return 'Your Resonate Mix';
+      case 'Exploring': return 'Open The Search';
+      case 'Familiar flow': return 'Your Familiar Flow';
+      default: return 'Your Resonate Mix';
     }
   }
 }
