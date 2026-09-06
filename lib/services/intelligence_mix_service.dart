@@ -3,6 +3,7 @@ import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'intelligence_decision_engine.dart';
+import 'intelligence_mix_continuity.dart';
 import 'intelligence_mix_memory.dart';
 
 /// Local-only mix intelligence. It does not decode or upload audio. It learns
@@ -12,14 +13,17 @@ class IntelligenceMixService {
   final DatabaseHelper _database;
   final IntelligenceDecisionEngine _decisionEngine;
   final IntelligenceMixMemory _memory;
+  final IntelligenceMixContinuity _continuity;
 
   IntelligenceMixService({
     DatabaseHelper? database,
     IntelligenceDecisionEngine? decisionEngine,
     IntelligenceMixMemory? memory,
+    IntelligenceMixContinuity? continuity,
   })  : _database = database ?? DatabaseHelper(),
         _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine(),
-        _memory = memory ?? IntelligenceMixMemory();
+        _memory = memory ?? IntelligenceMixMemory(),
+        _continuity = continuity ?? IntelligenceMixContinuity();
 
   Future<IntelligenceMixAnalysis?> analyzeLongMix(
     Song source, {
@@ -114,13 +118,14 @@ class IntelligenceMixService {
     final songs = <Song>[];
     final selectedIds = <String>{if (currentSong != null) currentSong.id};
     final targetMs = targetDuration.inMilliseconds;
+    final continuityPrior = await _continuity.continuityPrior();
     var totalMs = 0;
     var safety = 0;
 
     while (totalMs < targetMs && safety < 80) {
       safety++;
       final next = await _decisionEngine.chooseSequence(
-        recommendations: recommendations,
+        recommendations: _continuityAdjustedRecommendations(recommendations, continuityPrior),
         queuedIds: selectedIds,
         currentSong: songs.isEmpty ? currentSong : songs.last,
         sessionMode: sessionMode,
@@ -137,10 +142,10 @@ class IntelligenceMixService {
       totalMs += song.duration.inMilliseconds;
     }
 
-    final reason = _mixReason(sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, count: songs.length);
+    final reason = _mixReason(sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, count: songs.length, continuityPrior: continuityPrior);
     final description = songs.isEmpty
         ? 'I need a little more listening evidence before I can build this mix.'
-        : '${songs.length} tracks shaped by your long-term memory and what you seem to want right now.';
+        : '${songs.length} tracks shaped by your long-term memory, recent listening and previous mix journeys.';
 
     final mix = IntelligenceMix(
       id: 'mix_${DateTime.now().microsecondsSinceEpoch}',
@@ -155,10 +160,40 @@ class IntelligenceMixService {
     return mix;
   }
 
+  List<IntelligenceRecommendation> _continuityAdjustedRecommendations(
+    List<IntelligenceRecommendation> recommendations,
+    double prior,
+  ) {
+    if (recommendations.isEmpty || (prior - .5).abs() < .08) return recommendations;
+    final factor = (prior - .5) * .20;
+    return recommendations.map((item) {
+      final familiarity = item.confidence.clamp(0.0, 1.0).toDouble();
+      final adjustment = factor * familiarity;
+      return IntelligenceRecommendation(
+        song: item.song,
+        score: item.score + adjustment,
+        confidence: item.confidence,
+        reason: item.reason,
+        decision: item.decision,
+        sessionReason: item.sessionReason,
+      );
+    }).toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>?> evaluateMix(IntelligenceMix mix) async {
+    final assessment = await _continuity.evaluate(mix);
+    if (assessment != null) await _continuity.remember(assessment);
+    return assessment;
+  }
+
+  Future<List<Map<String, dynamic>>> recentMixContinuity() => _continuity.recent();
+
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _memory.recent();
 
-  String _mixReason({required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required int count}) {
+  String _mixReason({required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required int count, required double continuityPrior}) {
     if (count == 0) return 'Not enough confident choices yet.';
+    if (continuityPrior >= .72) return 'Building on mix flows you have tended to stay with.';
+    if (continuityPrior <= .35) return 'Trying a different path after recent mixes did not quite land.';
     if (sessionSkipStreak >= 2) return 'A little more exploration after your recent skips.';
     if (sessionCompletionStreak >= 2) return 'Keeping the flow because you have been finishing tracks.';
     if (sessionMode == 'Exploring') return 'A balanced discovery mix for this session.';
