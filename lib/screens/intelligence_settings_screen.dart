@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/intelligence_provider.dart';
+import '../services/intelligence_pattern_store.dart';
 import '../services/intelligence_settings_store.dart';
 
 class IntelligenceSettingsScreen extends StatefulWidget {
@@ -54,11 +55,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
                   SwitchListTile.adaptive(title: const Text('Intelligence'), subtitle: Text(intelligence.isEnabled ? 'Learning and anticipating locally' : 'Completely inactive; normal player behavior continues'), value: intelligence.isEnabled, onChanged: intelligence.setEnabled),
                   const Divider(),
                   _header(context, 'Authority'),
-                  SegmentedButton<int>(
-                    segments: const [ButtonSegment(value: 0, label: Text('Suggest')), ButtonSegment(value: 1, label: Text('Assist')), ButtonSegment(value: 2, label: Text('Autopilot'))],
-                    selected: {intelligence.autonomy},
-                    onSelectionChanged: (value) => intelligence.setAutonomy(value.first),
-                  ),
+                  SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('Suggest')), ButtonSegment(value: 1, label: Text('Assist')), ButtonSegment(value: 2, label: Text('Autopilot'))], selected: {intelligence.autonomy}, onSelectionChanged: (value) => intelligence.setAutonomy(value.first)),
                   Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text(intelligence.isAutopilot ? 'Autopilot may prepare and choose the next track when confidence is high enough.' : 'Your normal player remains in control until you allow more autonomy.')),
                   _header(context, 'Decision tuning'),
                   ListTile(title: const Text('Exploration ↔ familiarity'), subtitle: Text('$_exploration% exploration • higher values discover more new music')),
@@ -74,10 +71,24 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
                   SwitchListTile.adaptive(title: const Text('Learned per-song EQ'), subtitle: const Text('Allow Intelligence to remember sound preferences per song.'), value: _learnedEq, onChanged: (v) async { setState(() => _learnedEq = v); await IntelligenceSettingsStore.setLearnedEq(v); }),
                   SwitchListTile.adaptive(title: const Text('Autopilot crossfade'), subtitle: Text(_crossfade ? '${(_crossfadeMs / 1000).toStringAsFixed(1)} second transition' : 'Disabled'), value: _crossfade, onChanged: (v) async { setState(() => _crossfade = v); await IntelligenceSettingsStore.setAutopilotCrossfade(v); }),
                   if (_crossfade) Slider(value: _crossfadeMs.toDouble(), min: 1000, max: 12000, divisions: 11, label: '${(_crossfadeMs / 1000).toStringAsFixed(1)}s', onChanged: (v) => setState(() => _crossfadeMs = v.round()), onChangeEnd: (v) => IntelligenceSettingsStore.setAutopilotCrossfadeMs(v.round())),
-                  _header(context, 'Learning'),
-                  ListTile(leading: const Icon(Icons.insights_rounded), title: Text('Session: ${intelligence.sessionMode}'), subtitle: Text(intelligence.sessionSummary)),
-                  ListTile(leading: const Icon(Icons.auto_awesome), title: Text(intelligence.anticipatedNext?.song.title ?? 'No prediction yet'), subtitle: Text(intelligence.anticipatedNext == null ? 'Keep listening and Resonate will build local evidence.' : '${(intelligence.anticipatedNext!.confidence * 100).round()}% confidence • ${intelligence.anticipatedNext!.reason}')),
-                  ListTile(leading: const Icon(Icons.restart_alt_rounded), title: const Text('Reset advanced tuning'), subtitle: const Text('Return all Intelligence controls to conservative defaults.'), onTap: () => _confirmReset(context)),
+                  _header(context, 'Companion memory'),
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: Future.wait([IntelligencePatternStore.readBucket(DateTime.now()), IntelligencePatternStore.readStateProfile()]),
+                    builder: (context, snapshot) {
+                      final bucket = snapshot.data != null && snapshot.data!.isNotEmpty ? snapshot.data![0] : const <String, dynamic>{};
+                      final profile = snapshot.data != null && snapshot.data!.length > 1 ? snapshot.data![1] : const <String, dynamic>{};
+                      final state = IntelligencePatternStore.stateFor(bucket);
+                      final global = IntelligencePatternStore.globalState(profile);
+                      final confidence = IntelligencePatternStore.stateConfidence(profile);
+                      final momentum = IntelligencePatternStore.stateMomentum(profile);
+                      return Column(children: [
+                        ListTile(leading: const Icon(Icons.psychology_rounded), title: Text('This window: $state'), subtitle: Text(IntelligencePatternStore.explanationFor(state, bucket))),
+                        ListTile(leading: const Icon(Icons.history_rounded), title: Text('Across sessions: $global'), subtitle: Text(confidence == 0 ? 'Still learning your recurring listening pattern.' : '${(confidence * 100).round()}% of learned states point here${momentum >= .5 ? ' • pattern is holding' : ''}.')),
+                        ListTile(leading: const Icon(Icons.auto_awesome_rounded), title: Text(intelligence.anticipatedNext?.song.title ?? 'No prediction yet'), subtitle: Text(intelligence.anticipatedNext == null ? 'Keep listening and Resonate will build local evidence.' : '${(intelligence.anticipatedNext!.confidence * 100).round()}% confidence • ${intelligence.anticipatedNext!.reason}')),
+                        ListTile(leading: const Icon(Icons.restart_alt_rounded), title: const Text('Reset advanced tuning'), subtitle: const Text('Return decision controls to conservative defaults; learned memory stays intact.'), onTap: () => _confirmReset(context)),
+                      ]);
+                    },
+                  ),
                 ],
               ),
             ),
@@ -87,7 +98,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
   Widget _header(BuildContext context, String title) => Padding(padding: const EdgeInsets.fromLTRB(16, 22, 16, 8), child: Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)));
 
   Future<void> _confirmReset(BuildContext context) async {
-    final yes = await showDialog<bool>(context: context, builder: (_) => AlertDialog(title: const Text('Reset advanced tuning?'), content: const Text('This resets the decision controls, but keeps listening history and learned song feedback.'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reset'))]));
+    final yes = await showDialog<bool>(context: context, builder: (_) => AlertDialog(title: const Text('Reset advanced tuning?'), content: const Text('This resets decision controls, but keeps listening history, learned song feedback and Companion memory.'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reset'))]));
     if (yes == true) await _resetTuning();
   }
 }
