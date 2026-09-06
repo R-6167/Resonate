@@ -129,11 +129,14 @@ class IntelligenceMixService {
     final selectedIds = <String>{if (currentSong != null) currentSong.id};
     final targetMs = targetDuration.inMilliseconds;
     final continuityPrior = await _continuity.continuityPrior();
+    final pacingReferenceMs = _pacingReferenceMs(recommendations);
     var totalMs = 0;
     var safety = 0;
     while (totalMs < targetMs && safety < 80) {
       safety++;
-      final next = await _decisionEngine.chooseSequence(recommendations: _continuityAdjustedRecommendations(recommendations, continuityPrior), queuedIds: selectedIds, currentSong: songs.isEmpty ? currentSong : songs.last, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, count: 1);
+      final progress = targetMs <= 0 ? 1.0 : (totalMs / targetMs).clamp(0.0, 1.0).toDouble();
+      final journeyRecommendations = _journeyAdjustedRecommendations(recommendations, progress, pacingReferenceMs);
+      final next = await _decisionEngine.chooseSequence(recommendations: _continuityAdjustedRecommendations(journeyRecommendations, continuityPrior), queuedIds: selectedIds, currentSong: songs.isEmpty ? currentSong : songs.last, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, count: 1);
       if (next.isEmpty) break;
       final song = next.first;
       if (selectedIds.contains(song.id)) break;
@@ -144,6 +147,37 @@ class IntelligenceMixService {
     final mix = IntelligenceMix(id: 'mix_${DateTime.now().microsecondsSinceEpoch}', title: title, description: description, songs: List.unmodifiable(songs), targetDuration: targetDuration, createdAt: DateTime.now(), reason: reason, parentMixId: parentMixId, edition: edition, previousContinuityScore: evolvingFrom);
     await _memory.remember(mix);
     return mix;
+  }
+
+  int _pacingReferenceMs(List<IntelligenceRecommendation> recommendations) {
+    final durations = recommendations.map((item) => item.song.duration.inMilliseconds).where((ms) => ms > 0).toList()..sort();
+    if (durations.isEmpty) return 0;
+    return durations[durations.length ~/ 2];
+  }
+
+  List<IntelligenceRecommendation> _journeyAdjustedRecommendations(List<IntelligenceRecommendation> recommendations, double progress, int pacingReferenceMs) {
+    if (recommendations.isEmpty) return recommendations;
+    return recommendations.map((item) {
+      final confidence = item.confidence.clamp(0.0, 1.0).toDouble();
+      final duration = item.song.duration.inMilliseconds;
+      var delta = 0.0;
+      // Opening: establish trust with proven, confident choices.
+      if (progress < .25) delta += confidence * .08;
+      // Middle: make room for discovery without abandoning the listener's
+      // strongest signals.
+      else if (progress < .65) delta += (1.0 - confidence) * .07;
+      // Closing: resolve the journey with choices the listener is more likely
+      // to stay with.
+      else delta += confidence * .10;
+
+      // Keep the opening and closing from becoming a run of unusually long
+      // tracks; the middle is the safest place for a longer stretch.
+      if (pacingReferenceMs > 0 && duration > pacingReferenceMs * 1.45) {
+        if (progress < .25 || progress >= .75) delta -= .035;
+        else delta += .015;
+      }
+      return IntelligenceRecommendation(song: item.song, score: item.score + delta, confidence: item.confidence, reason: item.reason, decision: item.decision, sessionReason: item.sessionReason);
+    }).toList(growable: false);
   }
 
   List<IntelligenceRecommendation> _continuityAdjustedRecommendations(List<IntelligenceRecommendation> recommendations, double prior) {
