@@ -7,6 +7,7 @@ import '../models/song.dart';
 import '../services/database_helper.dart';
 import '../services/intelligence_mix_memory.dart';
 import '../services/intelligence_mix_service.dart';
+import '../services/intelligence_mix_settings_store.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 
@@ -26,11 +27,7 @@ class IntelligenceMixController extends ChangeNotifier {
   String? _analyzingSongId;
   String? _lastObservedSongId;
 
-  IntelligenceMixController({
-    required this.music,
-    required this.intelligence,
-    IntelligenceMixService? service,
-  }) : _service = service ?? IntelligenceMixService() {
+  IntelligenceMixController({required this.music, required this.intelligence, IntelligenceMixService? service}) : _service = service ?? IntelligenceMixService() {
     music.addListener(_observeMixPlayback);
     unawaited(_restoreLatestMix());
   }
@@ -41,14 +38,12 @@ class IntelligenceMixController extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get analyzingSongId => _analyzingSongId;
 
-  Future<IntelligenceMix?> generateMix({
-    Duration targetDuration = const Duration(minutes: 60),
-    String? title,
-  }) async {
+  Future<IntelligenceMix?> generateMix({Duration? targetDuration, String? title}) async {
     if (!intelligence.isEnabled || intelligence.recommendations.isEmpty) return null;
     _loading = true;
     notifyListeners();
     try {
+      final minutes = targetDuration?.inMinutes ?? await IntelligenceMixSettingsStore.targetMinutes();
       final mix = await _service.generateMix(
         recommendations: intelligence.recommendations,
         currentSong: music.currentSong,
@@ -56,7 +51,7 @@ class IntelligenceMixController extends ChangeNotifier {
         sessionSkipStreak: intelligence.sessionSkipStreak,
         sessionCompletionStreak: intelligence.sessionCompletionStreak,
         sessionArtistCounts: intelligence.sessionArtistCounts,
-        targetDuration: targetDuration,
+        targetDuration: Duration(minutes: minutes.clamp(15, 120)),
         title: title ?? _defaultTitle(),
       );
       _currentMix = mix;
@@ -71,6 +66,7 @@ class IntelligenceMixController extends ChangeNotifier {
   Future<IntelligenceMix?> evolveCurrentMix() async {
     final previous = _currentMix;
     if (previous == null || !intelligence.isEnabled || intelligence.recommendations.isEmpty) return null;
+    if (!await IntelligenceMixSettingsStore.autoEvolutionEnabled()) return null;
     _loading = true;
     notifyListeners();
     try {
@@ -92,17 +88,13 @@ class IntelligenceMixController extends ChangeNotifier {
     }
   }
 
-  Future<IntelligenceMixAnalysis?> analyzeLongMix(
-    Song song, {
-    int minimumDurationMinutes = 20,
-  }) async {
+  Future<IntelligenceMixAnalysis?> analyzeLongMix(Song song, {int? minimumDurationMinutes}) async {
+    if (!await IntelligenceMixSettingsStore.longFormEnabled()) return null;
     _analyzingSongId = song.id;
     notifyListeners();
     try {
-      final analysis = await _service.analyzeLongMix(
-        song,
-        minimumDurationMinutes: minimumDurationMinutes,
-      );
+      final minimum = minimumDurationMinutes ?? await IntelligenceMixSettingsStore.minimumLongFormMinutes();
+      final analysis = await _service.analyzeLongMix(song, minimumDurationMinutes: minimum);
       _currentAnalysis = analysis;
       return analysis;
     } finally {
@@ -115,21 +107,14 @@ class IntelligenceMixController extends ChangeNotifier {
     final mix = _currentMix;
     if (mix == null) return null;
     final assessment = await _service.evaluateMix(mix);
-    if (assessment != null) {
-      _currentContinuity = assessment;
-      notifyListeners();
-    }
+    if (assessment != null) { _currentContinuity = assessment; notifyListeners(); }
     return assessment;
   }
 
   Future<List<Map<String, dynamic>>> recentMixContinuity() => _service.recentMixContinuity();
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _service.recentGeneratedMixes();
 
-  void clearMix() {
-    _currentMix = null;
-    _currentContinuity = null;
-    notifyListeners();
-  }
+  void clearMix() { _currentMix = null; _currentContinuity = null; notifyListeners(); }
 
   Future<void> _restoreLatestMix() async {
     try {
@@ -139,20 +124,12 @@ class IntelligenceMixController extends ChangeNotifier {
       final rawSongIds = latest['songIds'] as List?;
       final songIds = rawSongIds?.whereType<String>().toList(growable: false);
       if (songIds == null || songIds.isEmpty) return;
-
       final allSongs = await _database.getAllSongs();
       final byId = <String, Song>{for (final song in allSongs) song.id: song};
-      // Preserve the exact sequence remembered by the mix instead of using a
-      // Set, because mix order is part of the journey the Companion created.
       final songs = <Song>[];
       final restoredIds = <String>{};
-      for (final id in songIds) {
-        if (!restoredIds.add(id)) continue;
-        final song = byId[id];
-        if (song != null) songs.add(song);
-      }
+      for (final id in songIds) { if (!restoredIds.add(id)) continue; final song = byId[id]; if (song != null) songs.add(song); }
       if (songs.isEmpty) return;
-
       final id = latest['id'] as String?;
       final title = latest['title'] as String?;
       final description = latest['description'] as String?;
@@ -160,23 +137,9 @@ class IntelligenceMixController extends ChangeNotifier {
       final createdAt = DateTime.tryParse(latest['createdAt'] as String? ?? '');
       final targetMinutes = (latest['targetMinutes'] as num?)?.toInt();
       if (id == null || title == null || description == null || reason == null || createdAt == null || targetMinutes == null) return;
-
-      _currentMix = IntelligenceMix(
-        id: id,
-        title: title,
-        description: description,
-        songs: List.unmodifiable(songs),
-        targetDuration: Duration(minutes: targetMinutes),
-        createdAt: createdAt,
-        reason: reason,
-        parentMixId: latest['parentMixId'] as String?,
-        edition: (latest['edition'] as num?)?.toInt() ?? 1,
-        previousContinuityScore: (latest['previousContinuityScore'] as num?)?.toDouble(),
-      );
+      _currentMix = IntelligenceMix(id: id, title: title, description: description, songs: List.unmodifiable(songs), targetDuration: Duration(minutes: targetMinutes), createdAt: createdAt, reason: reason, parentMixId: latest['parentMixId'] as String?, edition: (latest['edition'] as num?)?.toInt() ?? 1, previousContinuityScore: (latest['previousContinuityScore'] as num?)?.toDouble());
       notifyListeners();
-    } catch (_) {
-      // Remembered mix restoration is optional and must never affect playback.
-    }
+    } catch (_) {}
   }
 
   void _observeMixPlayback() {
@@ -187,22 +150,11 @@ class IntelligenceMixController extends ChangeNotifier {
     if (mix.songs.any((song) => song.id == songId)) evaluateCurrentMix();
   }
 
-  @override
-  void dispose() {
-    music.removeListener(_observeMixPlayback);
-    super.dispose();
-  }
+  @override void dispose() { music.removeListener(_observeMixPlayback); super.dispose(); }
 
   String _defaultTitle() {
     if (intelligence.sessionSkipStreak >= 2) return 'A Fresh Turn';
     if (intelligence.sessionCompletionStreak >= 2) return 'Keep The Flow';
-    switch (intelligence.sessionMode) {
-      case 'Exploring':
-        return 'Open The Search';
-      case 'Familiar flow':
-        return 'Your Familiar Flow';
-      default:
-        return 'Your Resonate Mix';
-    }
+    switch (intelligence.sessionMode) { case 'Exploring': return 'Open The Search'; case 'Familiar flow': return 'Your Familiar Flow'; default: return 'Your Resonate Mix'; }
   }
 }
