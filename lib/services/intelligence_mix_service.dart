@@ -1,10 +1,8 @@
 import '../models/intelligence_mix.dart';
 import '../models/intelligence_recommendation.dart';
-import '../models/listening_event.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'intelligence_decision_engine.dart';
-import 'intelligence_settings_store.dart';
 
 /// Local-only mix intelligence. It does not decode or upload audio. It learns
 /// from playback events already recorded by Resonate and uses the same
@@ -21,10 +19,10 @@ class IntelligenceMixService {
 
   /// Analyzes a long audio item as a behavioral listening map.
   ///
-  /// Today Resonate records where a listener stopped and how much of the item
-  /// they consumed. That is enough to identify repeatedly reached sections and
-  /// common exit points without pretending we can identify embedded tracks in
-  /// a DJ mix. True embedded-track recognition can be layered on later.
+  /// Today Resonate records how far a listener reached and where they stopped.
+  /// That is enough to identify repeatedly reached sections and common exit
+  /// points without pretending we can identify embedded tracks in a DJ mix.
+  /// True embedded-track recognition can be layered on later.
   Future<IntelligenceMixAnalysis?> analyzeLongMix(
     Song source, {
     int minimumDurationMinutes = 20,
@@ -113,10 +111,8 @@ class IntelligenceMixService {
   }
 
   /// Generates a fresh local mixtape from Intelligence recommendations.
-  ///
-  /// This is deliberately a dynamic sequence rather than a permanently saved
-  /// playlist. Calling it again can produce a different mix as the user's
-  /// memory and current session change.
+  /// Calling it again can produce a different mix as the user's memory and
+  /// current session change.
   Future<IntelligenceMix> generateMix({
     required List<IntelligenceRecommendation> recommendations,
     required Song? currentSong,
@@ -128,7 +124,7 @@ class IntelligenceMixService {
     String title = 'Your Resonate Mix',
   }) async {
     final songs = <Song>[];
-    final selectedIds = <String>{currentSong?.id};
+    final selectedIds = <String>{if (currentSong != null) currentSong.id};
     final targetMs = targetDuration.inMilliseconds;
     var totalMs = 0;
     var safety = 0;
