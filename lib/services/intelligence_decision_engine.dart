@@ -34,12 +34,15 @@ class IntelligenceDecisionEngine {
     final songsById = {for (final song in songs) song.id: song};
     await IntelligencePatternStore.learnFromRecentEvents(recentEvents, songsById);
     final pattern = await IntelligencePatternStore.readBucket(DateTime.now());
+    final globalProfile = await IntelligencePatternStore.readStateProfile();
     final patternSongs = _counts(pattern['songs']);
     final patternArtists = _counts(pattern['artists']);
     final patternEvents = (pattern['events'] as num?)?.toInt() ?? 0;
     final patternCompleted = (pattern['completed'] as num?)?.toInt() ?? 0;
     final patternCompletionRate = patternEvents == 0 ? 0.0 : patternCompleted / patternEvents;
     final patternState = IntelligencePatternStore.stateFor(pattern);
+    final globalState = IntelligencePatternStore.globalState(globalProfile);
+    final globalStateConfidence = IntelligencePatternStore.stateConfidence(globalProfile);
 
     final pool = recommendations.where((r) => r.confidence >= threshold).where((r) => r.song.id != currentSong?.id).where((r) => !queuedIds.contains(r.song.id)).toList(growable: false);
     if (pool.isEmpty) return const <Song>[];
@@ -62,6 +65,10 @@ class IntelligenceDecisionEngine {
       var value = r.score * (1.0 - exploration) + exploration * (1.0 - rank / pool.length) * 3.0 + r.confidence * 2.0;
       value += historicalSongBoost + historicalArtistBoost;
       if (patternCompletionRate >= .70 && patternEvents >= 3) value += historicalSongBoost * .45;
+
+      // The local time bucket is the strongest contextual memory. The global
+      // state acts only as a bounded prior once Intelligence has accumulated
+      // enough evidence across multiple contexts.
       if (patternState == 'Familiar flow' && historicalSongWeight > 0) {
         value += (1.0 - exploration) * .9;
       } else if (patternState == 'Exploration' && historicalSongWeight == 0) {
@@ -69,6 +76,15 @@ class IntelligenceDecisionEngine {
       } else if (patternState == 'Balanced') {
         value += .15;
       }
+
+      if (globalStateConfidence >= .55) {
+        if (globalState == 'Familiar flow' && historicalSongWeight > 0) {
+          value += globalStateConfidence * (1.0 - exploration) * .65;
+        } else if (globalState == 'Exploration' && historicalSongWeight == 0) {
+          value += globalStateConfidence * exploration * .75;
+        }
+      }
+
       if (sessionMode == 'Exploring') value += exploration * 1.5;
       else if (sessionMode == 'Familiar flow') value += (1.0 - exploration) * 1.0;
       if (explorationPressure > 0) {
