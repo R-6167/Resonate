@@ -121,6 +121,9 @@ class AutopilotController extends ChangeNotifier {
         queuedIds: futureQueued,
         currentSong: music.currentSong,
         sessionMode: intelligence.sessionMode,
+        sessionSkipStreak: intelligence.sessionSkipStreak,
+        sessionCompletionStreak: intelligence.sessionCompletionStreak,
+        sessionArtistCounts: intelligence.sessionArtistCounts,
         count: 2,
       );
       if (candidates.isNotEmpty) await music.enqueueSongs(candidates);
