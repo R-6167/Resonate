@@ -1,12 +1,15 @@
 import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
+import 'database_helper.dart';
+import 'intelligence_pattern_store.dart';
 import 'intelligence_settings_store.dart';
 
 /// Chooses the next track from Intelligence's ranked evidence.
 ///
 /// This layer deliberately does not play audio or mutate the queue. It turns
 /// recommendations into a session-aware decision so Autopilot does not simply
-/// take the first ranked rows every time.
+/// take the first ranked rows every time. It also consults compact local
+/// memories of recurring listening contexts across sessions.
 class IntelligenceDecisionEngine {
   const IntelligenceDecisionEngine();
 
@@ -44,6 +47,20 @@ class IntelligenceDecisionEngine {
     final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0;
     final allowArtistRepeat = await IntelligenceSettingsStore.artistRepeat();
 
+    // Before making a decision, fold any newly finished history into the
+    // persistent weekday/time memory. This is deduplicated by event ID.
+    final database = DatabaseHelper();
+    final songs = await database.getAllSongs();
+    final recentEvents = await database.getRecentListeningEvents(limit: 200);
+    final songsById = {for (final song in songs) song.id: song};
+    await IntelligencePatternStore.learnFromRecentEvents(recentEvents, songsById);
+    final pattern = await IntelligencePatternStore.readBucket(DateTime.now());
+    final patternSongs = _counts(pattern['songs']);
+    final patternArtists = _counts(pattern['artists']);
+    final patternEvents = (pattern['events'] as num?)?.toInt() ?? 0;
+    final patternCompleted = (pattern['completed'] as num?)?.toInt() ?? 0;
+    final patternCompletionRate = patternEvents == 0 ? 0.0 : patternCompleted / patternEvents;
+
     final pool = recommendations
         .where((r) => r.confidence >= threshold)
         .where((r) => r.song.id != currentSong?.id)
@@ -66,10 +83,26 @@ class IntelligenceDecisionEngine {
       final sessionArtistCount = artist.isEmpty ? 0 : (sessionArtistCounts[artist] ?? 0);
       final sessionFatigue = sessionArtistCount >= 2 ? (sessionArtistCount - 1) * 1.1 : 0.0;
       final sameCurrentArtist = artist.isNotEmpty && artist == currentArtist;
+      final historicalSongWeight = patternSongs[r.song.id] ?? 0;
+      final historicalArtistWeight = artist.isEmpty ? 0 : (patternArtists[artist] ?? 0);
+      final historicalSongBoost = historicalSongWeight > 0
+          ? (0.55 + (historicalSongWeight.clamp(0, 8) / 8.0)) * (1.0 - exploration * .65)
+          : 0.0;
+      final historicalArtistBoost = historicalArtistWeight > 0
+          ? (0.35 + (historicalArtistWeight.clamp(0, 8) / 8.0)) * (1.0 - exploration * .55)
+          : 0.0;
 
       var value = r.score * (1.0 - exploration);
       value += exploration * (1.0 - rank / pool.length) * 3.0;
       value += r.confidence * 2.0;
+      value += historicalSongBoost;
+      value += historicalArtistBoost;
+
+      // A recurring context with a strong completion history gets a modest
+      // continuity bias. It never overrides confidence or user feedback.
+      if (patternCompletionRate >= .70 && patternEvents >= 3) {
+        value += historicalSongBoost * .45;
+      }
 
       if (sessionMode == 'Exploring') {
         value += exploration * 1.5;
@@ -121,5 +154,10 @@ class IntelligenceDecisionEngine {
       }
     }
     return selected;
+  }
+
+  Map<String, int> _counts(dynamic value) {
+    if (value is! Map) return <String, int>{};
+    return value.map((key, item) => MapEntry(key.toString(), (item as num?)?.toInt() ?? 0));
   }
 }
