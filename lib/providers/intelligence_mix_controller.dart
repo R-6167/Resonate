@@ -16,17 +16,22 @@ class IntelligenceMixController extends ChangeNotifier {
 
   IntelligenceMix? _currentMix;
   IntelligenceMixAnalysis? _currentAnalysis;
+  Map<String, dynamic>? _currentContinuity;
   bool _loading = false;
   String? _analyzingSongId;
+  String? _lastObservedSongId;
 
   IntelligenceMixController({
     required this.music,
     required this.intelligence,
     IntelligenceMixService? service,
-  }) : _service = service ?? IntelligenceMixService();
+  }) : _service = service ?? IntelligenceMixService() {
+    music.addListener(_observeMixPlayback);
+  }
 
   IntelligenceMix? get currentMix => _currentMix;
   IntelligenceMixAnalysis? get currentAnalysis => _currentAnalysis;
+  Map<String, dynamic>? get currentContinuity => _currentContinuity;
   bool get isLoading => _loading;
   String? get analyzingSongId => _analyzingSongId;
 
@@ -49,6 +54,7 @@ class IntelligenceMixController extends ChangeNotifier {
         title: title ?? _defaultTitle(),
       );
       _currentMix = mix;
+      _currentContinuity = null;
       return mix;
     } finally {
       _loading = false;
@@ -75,9 +81,41 @@ class IntelligenceMixController extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>?> evaluateCurrentMix() async {
+    final mix = _currentMix;
+    if (mix == null) return null;
+    final assessment = await _service.evaluateMix(mix);
+    if (assessment != null) {
+      _currentContinuity = assessment;
+      notifyListeners();
+    }
+    return assessment;
+  }
+
+  Future<List<Map<String, dynamic>>> recentMixContinuity() => _service.recentMixContinuity();
+
   void clearMix() {
     _currentMix = null;
+    _currentContinuity = null;
     notifyListeners();
+  }
+
+  void _observeMixPlayback() {
+    final mix = _currentMix;
+    final songId = music.currentSong?.id;
+    if (mix == null || songId == null || songId == _lastObservedSongId) return;
+    _lastObservedSongId = songId;
+    if (mix.songs.any((song) => song.id == songId)) {
+      // A generated mix has been entered again. Re-score it from the local
+      // listening history so future mixes can learn from the journey.
+      evaluateCurrentMix();
+    }
+  }
+
+  @override
+  void dispose() {
+    music.removeListener(_observeMixPlayback);
+    super.dispose();
   }
 
   String _defaultTitle() {
