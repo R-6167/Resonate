@@ -44,9 +44,13 @@ class IntelligenceMixService {
       }
     }
     final seekEvents = await _seekMemory.forSong(source.id);
+    var replayEvents = 0;
     for (final seek in seekEvents) {
-      final toMs = (seek['toMs'] as num?)?.toInt();
-      if (toMs == null || toMs < 0 || toMs >= durationMs) continue;
+      final fromMs = seek['fromMs'];
+      final toMs = seek['toMs'];
+      if (fromMs == null || toMs == null || fromMs < 0 || toMs < 0 || toMs >= durationMs) continue;
+      if (toMs >= fromMs || fromMs - toMs < 10 * 1000) continue;
+      replayEvents++;
       final bucket = (toMs / bucketMs).floor();
       if (bucket >= 0 && bucket < bucketCount) replays[bucket] = (replays[bucket] ?? 0) + 1;
     }
@@ -54,14 +58,16 @@ class IntelligenceMixService {
     final preferred = <IntelligenceMixSegment>[];
     var startBucket = -1;
     for (var i = 0; i < reached.length; i++) {
-      final strong = (replays[i] ?? 0) >= 2 || (maxReached > 0 && reached[i] >= (maxReached * .55).ceil());
+      final strongReach = maxReached > 0 && reached[i] >= (maxReached * .55).ceil();
+      final replayStrong = (replays[i] ?? 0) >= 2;
+      final strong = strongReach || replayStrong;
       if (strong && startBucket < 0) startBucket = i;
       else if (!strong && startBucket >= 0) { preferred.add(_segment(startBucket, i, reached, replays, relevant.length, bucketMs, durationMs)); startBucket = -1; }
     }
     if (startBucket >= 0) preferred.add(_segment(startBucket, reached.length, reached, replays, relevant.length, bucketMs, durationMs));
     final strongestExit = exits.isEmpty ? null : exits.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
     final coverage = preferred.fold<int>(0, (sum, segment) => sum + (segment.endMs - segment.startMs));
-    return IntelligenceMixAnalysis(source: source, observations: relevant.length, averageCompletion: completionSum / relevant.length, preferredCoverage: (coverage / durationMs).clamp(0.0, 1.0).toDouble(), preferredSegments: preferred, commonExitPoint: strongestExit == null ? null : Duration(milliseconds: strongestExit));
+    return IntelligenceMixAnalysis(source: source, observations: relevant.length, averageCompletion: completionSum / relevant.length, preferredCoverage: (coverage / durationMs).clamp(0.0, 1.0).toDouble(), preferredSegments: preferred, commonExitPoint: strongestExit == null ? null : Duration(milliseconds: strongestExit), replayEvents: replayEvents, replayedSegments: replays.length);
   }
 
   IntelligenceMixSegment _segment(int startBucket, int endBucket, List<int> reached, Map<int, int> replays, int observations, int bucketMs, int durationMs) {
@@ -71,7 +77,7 @@ class IntelligenceMixService {
     final replayCount = replays.entries.where((entry) => entry.key >= startBucket && entry.key < endBucket).fold(0, (a, b) => a + b.value);
     final span = (endBucket - startBucket).clamp(1, 100000);
     final preference = observations == 0 ? 0.0 : ((listens / (observations * span)) + replayCount * .08).clamp(0.0, 1.0).toDouble();
-    return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens + replayCount, preference: preference);
+    return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens + replayCount, preference: preference, replayCount: replayCount);
   }
 
   Future<IntelligenceMix> generateMix({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration targetDuration = const Duration(minutes: 60), String title = 'Your Resonate Mix'}) async {
