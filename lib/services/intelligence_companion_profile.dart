@@ -40,9 +40,6 @@ class IntelligenceCompanionProfile {
     required this.feedbackAlignment,
   });
 
-  /// Stable, bounded preference signals derived from compact local memory.
-  /// These are priors, not commands: current-session behavior and explicit
-  /// feedback remain stronger than this profile.
   static Future<Map<String, double>> readPreferenceSignals() async {
     final bucket = await IntelligencePatternStore.readBucket(DateTime.now());
     final profile = await IntelligencePatternStore.readStateProfile();
@@ -62,14 +59,11 @@ class IntelligenceCompanionProfile {
     final familiarity = ((completionRate * .65) + ((songs.length.clamp(0, 12) / 12.0) * .35)) * evidence;
     final exploration = ((skipRate * .70) + (1.0 - (songs.length.clamp(0, 12) / 12.0)) * .30) * evidence;
     final skipSensitivity = (skipRate * .75 + (learned >= 12 ? .25 : 0.0)).clamp(0.0, 1.0).toDouble();
-    final feedbackAlignment = ((profile['feedback_alignment'] as num?)?.toDouble() ?? completionRate).clamp(0.0, 1.0).toDouble();
-
     return <String, double>{
       'familiarity': familiarity.clamp(0.0, 1.0).toDouble(),
       'exploration': exploration.clamp(0.0, 1.0).toDouble(),
       'skipSensitivity': skipSensitivity,
       'artistDiversity': (diversity * (distinctArtists >= 2 ? 1.0 : .5)).clamp(0.0, 1.0).toDouble(),
-      'feedbackAlignment': feedbackAlignment,
     };
   }
 
@@ -92,7 +86,6 @@ class IntelligenceCompanionProfile {
     String secondary = globalState == 'Learning' ? '' : globalState;
     String tendency;
     String explanation;
-
     if (intelligence.sessionSkipStreak >= 3) {
       tendency = 'Explore more';
       explanation = 'The current session has several quick exits, so I am widening the next choices.';
@@ -113,9 +106,7 @@ class IntelligenceCompanionProfile {
       explanation = IntelligencePatternStore.explanationFor(bucketState, bucket);
     }
 
-    if (globalState != 'Learning' && globalState != primary && globalConfidence >= .55) {
-      secondary = globalState;
-    }
+    if (globalState != 'Learning' && globalState != primary && globalConfidence >= .55) secondary = globalState;
     if (secondary.isEmpty && momentum >= .5 && primary != 'Learning') secondary = 'Pattern holding';
 
     final contextualConfidence = [
@@ -123,10 +114,7 @@ class IntelligenceCompanionProfile {
       events >= 3 ? (completionRate - .5).abs() * 1.2 : 0.0,
       intelligence.sessionCompletionStreak >= 3 || intelligence.sessionSkipStreak >= 3 ? .78 : 0.0,
     ].reduce((a, b) => a > b ? a : b).clamp(0.0, .97).toDouble();
-
-    final context = bucketState == 'Learning'
-        ? 'This time window is still new to me.'
-        : 'This pattern shows up around ${_windowLabel(now)}.';
+    final context = bucketState == 'Learning' ? 'This time window is still new to me.' : 'This pattern shows up around ${_windowLabel(now)}.';
 
     return IntelligenceCompanionProfile(
       primarySignal: primary,
@@ -144,7 +132,7 @@ class IntelligenceCompanionProfile {
       explorationAffinity: signals['exploration'] ?? 0,
       skipSensitivity: signals['skipSensitivity'] ?? 0,
       artistDiversity: signals['artistDiversity'] ?? 0,
-      feedbackAlignment: signals['feedbackAlignment'] ?? 0,
+      feedbackAlignment: intelligence.feedbackAlignment,
     );
   }
 
