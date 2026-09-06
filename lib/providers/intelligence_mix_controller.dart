@@ -62,6 +62,7 @@ class IntelligenceMixController extends ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> recentMixContinuity() => _service.recentMixContinuity();
+  Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _service.recentGeneratedMixes();
   void clearMix() { _currentMix = null; _currentContinuity = null; notifyListeners(); }
 
   void _observeMixPlayback() {
