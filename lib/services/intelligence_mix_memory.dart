@@ -22,6 +22,9 @@ class IntelligenceMixMemory {
         'targetMinutes': mix.targetDuration.inMinutes,
         'createdAt': mix.createdAt.toIso8601String(),
         'songIds': mix.songs.map((song) => song.id).toList(),
+        'parentMixId': mix.parentMixId,
+        'edition': mix.edition,
+        'previousContinuityScore': mix.previousContinuityScore,
       });
       final updated = <String>[entry, ...existing.where((item) => item != entry)];
       await prefs.setStringList(_key, updated.take(_maxMixes).toList());
