@@ -17,12 +17,6 @@ class IntelligenceMixService {
   })  : _database = database ?? DatabaseHelper(),
         _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine();
 
-  /// Analyzes a long audio item as a behavioral listening map.
-  ///
-  /// Today Resonate records how far a listener reached and where they stopped.
-  /// That is enough to identify repeatedly reached sections and common exit
-  /// points without pretending we can identify embedded tracks in a DJ mix.
-  /// True embedded-track recognition can be layered on later.
   Future<IntelligenceMixAnalysis?> analyzeLongMix(
     Song source, {
     int minimumDurationMinutes = 20,
@@ -44,7 +38,7 @@ class IntelligenceMixService {
 
     for (final event in relevant) {
       completionSum += event.completionRatio.clamp(0.0, 1.0);
-      final played = event.durationPlayedMs.clamp(0, durationMs);
+      final played = event.durationPlayedMs.clamp(0, durationMs).toInt();
       final lastBucket = played == 0 ? -1 : ((played - 1) / bucketMs).floor();
       for (var bucket = 0; bucket <= lastBucket && bucket < bucketCount; bucket++) {
         reached[bucket]++;
@@ -95,17 +89,15 @@ class IntelligenceMixService {
     int bucketMs,
     int durationMs,
   ) {
-    final startMs = (startBucket * bucketMs).clamp(0, durationMs);
-    final endMs = (endBucket * bucketMs).clamp(startMs, durationMs);
+    final startMs = (startBucket * bucketMs).clamp(0, durationMs).toInt();
+    final endMs = (endBucket * bucketMs).clamp(startMs, durationMs).toInt();
     final listens = reached.sublist(startBucket, endBucket).fold(0, (a, b) => a + b);
     final span = (endBucket - startBucket).clamp(1, 100000);
-    final returns = (listens / span).round();
     final preference = observations == 0 ? 0.0 : (listens / (observations * span)).clamp(0.0, 1.0).toDouble();
     return IntelligenceMixSegment(
       startMs: startMs,
       endMs: endMs,
       listens: listens,
-      returns: returns,
       preference: preference,
     );
   }
