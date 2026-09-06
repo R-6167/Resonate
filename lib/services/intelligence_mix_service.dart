@@ -85,7 +85,11 @@ class IntelligenceMixService {
   }
 
   Future<IntelligenceMix> generateMix({required List<IntelligenceRecommendation> recommendations, required Song? currentSong, required String sessionMode, int sessionSkipStreak = 0, int sessionCompletionStreak = 0, Map<String, int> sessionArtistCounts = const <String, int>{}, Duration targetDuration = const Duration(minutes: 60), String title = 'Your Resonate Mix'}) async {
-    return _generateFrom(recommendations: recommendations, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration, title: title, evolvingFrom: null, parentMixId: null, edition: 1);
+    // Long-form behavior is useful even before a mix has a continuity history:
+    // if the listener has repeatedly rewound parts of a long track, those
+    // tracks deserve a small boost in newly generated mixes too.
+    final longMixAware = await _applyLongMixSignals(recommendations, await _continuity.continuityPrior(), const <String>{});
+    return _generateFrom(recommendations: longMixAware, currentSong: currentSong, sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, sessionArtistCounts: sessionArtistCounts, targetDuration: targetDuration, title: title, evolvingFrom: null, parentMixId: null, edition: 1);
   }
 
   /// Builds the next edition of an existing mix. Successful journeys keep a
