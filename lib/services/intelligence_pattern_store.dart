@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/listening_event.dart';
+import '../models/song.dart';
+
 /// Small, local-only memory of when and how the user tends to listen.
 ///
 /// The store intentionally keeps aggregates instead of raw listening history:
@@ -10,8 +13,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// current session has ended without introducing a remote service or model.
 class IntelligencePatternStore {
   static const _key = 'intelligence_listening_patterns_v1';
+  static const _learnedEventsKey = 'intelligence_pattern_learned_events_v1';
   static const _maxSongsPerBucket = 40;
   static const _maxArtistsPerBucket = 24;
+  static const _maxLearnedEventIds = 300;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -29,6 +34,42 @@ class IntelligencePatternStore {
       return Map<String, dynamic>.from(bucket);
     } catch (_) {
       return <String, dynamic>{};
+    }
+  }
+
+  /// Imports newly finished history rows once. Re-running is safe because
+  /// event IDs are remembered locally, preventing pattern inflation.
+  static Future<void> learnFromRecentEvents(
+    List<ListeningEvent> events,
+    Map<String, Song> songsById,
+  ) async {
+    if (events.isEmpty) return;
+    try {
+      final prefs = await _prefs();
+      final learnedRaw = prefs.getString(_learnedEventsKey);
+      final decoded = learnedRaw == null || learnedRaw.isEmpty ? <dynamic>[] : jsonDecode(learnedRaw);
+      final learned = decoded is List ? decoded.map((e) => e.toString()).toSet() : <String>{};
+      var changed = false;
+      for (final event in events.reversed) {
+        if (event.endedAt == null || learned.contains(event.id)) continue;
+        final song = songsById[event.songId];
+        await record(
+          time: event.startedAt,
+          songId: event.songId,
+          artist: song?.artist?.trim().toLowerCase() ?? '',
+          completed: event.completed,
+          completionRatio: event.completionRatio,
+        );
+        learned.add(event.id);
+        changed = true;
+      }
+      if (changed) {
+        final ids = learned.toList()..sort();
+        final trimmed = ids.length > _maxLearnedEventIds ? ids.sublist(ids.length - _maxLearnedEventIds) : ids;
+        await prefs.setString(_learnedEventsKey, jsonEncode(trimmed));
+      }
+    } catch (_) {
+      // Pattern memory must never interfere with playback.
     }
   }
 
@@ -83,7 +124,9 @@ class IntelligencePatternStore {
 
   static Future<void> clear() async {
     try {
-      await (await _prefs()).remove(_key);
+      final prefs = await _prefs();
+      await prefs.remove(_key);
+      await prefs.remove(_learnedEventsKey);
     } catch (_) {}
   }
 }
