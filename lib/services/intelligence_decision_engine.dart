@@ -43,6 +43,7 @@ class IntelligenceDecisionEngine {
     final patternState = IntelligencePatternStore.stateFor(pattern);
     final globalState = IntelligencePatternStore.globalState(globalProfile);
     final globalStateConfidence = IntelligencePatternStore.stateConfidence(globalProfile);
+    final globalStateMomentum = IntelligencePatternStore.stateMomentum(globalProfile);
 
     final pool = recommendations.where((r) => r.confidence >= threshold).where((r) => r.song.id != currentSong?.id).where((r) => !queuedIds.contains(r.song.id)).toList(growable: false);
     if (pool.isEmpty) return const <Song>[];
@@ -77,11 +78,17 @@ class IntelligenceDecisionEngine {
         value += .15;
       }
 
-      if (globalStateConfidence >= .55) {
+      // Cross-session state is deliberately weaker than current-session and
+      // time-window evidence. Momentum matters only when the learned global
+      // state has persisted for several observations.
+      if (globalStateConfidence >= .55 && globalStateMomentum > 0) {
+        final stateWeight = globalStateConfidence * globalStateMomentum;
         if (globalState == 'Familiar flow' && historicalSongWeight > 0) {
-          value += globalStateConfidence * (1.0 - exploration) * .65;
+          value += stateWeight * (1.0 - exploration) * .8;
         } else if (globalState == 'Exploration' && historicalSongWeight == 0) {
-          value += globalStateConfidence * exploration * .75;
+          value += stateWeight * exploration * .9;
+        } else if (globalState == 'Balanced') {
+          value += stateWeight * .12;
         }
       }
 
