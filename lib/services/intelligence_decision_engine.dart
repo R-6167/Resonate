@@ -6,7 +6,7 @@ import 'intelligence_settings_store.dart';
 ///
 /// This layer deliberately does not play audio or mutate the queue. It turns
 /// recommendations into a session-aware decision so Autopilot does not simply
-/// take the first two ranked rows every time.
+/// take the first ranked rows every time.
 class IntelligenceDecisionEngine {
   const IntelligenceDecisionEngine();
 
@@ -33,6 +33,9 @@ class IntelligenceDecisionEngine {
     required Set<String> queuedIds,
     required Song? currentSong,
     required String sessionMode,
+    int sessionSkipStreak = 0,
+    int sessionCompletionStreak = 0,
+    Map<String, int> sessionArtistCounts = const <String, int>{},
     int count = 2,
   }) async {
     if (count <= 0 || recommendations.isEmpty) return const <Song>[];
@@ -52,26 +55,49 @@ class IntelligenceDecisionEngine {
     final selected = <Song>[];
     final selectedArtists = <String>{};
 
-    // Recommendation.score is the learned evidence. Confidence protects
-    // Autopilot from acting on thin evidence. Exploration then deliberately
-    // lifts lower-ranked, well-supported alternatives instead of making the
-    // exploration setting cosmetic.
+    // Session signals deliberately have a short memory. A run of skips opens
+    // the search, while a run of completed tracks rewards continuity. The
+    // effect is bounded so one unusual burst cannot permanently steer the user.
+    final explorationPressure = sessionSkipStreak.clamp(0, 4) / 4.0;
+    final continuityPressure = sessionCompletionStreak.clamp(0, 4) / 4.0;
+
     double utility(IntelligenceRecommendation r, int rank) {
-      final evidence = r.score * (1.0 - exploration);
-      final explorationLift = exploration * (1.0 - rank / pool.length) * 3.0;
-      final confidenceLift = r.confidence * 2.0;
-      final modeLift = sessionMode == 'Exploring'
-          ? exploration * 1.5
-          : sessionMode == 'Familiar flow'
-              ? (1.0 - exploration) * 1.0
-              : .0;
-      return evidence + explorationLift + confidenceLift + modeLift;
+      final artist = _artistKey(r.song.artist);
+      final sessionArtistCount = artist.isEmpty ? 0 : (sessionArtistCounts[artist] ?? 0);
+      final sessionFatigue = sessionArtistCount >= 2 ? (sessionArtistCount - 1) * 1.1 : 0.0;
+      final sameCurrentArtist = artist.isNotEmpty && artist == currentArtist;
+
+      var value = r.score * (1.0 - exploration);
+      value += exploration * (1.0 - rank / pool.length) * 3.0;
+      value += r.confidence * 2.0;
+
+      if (sessionMode == 'Exploring') {
+        value += exploration * 1.5;
+      } else if (sessionMode == 'Familiar flow') {
+        value += (1.0 - exploration) * 1.0;
+      }
+
+      // When the user is skipping repeatedly, prefer a genuinely different
+      // direction. When they are completing repeatedly, preserve continuity.
+      if (explorationPressure > 0) {
+        value += explorationPressure * (artist.isEmpty ? .15 : -sessionArtistCount * .7);
+        if (sameCurrentArtist) value -= explorationPressure * 1.0;
+      }
+      if (continuityPressure > 0 && sessionArtistCount > 0) {
+        value += continuityPressure * 1.25;
+      }
+      value -= sessionFatigue * (0.5 + explorationPressure);
+      return value;
     }
 
     final ranked = <({IntelligenceRecommendation recommendation, int rank, double utility})>[];
     for (var i = 0; i < pool.length; i++) {
       final recommendation = pool[i];
-      ranked.add((recommendation: recommendation, rank: i, utility: utility(recommendation, i)));
+      ranked.add((
+        recommendation: recommendation,
+        rank: i,
+        utility: utility(recommendation, i),
+      ));
     }
     ranked.sort((a, b) => b.utility.compareTo(a.utility));
 
