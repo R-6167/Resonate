@@ -9,7 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 /// Privacy-first local diagnostics for development and real-device testing.
 /// Crash capture is mandatory for the current development build. Nothing is
-/// uploaded automatically; the user exports a report when they choose.
+/// uploaded automatically; reports and crash files are saved locally.
 class ResonateDiagnostics {
   static const _eventsKey = 'resonate_diagnostics_events_v1';
   static const _feedbackKey = 'resonate_diagnostics_feedback_v1';
@@ -19,6 +19,24 @@ class ResonateDiagnostics {
   static const _maxFeedback = 50;
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+
+  static Future<Directory?> _documentsDirectory() async {
+    try {
+      final directories = await getExternalStorageDirectories(type: StorageDirectory.documents);
+      if (directories != null && directories.isNotEmpty) {
+        final directory = directories.first;
+        await directory.create(recursive: true);
+        return directory;
+      }
+    } catch (_) {}
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      await directory.create(recursive: true);
+      return directory;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
     try {
@@ -31,18 +49,35 @@ class ResonateDiagnostics {
   }
 
   static Future<void> recordCrash(Object error, StackTrace stack, {String source = 'unknown'}) async {
+    final entry = _entry('crash', {
+      'source': source,
+      'error': error.toString(),
+      'stackTrace': stack.toString(),
+    });
     try {
       final prefs = await _prefs();
       final items = _decodeList(prefs.getString(_crashesKey));
-      items.add(_entry('crash', {
-        'source': source,
-        'error': error.toString(),
-        'stackTrace': stack.toString(),
-      }));
+      items.add(entry);
       if (items.length > _maxCrashes) items.removeRange(0, items.length - _maxCrashes);
       await prefs.setString(_crashesKey, jsonEncode(items));
-      await record('crash_recorded', {'source': source, 'error': error.toString()});
     } catch (_) {}
+
+    // Keep an individual crash file as well as the compact local index so a
+    // tester can retrieve the exact failure without needing app internals.
+    try {
+      final directory = await _documentsDirectory();
+      if (directory != null) {
+        final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+        final file = File('${directory.path}/resonate-crash-$stamp.json');
+        await file.writeAsString(const JsonEncoder.withIndent('  ').convert({
+          'reportVersion': 1,
+          'app': 'Resonate',
+          'createdAt': DateTime.now().toIso8601String(),
+          ...entry,
+        }), flush: true);
+      }
+    } catch (_) {}
+    await record('crash_recorded', {'source': source, 'error': error.toString()});
   }
 
   static Future<void> recordFeedback({required String category, required String message, bool includeDiagnostics = true}) async {
@@ -77,12 +112,13 @@ class ResonateDiagnostics {
 
   static Future<String> exportReport() async {
     final report = await snapshot();
-    final directory = await getTemporaryDirectory();
+    final directory = await _documentsDirectory();
+    if (directory == null) throw StateError('Could not access a local Documents directory.');
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
     final file = File('${directory.path}/resonate-diagnostics-$stamp.json');
     await file.writeAsString(const JsonEncoder.withIndent('  ').convert(report), flush: true);
-    await Share.shareXFiles([XFile(file.path)], subject: 'Resonate diagnostic report');
-    unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length}));
+    await Share.shareXFiles([XFile(file.path, mimeType: 'application/json')], subject: 'Resonate diagnostic report');
+    unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length, 'path': file.path}));
     return file.path;
   }
 
@@ -93,9 +129,20 @@ class ResonateDiagnostics {
     await prefs.remove(_feedbackKey);
   }
 
-  static Future<int> eventCount() async => (await snapshot())['events'] is List ? ((await snapshot())['events'] as List).length : 0;
-  static Future<int> crashCount() async => (await snapshot())['crashes'] is List ? ((await snapshot())['crashes'] as List).length : 0;
-  static Future<int> feedbackCount() async => (await snapshot())['feedback'] is List ? ((await snapshot())['feedback'] as List).length : 0;
+  static Future<int> eventCount() async {
+    final report = await snapshot();
+    return (report['events'] as List).length;
+  }
+
+  static Future<int> crashCount() async {
+    final report = await snapshot();
+    return (report['crashes'] as List).length;
+  }
+
+  static Future<int> feedbackCount() async {
+    final report = await snapshot();
+    return (report['feedback'] as List).length;
+  }
 
   static Map<String, dynamic> _entry(String type, Map<String, dynamic> data) => {
         'at': DateTime.now().toIso8601String(),
