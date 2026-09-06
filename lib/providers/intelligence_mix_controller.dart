@@ -136,15 +136,18 @@ class IntelligenceMixController extends ChangeNotifier {
       final entries = await _memory.recent();
       if (entries.isEmpty) return;
       final latest = entries.first;
-      final songIds = (latest['songIds'] as List?)
-          ?.whereType<String>()
-          .toSet();
+      final rawSongIds = latest['songIds'] as List?;
+      final songIds = rawSongIds?.whereType<String>().toList(growable: false);
       if (songIds == null || songIds.isEmpty) return;
 
       final allSongs = await _database.getAllSongs();
       final byId = <String, Song>{for (final song in allSongs) song.id: song};
+      // Preserve the exact sequence remembered by the mix instead of using a
+      // Set, because mix order is part of the journey the Companion created.
       final songs = <Song>[];
+      final restoredIds = <String>{};
       for (final id in songIds) {
+        if (!restoredIds.add(id)) continue;
         final song = byId[id];
         if (song != null) songs.add(song);
       }
