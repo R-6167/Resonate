@@ -5,6 +5,7 @@ import 'database_helper.dart';
 import 'intelligence_decision_engine.dart';
 import 'intelligence_mix_continuity.dart';
 import 'intelligence_mix_memory.dart';
+import 'intelligence_seek_memory.dart';
 
 /// Local-only mix intelligence. It does not decode or upload audio. It learns
 /// from playback events already recorded by Resonate and uses the same
@@ -14,43 +15,39 @@ class IntelligenceMixService {
   final IntelligenceDecisionEngine _decisionEngine;
   final IntelligenceMixMemory _memory;
   final IntelligenceMixContinuity _continuity;
+  final IntelligenceSeekMemory _seekMemory;
 
   IntelligenceMixService({
     DatabaseHelper? database,
     IntelligenceDecisionEngine? decisionEngine,
     IntelligenceMixMemory? memory,
     IntelligenceMixContinuity? continuity,
+    IntelligenceSeekMemory? seekMemory,
   })  : _database = database ?? DatabaseHelper(),
         _decisionEngine = decisionEngine ?? const IntelligenceDecisionEngine(),
         _memory = memory ?? IntelligenceMixMemory(),
-        _continuity = continuity ?? IntelligenceMixContinuity();
+        _continuity = continuity ?? IntelligenceMixContinuity(),
+        _seekMemory = seekMemory ?? IntelligenceSeekMemory();
 
-  Future<IntelligenceMixAnalysis?> analyzeLongMix(
-    Song source, {
-    int minimumDurationMinutes = 20,
-  }) async {
+  Future<IntelligenceMixAnalysis?> analyzeLongMix(Song source, {int minimumDurationMinutes = 20}) async {
     final durationMs = source.duration.inMilliseconds;
     if (durationMs < minimumDurationMinutes * 60 * 1000) return null;
-
     final events = await _database.getRecentListeningEvents(limit: 300);
-    final relevant = events
-        .where((event) => event.songId == source.id && event.endedAt != null)
-        .toList(growable: false);
+    final relevant = events.where((event) => event.songId == source.id && event.endedAt != null).toList(growable: false);
     if (relevant.isEmpty) return null;
 
     const bucketMs = 5 * 60 * 1000;
     final bucketCount = (durationMs / bucketMs).ceil();
     final reached = List<int>.filled(bucketCount, 0);
     final exits = <int, int>{};
+    final replays = <int, int>{};
     var completionSum = 0.0;
 
     for (final event in relevant) {
       completionSum += event.completionRatio.clamp(0.0, 1.0);
       final played = event.durationPlayedMs.clamp(0, durationMs).toInt();
       final lastBucket = played == 0 ? -1 : ((played - 1) / bucketMs).floor();
-      for (var bucket = 0; bucket <= lastBucket && bucket < bucketCount; bucket++) {
-        reached[bucket]++;
-      }
+      for (var bucket = 0; bucket <= lastBucket && bucket < bucketCount; bucket++) reached[bucket]++;
       final exit = event.skipPositionMs;
       if (event.skipped && exit != null && exit > 0) {
         final normalized = (exit / bucketMs).round() * bucketMs;
@@ -58,27 +55,30 @@ class IntelligenceMixService {
       }
     }
 
+    final seekEvents = await _seekMemory.forSong(source.id);
+    for (final seek in seekEvents) {
+      final toMs = (seek['toMs'] as num?)?.toInt();
+      if (toMs == null || toMs < 0 || toMs >= durationMs) continue;
+      final bucket = (toMs / bucketMs).floor();
+      if (bucket >= 0 && bucket < bucketCount) replays[bucket] = (replays[bucket] ?? 0) + 1;
+    }
+
     final maxReached = reached.reduce((a, b) => a > b ? a : b);
     final preferred = <IntelligenceMixSegment>[];
     var startBucket = -1;
     for (var i = 0; i < reached.length; i++) {
-      final strong = maxReached > 0 && reached[i] >= (maxReached * .55).ceil();
+      final strong = (replays[i] ?? 0) >= 2 || (maxReached > 0 && reached[i] >= (maxReached * .55).ceil());
       if (strong && startBucket < 0) {
         startBucket = i;
       } else if (!strong && startBucket >= 0) {
-        preferred.add(_segment(startBucket, i, reached, relevant.length, bucketMs, durationMs));
+        preferred.add(_segment(startBucket, i, reached, replays, relevant.length, bucketMs, durationMs));
         startBucket = -1;
       }
     }
-    if (startBucket >= 0) {
-      preferred.add(_segment(startBucket, reached.length, reached, relevant.length, bucketMs, durationMs));
-    }
+    if (startBucket >= 0) preferred.add(_segment(startBucket, reached.length, reached, replays, relevant.length, bucketMs, durationMs));
 
-    final strongestExit = exits.isEmpty
-        ? null
-        : exits.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    final strongestExit = exits.isEmpty ? null : exits.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
     final coverage = preferred.fold<int>(0, (sum, segment) => sum + (segment.endMs - segment.startMs));
-
     return IntelligenceMixAnalysis(
       source: source,
       observations: relevant.length,
@@ -89,20 +89,14 @@ class IntelligenceMixService {
     );
   }
 
-  IntelligenceMixSegment _segment(
-    int startBucket,
-    int endBucket,
-    List<int> reached,
-    int observations,
-    int bucketMs,
-    int durationMs,
-  ) {
+  IntelligenceMixSegment _segment(int startBucket, int endBucket, List<int> reached, Map<int, int> replays, int observations, int bucketMs, int durationMs) {
     final startMs = (startBucket * bucketMs).clamp(0, durationMs).toInt();
     final endMs = (endBucket * bucketMs).clamp(startMs, durationMs).toInt();
     final listens = reached.sublist(startBucket, endBucket).fold(0, (a, b) => a + b);
+    final replayCount = replays.entries.where((entry) => entry.key >= startBucket && entry.key < endBucket).fold(0, (a, b) => a + b.value);
     final span = (endBucket - startBucket).clamp(1, 100000);
-    final preference = observations == 0 ? 0.0 : (listens / (observations * span)).clamp(0.0, 1.0).toDouble();
-    return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens, preference: preference);
+    final preference = observations == 0 ? 0.0 : ((listens / (observations * span)) + (replayCount * .08)).clamp(0.0, 1.0).toDouble();
+    return IntelligenceMixSegment(startMs: startMs, endMs: endMs, listens: listens + replayCount, preference: preference);
   }
 
   Future<IntelligenceMix> generateMix({
@@ -121,7 +115,6 @@ class IntelligenceMixService {
     final continuityPrior = await _continuity.continuityPrior();
     var totalMs = 0;
     var safety = 0;
-
     while (totalMs < targetMs && safety < 80) {
       safety++;
       final next = await _decisionEngine.chooseSequence(
@@ -143,40 +136,18 @@ class IntelligenceMixService {
     }
 
     final reason = _mixReason(sessionMode: sessionMode, sessionSkipStreak: sessionSkipStreak, sessionCompletionStreak: sessionCompletionStreak, count: songs.length, continuityPrior: continuityPrior);
-    final description = songs.isEmpty
-        ? 'I need a little more listening evidence before I can build this mix.'
-        : '${songs.length} tracks shaped by your long-term memory, recent listening and previous mix journeys.';
-
-    final mix = IntelligenceMix(
-      id: 'mix_${DateTime.now().microsecondsSinceEpoch}',
-      title: title,
-      description: description,
-      songs: List.unmodifiable(songs),
-      targetDuration: targetDuration,
-      createdAt: DateTime.now(),
-      reason: reason,
-    );
+    final description = songs.isEmpty ? 'I need a little more listening evidence before I can build this mix.' : '${songs.length} tracks shaped by your long-term memory, recent listening and previous mix journeys.';
+    final mix = IntelligenceMix(id: 'mix_${DateTime.now().microsecondsSinceEpoch}', title: title, description: description, songs: List.unmodifiable(songs), targetDuration: targetDuration, createdAt: DateTime.now(), reason: reason);
     await _memory.remember(mix);
     return mix;
   }
 
-  List<IntelligenceRecommendation> _continuityAdjustedRecommendations(
-    List<IntelligenceRecommendation> recommendations,
-    double prior,
-  ) {
+  List<IntelligenceRecommendation> _continuityAdjustedRecommendations(List<IntelligenceRecommendation> recommendations, double prior) {
     if (recommendations.isEmpty || (prior - .5).abs() < .08) return recommendations;
     final factor = (prior - .5) * .20;
     return recommendations.map((item) {
       final familiarity = item.confidence.clamp(0.0, 1.0).toDouble();
-      final adjustment = factor * familiarity;
-      return IntelligenceRecommendation(
-        song: item.song,
-        score: item.score + adjustment,
-        confidence: item.confidence,
-        reason: item.reason,
-        decision: item.decision,
-        sessionReason: item.sessionReason,
-      );
+      return IntelligenceRecommendation(song: item.song, score: item.score + factor * familiarity, confidence: item.confidence, reason: item.reason, decision: item.decision, sessionReason: item.sessionReason);
     }).toList(growable: false);
   }
 
@@ -187,7 +158,6 @@ class IntelligenceMixService {
   }
 
   Future<List<Map<String, dynamic>>> recentMixContinuity() => _continuity.recent();
-
   Future<List<Map<String, dynamic>>> recentGeneratedMixes() => _memory.recent();
 
   String _mixReason({required String sessionMode, required int sessionSkipStreak, required int sessionCompletionStreak, required int count, required double continuityPrior}) {
