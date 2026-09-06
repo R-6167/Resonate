@@ -4,14 +4,12 @@ class IntelligenceMixSegment {
   final int startMs;
   final int endMs;
   final int listens;
-  final int returns;
   final double preference;
 
   const IntelligenceMixSegment({
     required this.startMs,
     required this.endMs,
     required this.listens,
-    required this.returns,
     required this.preference,
   });
 
@@ -25,7 +23,6 @@ class IntelligenceMixAnalysis {
   final double averageCompletion;
   final double preferredCoverage;
   final List<IntelligenceMixSegment> preferredSegments;
-  final Duration? strongestReturnPoint;
   final Duration? commonExitPoint;
 
   const IntelligenceMixAnalysis({
@@ -34,7 +31,6 @@ class IntelligenceMixAnalysis {
     required this.averageCompletion,
     required this.preferredCoverage,
     required this.preferredSegments,
-    this.strongestReturnPoint,
     this.commonExitPoint,
   });
 
