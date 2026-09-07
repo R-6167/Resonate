@@ -5,12 +5,12 @@ plugins {
 }
 
 android {
-    namespace = "com.example.resonate"
+    namespace = "com.Aetherion.Resonate"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.example.resonate"
+        applicationId = "com.Aetherion.Resonate"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -30,9 +30,6 @@ android {
         release {
             minifyEnabled false
             shrinkResources false
-
-            // Temporary test signing so the GitHub Actions APK is installable.
-            // A private production release keystore should replace this before publishing.
             signingConfig = signingConfigs.debug
         }
     }
