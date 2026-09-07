@@ -18,6 +18,7 @@ class ResonateDiagnostics {
   static const _maxFeedback = 50;
   static const _maxStackTraceChars = 12000;
   static const _mediaStoreChannel = MethodChannel('com.example.resonate/media_store');
+  static Future<void> _writeSerial = Future<void>.value();
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -40,22 +41,20 @@ class ResonateDiagnostics {
   }
 
   static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
-    try {
-      final prefs = await _prefs();
-      final items = _decodeList(prefs.getString(_eventsKey));
-      items.add(_entry(type, data));
-      if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
-      await prefs.setString(_eventsKey, jsonEncode(items));
-    } catch (_) {}
+    _writeSerial = _writeSerial.then((_) async {
+      try {
+        final prefs = await _prefs();
+        final items = _decodeList(prefs.getString(_eventsKey));
+        items.add(_entry(type, data));
+        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
+        await prefs.setString(_eventsKey, jsonEncode(items));
+      } catch (_) {}
+    });
+    await _writeSerial;
   }
 
   static Future<void> recordPlaybackCommand({required String source, required String command, required int generation, Map<String, dynamic> data = const {}}) async {
-    await record('playback_command', {
-      'source': source,
-      'command': command,
-      'generation': generation,
-      ...data,
-    });
+    await record('playback_command', {'source': source, 'command': command, 'generation': generation, ...data});
   }
 
   static Future<void> recordCrash(Object error, StackTrace stack, {String source = 'unknown'}) async {
@@ -66,13 +65,16 @@ class ResonateDiagnostics {
       'error': error.toString(),
       'stackTrace': stackText.length > _maxStackTraceChars ? '${stackText.substring(0, _maxStackTraceChars)}\n[stack trace truncated]' : stackText,
     });
-    try {
-      final prefs = await _prefs();
-      final items = _decodeList(prefs.getString(_crashesKey));
-      items.add(entry);
-      if (items.length > _maxCrashes) items.removeRange(0, items.length - _maxCrashes);
-      await prefs.setString(_crashesKey, jsonEncode(items));
-    } catch (_) {}
+    _writeSerial = _writeSerial.then((_) async {
+      try {
+        final prefs = await _prefs();
+        final items = _decodeList(prefs.getString(_crashesKey));
+        items.add(entry);
+        if (items.length > _maxCrashes) items.removeRange(0, items.length - _maxCrashes);
+        await prefs.setString(_crashesKey, jsonEncode(items));
+      } catch (_) {}
+    });
+    await _writeSerial;
     try {
       final directory = await _documentsDirectory();
       if (directory != null) {
@@ -85,17 +87,21 @@ class ResonateDiagnostics {
   }
 
   static Future<void> recordFeedback({required String category, required String message, bool includeDiagnostics = true}) async {
-    try {
-      final prefs = await _prefs();
-      final items = _decodeList(prefs.getString(_feedbackKey));
-      items.add(_entry('feedback', {'category': category, 'message': message.trim(), 'includeDiagnostics': includeDiagnostics}));
-      if (items.length > _maxFeedback) items.removeRange(0, items.length - _maxFeedback);
-      await prefs.setString(_feedbackKey, jsonEncode(items));
-      await record('feedback_submitted', {'category': category, 'includeDiagnostics': includeDiagnostics});
-    } catch (_) {}
+    _writeSerial = _writeSerial.then((_) async {
+      try {
+        final prefs = await _prefs();
+        final items = _decodeList(prefs.getString(_feedbackKey));
+        items.add(_entry('feedback', {'category': category, 'message': message.trim(), 'includeDiagnostics': includeDiagnostics}));
+        if (items.length > _maxFeedback) items.removeRange(0, items.length - _maxFeedback);
+        await prefs.setString(_feedbackKey, jsonEncode(items));
+      } catch (_) {}
+    });
+    await _writeSerial;
+    await record('feedback_submitted', {'category': category, 'includeDiagnostics': includeDiagnostics});
   }
 
   static Future<Map<String, dynamic>> snapshot() async {
+    await _writeSerial;
     final prefs = await _prefs();
     return {
       'reportVersion': 2,
@@ -141,6 +147,7 @@ class ResonateDiagnostics {
   }
 
   static Future<void> clearDiagnostics() async {
+    await _writeSerial;
     final prefs = await _prefs();
     await prefs.remove(_eventsKey);
     await prefs.remove(_crashesKey);
