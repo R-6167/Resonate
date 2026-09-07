@@ -1,4 +1,5 @@
 import '../providers/music_provider.dart';
+import 'resonate_diagnostics.dart';
 
 /// Central playback authority. User commands advance a generation so an
 /// Intelligence/automatic transition can detect that the user has taken over.
@@ -69,6 +70,7 @@ class PlaybackAuthority {
     _userGeneration++;
     _lastSource = source;
     _lastCommand = command;
+    _recordCommand(source, command);
   }
 
   bool isStale(int generation) => generation != _userGeneration;
@@ -76,6 +78,10 @@ class PlaybackAuthority {
   int beginAutomatic(String command) {
     _lastSource = 'automatic_transition';
     _lastCommand = command;
+    unawaited(ResonateDiagnostics.record('automatic_command_started', {
+      'command': command,
+      'userCommandGeneration': _userGeneration,
+    }));
     return _userGeneration;
   }
 
@@ -83,6 +89,15 @@ class PlaybackAuthority {
     _userGeneration++;
     _lastSource = 'normal_player';
     _lastCommand = command;
+    _recordCommand('normal_player', command);
+  }
+
+  void _recordCommand(String source, String command) {
+    unawaited(ResonateDiagnostics.recordPlaybackCommand(
+      source: source,
+      command: command,
+      generation: _userGeneration,
+    ));
   }
 
   Future<void> _pauseBoth(MusicProvider music) async {
