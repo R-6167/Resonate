@@ -1,0 +1,51 @@
+name: Apply playback UX hardening
+on:
+  push:
+    branches: [Playback_Stability_Diagnostics]
+jobs:
+  apply:
+    if: github.actor == 'Moses-808'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Patch playback UX
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('lib/screens/player_screen.dart')
+          s = p.read_text()
+          old = "Slider(value: position, min: 0, max: max, onChanged: (value) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: value.round()))),"
+          new = "Slider(value: position, min: 0, max: max, onChanged: (_) {}, onChangeEnd: (value) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: value.round()))),"
+          if old not in s:
+              raise SystemExit('player slider pattern not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('lib/providers/playback_features_provider.dart')
+          s = p.read_text()
+          old = "final gainDb = (-14.0 - targetLoudness).clamp(-6.0, 6.0).toDouble();"
+          new = "// LoudnessEnhancer has no per-track LUFS measurement. Keep the target as a\n      // user preference, but never pretend that -14 LUFS itself is a gain value.\n      // Track-specific gain is applied through applyTrackGain() when metadata is available.\n      final gainDb = 0.0;"
+          if old not in s:
+              raise SystemExit('normalization pattern not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('lib/screens/player_screen.dart')
+          s = p.read_text()
+          old = "subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'),"
+          new = "subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'),"
+          if old not in s:
+              raise SystemExit('normalization UI pattern not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/apply_playback_ux_hardening.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/screens/player_screen.dart lib/providers/playback_features_provider.dart .github/workflows/apply_playback_ux_hardening.yml
+          git commit -m 'Harden seek interaction and normalization semantics'
+          git push
