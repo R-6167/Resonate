@@ -139,24 +139,67 @@ class _SessionCard extends StatelessWidget {
   @override Widget build(BuildContext context) => Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Your listening flow', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)), const SizedBox(height: 8), Text(intelligence.sessionSummary), if (intelligence.sessionArtists.isNotEmpty) ...[const SizedBox(height: 8), Text('Current flow: ${intelligence.sessionArtists.take(3).join(' • ')}')]])));
 }
 
-class _AnticipationCard extends StatelessWidget {
+class _AnticipationCard extends StatefulWidget {
   final IntelligenceRecommendation item;
   final List<dynamic> songs;
   const _AnticipationCard({required this.item, required this.songs});
-  @override Widget build(BuildContext context) {
-    final music = context.read<MusicProvider>();
-    Future<void> play() async { final index = songs.indexWhere((song) => song.id == item.song.id); await music.playSong(item.song, queue: index >= 0 ? songs.cast() : [item.song], startIndex: index >= 0 ? index : 0); }
-    return Card(child: ListTile(leading: const Icon(Icons.auto_awesome), title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(item.reason, maxLines: 2, overflow: TextOverflow.ellipsis), trailing: IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: play), onTap: play));
-  }
+  @override State<_AnticipationCard> createState() => _AnticipationCardState();
 }
 
-class _RecommendationTile extends StatelessWidget {
+class _AnticipationCardState extends State<_AnticipationCard> {
+  bool _loading = false;
+  Future<void> _play() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final music = context.read<MusicProvider>();
+    final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
+    try {
+      await music.playSong(widget.item.song, queue: index >= 0 ? widget.songs.cast() : [widget.item.song], startIndex: index >= 0 ? index : 0);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+  @override Widget build(BuildContext context) => Card(child: ListTile(leading: const Icon(Icons.auto_awesome), title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text(widget.item.reason, maxLines: 2, overflow: TextOverflow.ellipsis), trailing: _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play), onTap: _loading ? null : _play));
+}
+
+class _RecommendationTile extends StatefulWidget {
   final IntelligenceRecommendation item;
   final List<dynamic> songs;
   const _RecommendationTile({required this.item, required this.songs});
-  @override Widget build(BuildContext context) {
+  @override State<_RecommendationTile> createState() => _RecommendationTileState();
+}
+
+class _RecommendationTileState extends State<_RecommendationTile> {
+  bool _loading = false;
+
+  Future<void> _play() async {
+    if (_loading) return;
+    setState(() => _loading = true);
     final music = context.read<MusicProvider>();
-    Future<void> play() async { final index = songs.indexWhere((song) => song.id == item.song.id); await music.playSong(item.song, queue: index >= 0 ? songs.cast() : [item.song], startIndex: index >= 0 ? index : 0); }
-    return Card(margin: const EdgeInsets.only(bottom: 9), child: ListTile(leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)), title: Text(item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis), subtitle: Text('${item.song.artist}\n${item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis), trailing: IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: play), onTap: play));
+    final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
+    try {
+      await music.playSong(widget.item.song, queue: index >= 0 ? widget.songs.cast() : [widget.item.song], startIndex: index >= 0 ? index : 0);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override Widget build(BuildContext context) {
+    return Consumer<LibraryProvider>(builder: (context, library, _) {
+      final liked = library.isFavoriteSync(widget.item.song.id);
+      return Card(
+        margin: const EdgeInsets.only(bottom: 9),
+        child: ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)),
+          title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${widget.item.song.artist}\n${widget.item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(tooltip: liked ? 'Unlike' : 'Like', icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded), onPressed: _loading ? null : () => library.toggleFavorite(widget.item.song)),
+            _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play),
+          ]),
+          onTap: _loading ? null : _play,
+        ),
+      );
+    });
   }
 }
