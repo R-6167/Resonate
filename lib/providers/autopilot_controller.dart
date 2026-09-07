@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
+import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 
@@ -13,6 +14,7 @@ class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
   final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
+  final PlaybackAuthority _authority = PlaybackAuthority.instance;
   bool _queueDecisionInFlight = false;
   bool _transitionInFlight = false;
   String? _transitionSongId;
@@ -97,11 +99,18 @@ class AutopilotController extends ChangeNotifier {
     _pendingSongId = null;
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
+    final userGeneration = _authority.userGeneration;
+    final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     try {
+      // A direct user command always invalidates this transition before it can
+      // take effect, regardless of Intelligence confidence.
+      if (_authority.isStale(automaticGeneration) || userGeneration != _authority.userGeneration) return;
       if (useCrossfade) {
         final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
+        if (_authority.isStale(automaticGeneration)) return;
         await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
       } else {
+        if (_authority.isStale(automaticGeneration)) return;
         await music.nextSong();
       }
     } finally {
