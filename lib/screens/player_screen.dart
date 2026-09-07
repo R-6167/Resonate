@@ -10,6 +10,7 @@ import '../providers/playback_features_provider.dart';
 import '../screens/equalizer_screen.dart';
 import '../screens/queue_screen.dart';
 import '../services/audio_file_service.dart';
+import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import '../widgets/player_action_overlay.dart';
@@ -50,7 +51,7 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Now Playing')),
+    appBar: AppBar(title: Consumer<MusicProvider>(builder: (_, music, __) => Row(mainAxisSize: MainAxisSize.min, children: [const Text('Now Playing'), const SizedBox(width: 10), _EngineBadge(label: PlaybackAuthority.instance.engineLabel(music))]))),
     body: Consumer<MusicProvider>(builder: (context, music, _) {
       final song = music.currentSong;
       if (song == null) return const Center(child: Text('No song selected'));
@@ -70,15 +71,15 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
         const SizedBox(height: 16),
         ClipRRect(borderRadius: BorderRadius.circular(16), child: Container(height: 105, padding: const EdgeInsets.all(8), color: scheme.surfaceContainerHighest, child: const AudioVisualizationWidget())),
         const SizedBox(height: 12),
-        Slider(value: value, min: 0, max: max, onChanged: (v) => music.seek(Duration(milliseconds: v.round()))),
+        Slider(value: value, min: 0, max: max, onChanged: (v) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: v.round()))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(AudioFileService.formatDuration(music.currentPosition)), Text(AudioFileService.formatDuration(duration))])),
         const SizedBox(height: 10),
         Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _IconControl(tooltip: 'Previous song', icon: Icons.skip_previous_rounded, onPressed: music.previousSong),
-          _IconControl(tooltip: 'Back 10 seconds', icon: Icons.replay_10_rounded, onPressed: () => music.seek(Duration(milliseconds: (music.currentPosition.inMilliseconds - 10000).clamp(0, max.toInt())))),
-          StreamBuilder<PlayerState>(stream: music.audioPlayer.playerStateStream, initialData: music.audioPlayer.playerState, builder: (_, snapshot) { final state = snapshot.data ?? music.audioPlayer.playerState; final playing = state.playing && state.processingState != ProcessingState.completed; return _PlayPauseControl(isPlaying: playing, onPressed: music.togglePlayPause); }),
-          _IconControl(tooltip: 'Forward 10 seconds', icon: Icons.forward_10_rounded, onPressed: () => music.seek(Duration(milliseconds: (music.currentPosition.inMilliseconds + 10000).clamp(0, max.toInt()))),),
-          _IconControl(tooltip: 'Next song', icon: Icons.skip_next_rounded, onPressed: music.nextSong),
+          _IconControl(tooltip: 'Previous song', icon: Icons.skip_previous_rounded, onPressed: () => PlaybackAuthority.instance.userPrevious(music)),
+          _IconControl(tooltip: 'Back 10 seconds', icon: Icons.replay_10_rounded, onPressed: () => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: (music.currentPosition.inMilliseconds - 10000).clamp(0, max.toInt())))),
+          StreamBuilder<PlayerState>(stream: music.audioPlayer.playerStateStream, initialData: music.audioPlayer.playerState, builder: (_, snapshot) { final state = snapshot.data ?? music.audioPlayer.playerState; final playing = state.playing && state.processingState != ProcessingState.completed; return _PlayPauseControl(isPlaying: playing, onPressed: () => PlaybackAuthority.instance.userToggle(music)); }),
+          _IconControl(tooltip: 'Forward 10 seconds', icon: Icons.forward_10_rounded, onPressed: () => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: (music.currentPosition.inMilliseconds + 10000).clamp(0, max.toInt()))),),
+          _IconControl(tooltip: 'Next song', icon: Icons.skip_next_rounded, onPressed: () => PlaybackAuthority.instance.userNext(music)),
         ]),
         const SizedBox(height: 7),
         Card(child: SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -115,6 +116,16 @@ class _PlayerScreenState extends State<PlayerScreen> with SingleTickerProviderSt
 
   Future<void> _showSleepTimer(BuildContext context, PlaybackFeaturesProvider playback) async { final options = <Duration>[const Duration(minutes: 15), const Duration(minutes: 30), const Duration(minutes: 45), const Duration(minutes: 60), const Duration(minutes: 90), const Duration(hours: 2)]; await PlayerActionOverlay.show<void>(context: context, icon: Icons.timer_outlined, title: 'Sleep timer', child: Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => Column(mainAxisSize: MainAxisSize.min, children: [if (current.sleepTimerActive) ...[Text(current.sleepTimerLabel, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)), const SizedBox(height: 4), const Text('Playback will pause when the timer reaches zero.'), const SizedBox(height: 8)], ...options.map((duration) => ListTile(dense: true, leading: const Icon(Icons.timer_outlined), title: Text(_format(duration)), onTap: () { current.startSleepTimer(duration); Navigator.pop(context); })), if (current.sleepTimerActive) ListTile(dense: true, title: const Text('Cancel timer'), leading: const Icon(Icons.close_rounded), onTap: () { current.cancelSleepTimer(); Navigator.pop(context); })]))); }
   String _format(Duration value) => value.inHours > 0 ? '${value.inHours} hours' : '${value.inMinutes} minutes';
+}
+
+class _EngineBadge extends StatelessWidget {
+  final String label;
+  const _EngineBadge({required this.label});
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(width: 24, height: 24, alignment: Alignment.center, decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(7), border: Border.all(color: scheme.primary.withOpacity(.45))), child: Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800, color: scheme.onPrimaryContainer)));
+  }
 }
 
 class _ScrollingSongTitle extends StatelessWidget {
