@@ -4,15 +4,17 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../providers/music_provider.dart';
+import 'playback_authority.dart';
 import 'resonate_diagnostics.dart';
 
 /// Lightweight playback telemetry for local diagnostics.
 ///
-/// It deliberately records state transitions and sparse heartbeats rather than
-/// every position tick, so diagnostics stay small and do not interfere with
-/// playback. No song title or audio data is stored here.
+/// It records state transitions and sparse heartbeats while also exposing the
+/// currently active A/B engine and the last command source. No song title or
+/// audio data is stored here.
 class PlaybackDiagnosticsObserver extends ChangeNotifier {
   final MusicProvider music;
+  final PlaybackAuthority authority = PlaybackAuthority.instance;
   Timer? _heartbeat;
   bool _lastPlaying = false;
   String? _lastSongId;
@@ -60,6 +62,10 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
     unawaited(ResonateDiagnostics.record(event, {
       'playing': music.isPlaying,
       'processingState': state.processingState.name,
+      'engine': authority.engineLabel(music),
+      'lastCommandSource': authority.lastSource,
+      'lastCommand': authority.lastCommand,
+      'userCommandGeneration': authority.userGeneration,
       'queueIndex': music.queueIndex,
       'queueLength': music.queue.length,
       'positionMs': music.currentPosition.inMilliseconds,
