@@ -1,6 +1,8 @@
 name: Fix stability serializer
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - Playback_Stability_Diagnostics
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -13,7 +15,7 @@ jobs:
           p = Path('lib/providers/music_provider.dart')
           s = p.read_text()
           old = '''    final next = _playOperation.then((_) async {\n      if (userInitiated && !_playbackIntentGate.isCurrent(effectiveIntent)) {\n        await ResonateDiagnostics.record('playback_command_stale_before_start', {\n          'command': command, 'source': source, 'intentToken': effectiveIntent, 'currentIntentToken': _playbackIntentGate.currentToken,\n        });\n        return await operation();\n      }\n      return await operation();\n    });\n    _playOperation = next.then<void>((_) {}, onError: (_, __) {});\n    return next;'''
-          new = '''    // User intent is the priority lane. Do not put a user command behind an\n    // older load/play operation: that was the source of pause/next appearing\n    // to do nothing until the stale recommendation finished. The intent gate\n    // invalidates older work, while automatic transitions remain serialized.\n    if (userInitiated) {\n      if (!_playbackIntentGate.isCurrent(effectiveIntent)) {\n        return operation();\n      }\n      return operation();\n    }\n\n    final next = _playOperation.then((_) => operation());\n    _playOperation = next.then<void>((_) {}, onError: (_, __) {});\n    return next;'''
+          new = '''    // User intent is the priority lane. Do not put a user command behind an\n    // older load/play operation: that was the source of pause/next appearing\n    // to do nothing until the stale recommendation finished. The intent gate\n    // invalidates older work, while automatic transitions remain serialized.\n    if (userInitiated) {\n      return operation();\n    }\n\n    final next = _playOperation.then((_) => operation());\n    _playOperation = next.then<void>((_) {}, onError: (_, __) {});\n    return next;'''
           if old not in s:
               raise SystemExit('serializer block not found')
           p.write_text(s.replace(old, new, 1))
@@ -28,12 +30,12 @@ jobs:
               s += '''\n\ntest('latest user intent remains current while older work is pending', () {\n  final gate = PlaybackIntentGate();\n  final first = gate.issue();\n  final second = gate.issue();\n  expect(gate.isCurrent(first), isFalse);\n  expect(gate.isCurrent(second), isTrue);\n});\n'''
               p.write_text(s)
           PY
-      - name: Remove temporary workflow and commit
+      - name: Commit repair and remove workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add lib/providers/music_provider.dart test/playback_intent_gate_test.dart
-          git commit -m "Prioritize user playback commands over stale work" || exit 0
+          git commit -m "Prioritize user playback commands over stale work"
           git push
           git rm .github/workflows/fix_stability_serializer.yml
           git commit -m "Remove temporary stability serializer workflow"
