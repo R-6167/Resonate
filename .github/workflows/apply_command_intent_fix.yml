@@ -1,0 +1,26 @@
+name: Apply command intent fix
+on:
+  push:
+    branches:
+      - Playback_Stability_Diagnostics
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Playback_Stability_Diagnostics
+          fetch-depth: 1
+      - name: Apply command intent hardening
+        run: python3 tools/fix_playback_command_intents.py
+      - name: Commit fix and remove automation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/music_provider.dart
+          git rm tools/fix_playback_command_intents.py .github/workflows/apply_command_intent_fix.yml
+          git commit -m "Make playback controls latest-intent wins"
+          git push origin Playback_Stability_Diagnostics
