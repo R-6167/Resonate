@@ -1,0 +1,26 @@
+name: Apply crossfade history hardening
+on:
+  push:
+    branches:
+      - Playback_Stability_Diagnostics
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Playback_Stability_Diagnostics
+          fetch-depth: 1
+      - name: Apply hardening
+        run: python3 tools/harden_crossfade_history.py
+      - name: Commit fix and remove automation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/music_provider.dart
+          git rm tools/harden_crossfade_history.py .github/workflows/apply_crossfade_history_hardening.yml
+          git commit -m "Harden crossfade history and cancellation"
+          git push origin Playback_Stability_Diagnostics
