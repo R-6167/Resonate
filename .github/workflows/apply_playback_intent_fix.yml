@@ -1,6 +1,9 @@
 name: Apply playback intent fix
 
 on:
+  push:
+    branches:
+      - Playback_Stability_Diagnostics
   workflow_dispatch:
 
 permissions:
