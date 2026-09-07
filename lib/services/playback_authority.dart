@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../providers/music_provider.dart';
 import 'resonate_diagnostics.dart';
 
@@ -57,12 +59,8 @@ class PlaybackAuthority {
     final wasPlaying = music.isPlaying || music.audioPlayer.playing;
     await _pauseBoth(music);
     await music.seek(position);
-    // Seeking is an input, not a request to pause. Resume the same active
-    // engine after the seek so fast dragging/10-second jumps stay continuous.
     if (wasPlaying) {
-      try {
-        await music.audioPlayer.play();
-      } catch (_) {}
+      try { await music.audioPlayer.play(); } catch (_) {}
     }
   }
 
