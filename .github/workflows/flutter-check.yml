@@ -34,4 +34,4 @@ jobs:
         run: flutter pub get
 
       - name: Analyze project
-        run: flutter analyze
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos

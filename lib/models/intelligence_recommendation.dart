@@ -6,6 +6,7 @@ class IntelligenceRecommendation {
   final double confidence;
   final String reason;
   final String decision;
+  final String sessionReason;
 
   const IntelligenceRecommendation({
     required this.song,
@@ -13,6 +14,7 @@ class IntelligenceRecommendation {
     required this.reason,
     this.confidence = 0.0,
     this.decision = 'suggest',
+    this.sessionReason = '',
   });
 
   String get confidenceLabel {
