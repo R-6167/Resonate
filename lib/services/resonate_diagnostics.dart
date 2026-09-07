@@ -10,12 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
 class ResonateDiagnostics {
-  static const _eventsKey = 'resonate_diagnostics_events_v1';
+  static const _eventsKey = 'resonate_diagnostics_events_v2';
   static const _feedbackKey = 'resonate_diagnostics_feedback_v1';
-  static const _crashesKey = 'resonate_diagnostics_crashes_v1';
-  static const _maxEvents = 250;
-  static const _maxCrashes = 25;
+  static const _crashesKey = 'resonate_diagnostics_crashes_v2';
+  static const _maxEvents = 600;
+  static const _maxCrashes = 50;
   static const _maxFeedback = 50;
+  static const _maxStackTraceChars = 12000;
   static const _mediaStoreChannel = MethodChannel('com.example.resonate/media_store');
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
@@ -48,8 +49,23 @@ class ResonateDiagnostics {
     } catch (_) {}
   }
 
+  static Future<void> recordPlaybackCommand({required String source, required String command, required int generation, Map<String, dynamic> data = const {}}) async {
+    await record('playback_command', {
+      'source': source,
+      'command': command,
+      'generation': generation,
+      ...data,
+    });
+  }
+
   static Future<void> recordCrash(Object error, StackTrace stack, {String source = 'unknown'}) async {
-    final entry = _entry('crash', {'source': source, 'error': error.toString(), 'stackTrace': stack.toString()});
+    final stackText = stack.toString();
+    final entry = _entry('crash', {
+      'source': source,
+      'errorType': error.runtimeType.toString(),
+      'error': error.toString(),
+      'stackTrace': stackText.length > _maxStackTraceChars ? '${stackText.substring(0, _maxStackTraceChars)}\n[stack trace truncated]' : stackText,
+    });
     try {
       final prefs = await _prefs();
       final items = _decodeList(prefs.getString(_crashesKey));
@@ -62,10 +78,10 @@ class ResonateDiagnostics {
       if (directory != null) {
         final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
         final file = File('${directory.path}/resonate-crash-$stamp.json');
-        await file.writeAsString(const JsonEncoder.withIndent('  ').convert({'reportVersion': 1, 'app': 'Resonate', 'createdAt': DateTime.now().toIso8601String(), ...entry}), flush: true);
+        await file.writeAsString(const JsonEncoder.withIndent('  ').convert({'reportVersion': 2, 'app': 'Resonate', 'createdAt': DateTime.now().toIso8601String(), ...entry}), flush: true);
       }
     } catch (_) {}
-    await record('crash_recorded', {'source': source, 'error': error.toString()});
+    await record('crash_recorded', {'source': source, 'errorType': error.runtimeType.toString(), 'error': error.toString()});
   }
 
   static Future<void> recordFeedback({required String category, required String message, bool includeDiagnostics = true}) async {
@@ -82,12 +98,15 @@ class ResonateDiagnostics {
   static Future<Map<String, dynamic>> snapshot() async {
     final prefs = await _prefs();
     return {
-      'reportVersion': 1,
+      'reportVersion': 2,
       'createdAt': DateTime.now().toIso8601String(),
       'app': 'Resonate',
       'buildMode': kDebugMode ? 'debug' : kProfileMode ? 'profile' : 'release',
       'platform': Platform.operatingSystem,
       'platformVersion': Platform.operatingSystemVersion,
+      'locale': Platform.localeName,
+      'isAndroid': Platform.isAndroid,
+      'isIOS': Platform.isIOS,
       'events': _decodeList(prefs.getString(_eventsKey)),
       'crashes': _decodeList(prefs.getString(_crashesKey)),
       'feedback': _decodeList(prefs.getString(_feedbackKey)),
@@ -117,7 +136,7 @@ class ResonateDiagnostics {
       }
     }
     await Share.shareXFiles([XFile(file.path, mimeType: 'application/json')], subject: 'Resonate diagnostic report');
-    unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length, 'path': file.path}));
+    unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length, 'feedbackCount': (report['feedback'] as List).length, 'path': file.path}));
     return file.path;
   }
 
