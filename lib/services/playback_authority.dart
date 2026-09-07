@@ -1,18 +1,24 @@
-import '../providers/music_provider.dart';
+import 'dart:async';
 
-/// Thin command facade for UI surfaces. MusicProvider is the single playback
-/// owner and is responsible for intent tokens, priority and diagnostics.
-/// Keeping the facade side-effect free prevents one tap from being recorded as
-/// two user commands.
+import '../providers/music_provider.dart';
+import 'resonate_diagnostics.dart';
+
+/// Central playback authority. UI methods delegate to MusicProvider, which is
+/// the single owner of intent tokens and command diagnostics. This facade no
+/// longer marks the same tap a second time.
 class PlaybackAuthority {
   PlaybackAuthority._();
   static final PlaybackAuthority instance = PlaybackAuthority._();
 
-  int get userGeneration => 0;
-  String get lastSource => 'normal_player';
-  String get lastCommand => 'none';
+  int _userGeneration = 0;
+  String _lastSource = 'normal_player';
+  String _lastCommand = 'none';
 
-  String engineLabel(MusicProvider music) => music.audioPlayer == music.inactivePlayer ? 'B' : _engineLabelFor(music);
+  int get userGeneration => _userGeneration;
+  String get lastSource => _lastSource;
+  String get lastCommand => _lastCommand;
+
+  String engineLabel(MusicProvider music) => _engineLabelFor(music.audioPlayer);
 
   Future<void> userPause(MusicProvider music) => music.pause();
   Future<void> userStop(MusicProvider music) => music.stop();
@@ -21,11 +27,37 @@ class PlaybackAuthority {
   Future<void> userToggle(MusicProvider music) => music.togglePlayPause();
   Future<void> userSeek(MusicProvider music, Duration position) => music.seek(position);
 
-  /// Kept for compatibility with automatic transition code. Automatic work
-  /// uses the provider's intent gate; a generation is now represented by the
-  /// current user-intent generation in MusicProvider.
-  bool isStale(int generation) => false;
-  int beginAutomatic(String command) => 0;
+  void markExternalUserCommand(String source, String command) {
+    _userGeneration++;
+    _lastSource = source;
+    _lastCommand = command;
+    _recordCommand(source, command);
+  }
 
-  String _engineLabelFor(MusicProvider music) => music.activeEngineLabel == 'A' ? 'A' : 'B';
+  bool isStale(int generation) => generation != _userGeneration;
+
+  int beginAutomatic(String command) {
+    _lastSource = 'automatic_transition';
+    _lastCommand = command;
+    unawaited(ResonateDiagnostics.record('automatic_command_started', {
+      'command': command,
+      'userCommandGeneration': _userGeneration,
+    }));
+    return _userGeneration;
+  }
+
+  void _recordCommand(String source, String command) {
+    unawaited(ResonateDiagnostics.recordPlaybackCommand(source: source, command: command, generation: _userGeneration));
+  }
+
+  static final Map<int, String> _engineIds = <int, String>{};
+
+  String _engineLabelFor(Object player) {
+    final id = identityHashCode(player);
+    final known = _engineIds[id];
+    if (known != null) return known;
+    final label = _engineIds.isEmpty ? 'A' : (_engineIds.values.contains('A') ? 'B' : 'A');
+    _engineIds[id] = label;
+    return label;
+  }
 }
