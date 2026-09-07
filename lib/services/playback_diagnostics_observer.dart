@@ -7,11 +7,6 @@ import '../providers/music_provider.dart';
 import 'playback_authority.dart';
 import 'resonate_diagnostics.dart';
 
-/// Lightweight playback telemetry for local diagnostics.
-///
-/// It records state transitions and sparse heartbeats while also exposing the
-/// currently active A/B engine and the last command source. No song title or
-/// audio data is stored here.
 class PlaybackDiagnosticsObserver extends ChangeNotifier {
   final MusicProvider music;
   final PlaybackAuthority authority = PlaybackAuthority.instance;
@@ -32,12 +27,8 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
     final player = music.audioPlayer;
     final state = player.playerState;
     final songId = music.currentSong?.id;
-    final changed = _lastPlaying != music.isPlaying ||
-        _lastSongId != songId ||
-        _lastQueueIndex != music.queueIndex ||
-        _lastProcessingState != state.processingState;
+    final changed = _lastPlaying != music.isPlaying || _lastSongId != songId || _lastQueueIndex != music.queueIndex || _lastProcessingState != state.processingState;
     if (!changed) return;
-
     _lastPlaying = music.isPlaying;
     _lastSongId = songId;
     _lastQueueIndex = music.queueIndex;
@@ -53,11 +44,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
 
   void _recordState(PlayerState state, {required String event}) {
     final now = DateTime.now();
-    if (event == 'playback_state_changed' &&
-        _lastStateWrite != null &&
-        now.difference(_lastStateWrite!) < const Duration(milliseconds: 350)) {
-      return;
-    }
+    if (event == 'playback_state_changed' && _lastStateWrite != null && now.difference(_lastStateWrite!) < const Duration(milliseconds: 350)) return;
     _lastStateWrite = now;
     unawaited(ResonateDiagnostics.record(event, {
       'playing': music.isPlaying,
@@ -73,16 +60,11 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
       'shuffle': music.shuffleEnabled,
       'repeat': music.repeatMode.name,
       'crossfadeEnabled': music.crossfadeEnabled,
-      'crossfadeInProgress': music.canCrossfadeNext == false && music.crossfadeEnabled,
+      'crossfadeInProgress': music.transitionInProgress,
       'hasCurrentSong': music.currentSong != null,
     }));
   }
 
   @override
-  void dispose() {
-    music.removeListener(_observe);
-    _heartbeat?.cancel();
-    _heartbeat = null;
-    super.dispose();
-  }
+  void dispose() { music.removeListener(_observe); _heartbeat?.cancel(); _heartbeat = null; super.dispose(); }
 }
