@@ -22,9 +22,13 @@ class MainActivity : AudioServiceActivity() {
     private val permissionRequestCode = 6167
     private val folderRequestCode = 6168
     private val notificationPermissionRequestCode = 6169
+    private val diagnosticFileRequestCode = 6170
     private var permissionResult: MethodChannel.Result? = null
     private var folderResult: MethodChannel.Result? = null
     private var notificationPermissionResult: MethodChannel.Result? = null
+    private var diagnosticFileResult: MethodChannel.Result? = null
+    private var pendingDiagnosticBytes: ByteArray? = null
+    private var pendingDiagnosticMime: String = "application/json"
     private var effectSessionId: Int = 0
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
@@ -37,6 +41,7 @@ class MainActivity : AudioServiceActivity() {
                 "requestAudioPermission" -> requestAudioPermission(result)
                 "requestNotificationPermission" -> requestNotificationPermission(result)
                 "pickFolder" -> pickFolder(result)
+                "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
                 "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList()))
                 "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
                 else -> result.notImplemented()
@@ -94,8 +99,39 @@ class MainActivity : AudioServiceActivity() {
         startActivityForResult(intent, folderRequestCode)
     }
 
+    private fun saveDiagnosticReport(fileName: String, bytes: ByteArray, result: MethodChannel.Result) {
+        if (bytes.isEmpty()) { result.error("EMPTY_REPORT", "Diagnostic report is empty.", null); return }
+        diagnosticFileResult = result
+        pendingDiagnosticBytes = bytes
+        pendingDiagnosticMime = "application/json"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = pendingDiagnosticMime
+            putExtra(Intent.EXTRA_TITLE, if (fileName.endsWith(".json")) fileName else "$fileName.json")
+        }
+        try { startActivityForResult(intent, diagnosticFileRequestCode) } catch (e: Exception) {
+            diagnosticFileResult = null
+            pendingDiagnosticBytes = null
+            result.error("DOCUMENT_PICKER_FAILED", e.message, null)
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == diagnosticFileRequestCode) {
+            val result = diagnosticFileResult
+            diagnosticFileResult = null
+            val bytes = pendingDiagnosticBytes
+            pendingDiagnosticBytes = null
+            if (result == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null || bytes == null) { result.success(null); return }
+            try {
+                contentResolver.openOutputStream(data.data!!)?.use { it.write(bytes); it.flush() }
+                    ?: throw IllegalStateException("Could not open selected document.")
+                result.success(data.data!!.toString())
+            } catch (e: Exception) { result.error("SAVE_FAILED", e.message, null) }
+            return
+        }
         if (requestCode != folderRequestCode) return
         val result = folderResult ?: return; folderResult = null
         if (resultCode != Activity.RESULT_OK || data?.data == null) { result.success(null); return }
