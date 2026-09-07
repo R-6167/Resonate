@@ -383,7 +383,7 @@ class MusicProvider extends ChangeNotifier {
       if (_activeHistoryEvent?.songId == song.id) return;
       final event = ListeningEvent(id: '${DateTime.now().microsecondsSinceEpoch}_${song.id}', songId: song.id, previousSongId: _queueIndex > 0 ? _queue[_queueIndex - 1].id : null, startedAt: DateTime.now(), durationPlayedMs: currentPosition.inMilliseconds, songDurationMs: song.duration.inMilliseconds, completionRatio: 0, completed: false, skipped: false);
       _activeHistoryEvent = event; _activeHistoryPositionMs = currentPosition.inMilliseconds; _resumePositionMs = currentPosition.inMilliseconds; _resumeSongId = song.id;
-      try { await _database.insertListeningEvent(event); await _database.updateSongPlayCount(song.id); } catch (e, stack) { debugPrint('Listening history start failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_start_failed', {'songId': song.id, 'error': e.toString(), 'stack': stack.toString()})); }
+      try { final inserted = await _database.insertListeningEvent(event); final playCount = await _database.updateSongPlayCount(song.id); if (inserted < 0 || playCount < 0) { unawaited(ResonateDiagnostics.record('listening_history_start_failed', {'songId': song.id, 'insertResult': inserted, 'playCountResult': playCount})); } } catch (e, stack) { debugPrint('Listening history start failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_start_failed', {'songId': song.id, 'error': e.toString(), 'stack': stack.toString()})); }
     });
   }
 
@@ -394,7 +394,7 @@ class MusicProvider extends ChangeNotifier {
       final updated = ListeningEvent(id: event.id, songId: event.songId, previousSongId: event.previousSongId, startedAt: event.startedAt, endedAt: DateTime.now(), durationPlayedMs: position, songDurationMs: total, completionRatio: ratio, completed: wasCompleted, skipped: !wasCompleted && position > 0, skipPositionMs: !wasCompleted && position > 0 ? position : null);
       _activeHistoryEvent = null; _activeHistoryPositionMs = 0;
       if (wasCompleted) { _resumePositionMs = 0; _resumeSongId = null; unawaited(SharedPreferences.getInstance().then((prefs) async { await prefs.remove(_resumePositionKey); await prefs.remove(_resumeSongIdKey); }).catchError((error) { debugPrint('Playback resume clear failed: $error'); })); } else { _persistResumePosition(force: true); }
-      try { await _database.updateListeningEvent(updated); } catch (e, stack) { debugPrint('Listening history finish failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'error': e.toString(), 'stack': stack.toString()})); }
+      try { final updatedRows = await _database.updateListeningEvent(updated); if (updatedRows < 0 || updatedRows == 0) { unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'eventId': event.id, 'updateResult': updatedRows})); } } catch (e, stack) { debugPrint('Listening history finish failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'error': e.toString(), 'stack': stack.toString()})); }
     });
   }
 
