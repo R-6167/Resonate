@@ -76,7 +76,10 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> _applyNormalization() async {
     try {
-      final gainDb = (-14.0 - targetLoudness).clamp(-6.0, 6.0).toDouble();
+      // LoudnessEnhancer has no per-track LUFS measurement. Keep the target as a
+      // user preference, but never pretend that -14 LUFS itself is a gain value.
+      // Track-specific gain is applied through applyTrackGain() when metadata is available.
+      final gainDb = 0.0;
       await loudnessEnhancer.setTargetGain(gainDb * 100.0);
       await loudnessEnhancer.setEnabled(normalizationEnabled);
     } catch (e) { debugPrint('Volume normalization failed: $e'); }

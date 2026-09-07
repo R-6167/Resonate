@@ -35,7 +35,7 @@ class PlayerScreen extends StatelessWidget {
             Text(song.album, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 16),
             const SizedBox(height: 105, child: AudioVisualizationWidget()),
-            Slider(value: position, min: 0, max: max, onChanged: (value) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: value.round()))),
+            Slider(value: position, min: 0, max: max, onChanged: (_) {}, onChangeEnd: (value) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: value.round()))),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(AudioFileService.formatDuration(music.currentPosition)), Text(AudioFileService.formatDuration(duration))]),
             const SizedBox(height: 10),
             StreamBuilder<PlayerState>(stream: music.audioPlayer.playerStateStream, initialData: music.audioPlayer.playerState, builder: (_, snapshot) {
@@ -74,7 +74,7 @@ class PlayerScreen extends StatelessWidget {
     final playback = context.read<PlaybackFeaturesProvider>();
     await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
       ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Playback speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () { Navigator.pop(context); _showSpeed(context, playback); }),
-      SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
+      SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'), value: playback.normalizationEnabled, onChanged: playback.setNormalizationEnabled),
       ListTile(leading: const Icon(Icons.timer_outlined), title: const Text('Sleep timer'), onTap: () { Navigator.pop(context); _showSleepTimer(context, playback); }),
     ])));
   }
