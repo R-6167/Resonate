@@ -4,6 +4,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
+import 'playback_authority.dart';
 
 class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   AudioPlayer? _fallbackPlayer;
@@ -111,8 +112,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> setSongQueue(List<Song> songs, {int startIndex = 0}) async {
-    final sourceSongs =
-        songs.where((song) => song.filePath.trim().isNotEmpty).toList();
+    final sourceSongs = songs.where((song) => song.filePath.trim().isNotEmpty).toList();
     if (sourceSongs.isEmpty) {
       _items.clear();
       queue.add(const []);
@@ -145,55 +145,58 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       mediaItem.add(_items.first);
       for (final song in orderedSongs.skip(1)) {
         try {
-          await playlist.add(
-            AudioSource.uri(
-              _audioUri(song.filePath),
-              tag: songToMediaItem(song),
-            ),
-          );
+          await playlist.add(AudioSource.uri(_audioUri(song.filePath), tag: songToMediaItem(song)));
         } catch (_) {}
       }
     } catch (e) {
-      playbackState.add(
-        playbackState.value.copyWith(
-          playing: false,
-          processingState: AudioProcessingState.error,
-          errorMessage: e.toString(),
-        ),
-      );
+      playbackState.add(playbackState.value.copyWith(
+        playing: false,
+        processingState: AudioProcessingState.error,
+        errorMessage: e.toString(),
+      ));
       rethrow;
     }
   }
 
   @override
   Future<void> play() async {
-    if (_onPlay != null) return _onPlay!();
+    if (_onPlay != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'play');
+      return _onPlay!();
+    }
     await _player.play();
   }
 
   @override
   Future<void> pause() async {
-    if (_onPause != null) return _onPause!();
+    if (_onPause != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'pause');
+      return _onPause!();
+    }
     await _player.pause();
   }
 
   @override
   Future<void> stop() async {
-    if (_onStop != null) return _onStop!();
+    if (_onStop != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'stop');
+      return _onStop!();
+    }
     await _player.stop();
-    playbackState.add(
-      playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.idle,
-        updatePosition: Duration.zero,
-      ),
-    );
+    playbackState.add(playbackState.value.copyWith(
+      playing: false,
+      processingState: AudioProcessingState.idle,
+      updatePosition: Duration.zero,
+    ));
     await super.stop();
   }
 
   @override
   Future<void> seek(Duration position) async {
-    if (_onSeek != null) return _onSeek!(position);
+    if (_onSeek != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'seek');
+      return _onSeek!(position);
+    }
     await _player.seek(position);
   }
 
@@ -220,18 +223,22 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
-    if (_onNext != null) return _onNext!();
+    if (_onNext != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'next');
+      return _onNext!();
+    }
     final index = _player.currentIndex;
     final sequence = _player.sequence ?? const <IndexedAudioSource>[];
-    if (index == null || sequence.length <= 1 || index >= sequence.length - 1) {
-      return;
-    }
+    if (index == null || sequence.length <= 1 || index >= sequence.length - 1) return;
     await _player.seekToNext();
   }
 
   @override
   Future<void> skipToPrevious() async {
-    if (_onPrevious != null) return _onPrevious!();
+    if (_onPrevious != null) {
+      PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'previous');
+      return _onPrevious!();
+    }
     final index = _player.currentIndex;
     final sequence = _player.sequence ?? const <IndexedAudioSource>[];
     if (index == null || sequence.isEmpty || index <= 0) return;
@@ -248,9 +255,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> addQueueItems(List<MediaItem> mediaItems) async {
-    for (final item in mediaItems) {
-      await addQueueItem(item);
-    }
+    for (final item in mediaItems) await addQueueItem(item);
   }
 
   Future<void> removeQueueItem(MediaItem item) async {
@@ -260,9 +265,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     queue.add(List.unmodifiable(_items));
   }
 
-  Future<void> setVolume(double volume) =>
-      _player.setVolume(volume.clamp(0.0, 1.0));
-
+  Future<void> setVolume(double volume) => _player.setVolume(volume.clamp(0.0, 1.0));
   Stream<double> get volumeStream => _player.volumeStream;
   Stream<int?> get audioSessionIdStream => _player.androidAudioSessionIdStream;
 
