@@ -53,8 +53,16 @@ class PlaybackAuthority {
 
   Future<void> userSeek(MusicProvider music, Duration position) async {
     _markUser('seek');
+    final wasPlaying = music.isPlaying || music.audioPlayer.playing;
     await _pauseBoth(music);
     await music.seek(position);
+    // Seeking is an input, not a request to pause. Resume the same active
+    // engine after the seek so fast dragging/10-second jumps stay continuous.
+    if (wasPlaying) {
+      try {
+        await music.audioPlayer.play();
+      } catch (_) {}
+    }
   }
 
   void markExternalUserCommand(String source, String command) {
