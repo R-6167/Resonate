@@ -57,17 +57,37 @@ class _ResonateBootstrapState extends State<ResonateBootstrap> {
   @override void initState() { super.initState(); _initializeAudioService(); }
   Future<void> _initializeAudioService() async {
     try {
-      final handler = await AudioService.init(builder: () => AudioServiceHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.example.resonate.audio', androidNotificationChannelName: 'Resonate Playback', androidNotificationChannelDescription: 'Playback controls, current song and album artwork for Resonate.', notificationColor: Color(0xFF9A7BFF), androidNotificationIcon: 'drawable/ic_stat_resonate', androidNotificationOngoing: true, androidStopForegroundOnPause: true, androidShowNotificationBadge: false, androidResumeOnClick: true, androidNotificationClickStartsActivity: true, fastForwardInterval: Duration(seconds: 10), rewindInterval: Duration(seconds: 10), artDownscaleWidth: 512, artDownscaleHeight: 512)).timeout(const Duration(seconds: 10));
+      final handler = await AudioService.init(builder: () => AudioServiceHandler(), config: const AudioServiceConfig(androidNotificationChannelId: 'com.Aetherion.Resonate.audio', androidNotificationChannelName: 'Resonate Playback', androidNotificationChannelDescription: 'Playback controls, current song and album artwork for Resonate.', notificationColor: Color(0xFF9A7BFF), androidNotificationIcon: 'drawable/ic_stat_resonate', androidNotificationOngoing: true, androidStopForegroundOnPause: true, androidShowNotificationBadge: false, androidResumeOnClick: true, androidNotificationClickStartsActivity: true, fastForwardInterval: Duration(seconds: 10), rewindInterval: Duration(seconds: 10), artDownscaleWidth: 512, artDownscaleHeight: 512)).timeout(const Duration(seconds: 10));
       try { await const MethodChannel('com.example.resonate/media_store').invokeMethod<bool>('requestNotificationPermission'); } catch (_) {}
       if (!mounted) return; setState(() => _audioHandler = handler);
     } catch (e, stack) { await ResonateDiagnostics.recordCrash(e, stack, source: 'AudioService startup'); if (!mounted) return; setState(() => _startupError = e); }
   }
   @override Widget build(BuildContext context) {
     final handler = _audioHandler;
-    if (handler == null) return MaterialApp(title: 'Resonate', debugShowCheckedModeBanner: false, theme: _theme(Brightness.light), darkTheme: _theme(Brightness.dark), home: Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(24), child: _startupError == null ? const Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(), SizedBox(height: 20), Text('Starting Resonate...')]) : Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.warning_amber_rounded, size: 48), const SizedBox(height: 16), const Text('Audio service could not start.', textAlign: TextAlign.center), const SizedBox(height: 8), Text('Resonate startup timed out or failed.\n$_startupError', textAlign: TextAlign.center), const SizedBox(height: 20), FilledButton(onPressed: () { setState(() => _startupError = null); _initializeAudioService(); }, child: const Text('Retry'))])))));
+    if (handler == null) return MaterialApp(title: 'Resonate', debugShowCheckedModeBanner: false, theme: _theme(Brightness.light), darkTheme: _theme(Brightness.dark), home: Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(28), child: _startupError == null ? Column(mainAxisSize: MainAxisSize.min, children: [const _ResonateLogo(size: 92), const SizedBox(height: 28), Text('Resonate', style: Theme.of(context).textTheme.displaySmall), const SizedBox(height: 8), Text('Tuning into your library…', style: Theme.of(context).textTheme.bodyMedium), const SizedBox(height: 28), const SizedBox(width: 180, child: LinearProgressIndicator(minHeight: 3)), const SizedBox(height: 14), Text('Preparing your listening space', style: Theme.of(context).textTheme.bodySmall)]) : Column(mainAxisSize: MainAxisSize.min, children: [const _ResonateLogo(size: 72), const SizedBox(height: 20), const Icon(Icons.warning_amber_rounded, size: 44), const SizedBox(height: 12), const Text('Audio service could not start.', textAlign: TextAlign.center), const SizedBox(height: 8), Text('Resonate startup timed out or failed.\n$_startupError', textAlign: TextAlign.center), const SizedBox(height: 20), FilledButton(onPressed: () { setState(() => _startupError = null); _initializeAudioService(); }, child: const Text('Retry'))])))));
     return ResonateApp(audioHandler: handler);
   }
 }
+
+class _ResonateLogo extends StatelessWidget {
+  final double size;
+  const _ResonateLogo({required this.size});
+  @override Widget build(BuildContext context) => Container(width: size, height: size, decoration: BoxDecoration(borderRadius: BorderRadius.circular(size * .27), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFB9A2FF), Color(0xFF7657E8)]), boxShadow: [BoxShadow(blurRadius: 28, spreadRadius: 2, color: Color(0x337657E8))]), child: CustomPaint(painter: _ResonateLogoPainter()));
+}
+
+class _ResonateLogoPainter extends CustomPainter {
+  @override void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = size.width * .075..strokeCap = StrokeCap.round;
+    final center = Offset(size.width * .45, size.height * .5);
+    final radius = size.width * .22;
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -mathPi * .78, mathPi * 1.56, false, paint);
+    final inner = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = size.width * .075..strokeCap = StrokeCap.round;
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius * .58), -mathPi * .70, mathPi * 1.40, false, inner);
+    canvas.drawCircle(Offset(size.width * .45, size.height * .5), size.width * .055, Paint()..color = Colors.white);
+  }
+  @override bool shouldRepaint(covariant _ResonateLogoPainter oldDelegate) => false;
+}
+const double mathPi = 3.141592653589793;
 
 class ResonateApp extends StatelessWidget {
   final AudioHandler audioHandler; const ResonateApp({super.key, required this.audioHandler});
