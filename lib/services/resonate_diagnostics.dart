@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
@@ -17,6 +18,7 @@ class ResonateDiagnostics {
   static const _maxEvents = 250;
   static const _maxCrashes = 25;
   static const _maxFeedback = 50;
+  static const _mediaStoreChannel = MethodChannel('com.example.resonate/media_store');
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -62,8 +64,6 @@ class ResonateDiagnostics {
       await prefs.setString(_crashesKey, jsonEncode(items));
     } catch (_) {}
 
-    // Keep an individual crash file as well as the compact local index so a
-    // tester can retrieve the exact failure without needing app internals.
     try {
       final directory = await _documentsDirectory();
       if (directory != null) {
@@ -112,11 +112,33 @@ class ResonateDiagnostics {
 
   static Future<String> exportReport() async {
     final report = await snapshot();
+    final json = const JsonEncoder.withIndent('  ').convert(report);
     final directory = await _documentsDirectory();
     if (directory == null) throw StateError('Could not access a local Documents directory.');
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final file = File('${directory.path}/resonate-diagnostics-$stamp.json');
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(report), flush: true);
+    final fileName = 'resonate-diagnostics-$stamp.json';
+    final file = File('${directory.path}/$fileName');
+    await file.writeAsString(json, flush: true);
+
+    // On Android, also open the system document picker so the tester can put
+    // the JSON in Downloads/Documents/Drive or any other visible provider.
+    if (Platform.isAndroid) {
+      try {
+        final savedUri = await _mediaStoreChannel.invokeMethod<String>('saveDiagnosticReport', {
+          'fileName': fileName,
+          'bytes': Uint8List.fromList(utf8.encode(json)),
+        });
+        if (savedUri != null && savedUri.isNotEmpty) {
+          await record('report_saved_to_device', {'uri': savedUri, 'path': file.path});
+          return savedUri;
+        }
+      } on PlatformException catch (e) {
+        await record('report_device_save_failed', {'code': e.code, 'message': e.message});
+      } catch (e) {
+        await record('report_device_save_failed', {'error': e.toString()});
+      }
+    }
+
     await Share.shareXFiles([XFile(file.path, mimeType: 'application/json')], subject: 'Resonate diagnostic report');
     unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length, 'path': file.path}));
     return file.path;
