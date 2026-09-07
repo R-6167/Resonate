@@ -32,4 +32,11 @@ void main() {
     expect(third, greaterThan(second));
     expect(gate.currentToken, third);
   });
+
+  test('a fresh gate has no active intent', () {
+    final gate = PlaybackIntentGate();
+
+    expect(gate.currentToken, 0);
+    expect(gate.isCurrent(0), isTrue);
+  });
 }
