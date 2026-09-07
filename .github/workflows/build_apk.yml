@@ -59,6 +59,8 @@ jobs:
         run: flutter pub get
       - name: Analyze project
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
+      - name: Run Flutter tests
+        run: flutter test --reporter expanded
       - name: Build release APK
         run: |
           set -o pipefail
