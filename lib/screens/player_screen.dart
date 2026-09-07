@@ -11,8 +11,14 @@ import '../widgets/autopilot_takeover_card.dart';
 import '../widgets/audio_visualization_widget.dart';
 import 'queue_screen.dart';
 
-class PlayerScreen extends StatelessWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({Key? key}) : super(key: key);
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen> {
+  double? _dragPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +29,8 @@ class PlayerScreen extends StatelessWidget {
         if (song == null) return const Center(child: Text('No song selected'));
         final duration = music.currentDuration ?? song.duration;
         final max = duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0;
-        final position = music.currentPosition.inMilliseconds.toDouble().clamp(0.0, max).toDouble();
+        final livePosition = music.currentPosition.inMilliseconds.toDouble().clamp(0.0, max).toDouble();
+        final position = (_dragPosition ?? livePosition).clamp(0.0, max).toDouble();
         return ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
           children: [
@@ -35,8 +42,19 @@ class PlayerScreen extends StatelessWidget {
             Text(song.album, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 16),
             const SizedBox(height: 105, child: AudioVisualizationWidget()),
-            Slider(value: position, min: 0, max: max, onChanged: (_) {}, onChangeEnd: (value) => PlaybackAuthority.instance.userSeek(music, Duration(milliseconds: value.round()))),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(AudioFileService.formatDuration(music.currentPosition)), Text(AudioFileService.formatDuration(duration))]),
+            Slider(
+              value: position,
+              min: 0,
+              max: max,
+              onChanged: (value) => setState(() => _dragPosition = value),
+              onChangeStart: (value) => setState(() => _dragPosition = value),
+              onChangeEnd: (value) async {
+                final target = Duration(milliseconds: value.round());
+                setState(() => _dragPosition = null);
+                await PlaybackAuthority.instance.userSeek(music, target);
+              },
+            ),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(AudioFileService.formatDuration(_dragPosition == null ? music.currentPosition : Duration(milliseconds: _dragPosition!.round()))), Text(AudioFileService.formatDuration(duration))]),
             const SizedBox(height: 10),
             StreamBuilder<PlayerState>(stream: music.audioPlayer.playerStateStream, initialData: music.audioPlayer.playerState, builder: (_, snapshot) {
               final state = snapshot.data ?? music.audioPlayer.playerState;
