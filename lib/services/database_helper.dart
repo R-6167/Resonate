@@ -7,7 +7,7 @@ import '../models/listening_event.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
   static const String tableSongs = 'songs';
   static const String tablePlaylists = 'playlists';
   static const String tablePlaylistSongs = 'playlist_songs';
@@ -56,13 +56,18 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE $tableSongs ($columnSongId TEXT PRIMARY KEY, $columnSongTitle TEXT NOT NULL, $columnSongArtist TEXT, $columnSongAlbum TEXT, $columnSongFilePath TEXT NOT NULL UNIQUE, $columnSongDuration INTEGER, $columnSongDateAdded TEXT, $columnSongAlbumArt TEXT, $columnSongPlayCount INTEGER DEFAULT 0, $columnSongLastPlayed TEXT)');
     await db.execute('CREATE TABLE $tablePlaylists ($columnPlaylistId TEXT PRIMARY KEY, $columnPlaylistName TEXT NOT NULL, $columnPlaylistCreatedAt TEXT NOT NULL, $columnPlaylistDescription TEXT)');
     await db.execute('CREATE TABLE $tablePlaylistSongs ($columnPlaylistSongPlaylistId TEXT NOT NULL, $columnPlaylistSongSongId TEXT NOT NULL, $columnPlaylistSongPosition INTEGER, PRIMARY KEY ($columnPlaylistSongPlaylistId, $columnPlaylistSongSongId), FOREIGN KEY ($columnPlaylistSongPlaylistId) REFERENCES $tablePlaylists($columnPlaylistId), FOREIGN KEY ($columnPlaylistSongSongId) REFERENCES $tableSongs($columnSongId))');
+    await db.execute('CREATE TABLE $tableFavorites ($columnFavoriteSongId TEXT PRIMARY KEY, $columnFavoriteDateAdded TEXT NOT NULL, FOREIGN KEY ($columnFavoriteSongId) REFERENCES $tableSongs($columnSongId))');
     await db.execute('CREATE TABLE $tableListeningEvents ($columnEventId TEXT PRIMARY KEY, $columnEventSongId TEXT NOT NULL, $columnEventPreviousSongId TEXT, $columnEventStartedAt TEXT NOT NULL, $columnEventEndedAt TEXT, $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0, $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0, $columnEventCompletionRatio REAL NOT NULL DEFAULT 0, $columnEventCompleted INTEGER NOT NULL DEFAULT 0, $columnEventSkipped INTEGER NOT NULL DEFAULT 0, $columnEventSkipPositionMs INTEGER, FOREIGN KEY ($columnEventSongId) REFERENCES $tableSongs($columnSongId))');
-    for (final sql in ['CREATE INDEX idx_songs_title ON $tableSongs($columnSongTitle)', 'CREATE INDEX idx_songs_artist ON $tableSongs($columnSongArtist)', 'CREATE INDEX idx_playlists_name ON $tablePlaylists($columnPlaylistName)', 'CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
+    for (final sql in ['CREATE INDEX idx_songs_title ON $tableSongs($columnSongTitle)', 'CREATE INDEX idx_songs_artist ON $tableSongs($columnSongArtist)', 'CREATE INDEX idx_playlists_name ON $tablePlaylists($columnPlaylistName)', 'CREATE INDEX idx_favorites_date_added ON $tableFavorites($columnFavoriteDateAdded)', 'CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
   }
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('CREATE TABLE $tableListeningEvents ($columnEventId TEXT PRIMARY KEY, $columnEventSongId TEXT NOT NULL, $columnEventPreviousSongId TEXT, $columnEventStartedAt TEXT NOT NULL, $columnEventEndedAt TEXT, $columnEventDurationPlayedMs INTEGER NOT NULL DEFAULT 0, $columnEventSongDurationMs INTEGER NOT NULL DEFAULT 0, $columnEventCompletionRatio REAL NOT NULL DEFAULT 0, $columnEventCompleted INTEGER NOT NULL DEFAULT 0, $columnEventSkipped INTEGER NOT NULL DEFAULT 0, $columnEventSkipPositionMs INTEGER, FOREIGN KEY ($columnEventSongId) REFERENCES $tableSongs($columnSongId))');
       for (final sql in ['CREATE INDEX idx_events_song ON $tableListeningEvents($columnEventSongId)', 'CREATE INDEX idx_events_previous_song ON $tableListeningEvents($columnEventPreviousSongId)', 'CREATE INDEX idx_events_started_at ON $tableListeningEvents($columnEventStartedAt)']) { await db.execute(sql); }
+    }
+    if (oldVersion < 3) {
+      await db.execute('CREATE TABLE $tableFavorites ($columnFavoriteSongId TEXT PRIMARY KEY, $columnFavoriteDateAdded TEXT NOT NULL, FOREIGN KEY ($columnFavoriteSongId) REFERENCES $tableSongs($columnSongId))');
+      await db.execute('CREATE INDEX idx_favorites_date_added ON $tableFavorites($columnFavoriteDateAdded)');
     }
   }
   Future<int> insertListeningEvent(ListeningEvent event) async {
@@ -116,8 +121,6 @@ class DatabaseHelper {
   Future<bool> isFavorite(String songId) async { try{return (await (await database).query(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId],limit:1)).isNotEmpty;}catch(e){return false;} }
   Future<int> removeFavorite(String songId) async { try{return await (await database).delete(tableFavorites,where:'$columnFavoriteSongId = ?',whereArgs:[songId]);}catch(e){return -1;} }
   Future<Map<String,dynamic>> getStatistics() async { try{final db=await database;final totalSongs=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableSongs'))??0;final totalPlaylists=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tablePlaylists'))??0;final favoriteCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableFavorites'))??0;final totalPlayCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COALESCE(SUM($columnSongPlayCount),0) FROM $tableSongs'))??0;return {'totalSongs':totalSongs,'totalPlaylists':totalPlaylists,'favoriteCount':favoriteCount,'totalPlayCount':totalPlayCount};}catch(e){return {'totalSongs':0,'totalPlaylists':0,'favoriteCount':0,'totalPlayCount':0};} }
-  Song _songFromMap(Map<String,dynamic> map){final d=map[columnSongDateAdded]?.toString();return Song(id:map[columnSongId]?.toString()??'',title:map[columnSongTitle]?.toString()??'Unknown Title',artist:map[columnSongArtist]?.toString()??'Unknown Artist',album:map[columnSongAlbum]?.toString()??'Unknown Album',filePath:map[columnSongFilePath]?.toString()??'',duration:Duration(milliseconds:(map[columnSongDuration] as num?)?.toInt()??0),dateAdded:DateTime.tryParse(d??'')??DateTime.now(),albumArt:map[columnSongAlbumArt]?.toString());}
-  Playlist _playlistFromMap(Map<String,dynamic> map){return Playlist(id:map[columnPlaylistId]?.toString()??'',name:map[columnPlaylistName]?.toString()??'Untitled Playlist',songIds:const [],createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription]?.toString());}
-  Future<void> clearAllData() async { try{final db=await database;await db.delete(tableListeningEvents);await db.delete(tablePlaylistSongs);await db.delete(tableFavorites);await db.delete(tablePlaylists);await db.delete(tableSongs);}catch(e){print('Error clearing database: $e');} }
-  Future<void> closeDatabase() async {if(_database!=null){await _database!.close();_database=null;}}
+  Song _songFromMap(Map<String,dynamic> map) => Song(id:map[columnSongId] as String,title:map[columnSongTitle] as String,artist:map[columnSongArtist] as String?,album:map[columnSongAlbum] as String?,filePath:map[columnSongFilePath] as String,duration:Duration(milliseconds:(map[columnSongDuration] as int?)??0),dateAdded:DateTime.tryParse(map[columnSongDateAdded]?.toString()??'')??DateTime.now(),albumArt:map[columnSongAlbumArt] as String?,playCount:(map[columnSongPlayCount] as int?)??0);
+  Playlist _playlistFromMap(Map<String,dynamic> map) => Playlist(id:map[columnPlaylistId] as String,name:map[columnPlaylistName] as String,createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription] as String?);
 }
