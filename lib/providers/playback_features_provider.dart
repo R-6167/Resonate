@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'music_provider.dart';
+
 class PlaybackFeaturesProvider extends ChangeNotifier {
-  final AudioPlayer player;
+  final MusicProvider music;
 
   double speed = 1.0;
   double pitch = 1.0;
@@ -15,9 +17,12 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   String? normalizedSongId;
   Timer? _sleepTimer;
 
-  PlaybackFeaturesProvider({required this.player}) {
+  PlaybackFeaturesProvider({required this.music}) {
     _load();
   }
+
+  AudioPlayer get player => music.audioPlayer;
+  AndroidLoudnessEnhancer get loudnessEnhancer => music.loudnessEnhancer;
 
   bool get sleepTimerActive => sleepRemainingSeconds > 0;
 
@@ -45,12 +50,14 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> setNormalizationEnabled(bool value) async {
     normalizationEnabled = value;
+    await _applyNormalization();
     await _save();
     notifyListeners();
   }
 
   Future<void> setTargetLoudness(double value) async {
     targetLoudness = value.clamp(-20.0, -8.0).toDouble();
+    if (normalizationEnabled) await _applyNormalization();
     await _save();
     notifyListeners();
   }
@@ -61,13 +68,40 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> applyTrackGain(String songId, double gainDb) async {
     normalizedSongId = songId;
     if (!normalizationEnabled) return;
-    final linear = _dbToLinear(gainDb).clamp(0.0, 1.0).toDouble();
     try {
-      await player.setVolume(linear);
+      await loudnessEnhancer.setTargetGain((gainDb * 100.0).clamp(-1000.0, 1000.0));
+      await loudnessEnhancer.setEnabled(true);
     } catch (e) {
       debugPrint('Track normalization failed: $e');
     }
     notifyListeners();
+  }
+
+  /// Android's LoudnessEnhancer needs a gain value rather than a LUFS target.
+  /// Until per-file loudness analysis is available, map the user's target
+  /// around the neutral -14 LUFS reference to a bounded audible compensation.
+  Future<void> _applyNormalization() async {
+    try {
+      final gainDb = (-14.0 - targetLoudness).clamp(-6.0, 6.0).toDouble();
+      await loudnessEnhancer.setTargetGain(gainDb * 100.0);
+      await loudnessEnhancer.setEnabled(normalizationEnabled);
+    } catch (e) {
+      debugPrint('Volume normalization failed: $e');
+    }
+  }
+
+  Future<void> applyToActiveEngine() async {
+    try {
+      await player.setSpeed(speed);
+      await player.setPitch(pitch);
+      if (normalizationEnabled) {
+        await _applyNormalization();
+      } else {
+        await loudnessEnhancer.setEnabled(false);
+      }
+    } catch (e) {
+      debugPrint('Active playback feature sync failed: $e');
+    }
   }
 
   Future<void> startSleepTimer(Duration duration) async {
@@ -106,25 +140,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     return '${seconds}s';
   }
 
-  double _dbToLinear(double db) => 1.0 * (10 * _pow10(db / 20.0));
-
-  double _pow10(double value) {
-    var result = 1.0;
-    if (value >= 0) {
-      for (var i = 0; i < value.floor(); i++) result *= 10;
-      result *= _fractionalPow10(value - value.floor());
-      return result;
-    }
-    return 1.0 / _pow10(-value);
-  }
-
-  double _fractionalPow10(double value) {
-    // Cubic approximation is sufficient for the volume compensation slider.
-    const ln10 = 2.302585092994046;
-    final x = value * ln10;
-    return 1 + x + (x * x) / 2 + (x * x * x) / 6 + (x * x * x * x) / 24;
-  }
-
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -132,8 +147,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       pitch = prefs.getDouble('playback_pitch') ?? 1.0;
       normalizationEnabled = prefs.getBool('normalization_enabled') ?? false;
       targetLoudness = prefs.getDouble('target_loudness') ?? -14.0;
-      await player.setSpeed(speed);
-      await player.setPitch(pitch);
+      await applyToActiveEngine();
     } catch (e) {
       debugPrint('Playback settings load failed: $e');
     }
