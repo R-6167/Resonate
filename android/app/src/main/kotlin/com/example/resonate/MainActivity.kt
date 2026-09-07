@@ -1,4 +1,4 @@
-package com.example.resonate
+package com.Aetherion.Resonate
 
 import android.Manifest
 import android.app.Activity
