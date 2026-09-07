@@ -11,6 +11,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
   final MusicProvider music;
   final PlaybackAuthority authority = PlaybackAuthority.instance;
   Timer? _heartbeat;
+  StreamSubscription<Object>? _playerErrorSubscription;
   bool _lastPlaying = false;
   String? _lastSongId;
   int _lastQueueIndex = -1;
@@ -20,6 +21,23 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
   PlaybackDiagnosticsObserver({required this.music}) {
     music.addListener(_observe);
     _heartbeat = Timer.periodic(const Duration(seconds: 5), (_) => _heartbeatTick());
+    _playerErrorSubscription = music.audioPlayer.errorStream.listen((error) {
+      unawaited(ResonateDiagnostics.record('audio_player_error', {
+        'errorType': error.runtimeType.toString(),
+        'error': error.toString(),
+        'engine': authority.engineLabel(music),
+        'songId': music.currentSong?.id,
+        'songTitle': music.currentSong?.title,
+        'songArtist': music.currentSong?.artist,
+        'positionMs': music.currentPosition.inMilliseconds,
+        'durationMs': (music.currentDuration ?? music.currentSong?.duration)?.inMilliseconds,
+        'queueIndex': music.queueIndex,
+        'queueLength': music.queue.length,
+        'lastCommandSource': authority.lastSource,
+        'lastCommand': authority.lastCommand,
+        'userCommandGeneration': authority.userGeneration,
+      }));
+    });
     _observe();
   }
 
@@ -48,6 +66,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
     _lastStateWrite = now;
     unawaited(ResonateDiagnostics.record(event, {
       'playing': music.isPlaying,
+      'playerPlaying': state.playing,
       'processingState': state.processingState.name,
       'engine': authority.engineLabel(music),
       'lastCommandSource': authority.lastSource,
@@ -55,8 +74,15 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
       'userCommandGeneration': authority.userGeneration,
       'queueIndex': music.queueIndex,
       'queueLength': music.queue.length,
+      'queueSongIds': music.queue.map((song) => song.id).toList(),
+      'currentSongId': music.currentSong?.id,
+      'currentSongTitle': music.currentSong?.title,
+      'currentSongArtist': music.currentSong?.artist,
       'positionMs': music.currentPosition.inMilliseconds,
+      'playerPositionMs': music.audioPlayer.position.inMilliseconds,
+      'bufferedPositionMs': music.audioPlayer.bufferedPosition.inMilliseconds,
       'durationMs': (music.currentDuration ?? music.currentSong?.duration)?.inMilliseconds,
+      'playerDurationMs': music.audioPlayer.duration?.inMilliseconds,
       'shuffle': music.shuffleEnabled,
       'repeat': music.repeatMode.name,
       'crossfadeEnabled': music.crossfadeEnabled,
@@ -66,5 +92,12 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
   }
 
   @override
-  void dispose() { music.removeListener(_observe); _heartbeat?.cancel(); _heartbeat = null; super.dispose(); }
+  void dispose() {
+    music.removeListener(_observe);
+    _heartbeat?.cancel();
+    _heartbeat = null;
+    _playerErrorSubscription?.cancel();
+    _playerErrorSubscription = null;
+    super.dispose();
+  }
 }
