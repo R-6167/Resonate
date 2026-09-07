@@ -1,0 +1,36 @@
+name: Fix DB model compatibility
+on:
+  workflow_dispatch:
+  push:
+    branches: [Playback_Stability_Diagnostics]
+jobs:
+  fix:
+    if: github.actor == 'Moses-808'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Patch database helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('lib/services/database_helper.dart')
+          s=p.read_text()
+          s=s.replace("Song(id:map[columnSongId] as String,title:map[columnSongTitle] as String,artist:map[columnSongArtist] as String?,album:map[columnSongAlbum] as String?,filePath:map[columnSongFilePath] as String,duration:Duration(milliseconds:(map[columnSongDuration] as int?)??0),dateAdded:DateTime.tryParse(map[columnSongDateAdded]?.toString()??'')??DateTime.now(),albumArt:map[columnSongAlbumArt] as String?,playCount:(map[columnSongPlayCount] as int?)??0);", "Song(id:map[columnSongId] as String,title:map[columnSongTitle] as String,artist:map[columnSongArtist]?.toString() ?? 'Unknown Artist',album:map[columnSongAlbum]?.toString() ?? 'Unknown Album',filePath:map[columnSongFilePath] as String,duration:Duration(milliseconds:(map[columnSongDuration] as num?)?.toInt()??0),dateAdded:DateTime.tryParse(map[columnSongDateAdded]?.toString()??'')??DateTime.now(),albumArt:map[columnSongAlbumArt]?.toString());")
+          s=s.replace("Playlist(id:map[columnPlaylistId] as String,name:map[columnPlaylistName] as String,createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription] as String?);", "Playlist(id:map[columnPlaylistId] as String,name:map[columnPlaylistName] as String,songIds:const [],createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription]?.toString());")
+          p.write_text(s)
+          PY
+      - name: Commit fix and remove workflow
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add lib/services/database_helper.dart .github/workflows/fix_db_models.yml
+          git commit -m "Fix database helper model compatibility"
+          git push
+          git rm .github/workflows/fix_db_models.yml
+          git commit -m "Remove temporary database fix workflow"
+          git push
