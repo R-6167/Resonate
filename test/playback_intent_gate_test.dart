@@ -21,4 +21,15 @@ void main() {
     }
     expect(gate.isCurrent(tokens.last), isTrue);
   });
+
+  test('tokens are strictly increasing', () {
+    final gate = PlaybackIntentGate();
+    final first = gate.issue();
+    final second = gate.issue();
+    final third = gate.issue();
+
+    expect(second, greaterThan(first));
+    expect(third, greaterThan(second));
+    expect(gate.currentToken, third);
+  });
 }
