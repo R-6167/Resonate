@@ -40,3 +40,12 @@ void main() {
     expect(gate.isCurrent(0), isTrue);
   });
 }
+
+
+test('latest user intent remains current while older work is pending', () {
+  final gate = PlaybackIntentGate();
+  final first = gate.issue();
+  final second = gate.issue();
+  expect(gate.isCurrent(first), isFalse);
+  expect(gate.isCurrent(second), isTrue);
+});

@@ -259,15 +259,15 @@ class MusicProvider extends ChangeNotifier {
         'command': command, 'source': source, 'intentToken': effectiveIntent,
       }));
     }
-    final next = _playOperation.then((_) async {
-      if (userInitiated && !_playbackIntentGate.isCurrent(effectiveIntent)) {
-        await ResonateDiagnostics.record('playback_command_stale_before_start', {
-          'command': command, 'source': source, 'intentToken': effectiveIntent, 'currentIntentToken': _playbackIntentGate.currentToken,
-        });
-        return await operation();
-      }
-      return await operation();
-    });
+    // User intent is the priority lane. Do not put a user command behind an
+    // older load/play operation: that was the source of pause/next appearing
+    // to do nothing until the stale recommendation finished. The intent gate
+    // invalidates older work, while automatic transitions remain serialized.
+    if (userInitiated) {
+      return operation();
+    }
+
+    final next = _playOperation.then((_) => operation());
     _playOperation = next.then<void>((_) {}, onError: (_, __) {});
     return next;
   }
