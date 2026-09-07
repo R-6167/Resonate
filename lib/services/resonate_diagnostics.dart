@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -8,9 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Privacy-first local diagnostics for development and real-device testing.
-/// Crash capture is mandatory for the current development build. Nothing is
-/// uploaded automatically; reports and crash files are saved locally.
 class ResonateDiagnostics {
   static const _eventsKey = 'resonate_diagnostics_events_v1';
   static const _feedbackKey = 'resonate_diagnostics_feedback_v1';
@@ -51,11 +49,7 @@ class ResonateDiagnostics {
   }
 
   static Future<void> recordCrash(Object error, StackTrace stack, {String source = 'unknown'}) async {
-    final entry = _entry('crash', {
-      'source': source,
-      'error': error.toString(),
-      'stackTrace': stack.toString(),
-    });
+    final entry = _entry('crash', {'source': source, 'error': error.toString(), 'stackTrace': stack.toString()});
     try {
       final prefs = await _prefs();
       final items = _decodeList(prefs.getString(_crashesKey));
@@ -63,18 +57,12 @@ class ResonateDiagnostics {
       if (items.length > _maxCrashes) items.removeRange(0, items.length - _maxCrashes);
       await prefs.setString(_crashesKey, jsonEncode(items));
     } catch (_) {}
-
     try {
       final directory = await _documentsDirectory();
       if (directory != null) {
         final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
         final file = File('${directory.path}/resonate-crash-$stamp.json');
-        await file.writeAsString(const JsonEncoder.withIndent('  ').convert({
-          'reportVersion': 1,
-          'app': 'Resonate',
-          'createdAt': DateTime.now().toIso8601String(),
-          ...entry,
-        }), flush: true);
+        await file.writeAsString(const JsonEncoder.withIndent('  ').convert({'reportVersion': 1, 'app': 'Resonate', 'createdAt': DateTime.now().toIso8601String(), ...entry}), flush: true);
       }
     } catch (_) {}
     await record('crash_recorded', {'source': source, 'error': error.toString()});
@@ -84,11 +72,7 @@ class ResonateDiagnostics {
     try {
       final prefs = await _prefs();
       final items = _decodeList(prefs.getString(_feedbackKey));
-      items.add(_entry('feedback', {
-        'category': category,
-        'message': message.trim(),
-        'includeDiagnostics': includeDiagnostics,
-      }));
+      items.add(_entry('feedback', {'category': category, 'message': message.trim(), 'includeDiagnostics': includeDiagnostics}));
       if (items.length > _maxFeedback) items.removeRange(0, items.length - _maxFeedback);
       await prefs.setString(_feedbackKey, jsonEncode(items));
       await record('feedback_submitted', {'category': category, 'includeDiagnostics': includeDiagnostics});
@@ -119,15 +103,9 @@ class ResonateDiagnostics {
     final fileName = 'resonate-diagnostics-$stamp.json';
     final file = File('${directory.path}/$fileName');
     await file.writeAsString(json, flush: true);
-
-    // On Android, also open the system document picker so the tester can put
-    // the JSON in Downloads/Documents/Drive or any other visible provider.
     if (Platform.isAndroid) {
       try {
-        final savedUri = await _mediaStoreChannel.invokeMethod<String>('saveDiagnosticReport', {
-          'fileName': fileName,
-          'bytes': Uint8List.fromList(utf8.encode(json)),
-        });
+        final savedUri = await _mediaStoreChannel.invokeMethod<String>('saveDiagnosticReport', {'fileName': fileName, 'bytes': Uint8List.fromList(utf8.encode(json))});
         if (savedUri != null && savedUri.isNotEmpty) {
           await record('report_saved_to_device', {'uri': savedUri, 'path': file.path});
           return savedUri;
@@ -138,7 +116,6 @@ class ResonateDiagnostics {
         await record('report_device_save_failed', {'error': e.toString()});
       }
     }
-
     await Share.shareXFiles([XFile(file.path, mimeType: 'application/json')], subject: 'Resonate diagnostic report');
     unawaited(record('report_exported', {'eventCount': (report['events'] as List).length, 'crashCount': (report['crashes'] as List).length, 'path': file.path}));
     return file.path;
@@ -151,26 +128,11 @@ class ResonateDiagnostics {
     await prefs.remove(_feedbackKey);
   }
 
-  static Future<int> eventCount() async {
-    final report = await snapshot();
-    return (report['events'] as List).length;
-  }
+  static Future<int> eventCount() async { final report = await snapshot(); return (report['events'] as List).length; }
+  static Future<int> crashCount() async { final report = await snapshot(); return (report['crashes'] as List).length; }
+  static Future<int> feedbackCount() async { final report = await snapshot(); return (report['feedback'] as List).length; }
 
-  static Future<int> crashCount() async {
-    final report = await snapshot();
-    return (report['crashes'] as List).length;
-  }
-
-  static Future<int> feedbackCount() async {
-    final report = await snapshot();
-    return (report['feedback'] as List).length;
-  }
-
-  static Map<String, dynamic> _entry(String type, Map<String, dynamic> data) => {
-        'at': DateTime.now().toIso8601String(),
-        'type': type,
-        'data': data,
-      };
+  static Map<String, dynamic> _entry(String type, Map<String, dynamic> data) => {'at': DateTime.now().toIso8601String(), 'type': type, 'data': data};
 
   static List<Map<String, dynamic>> _decodeList(String? raw) {
     if (raw == null || raw.isEmpty) return <Map<String, dynamic>>[];
@@ -178,8 +140,6 @@ class ResonateDiagnostics {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return <Map<String, dynamic>>[];
       return decoded.whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
-    } catch (_) {
-      return <Map<String, dynamic>>[];
-    }
+    } catch (_) { return <Map<String, dynamic>>[]; }
   }
 }
