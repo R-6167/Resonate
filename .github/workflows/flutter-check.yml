@@ -33,7 +33,7 @@ jobs:
           python3 tools/finish_playback_companion.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm tools/repair_finish_script.py tools/finish_playback_companion.py .github/workflows/finish_playback_companion.yml
+          git rm -f tools/repair_finish_script.py tools/finish_playback_companion.py .github/workflows/finish_playback_companion.yml
           git add lib/providers/music_provider.dart lib/screens/player_screen.dart lib/providers/autopilot_controller.dart lib/providers/intelligence_provider.dart
           git commit -m "Apply playback companion finishing pass"
           git push origin HEAD:${GITHUB_REF_NAME}
