@@ -4,6 +4,7 @@ import '../providers/intelligence_provider.dart';
 import '../services/intelligence_mix_settings_store.dart';
 import '../services/intelligence_pattern_store.dart';
 import '../services/intelligence_settings_store.dart';
+import 'intelligence_transfer_screen.dart';
 
 class IntelligenceSettingsScreen extends StatefulWidget {
   const IntelligenceSettingsScreen({super.key});
@@ -51,7 +52,6 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Autonomy', style: Theme.of(context).textTheme.titleMedium)),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('Suggest')), ButtonSegment(value: 1, label: Text('Assist')), ButtonSegment(value: 2, label: Text('Autopilot'))], selected: {intelligence.autonomy}, onSelectionChanged: (value) => intelligence.setAutonomy(value.first))),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(intelligence.isAutopilot ? 'Autopilot may prepare and choose the next track when confidence is high enough.' : 'Your normal player remains in control until you allow more autonomy.', style: Theme.of(context).textTheme.bodySmall)),
-
         _header(context, 'Recommendation behavior', 'Shape how Resonate balances confidence, discovery and repetition.'),
         ListTile(title: const Text('Exploration ↔ familiarity'), subtitle: Text('$_exploration% exploration • higher values discover more new music')),
         Slider(value: _exploration.toDouble(), min: 0, max: 100, divisions: 20, label: '$_exploration%', onChanged: (v) => setState(() => _exploration = v.round()), onChangeEnd: (v) => IntelligenceSettingsStore.setExploration(v.round())),
@@ -59,11 +59,9 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
         Slider(value: _confidence, min: .45, max: .90, divisions: 9, label: '${(_confidence * 100).round()}%', onChanged: (v) => setState(() => _confidence = v), onChangeEnd: (v) => IntelligenceSettingsStore.setConfidenceThreshold(v)),
         SwitchListTile.adaptive(title: const Text('Automatic queue'), subtitle: const Text('Keep a small runway of likely next tracks ready.'), value: _automaticQueue, onChanged: (v) async { setState(() => _automaticQueue = v); await IntelligenceSettingsStore.setAutomaticQueue(v); }),
         SwitchListTile.adaptive(title: const Text('Allow artist repetition'), subtitle: const Text('Permit consecutive recommendations from the same artist.'), value: _artistRepeat, onChanged: (v) async { setState(() => _artistRepeat = v); await IntelligenceSettingsStore.setArtistRepeat(v); }),
-
         _header(context, 'Session awareness', 'Let the current listening session influence what feels right next.'),
         SwitchListTile.adaptive(title: const Text('Use current-session signals'), subtitle: const Text('Recent skips, completions and artists can steer the next decision.'), value: _sessionIntelligence, onChanged: (v) async { setState(() => _sessionIntelligence = v); await IntelligenceSettingsStore.setSessionIntelligence(v); }),
         SwitchListTile.adaptive(title: const Text('Show recommendation explanations'), subtitle: const Text('Display why a track was selected and its confidence.'), value: _explanations, onChanged: (v) async { setState(() => _explanations = v); await IntelligenceSettingsStore.setExplanations(v); }),
-
         _header(context, 'Companion journeys', 'Controls for longer, evolving listening sessions.'),
         ListTile(title: const Text('Generated mix length'), subtitle: Text('$_mixMinutes minutes • target length for new Companion journeys'), trailing: const Icon(Icons.schedule_rounded), onTap: () => _chooseMixLength(context)),
         SwitchListTile.adaptive(title: const Text('Long-form mix analysis'), subtitle: Text(_longMix ? 'Learn from long tracks, replayed sections and common exits' : 'Long-form analysis is disabled'), value: _longMix, onChanged: (v) async { setState(() => _longMix = v); await IntelligenceMixSettingsStore.setLongFormEnabled(v); }),
@@ -74,12 +72,10 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
           Slider(value: _replaySensitivity.toDouble(), min: 1, max: 5, divisions: 4, label: '$_replaySensitivity/5', onChanged: (v) => setState(() => _replaySensitivity = v.round()), onChangeEnd: (v) => IntelligenceMixSettingsStore.setReplaySensitivity(v.round())),
         ],
         SwitchListTile.adaptive(title: const Text('Evolve Companion mixes'), subtitle: const Text('Allow saved mix journeys to become new editions from actual listening behavior.'), value: _autoEvolution, onChanged: (v) async { setState(() => _autoEvolution = v); await IntelligenceMixSettingsStore.setAutoEvolutionEnabled(v); }),
-
         _header(context, 'Audio intelligence', 'Allow Resonate to remember sound preferences and coordinate transitions.'),
         SwitchListTile.adaptive(title: const Text('Learned per-song EQ'), subtitle: const Text('Allow Intelligence to remember sound preferences per song.'), value: _learnedEq, onChanged: (v) async { setState(() => _learnedEq = v); await IntelligenceSettingsStore.setLearnedEq(v); }),
         SwitchListTile.adaptive(title: const Text('Autopilot crossfade'), subtitle: Text(_crossfade ? '${(_crossfadeMs / 1000).toStringAsFixed(1)} second transition' : 'Disabled'), value: _crossfade, onChanged: (v) async { setState(() => _crossfade = v); await IntelligenceSettingsStore.setAutopilotCrossfade(v); }),
         if (_crossfade) Slider(value: _crossfadeMs.toDouble(), min: 1000, max: 12000, divisions: 11, label: '${(_crossfadeMs / 1000).toStringAsFixed(1)}s', onChanged: (v) => setState(() => _crossfadeMs = v.round()), onChangeEnd: (v) => IntelligenceSettingsStore.setAutopilotCrossfadeMs(v.round())),
-
         _header(context, 'Companion memory & insight', 'See what Resonate currently believes and reset tuning without deleting learned history.'),
         FutureBuilder<List<Map<String, dynamic>>>(future: Future.wait([IntelligencePatternStore.readBucket(DateTime.now()), IntelligencePatternStore.readStateProfile()]), builder: (context, snapshot) {
           final bucket = snapshot.data != null && snapshot.data!.isNotEmpty ? snapshot.data![0] : const <String, dynamic>{};
@@ -89,6 +85,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
             ListTile(leading: const Icon(Icons.psychology_rounded), title: Text('This window: $state'), subtitle: Text(IntelligencePatternStore.explanationFor(state, bucket))),
             ListTile(leading: const Icon(Icons.history_rounded), title: Text('Across sessions: $global'), subtitle: Text(confidence == 0 ? 'Still learning your recurring listening pattern.' : '${(confidence * 100).round()}% of learned states point here${momentum >= .5 ? ' • pattern is holding' : ''}.')),
             ListTile(leading: const Icon(Icons.auto_awesome_rounded), title: Text(intelligence.anticipatedNext?.song.title ?? 'No prediction yet'), subtitle: Text(intelligence.anticipatedNext == null ? 'Keep listening and Resonate will build local evidence.' : '${(intelligence.anticipatedNext!.confidence * 100).round()}% confidence • ${intelligence.anticipatedNext!.reason}')),
+            ListTile(leading: const Icon(Icons.swap_vert_rounded), title: const Text('Transfer Intelligence settings'), subtitle: const Text('Export this setup or import it on another Resonate installation.'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceTransferScreen()))),
             ListTile(leading: const Icon(Icons.restart_alt_rounded), title: const Text('Reset advanced tuning'), subtitle: const Text('Return decision and mix controls to conservative defaults; learned memory stays intact.'), onTap: () => _confirmReset(context)),
           ]);
         }),
