@@ -301,12 +301,43 @@ class _IntelligenceHero extends StatelessWidget {
         ),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Stack(children: [
-        Positioned(right: -8, bottom: 4, child: IgnorePointer(child: Opacity(opacity: .07, child: Text('RESONATE', style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, letterSpacing: 3))))),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Stack(
+        children: [
+          Positioned(
+            right: -8,
+            bottom: 4,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: .11,
+                child: Text(
+                  'RESONATE',
+                  style: const TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
           Row(
             children: [
-              AnimatedSwitcher(duration: const Duration(milliseconds: 420), transitionBuilder: (child, animation) => RotationTransition(turns: Tween(begin: .88, end: 1.0).animate(animation), child: FadeTransition(opacity: animation, child: child)), child: Icon(intelligence.isAutopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, key: ValueKey(intelligence.autonomyLabel))),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 520),
+                transitionBuilder: (child, animation) => RotationTransition(
+                  turns: Tween(begin: .88, end: 1.0).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  intelligence.isAutopilot
+                      ? Icons.smart_toy_rounded
+                      : Icons.auto_awesome,
+                  key: ValueKey(intelligence.autonomyLabel),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -339,6 +370,8 @@ class _IntelligenceHero extends StatelessWidget {
               const Chip(label: Text('Local-first')),
               const Chip(label: Text('Explainable')),
               Chip(label: Text('$songCount songs')),
+            ],
+          ),
             ],
           ),
         ],
