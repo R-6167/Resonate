@@ -1,0 +1,60 @@
+name: One-shot Playback Repair
+
+on:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply surgical playback and diagnostics fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          music = Path('lib/providers/music_provider.dart')
+          text = music.read_text()
+          old = "const {'toggle', 'pause', 'seek'}"
+          new = "const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}"
+          if old not in text:
+              raise SystemExit('Expected playback priority set not found')
+          text = text.replace(old, new)
+          old_load = "await player.setVolume(start ? _volume : 0.0);"
+          new_load = "await player.setVolume(start ? 1.0 : 0.0);"
+          if old_load not in text:
+              raise SystemExit('Expected _loadSingle volume expression not found')
+          text = text.replace(old_load, new_load, 1)
+          music.write_text(text)
+
+          diagnostics = Path('lib/services/resonate_diagnostics.dart')
+          text = diagnostics.read_text()
+          old_summary = """        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }"""
+          new_summary = """        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }\n        // Completion is also recorded as its own event. Count that authoritative\n        // signal directly so the exported summary cannot report zero when the\n        // event stream clearly contains completion detections.\n        if (type == 'completion_detected') completedSignals++;"""
+          if old_summary not in text:
+              raise SystemExit('Expected diagnostics summary block not found')
+          text = text.replace(old_summary, new_summary, 1)
+          diagnostics.write_text(text)
+          PY
+
+      - name: Commit repaired sources
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/music_provider.dart lib/services/resonate_diagnostics.dart
+          if git diff --cached --quiet; then
+            echo "No source changes required"
+            exit 0
+          fi
+          git commit -m "Restore immediate next previous controls and completion diagnostics"
+          git push
