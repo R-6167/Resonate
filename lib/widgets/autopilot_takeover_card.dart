@@ -31,6 +31,12 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
       }
     }
     final scheme = Theme.of(context).colorScheme;
+    final mode = intelligence.autonomyLabel;
+    final modeIcon = intelligence.isAutopilot
+        ? Icons.auto_awesome_rounded
+        : intelligence.autonomy == 1
+            ? Icons.assistant_rounded
+            : Icons.lightbulb_outline_rounded;
     return FutureBuilder<IntelligenceCompanionProfile>(
       future: _profileFuture,
       builder: (context, snapshot) {
@@ -51,7 +57,16 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
             Row(children: [
               Icon(Icons.psychology_rounded, color: scheme.primary), const SizedBox(width: 9),
               Expanded(child: Text('Companion memory', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700))),
-              if (profile != null && profile.confidence > 0) Padding(padding: const EdgeInsets.only(right: 4), child: Text('${(profile.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.primary))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(999)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(modeIcon, size: 14, color: scheme.onPrimaryContainer),
+                  const SizedBox(width: 5),
+                  Text(mode, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+              if (profile != null && profile.confidence > 0) Padding(padding: const EdgeInsets.only(left: 8, right: 4), child: Text('${(profile.confidence * 100).round()}%', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.primary))),
               IconButton(tooltip: 'Refresh memory', onPressed: _refreshProfile, icon: const Icon(Icons.refresh_rounded), visualDensity: VisualDensity.compact),
             ]),
             if (profile == null) ...[const SizedBox(height: 8), const LinearProgressIndicator(minHeight: 2)] else ...[
