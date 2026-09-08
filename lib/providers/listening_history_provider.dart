@@ -8,8 +8,6 @@ class ListeningHistoryItem {
   final ListeningEvent event;
   final Song? song;
   const ListeningHistoryItem({required this.event, required this.song});
-  @override
-  void dispose() { _refreshTimer?.cancel(); super.dispose(); }
 }
 
 class ListeningHistoryProvider extends ChangeNotifier {
@@ -23,7 +21,12 @@ class ListeningHistoryProvider extends ChangeNotifier {
   Map<String, dynamic> get stats => Map.unmodifiable(_stats);
   bool get isLoading => _loading;
 
-  ListeningHistoryProvider() { load(); _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (!_loading) load(); }); }
+  ListeningHistoryProvider() {
+    load();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_loading) load();
+    });
+  }
 
   Future<void> load() async {
     _loading = true;
@@ -38,6 +41,12 @@ class ListeningHistoryProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> clearHistory() async {
