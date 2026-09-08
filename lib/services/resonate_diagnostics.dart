@@ -294,6 +294,10 @@ class ResonateDiagnostics {
           if (data['stage'] == 'completion_detected') completedSignals++;
           if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;
         }
+        // Completion is also recorded as its own event. Count that authoritative
+        // signal directly so the exported summary cannot report zero when the
+        // event stream clearly contains completion detections.
+        if (type == 'completion_detected') completedSignals++;
         if (type == 'crossfade_committed' || type == 'crossfade_failed' || type == 'crossfade_cancelled') {
           final outcome = type.replaceFirst('crossfade_', '');
           transitionOutcomes[outcome] = (transitionOutcomes[outcome] ?? 0) + 1;

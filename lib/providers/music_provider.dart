@@ -330,11 +330,11 @@ class MusicProvider extends ChangeNotifier {
       'source': source,
       'userInitiated': userInitiated,
       'intentToken': effectiveIntent,
-      'lane': userInitiated && const {'toggle', 'pause', 'seek'}.contains(command) && audioPlayer.audioSource != null
+      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command) && audioPlayer.audioSource != null
           ? 'transport_priority'
           : 'source_serialized',
     });
-    if (userInitiated && const {'toggle', 'pause', 'seek'}.contains(command) && audioPlayer.audioSource != null) {
+    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command) && audioPlayer.audioSource != null) {
       return operation();
     }
     final next = _playOperation.then((_) => operation());
@@ -486,7 +486,7 @@ class MusicProvider extends ChangeNotifier {
   Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); notifyListeners(); return true; }
   void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); notifyListeners(); }
 
-  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setLoopMode(LoopMode.off); await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? _volume : 0.0); if (start) await player.play(); }
+  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setLoopMode(LoopMode.off); await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? 1.0 : 0.0); if (start) await player.play(); }
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) => _serializePlayback(() => _performTrueCrossfade(milliseconds: milliseconds, fadeType: fadeType, generation: _authority.beginAutomatic('crossfade')), command: 'crossfade', source: 'automatic_transition');
 
