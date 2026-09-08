@@ -9,6 +9,7 @@ import '../models/listening_event.dart';
 import '../models/song.dart';
 import '../services/database_helper.dart';
 import '../services/intelligence_settings_store.dart';
+import '../services/resonate_diagnostics.dart';
 import 'music_provider.dart';
 
 class IntelligenceProvider extends ChangeNotifier {
