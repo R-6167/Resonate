@@ -1,11 +1,9 @@
 name: Flutter Check
 
+# Keep validation useful on PRs and when explicitly requested, rather than
+# creating a check for every small development commit.
+
 on:
-  push:
-    branches:
-      - Intelligence
-      - Playback_Stability_Diagnostics
-      - Companion_Features_Diagnostics
   pull_request:
     branches:
       - Intelligence
@@ -13,7 +11,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: flutter-check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   flutter-check:
@@ -22,29 +24,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Repair one-time finishing script
-        if: hashFiles('tools/repair_finish_script.py') != ''
-        run: python3 tools/repair_finish_script.py
-
-      - name: Apply one-time playback companion finishing pass
-        if: hashFiles('tools/finish_playback_companion.py') != ''
-        run: |
-          python3 tools/finish_playback_companion.py
-
-      - name: Finalize Intelligence telemetry
-        if: hashFiles('tools/finalize_intelligence_telemetry.py') != ''
-        run: python3 tools/finalize_intelligence_telemetry.py
-
-      - name: Commit playback companion finishing pass
-        if: hashFiles('tools/finish_playback_companion.py') != '' || hashFiles('tools/finalize_intelligence_telemetry.py') != ''
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f tools/repair_finish_script.py tools/finish_playback_companion.py tools/finalize_intelligence_telemetry.py .github/workflows/finish_playback_companion.yml || true
-          git add lib/providers/music_provider.dart lib/screens/player_screen.dart lib/providers/autopilot_controller.dart lib/providers/intelligence_provider.dart
-          git commit -m "Apply playback companion finishing pass"
-          git push origin HEAD:${GITHUB_REF_NAME}
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
