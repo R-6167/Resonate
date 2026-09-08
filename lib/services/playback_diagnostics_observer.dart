@@ -16,6 +16,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
   int _lastQueueIndex = -1;
   ProcessingState _lastProcessingState = ProcessingState.idle;
   DateTime? _lastStateWrite;
+  bool _terminalRecoveryInFlight = false;
 
   PlaybackDiagnosticsObserver({required this.music}) {
     music.addListener(_observe);
@@ -72,7 +73,74 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
           'playerDurationMs': player.duration?.inMilliseconds,
         },
       ));
+      _scheduleTerminalRecovery(
+        expectedSongId: songId,
+        expectedQueueIndex: music.queueIndex,
+        expectedIntent: authority.userGeneration,
+        processingState: state.processingState,
+      );
     }
+  }
+
+  void _scheduleTerminalRecovery({required String? expectedSongId, required int expectedQueueIndex, required int expectedIntent, required ProcessingState processingState}) {
+    if (_terminalRecoveryInFlight) return;
+    _terminalRecoveryInFlight = true;
+    unawaited(() async {
+      try {
+        // Give a legitimate crossfade/terminal transition time to finish. The
+        // recovery is deliberately outside MusicProvider's playback path so it
+        // cannot interfere with a transition that is still committing.
+        for (var i = 0; i < 40; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          if (music.currentSong?.id != expectedSongId || music.queueIndex != expectedQueueIndex) return;
+          if (music.isPlaying) return;
+          if (authority.userGeneration != expectedIntent) return;
+          if (music.transitionInProgress) continue;
+          final currentState = music.audioPlayer.playerState.processingState;
+          if (currentState != ProcessingState.completed && currentState != ProcessingState.idle) return;
+          break;
+        }
+
+        if (music.currentSong?.id != expectedSongId || music.queueIndex != expectedQueueIndex || music.isPlaying) return;
+        if (authority.userGeneration != expectedIntent) return;
+        final upcoming = music.queue.length - music.queueIndex - 1;
+        if (upcoming <= 0) return;
+
+        await ResonateDiagnostics.recordPlaybackCheckpoint(
+          stage: 'terminal_recovery_attempt', source: 'diagnostics_recovery', command: 'next',
+          songId: expectedSongId, songTitle: music.currentSong?.title,
+          positionMs: music.currentPosition.inMilliseconds, durationMs: (music.currentDuration ?? music.currentSong?.duration)?.inMilliseconds,
+          playing: music.isPlaying, processingState: music.audioPlayer.playerState.processingState.name,
+          queueIndex: music.queueIndex, queueLength: music.queue.length, upcomingCount: upcoming,
+          shuffle: music.shuffleEnabled, repeatMode: music.repeatMode.name, crossfadeEnabled: music.crossfadeEnabled,
+          transitionInProgress: music.transitionInProgress, engine: authority.engineLabel(music), intentToken: expectedIntent,
+          extra: {'reason': processingState.name, 'expectedSongId': expectedSongId},
+        );
+
+        await music.nextSong(source: 'diagnostics_recovery');
+
+        await ResonateDiagnostics.recordPlaybackCheckpoint(
+          stage: 'terminal_recovery_result', source: 'diagnostics_recovery', command: 'next',
+          songId: music.currentSong?.id, songTitle: music.currentSong?.title,
+          positionMs: music.currentPosition.inMilliseconds, durationMs: (music.currentDuration ?? music.currentSong?.duration)?.inMilliseconds,
+          playing: music.isPlaying, processingState: music.audioPlayer.playerState.processingState.name,
+          queueIndex: music.queueIndex, queueLength: music.queue.length,
+          upcomingCount: music.queue.length - music.queueIndex - 1,
+          shuffle: music.shuffleEnabled, repeatMode: music.repeatMode.name, crossfadeEnabled: music.crossfadeEnabled,
+          transitionInProgress: music.transitionInProgress, engine: authority.engineLabel(music), intentToken: authority.userGeneration,
+          extra: {'recoveredFromSongId': expectedSongId},
+        );
+      } catch (e, stack) {
+        await ResonateDiagnostics.record('terminal_recovery_failed', {
+          'songId': expectedSongId,
+          'queueIndex': expectedQueueIndex,
+          'error': e.toString(),
+          'stack': stack.toString(),
+        });
+      } finally {
+        _terminalRecoveryInFlight = false;
+      }
+    }());
   }
 
   void _heartbeatTick() {
