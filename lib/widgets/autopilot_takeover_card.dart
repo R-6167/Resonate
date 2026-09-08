@@ -43,7 +43,14 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
         final profile = snapshot.data;
         return Column(children: [
           if (pendingSong != null)
-            Card(color: scheme.primaryContainer, child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 8, 10), child: Row(children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Material(
+                elevation: 7,
+                shadowColor: scheme.shadow.withOpacity(.28),
+                borderRadius: BorderRadius.circular(20),
+                color: scheme.primaryContainer,
+                child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 8, 10), child: Row(children: [
               Icon(Icons.smart_toy_rounded, color: scheme.primary), const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Autopilot is ready', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary)),

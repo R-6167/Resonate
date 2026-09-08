@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -305,23 +307,6 @@ class _IntelligenceHero extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(
-            right: -8,
-            bottom: 4,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: .11,
-                child: Text(
-                  'RESONATE',
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 3,
-                  ),
-                ),
-              ),
-            ),
-          ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -405,8 +390,8 @@ class _SessionCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary))),
-                const SizedBox(width: 12),
+                const SizedBox(width: 30, height: 22, child: _LearningWaveDots()),
+                const SizedBox(width: 10),
                 Expanded(child: Text(intelligence.sessionSummary)),
               ],
             ),

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -78,13 +77,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
-              Container(
-                height: 250,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(26),
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: SizedBox(
+                  height: 250,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        ),
+                        child: const AudioVisualizationWidget(),
+                      ),
+                      Center(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(28),
+                            child: Icon(Icons.album_rounded, size: 86),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: const Icon(Icons.album_rounded, size: 110),
               ),
               const SizedBox(height: 18),
               _MarqueeSongTitle(title: song.title),
@@ -102,11 +122,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 10),
-              const SizedBox(height: 10),
-              const SizedBox(
-                height: 100,
-                child: AudioVisualizationWidget(),
-              ),
+              const SizedBox(height: 8),
               _WaveSeekBar(
                 value: position,
                 max: max,
@@ -256,13 +272,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
               const SizedBox(height: 14),
-              const AutopilotTakeoverCard(),
-              const SizedBox(height: 10),
               Consumer<IntelligenceProvider>(
                 builder: (context, intelligence, _) {
                   final item = intelligence.anticipatedNext;
                   if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
-                  return _NextCard(item: item, mode: intelligence.autonomyLabel);
+                  return Column(
+                    children: [
+                      _NextCard(item: item, mode: intelligence.autonomyLabel),
+                      const SizedBox(height: 10),
+                      const AutopilotTakeoverCard(),
+                    ],
+                  );
                 },
               ),
             ],
