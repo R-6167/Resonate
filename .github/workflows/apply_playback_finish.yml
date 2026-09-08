@@ -1,0 +1,64 @@
+name: Apply playback finishing fixes
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: "!contains(github.event.head_commit.message, '[playback-finish-applied]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch playback serialization and diagnostics
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('lib/providers/music_provider.dart'); s=p.read_text()
+          old='''    if (userInitiated) {\n      return operation();\n    }\n\n    final next = _playOperation.then((_) => operation());'''
+          new='''    if (userInitiated) {\n      unawaited(ResonateDiagnostics.record('playback_operation_queued', {\n        'command': command, 'source': source, 'intentToken': effectiveIntent,\n      }));\n    }\n    final next = _playOperation.then((_) => operation());'''
+          assert old in s; p.write_text(s.replace(old,new,1))
+
+          p=Path('lib/screens/player_screen.dart'); s=p.read_text()
+          old='''              Text(\n                song.title,\n                textAlign: TextAlign.center,\n                maxLines: 2,\n                overflow: TextOverflow.ellipsis,\n                style: Theme.of(context)\n                    .textTheme\n                    .headlineSmall\n                    ?.copyWith(fontWeight: FontWeight.bold),\n              ),'''
+          new='''              _MarqueeTitle(title: song.title),'''
+          assert old in s; s=s.replace(old,new,1)
+          s=s.replace('''              const SizedBox(height: 14),\n              Consumer<IntelligenceProvider>(''','''              const SizedBox(height: 8),\n              Consumer<IntelligenceProvider>(''',1)
+          s=s.replace('return _NextCard(item: item);','return _NextCard(item: item, mode: intelligence.autonomyLabel);',1)
+          s=s.replace('''class _NextCard extends StatelessWidget {\n  final IntelligenceRecommendation item;\n\n  const _NextCard({required this.item});''','''class _MarqueeTitle extends StatefulWidget {\n  final String title;\n  const _MarqueeTitle({required this.title});\n  @override State<_MarqueeTitle> createState()=>_MarqueeTitleState();\n}\nclass _MarqueeTitleState extends State<_MarqueeTitle> {\n  final ScrollController _c=ScrollController(); bool _running=false;\n  @override void initState(){super.initState(); WidgetsBinding.instance.addPostFrameCallback((_)=>_run());}\n  @override void didUpdateWidget(covariant _MarqueeTitle old){super.didUpdateWidget(old); if(old.title!=widget.title){WidgetsBinding.instance.addPostFrameCallback((_)=>_run(reset:true));}}\n  Future<void> _run({bool reset=false}) async {\n    if(!mounted||!_c.hasClients||_running)return; if(reset)_c.jumpTo(0); final max=_c.position.maxScrollExtent; if(max<=2)return; _running=true;\n    try { await Future<void>.delayed(const Duration(milliseconds:800)); while(mounted&&_c.hasClients&&_c.position.maxScrollExtent>2){final d=_c.position.maxScrollExtent; await _c.animateTo(d,duration:Duration(milliseconds:900+(d*5).round()),curve:Curves.easeInOut); await Future<void>.delayed(const Duration(milliseconds:600)); await _c.animateTo(0,duration:Duration(milliseconds:900+(d*5).round()),curve:Curves.easeInOut); await Future<void>.delayed(const Duration(milliseconds:800));}} finally {_running=false;}\n  }\n  @override void dispose(){_c.dispose();super.dispose();}\n  @override Widget build(BuildContext context)=>SizedBox(height:34,child:LayoutBuilder(builder:(context,box){WidgetsBinding.instance.addPostFrameCallback((_)=>_run()); return SingleChildScrollView(controller:_c,scrollDirection:Axis.horizontal,physics:const NeverScrollableScrollPhysics(),child:ConstrainedBox(constraints:BoxConstraints(minWidth:box.maxWidth),child:Text(widget.title,textAlign:TextAlign.center,maxLines:1,style:Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight:FontWeight.bold))));}));\n}\nclass _NextCard extends StatelessWidget {\n  final IntelligenceRecommendation item; final String mode;\n  const _NextCard({required this.item,required this.mode});''',1)
+          old="""        title: const Text('A thought for your next track'),"""
+          new="""        title: Row(children:[const Expanded(child:Text('A thought for your next track')),Chip(label:Text(mode),visualDensity:VisualDensity.compact)]),"""
+          assert old in s; p.write_text(s.replace(old,new,1))
+
+          p=Path('lib/providers/autopilot_controller.dart'); s=p.read_text()
+          s=s.replace("import '../services/playback_authority.dart';","import '../services/playback_authority.dart';\nimport '../services/resonate_diagnostics.dart';",1)
+          old='''      if (!_pendingTakeover) {\n        _pendingTakeover = true;\n        _pendingSongId = next.id;\n        notifyListeners();\n      }'''
+          new='''      if (!_pendingTakeover) {\n        _pendingTakeover = true; _pendingSongId = next.id;\n        unawaited(ResonateDiagnostics.recordIntelligence(stage:'notification_shown',songId:next.id,confidence:recommendation.confidence,reasons:[recommendation.reason],action:'ask_user',extra:{'mode':intelligence.autonomyLabel,'surface':'player'}));\n        notifyListeners();\n      }'''
+          assert old in s; s=s.replace(old,new,1)
+          old='''    _consentGranted = true;\n    _pendingTakeover = false;'''
+          new='''    unawaited(ResonateDiagnostics.recordIntelligence(stage:'notification_accepted',songId:_pendingSongId,action:'let_it_choose',extra:{'mode':intelligence.autonomyLabel,'surface':'player'}));\n    _consentGranted = true;\n    _pendingTakeover = false;'''
+          assert old in s; s=s.replace(old,new,1)
+          old='''    _pendingTakeover = false;\n    _pendingSongId = null;\n    if (pending != null) _declinedForSongId = pending;'''
+          new='''    unawaited(ResonateDiagnostics.recordIntelligence(stage:'notification_rejected',songId:pending,action:'keep_current',extra:{'mode':intelligence.autonomyLabel,'surface':'player'}));\n    _pendingTakeover = false;\n    _pendingSongId = null;\n    if (pending != null) _declinedForSongId = pending;'''
+          assert old in s; s=s.replace(old,new,1)
+          old='''      if (candidates.isNotEmpty) await music.enqueueSongs(candidates);'''
+          new='''      if (candidates.isNotEmpty) { await music.enqueueSongs(candidates); for(final c in candidates){unawaited(ResonateDiagnostics.recordIntelligence(stage:'queue_changed',songId:c.id,action:'enqueue',extra:{'mode':intelligence.autonomyLabel,'surface':'autopilot'}));} }'''
+          assert old in s; p.write_text(s.replace(old,new,1))
+
+          p=Path('lib/providers/intelligence_provider.dart'); s=p.read_text()
+          s=s.replace("import '../services/intelligence_settings_store.dart';","import '../services/intelligence_settings_store.dart';\nimport '../services/resonate_diagnostics.dart';",1)
+          anchor='''      _recommendations = ranked.take(limit).toList();'''
+          repl='''      _recommendations = ranked.take(limit).toList();\n      final first = _recommendations.isEmpty ? null : _recommendations.first;\n      if (first != null) unawaited(ResonateDiagnostics.recordIntelligence(stage:'recommendation_generated',songId:first.song.id,score:first.score,confidence:first.confidence,reasons:[first.reason],action:'recommend',extra:{'mode':autonomyLabel,'sessionMode':_sessionMode,'surface':'for_you_or_player'}));'''
+          assert anchor in s; p.write_text(s.replace(anchor,repl,1))
+
+          p=Path('lib/providers/music_provider.dart'); s=p.read_text()
+          anchor='''      if (_queueIndex < _queue.length - 1) { await _playSongInternal(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1, playbackIntentToken: _playbackIntentGate.currentToken); return; }'''
+          repl='''      if (_queueIndex < _queue.length - 1) { final next=_queue[_queueIndex+1]; unawaited(ResonateDiagnostics.record('completion_advance_attempt',{'fromSongId':currentSong?.id,'toSongId':next.id,'queueIndex':_queueIndex,'queueLength':_queue.length,'upcomingCount':_queue.length-_queueIndex-1,'crossfadeInProgress':_crossfadeInProgress})); final advanced=await _playSongInternal(next,queue:_queue,startIndex:_queueIndex+1,playbackIntentToken:_playbackIntentGate.currentToken); unawaited(ResonateDiagnostics.record('completion_advance_result',{'toSongId':next.id,'advanced':advanced,'queueIndex':_queueIndex,'queueLength':_queue.length})); return; }'''
+          assert anchor in s; p.write_text(s.replace(anchor,repl,1))
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/providers/music_provider.dart lib/screens/player_screen.dart lib/providers/autopilot_controller.dart lib/providers/intelligence_provider.dart
+          git commit -m 'Finish playback and Intelligence fixes [playback-finish-applied]'
+          git push
