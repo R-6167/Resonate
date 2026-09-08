@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - '.github/workflows/apply-companion-ui.yml'
+  pull_request:
+    types: [synchronize]
 
 jobs:
   apply:
@@ -20,7 +22,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           Path('lib/widgets/resonate_logo.dart').write_text('''import 'package:flutter/material.dart';
 
 class ResonateLogo extends StatelessWidget {
