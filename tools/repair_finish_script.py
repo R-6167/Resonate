@@ -20,5 +20,6 @@ repl = """      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendati
         },
       );
       await _evaluateAutopilotGraduation(); if (notify) notifyListeners();"""
+'''
 s = s[:start] + replacement + s[end:]
 p.write_text(s)
