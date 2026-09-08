@@ -179,7 +179,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Audio session setup failed: $e'); }
   }
 
-  Future<void> _duckForInterruption() async { try { await audioPlayer.setVolume(_volume * .35); } catch (_) {} }
+  Future<void> _duckForInterruption() async { try { await audioPlayer.setVolume(.35); } catch (_) {} }
 
   Future<void> _restoreQueue() async {
     if (_queueRestoreInProgress) return;
@@ -238,7 +238,8 @@ class MusicProvider extends ChangeNotifier {
     });
     _positionSubscription = player.positionStream.listen((position) { if (currentPosition != position) { currentPosition = position; if (_activeHistoryEvent != null) { _activeHistoryPositionMs = position.inMilliseconds; _persistResumePosition(); } notifyListeners(); _publishServiceState(); } _maybeStartAutomaticCrossfade(position); });
     _durationSubscription = player.durationStream.listen((duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
-    _volumeSubscription = player.volumeStream.listen((value) { if (_volume != value) { _volume = value; notifyListeners(); } });
+    // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
+    // internal gain into _volume or it will overwrite the system-volume value.
   }
 
   void _persistResumePosition({bool force = false}) {
@@ -310,7 +311,7 @@ class MusicProvider extends ChangeNotifier {
 
   Uri _audioUri(String value) { final path = value.trim(); if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path); return Uri.file(path); }
 
-  Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(_volume); } catch (_) {} try { await _playerB.setVolume(_volume); } catch (_) {} }
+  Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }
 
@@ -411,7 +412,7 @@ class MusicProvider extends ChangeNotifier {
         currentPosition = Duration(milliseconds: safeResume);
       }
       await _enableEffects(audioPlayer, equalizer, loudnessEnhancer);
-      await audioPlayer.setVolume(_volume);
+      await audioPlayer.setVolume(1.0);
       if (!_playbackIntentGate.isCurrent(intentToken)) {
         await ResonateDiagnostics.record('playback_operation_stale', {
           'songId': currentSong!.id, 'stage': 'before_play', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken,
