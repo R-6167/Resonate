@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="#F8F7FC" />
+    <item android:drawable="@color/resonate_launch_background" />
     <item
         android:width="180dp"
         android:height="180dp"
