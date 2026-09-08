@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -101,17 +102,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 10),
-              const AutopilotTakeoverCard(),
-              const SizedBox(height: 10),
-              Consumer<IntelligenceProvider>(
-                builder: (context, intelligence, _) {
-                  final item = intelligence.anticipatedNext;
-                  if (!intelligence.isEnabled || item == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return _NextCard(item: item, mode: intelligence.autonomyLabel);
-                },
-              ),
               const SizedBox(height: 10),
               const SizedBox(
                 height: 100,
@@ -266,6 +256,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
               const SizedBox(height: 14),
+              const AutopilotTakeoverCard(),
+              const SizedBox(height: 10),
+              Consumer<IntelligenceProvider>(
+                builder: (context, intelligence, _) {
+                  final item = intelligence.anticipatedNext;
+                  if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
+                  return _NextCard(item: item, mode: intelligence.autonomyLabel);
+                },
+              ),
             ],
           );
         },
@@ -627,7 +626,7 @@ class _MarqueeSongTitleState extends State<_MarqueeSongTitle> {
   @override void initState() { super.initState(); _controller = ScrollController(); WidgetsBinding.instance.addPostFrameCallback((_) => _schedule()); }
   @override void didUpdateWidget(covariant _MarqueeSongTitle oldWidget) { super.didUpdateWidget(oldWidget); if (oldWidget.title != widget.title) { _timer?.cancel(); if (_controller.hasClients) _controller.jumpTo(0); WidgetsBinding.instance.addPostFrameCallback((_) => _schedule()); } }
   void _schedule() { if (!mounted || !_controller.hasClients || _controller.position.maxScrollExtent <= 1) return; _timer?.cancel(); _timer = Timer(const Duration(milliseconds: 1200), _run); }
-  Future<void> _run() async { if (!mounted || !_controller.hasClients) return; final max = _controller.position.maxScrollExtent; if (max <= 1) return; await _controller.animateTo(max, duration: const Duration(milliseconds: 3200), curve: Curves.easeInOut); if (!mounted || !_controller.hasClients) return; await Future<void>.delayed(const Duration(milliseconds: 900)); if (!mounted || !_controller.hasClients) return; await _controller.animateTo(0, duration: const Duration(milliseconds: 3200), curve: Curves.easeInOut); if (mounted) _timer = Timer(const Duration(milliseconds: 1200), _run); }
+  Future<void> _run() async { if (!mounted || !_controller.hasClients) return; final max = _controller.position.maxScrollExtent; if (max <= 1) return; await _controller.animateTo(max, duration: const Duration(milliseconds: 5200), curve: Curves.easeInOut); if (!mounted || !_controller.hasClients) return; await Future<void>.delayed(const Duration(milliseconds: 1400)); if (!mounted || !_controller.hasClients) return; await _controller.animateTo(0, duration: const Duration(milliseconds: 5200), curve: Curves.easeInOut); if (mounted) _timer = Timer(const Duration(milliseconds: 1200), _run); }
   @override void dispose() { _timer?.cancel(); _controller.dispose(); super.dispose(); }
   @override Widget build(BuildContext context) { final style = Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold); return LayoutBuilder(builder: (context, constraints) => SizedBox(height: 34, child: SingleChildScrollView(controller: _controller, scrollDirection: Axis.horizontal, physics: const NeverScrollableScrollPhysics(), child: ConstrainedBox(constraints: BoxConstraints(minWidth: constraints.maxWidth), child: Text(widget.title, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.visible, style: style))))); }
 }

@@ -7,6 +7,8 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/playback_authority.dart';
 import '../widgets/evolving_mix_card.dart';
+import '../widgets/resonate_logo.dart';
+import '../widgets/animated_companion_mark.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -144,7 +146,7 @@ class _HomeDashboard extends StatelessWidget {
     final children = <Widget>[
       const SizedBox(height: 8),
       Text(
-        'Welcome back.',
+        'Hi',
         style: Theme.of(context)
             .textTheme
             .displaySmall
@@ -249,7 +251,7 @@ class _HomeDashboard extends StatelessWidget {
     ]);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Resonate')),
+      appBar: AppBar(title: const ResonateLogo(size: 32)),
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(
@@ -331,10 +333,9 @@ class _IntelligenceHero extends StatelessWidget {
                   turns: Tween(begin: .88, end: 1.0).animate(animation),
                   child: FadeTransition(opacity: animation, child: child),
                 ),
-                child: Icon(
-                  intelligence.isAutopilot
-                      ? Icons.smart_toy_rounded
-                      : Icons.auto_awesome,
+                child: AnimatedCompanionMark(
+                  mode: intelligence.autonomyLabel,
+                  size: 27,
                   key: ValueKey(intelligence.autonomyLabel),
                 ),
               ),
@@ -401,7 +402,14 @@ class _SessionCard extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            Text(intelligence.sessionSummary),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary))),
+                const SizedBox(width: 12),
+                Expanded(child: Text(intelligence.sessionSummary)),
+              ],
+            ),
             if (intelligence.sessionArtists.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
