@@ -1,11 +1,9 @@
 name: Flutter Check
 
-# Keep validation useful on PRs and when explicitly requested. The temporary
-# branch-push path below is removed automatically after the repair pass.
+# Keep validation useful on PRs and when explicitly requested, rather than
+# creating a check for every small development commit.
+
 on:
-  push:
-    branches:
-      - Companion_Features_Diagnostics
   pull_request:
     branches:
       - Intelligence
@@ -13,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: flutter-check-${{ github.ref }}
@@ -27,209 +25,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply one-shot surgical repair
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          root = Path('.')
-
-          p = root / 'lib/providers/music_provider.dart'
-          s = p.read_text()
-          pattern = r"  Future<T> _serializePlayback<T>\(Future<T> Function\(\) operation, \{required String command, required String source, bool userInitiated = false, int\? intentToken\}\) async \{.*?\n  \}\n\n  Future<bool> playSong"
-          match = re.search(pattern, s, re.S)
-          if not match:
-              raise SystemExit('Could not locate _serializePlayback block')
-          replacement = '''  Future<T> _serializePlayback<T>(
-    Future<T> Function() operation, {
-    required String command,
-    required String source,
-    bool userInitiated = false,
-    int? intentToken,
-  }) async {
-    final effectiveIntent = userInitiated
-        ? (intentToken ?? _playbackIntentGate.issue())
-        : _playbackIntentGate.currentToken;
-    if (userInitiated) {
-      _authority.markExternalUserCommand(source, command);
-      unawaited(ResonateDiagnostics.record('playback_command_accepted', {
-        'command': command,
-        'source': source,
-        'intentToken': effectiveIntent,
-      }));
-    }
-    await ResonateDiagnostics.record('playback_operation_queued', {
-      'command': command,
-      'source': source,
-      'userInitiated': userInitiated,
-      'intentToken': effectiveIntent,
-      'lane': userInitiated ? 'user_priority' : 'automatic_serialized',
-    });
-    // Never make an interactive command wait behind a native source load.
-    // Intent guards still invalidate older work, while automatic transitions
-    // keep their serialization to avoid uncontrolled background mutations.
-    if (userInitiated) return operation();
-    final next = _playOperation.then((_) => operation());
-    _playOperation = next.then<void>((_) {}, onError: (_, __) {});
-    return next;
-  }
-
-  Future<bool> playSong'''
-          s = s[:match.start()] + replacement + s[match.end():]
-          s = s.replace('await player.setVolume(start ? _volume : 0.0);', 'await player.setVolume(start ? 1.0 : 0.0);')
-          p.write_text(s)
-
-          p = root / 'lib/providers/listening_history_provider.dart'
-          s = p.read_text()
-          s = s.replace('  @override\n  void dispose() { _refreshTimer?.cancel(); super.dispose(); }\n', '')
-          if '  @override\n  void dispose() {' not in s:
-              s = s.replace('  Future<void> clearHistory() async {', '  @override\n  void dispose() {\n    _refreshTimer?.cancel();\n    super.dispose();\n  }\n\n  Future<void> clearHistory() async {')
-          p.write_text(s)
-
-          p = root / 'lib/services/resonate_diagnostics.dart'
-          s = p.read_text()
-          needle = """        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }"""
-          repl = """        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }\n        if (type == 'completion_detected') completedSignals++;\n        if (type == 'unexpected_stop_with_upcoming') stopWhileUpcomingSignals++;"""
-          if needle in s:
-              s = s.replace(needle, repl)
-          p.write_text(s)
-
-          p = root / 'lib/screens/player_screen.dart'
-          s = p.read_text()
-          s = s.replace('Timer(const Duration(milliseconds: 1200), _run)', 'Timer(const Duration(milliseconds: 1600), _run)')
-          s = s.replace('duration: const Duration(milliseconds: 3200)', 'duration: const Duration(milliseconds: 5000)')
-          s = s.replace('Future<void>.delayed(const Duration(milliseconds: 900))', 'Future<void>.delayed(const Duration(milliseconds: 1400))')
-          if "import 'dart:ui' as ui;" not in s:
-              s = s.replace("import 'dart:async';\n", "import 'dart:async';\nimport 'dart:ui' as ui;\n")
-          start = s.find('  Future<void> _showMoreOptions(BuildContext context) async {')
-          end = s.find('  Future<void> _showSpeed(', start)
-          if start >= 0 and end >= 0:
-              replacement = '''  Future<void> _showMoreOptions(BuildContext context) async {
-    final playback = context.read<PlaybackFeaturesProvider>();
-    final eq = context.read<EqualizerProvider>();
-    final effects = context.read<AudioEffectsProvider>();
-    await showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'More options',
-      barrierColor: Colors.black.withOpacity(.32),
-      transitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) => SafeArea(
-        child: Center(
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainer,
-            elevation: 18,
-            borderRadius: BorderRadius.circular(28),
-            clipBehavior: Clip.antiAlias,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520, maxHeight: 620),
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Padding(padding: const EdgeInsets.fromLTRB(20, 18, 12, 6), child: Row(children: [
-                    const Expanded(child: Text('More options', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700))),
-                    IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
-                  ])),
-                  ListTile(leading: const Icon(Icons.equalizer_rounded), title: const Text('Equalizer'), subtitle: Text(eq.isEnabled ? eq.preset : 'Disabled'), onTap: () { Navigator.pop(dialogContext); Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen())); }),
-                  ListTile(leading: const Icon(Icons.auto_awesome_rounded), title: const Text('Audio effects'), subtitle: Text(effects.effectsEnabled ? 'Bass, width, reverb and loudness' : 'Disabled'), onTap: () { Navigator.pop(dialogContext); Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen())); }),
-                  ListTile(leading: const Icon(Icons.speed_rounded), title: const Text('Playback speed'), trailing: Text('${playback.speed.toStringAsFixed(2)}×'), onTap: () { Navigator.pop(dialogContext); _showSpeed(context, playback); }),
-                  ListTile(leading: const Icon(Icons.tune_rounded), title: const Text('Pitch'), trailing: Text('${playback.pitch.toStringAsFixed(2)}×'), onTap: () { Navigator.pop(dialogContext); _showPitch(context, playback); }),
-                  Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'), value: current.normalizationEnabled, onChanged: current.setNormalizationEnabled)),
-                  ListTile(leading: const Icon(Icons.timer_outlined), title: const Text('Sleep timer'), trailing: Text(playback.sleepTimerLabel), onTap: () { Navigator.pop(dialogContext); _showSleepTimer(context, playback); }),
-                  const SizedBox(height: 10),
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-        return BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 7 * animation.value, sigmaY: 7 * animation.value), child: FadeTransition(opacity: curved, child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(curved), child: child)));
-      },
-    );
-  }
-
-'''
-              s = s[:start] + replacement + s[end:]
-          s = s.replace("Opacity(opacity: .07, child: Text('RESONATE'", "Opacity(opacity: .12, child: Text('RESONATE'")
-          p.write_text(s)
-
-          # Apply the same saved EQ curve to both A/B native engines.
-          p = root / 'lib/providers/equalizer_provider.dart'
-          s = p.read_text()
-          if 'final AndroidEqualizer? _secondaryEqualizer;' not in s:
-              s = s.replace('  final AndroidEqualizer? _androidEqualizer;\n', '  final AndroidEqualizer? _androidEqualizer;\n  final AndroidEqualizer? _secondaryEqualizer;\n')
-          s = s.replace('EqualizerProvider({AndroidEqualizer? equalizer}) : _androidEqualizer = equalizer { _initialize(); }', 'EqualizerProvider({AndroidEqualizer? equalizer, AndroidEqualizer? secondaryEqualizer}) : _androidEqualizer = equalizer, _secondaryEqualizer = secondaryEqualizer { _initialize(); }')
-          old_set = """  Future<void> _setNativeBand(EqualizerBandState band) async { if (_androidEqualizer == null) return; try { final parameters = await _androidEqualizer.parameters; final nativeBand = parameters.bands.firstWhere((b) => b.index == band.index); await nativeBand.setGain(band.gain); } catch (e) { debugPrint('Equalizer band update failed: $e'); } }"""
-          new_set = """  Future<void> _setNativeBand(EqualizerBandState band) async {\n    for (final target in <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer]) {\n      if (target == null) continue;\n      try { final parameters = await target.parameters; final nativeBand = parameters.bands.firstWhere((b) => b.index == band.index); await nativeBand.setGain(band.gain); }\n      catch (e) { debugPrint('Equalizer band update failed: $e'); }\n    }\n  }"""
-          if old_set in s: s = s.replace(old_set, new_set)
-          s = s.replace('await _androidEqualizer?.setEnabled(isEnabled);', 'for (final target in <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer]) { try { await target?.setEnabled(isEnabled); } catch (_) {} }')
-          s = s.replace('try { await _androidEqualizer?.setEnabled(value); } catch (e) { debugPrint(\'Equalizer enable failed: $e\'); }', 'for (final target in <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer]) { try { await target?.setEnabled(value); } catch (e) { debugPrint(\'Equalizer enable failed: $e\'); } }')
-          p.write_text(s)
-
-          p = root / 'lib/main.dart'
-          s = p.read_text()
-          s = s.replace('EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer)', 'EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer, secondaryEqualizer: context.read<MusicProvider>().inactiveEqualizer)')
-          p.write_text(s)
-          PY
-
-          # Restore the normal quiet workflow definition in this same repair
-          # commit so the repair push does not create another push-triggered run.
-          cat > .github/workflows/flutter-check.yml <<'YAML'
-          name: Flutter Check
-
-          # Keep validation useful on PRs and when explicitly requested, rather than
-          # creating a check for every small development commit.
-          on:
-            pull_request:
-              branches:
-                - Intelligence
-                - Playback_Stability_Diagnostics
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: flutter-check-${{ github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            flutter-check:
-              runs-on: ubuntu-latest
-              steps:
-                - name: Checkout repository
-                  uses: actions/checkout@v4
-                - name: Set up Flutter
-                  uses: subosito/flutter-action@v2
-                  with:
-                    flutter-version: '3.47.2'
-                    channel: stable
-                    cache: true
-                - name: Show Flutter version
-                  run: flutter --version
-                - name: Clean project
-                  run: flutter clean
-                - name: Get dependencies
-                  run: flutter pub get
-                - name: Analyze project
-                  run: flutter analyze --no-fatal-warnings --no-fatal-infos
-                - name: Run Flutter tests
-                  run: flutter test --reporter expanded
-          YAML
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/providers/music_provider.dart lib/providers/listening_history_provider.dart lib/services/resonate_diagnostics.dart lib/screens/player_screen.dart lib/providers/equalizer_provider.dart lib/main.dart .github/workflows/flutter-check.yml
-          git diff --cached --check
-          git commit -m "Restore responsive playback and finish companion UX"
-          git push
-
       - name: Set up Flutter
-        if: github.event_name != 'push'
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
@@ -237,21 +33,16 @@ jobs:
           cache: true
 
       - name: Show Flutter version
-        if: github.event_name != 'push'
         run: flutter --version
 
       - name: Clean project
-        if: github.event_name != 'push'
         run: flutter clean
 
       - name: Get dependencies
-        if: github.event_name != 'push'
         run: flutter pub get
 
       - name: Analyze project
-        if: github.event_name != 'push'
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
 
       - name: Run Flutter tests
-        if: github.event_name != 'push'
         run: flutter test --reporter expanded
