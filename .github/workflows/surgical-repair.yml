@@ -1,0 +1,246 @@
+name: Surgical Repair
+
+on:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply surgical fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          # 1) Playback: never put an interactive user command behind the
+          # automatic/source-operation FIFO. Intent tokens still invalidate
+          # stale work, while automatic transitions remain serialized.
+          p = root / 'lib/providers/music_provider.dart'
+          s = p.read_text()
+          old = re.search(r"  Future<T> _serializePlayback<T>\(Future<T> Function\(\) operation, \{required String command, required String source, bool userInitiated = false, int\? intentToken\}\) async \{.*?\n  \}\n\n  Future<bool> playSong", s, re.S)
+          if not old:
+              raise SystemExit('Could not locate _serializePlayback block')
+          new = '''  Future<T> _serializePlayback<T>(
+    Future<T> Function() operation, {
+    required String command,
+    required String source,
+    bool userInitiated = false,
+    int? intentToken,
+  }) async {
+    final effectiveIntent = userInitiated
+        ? (intentToken ?? _playbackIntentGate.issue())
+        : _playbackIntentGate.currentToken;
+    if (userInitiated) {
+      _authority.markExternalUserCommand(source, command);
+      unawaited(ResonateDiagnostics.record('playback_command_accepted', {
+        'command': command,
+        'source': source,
+        'intentToken': effectiveIntent,
+      }));
+    }
+
+    final lane = userInitiated ? 'user_priority' : 'automatic_serialized';
+    await ResonateDiagnostics.record('playback_operation_queued', {
+      'command': command,
+      'source': source,
+      'userInitiated': userInitiated,
+      'intentToken': effectiveIntent,
+      'lane': lane,
+    });
+
+    // User transport/source commands execute immediately. A previous native
+    // source load may still be resolving, but its intent is now stale and its
+    // own guards prevent it from committing. Waiting here made pause/next/
+    // previous/seek feel dead and turned the UI into a command backlog.
+    if (userInitiated) return operation();
+
+    final next = _playOperation.then((_) => operation());
+    _playOperation = next.then<void>((_) {}, onError: (_, __) {});
+    return next;
+  }
+
+  Future<bool> playSong'''
+          s = s[:old.start()] + new + s[old.end():]
+          s = s.replace('await player.setVolume(start ? _volume : 0.0);', 'await player.setVolume(start ? 1.0 : 0.0);')
+          p.write_text(s)
+
+          # 2) Listening history: the timer belongs to the provider, not the
+          # immutable history item. The old placement was a compile-time error.
+          p = root / 'lib/providers/listening_history_provider.dart'
+          s = p.read_text()
+          s = s.replace('''  @override\n  void dispose() { _refreshTimer?.cancel(); super.dispose(); }\n''', '')
+          marker = '''  Future<void> clearHistory() async {'''
+          if marker not in s:
+              raise SystemExit('Could not locate clearHistory')
+          s = s.replace(marker, '''  @override\n  void dispose() {\n    _refreshTimer?.cancel();\n    super.dispose();\n  }\n\n  Future<void> clearHistory() async {''')
+          p.write_text(s)
+
+          # 3) Diagnostics: completion and unexpected-stop are event types,
+          # not checkpoint stages. Count the actual flight-recorder events.
+          p = root / 'lib/services/resonate_diagnostics.dart'
+          s = p.read_text()
+          s = s.replace("""        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }""", """        if (type == 'playback_checkpoint') {\n          playbackCheckpoints++;\n          if (data['stage'] == 'completion_detected') completedSignals++;\n          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;\n        }\n        if (type == 'completion_detected') completedSignals++;\n        if (type == 'unexpected_stop_with_upcoming') stopWhileUpcomingSignals++;""")
+          p.write_text(s)
+
+          # 4) Slow the marquee enough to read long titles comfortably.
+          p = root / 'lib/screens/player_screen.dart'
+          s = p.read_text()
+          s = s.replace("Timer(const Duration(milliseconds: 1200), _run)", "Timer(const Duration(milliseconds: 1600), _run)")
+          s = s.replace("duration: const Duration(milliseconds: 3200)", "duration: const Duration(milliseconds: 5000)")
+          s = s.replace("Future<void>.delayed(const Duration(milliseconds: 900))", "Future<void>.delayed(const Duration(milliseconds: 1400))")
+          s = s.replace("if (mounted) _timer = Timer(const Duration(milliseconds: 1200), _run);", "if (mounted) _timer = Timer(const Duration(milliseconds: 1600), _run);")
+
+          # 5) Make More Options a centered, animated surface with background
+          # blur rather than a bottom sheet.
+          if "import 'dart:ui' as ui;" not in s:
+              s = s.replace("import 'dart:async';\n", "import 'dart:async';\nimport 'dart:ui' as ui;\n")
+          start = s.find('  Future<void> _showMoreOptions(BuildContext context) async {')
+          end = s.find('  Future<void> _showSpeed(', start)
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate _showMoreOptions')
+          replacement = '''  Future<void> _showMoreOptions(BuildContext context) async {
+    final playback = context.read<PlaybackFeaturesProvider>();
+    final eq = context.read<EqualizerProvider>();
+    final effects = context.read<AudioEffectsProvider>();
+
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'More options',
+      barrierColor: Colors.black.withOpacity(.32),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              elevation: 18,
+              borderRadius: BorderRadius.circular(28),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520, maxHeight: 620),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 12, 6),
+                        child: Row(
+                          children: [
+                            const Expanded(child: Text('More options', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700))),
+                            IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close_rounded)),
+                          ],
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.equalizer_rounded),
+                        title: const Text('Equalizer'),
+                        subtitle: Text(eq.isEnabled ? eq.preset : 'Disabled'),
+                        onTap: () { Navigator.pop(dialogContext); Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen())); },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.auto_awesome_rounded),
+                        title: const Text('Audio effects'),
+                        subtitle: Text(effects.effectsEnabled ? 'Bass, width, reverb and loudness' : 'Disabled'),
+                        onTap: () { Navigator.pop(dialogContext); Navigator.push(context, MaterialPageRoute(builder: (_) => const AudioEffectsScreen())); },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.speed_rounded),
+                        title: const Text('Playback speed'),
+                        trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
+                        onTap: () { Navigator.pop(dialogContext); _showSpeed(context, playback); },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.tune_rounded),
+                        title: const Text('Pitch'),
+                        trailing: Text('${playback.pitch.toStringAsFixed(2)}×'),
+                        onTap: () { Navigator.pop(dialogContext); _showPitch(context, playback); },
+                      ),
+                      Consumer<PlaybackFeaturesProvider>(
+                        builder: (_, current, __) => SwitchListTile(
+                          secondary: const Icon(Icons.volume_down_rounded),
+                          title: const Text('Volume normalization'),
+                          subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'),
+                          value: current.normalizationEnabled,
+                          onChanged: current.setNormalizationEnabled,
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.timer_outlined),
+                        title: const Text('Sleep timer'),
+                        trailing: Text(playback.sleepTimerLabel),
+                        onTap: () { Navigator.pop(dialogContext); _showSleepTimer(context, playback); },
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 7 * animation.value, sigmaY: 7 * animation.value),
+          child: FadeTransition(
+            opacity: curved,
+            child: ScaleTransition(scale: Tween(begin: .92, end: 1.0).animate(curved), child: child),
+          ),
+        );
+      },
+    );
+  }
+
+'''
+          s = s[:start] + replacement + s[end:]
+
+          # Make the For You word-art unmistakably present without dominating
+          # the card; the icon already animates with the autonomy state.
+          s = s.replace("Opacity(opacity: .07, child: Text('RESONATE'", "Opacity(opacity: .12, child: Text('RESONATE'")
+          p.write_text(s)
+
+          # 6) Avoid a stale one-player EQ controller: apply saved/native EQ
+          # changes to both A/B engines when MusicProvider exposes both.
+          p = root / 'lib/providers/equalizer_provider.dart'
+          s = p.read_text()
+          s = s.replace("  final AndroidEqualizer? _androidEqualizer;\n", "  final AndroidEqualizer? _androidEqualizer;\n  final AndroidEqualizer? _secondaryEqualizer;\n")
+          s = s.replace("EqualizerProvider({AndroidEqualizer? equalizer}) : _androidEqualizer = equalizer { _initialize(); }", "EqualizerProvider({AndroidEqualizer? equalizer, AndroidEqualizer? secondaryEqualizer}) : _androidEqualizer = equalizer, _secondaryEqualizer = secondaryEqualizer { _initialize(); }")
+          old_set = """  Future<void> _setNativeBand(EqualizerBandState band) async { if (_androidEqualizer == null) return; try { final parameters = await _androidEqualizer.parameters; final nativeBand = parameters.bands.firstWhere((b) => b.index == band.index); await nativeBand.setGain(band.gain); } catch (e) { debugPrint('Equalizer band update failed: $e'); } }"""
+          new_set = """  Future<void> _setNativeBand(EqualizerBandState band) async {\n    final targets = <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer];\n    for (final target in targets) {\n      if (target == null) continue;\n      try {\n        final parameters = await target.parameters;\n        final nativeBand = parameters.bands.firstWhere((b) => b.index == band.index);\n        await nativeBand.setGain(band.gain);\n      } catch (e) { debugPrint('Equalizer band update failed: $e'); }\n    }\n  }"""
+          if old_set in s:
+              s = s.replace(old_set, new_set)
+          s = s.replace("await _androidEqualizer?.setEnabled(isEnabled);", "for (final target in <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer]) { try { await target?.setEnabled(isEnabled); } catch (_) {} }")
+          s = s.replace("try { await _androidEqualizer?.setEnabled(value); } catch (e) { debugPrint('Equalizer enable failed: $e'); }", "for (final target in <AndroidEqualizer?>[_androidEqualizer, _secondaryEqualizer]) { try { await target?.setEnabled(value); } catch (e) { debugPrint('Equalizer enable failed: $e'); } }")
+          p.write_text(s)
+
+          # Wire the second A/B equalizer into the provider.
+          p = root / 'lib/main.dart'
+          s = p.read_text()
+          s = s.replace("EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer)", "EqualizerProvider(equalizer: context.read<MusicProvider>().equalizer, secondaryEqualizer: context.read<MusicProvider>().inactiveEqualizer)")
+          p.write_text(s)
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/music_provider.dart lib/providers/listening_history_provider.dart lib/services/resonate_diagnostics.dart lib/screens/player_screen.dart lib/providers/equalizer_provider.dart lib/main.dart
+          git diff --cached --check
+          git commit -m "Restore responsive playback and finish companion UX" || true
+          git push
+
+          # This is a one-shot repair workflow. Remove it after the repair
+          # commit so ordinary source pushes remain quiet.
+          git rm .github/workflows/surgical-repair.yml
+          git commit -m "Remove one-shot surgical repair workflow" || true
+          git push
