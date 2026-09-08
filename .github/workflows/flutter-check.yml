@@ -24,38 +24,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Repair one-time finishing script
-        if: hashFiles('tools/finish_playback_companion.py') != ''
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('tools/finish_playback_companion.py')
-          s = p.read_text()
-          old_start = 'needle = """      _recommendations = ranked.take(limit).toList();'
-          start = s.find(old_start)
-          if start < 0:
-              raise SystemExit('Old Intelligence telemetry patch block was not found')
-          end_marker = 's = s.replace(needle, repl, 1)'
-          end = s.find(end_marker, start)
-          if end < 0:
-              raise SystemExit('End of old Intelligence telemetry patch block was not found')
-          end += len(end_marker)
-          replacement = '''needle = """      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false); await _evaluateAutopilotGraduation(); if (notify) notifyListeners();"""
-repl = """      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
-      await ResonateDiagnostics.recordIntelligence(
-        'recommendations_generated',
-        data: {
-          'mode': autonomyLabel,
-          'sessionMode': _sessionMode,
-          'count': _recommendations.length,
-          'topSongId': _recommendations.isEmpty ? null : _recommendations.first.song.id,
-          'topConfidence': _recommendations.isEmpty ? 0 : _recommendations.first.confidence,
-          'exploration': exploration,
-        },
-      );
-      await _evaluateAutopilotGraduation(); if (notify) notifyListeners();"""
-s = s[:start] + replacement + s[end:]
-          p.write_text(s)
-          PY
+        if: hashFiles('tools/repair_finish_script.py') != ''
+        run: python3 tools/repair_finish_script.py
 
       - name: Apply one-time playback companion finishing pass
         if: hashFiles('tools/finish_playback_companion.py') != ''
@@ -63,7 +33,7 @@ s = s[:start] + replacement + s[end:]
           python3 tools/finish_playback_companion.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm tools/finish_playback_companion.py .github/workflows/finish_playback_companion.yml
+          git rm tools/repair_finish_script.py tools/finish_playback_companion.py .github/workflows/finish_playback_companion.yml
           git add lib/providers/music_provider.dart lib/screens/player_screen.dart lib/providers/autopilot_controller.dart lib/providers/intelligence_provider.dart
           git commit -m "Apply playback companion finishing pass"
           git push origin HEAD:${GITHUB_REF_NAME}
