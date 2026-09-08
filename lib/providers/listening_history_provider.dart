@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/listening_event.dart';
 import '../models/song.dart';
@@ -7,6 +8,8 @@ class ListeningHistoryItem {
   final ListeningEvent event;
   final Song? song;
   const ListeningHistoryItem({required this.event, required this.song});
+  @override
+  void dispose() { _refreshTimer?.cancel(); super.dispose(); }
 }
 
 class ListeningHistoryProvider extends ChangeNotifier {
@@ -14,12 +17,13 @@ class ListeningHistoryProvider extends ChangeNotifier {
   List<ListeningHistoryItem> _items = const [];
   Map<String, dynamic> _stats = const {};
   bool _loading = false;
+  Timer? _refreshTimer;
 
   List<ListeningHistoryItem> get items => List.unmodifiable(_items);
   Map<String, dynamic> get stats => Map.unmodifiable(_stats);
   bool get isLoading => _loading;
 
-  ListeningHistoryProvider() { load(); }
+  ListeningHistoryProvider() { load(); _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) { if (!_loading) load(); }); }
 
   Future<void> load() async {
     _loading = true;

@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.media.audiofx.BassBoost
 import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.Virtualizer
@@ -15,6 +16,7 @@ import android.provider.MediaStore
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import kotlin.math.roundToInt
 
 class MainActivity : AudioServiceActivity() {
     private val channelName = "com.example.resonate/media_store"
@@ -40,6 +42,8 @@ class MainActivity : AudioServiceActivity() {
             when (call.method) {
                 "requestAudioPermission" -> requestAudioPermission(result)
                 "requestNotificationPermission" -> requestNotificationPermission(result)
+                "getSystemVolume" -> getSystemVolume(result)
+                "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)
                 "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
                 "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList()))
@@ -87,6 +91,16 @@ class MainActivity : AudioServiceActivity() {
     private fun requestNotificationPermission(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) { result.success(true); return }
         notificationPermissionResult = result; requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), notificationPermissionRequestCode)
+    }
+
+    private fun getSystemVolume(result: MethodChannel.Result) {
+        try { val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; result.success(mapOf("current" to audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), "max" to audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC))) }
+        catch (e: Exception) { result.error("SYSTEM_VOLUME_ERROR", e.message, null) }
+    }
+
+    private fun setSystemVolume(value: Double, result: MethodChannel.Result) {
+        try { val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (value.coerceIn(0.0,1.0)*max).roundToInt(), 0); result.success(true) }
+        catch (e: Exception) { result.error("SYSTEM_VOLUME_ERROR", e.message, null) }
     }
 
     private fun pickFolder(result: MethodChannel.Result) {

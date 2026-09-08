@@ -301,16 +301,12 @@ class _IntelligenceHero extends StatelessWidget {
         ),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: Stack(children: [
+        Positioned(right: -8, bottom: 4, child: IgnorePointer(child: Opacity(opacity: .07, child: Text('RESONATE', style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, letterSpacing: 3))))),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(
             children: [
-              Icon(
-                intelligence.isAutopilot
-                    ? Icons.smart_toy_rounded
-                    : Icons.auto_awesome,
-              ),
+              AnimatedSwitcher(duration: const Duration(milliseconds: 420), transitionBuilder: (child, animation) => RotationTransition(turns: Tween(begin: .88, end: 1.0).animate(animation), child: FadeTransition(opacity: animation, child: child)), child: Icon(intelligence.isAutopilot ? Icons.smart_toy_rounded : Icons.auto_awesome, key: ValueKey(intelligence.autonomyLabel))),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(

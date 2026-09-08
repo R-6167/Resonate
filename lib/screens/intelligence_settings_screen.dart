@@ -19,7 +19,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
   bool _sessionIntelligence = true;
   bool _explanations = true;
   bool _learnedEq = false;
-  bool _crossfade = true;
+  bool _crossfade = false;
   int _crossfadeMs = 5000;
   int _mixMinutes = 60;
   bool _longMix = true;
