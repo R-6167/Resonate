@@ -1,4 +1,5 @@
 name: Build Resonate APK
+# Playback companion finishing pass: force a fresh APK run from the finalized source commit.
 
 on:
   push:
