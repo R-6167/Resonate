@@ -1,26 +1,16 @@
 name: Build Resonate APK
-# Playback companion finishing pass: force a fresh APK run from the finalized source commit.
+
+# Release APK builds are intentionally manual. This keeps normal development
+# pushes from creating a new APK/check for every tiny iteration.
 
 on:
-  push:
-    branches:
-      - debug-splash-hang
-      - Audio_Update
-      - Audio_Update.2
-      - Intelligence
-      - Notification_BugFix
-      - Playback_Stability_Diagnostics
-      - Companion_Features_Diagnostics
-  pull_request:
-    branches:
-      - Playback_Stability_Diagnostics
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: resonate-apk-${{ github.ref }}
+  group: resonate-apk-manual
   cancel-in-progress: true
 
 jobs:
@@ -30,55 +20,56 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Fix final CI compile errors
-        if: hashFiles('tools/fix_ci_compile_errors.py') != ''
-        run: |
-          python3 tools/fix_ci_compile_errors.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f tools/fix_ci_compile_errors.py
-          git add lib/providers/music_provider.dart lib/providers/intelligence_provider.dart
-          git commit -m "Fix finishing pass CI compile errors"
-          git push origin HEAD:${GITHUB_REF_NAME}
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
           channel: stable
           cache: true
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.14'
           cache-read-only: false
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+
       - name: Install required Android components
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
           sdkmanager "ndk;28.2.13676358"
+
       - name: Create Android local.properties
         run: |
           cat > android/local.properties <<EOF
           sdk.dir=${ANDROID_SDK_ROOT}
           flutter.sdk=${FLUTTER_ROOT}
           EOF
+
       - name: Verify Gradle
         working-directory: android
         run: gradle --version
+
       - name: Get Flutter dependencies
         run: flutter pub get
+
       - name: Analyze project
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
       - name: Run Flutter tests
         run: flutter test --reporter expanded
+
       - name: Build release APK
         run: |
           set -o pipefail
@@ -96,19 +87,24 @@ jobs:
               exit 1
             fi
           done
+
       - name: Verify APK exists
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
           ls -lh build/app/outputs/flutter-apk/app-release.apk
+
       - name: Verify APK signature
         run: |
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+
       - name: Show build log on failure
         if: failure()
         run: tail -300 build.log || true
+
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: resonate-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 3
           if-no-files-found: error
