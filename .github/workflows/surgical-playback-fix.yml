@@ -1,0 +1,66 @@
+name: One-shot Playback Repair
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - name: Patch playback serialization
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/providers/music_provider.dart')
+          s = p.read_text()
+          old = """      'lane': userInitiated && const {'toggle', 'pause', 'seek'}.contains(command) && audioPlayer.audioSource != null
+          ? 'transport_priority'
+          : 'source_serialized',
+    });
+    if (userInitiated && const {'toggle', 'pause', 'seek'}.contains(command) && audioPlayer.audioSource != null) {
+      return operation();
+    }
+"""
+          new = """      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command)
+          ? 'user_priority'
+          : 'source_serialized',
+    });
+    // Interactive transport commands must never sit behind an automatic/source
+    // operation already waiting on _playOperation. Their intent token makes any
+    // older source operation stale; source operations still serialize when they
+    // are initiated automatically.
+    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command)) {
+      return operation();
+    }
+"""
+          if old not in s:
+              raise SystemExit('serialization block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace("await player.setVolume(start ? _volume : 0.0);", "await player.setVolume(start ? 1.0 : 0.0);", 1)
+          p.write_text(s)
+          PY
+      - name: Format and validate
+        run: |
+          flutter pub get
+          dart format lib/providers/music_provider.dart lib/providers/listening_history_provider.dart
+          flutter analyze --no-fatal-warnings --no-fatal-infos
+      - name: Commit repair and remove workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/providers/music_provider.dart lib/providers/listening_history_provider.dart .github/workflows/surgical-playback-fix.yml
+          git diff --cached --check
+          git commit -m 'Prioritize all interactive playback controls' || true
+          git push
+          git rm .github/workflows/surgical-playback-fix.yml
+          git commit -m 'Remove one-shot playback repair workflow'
+          git push
