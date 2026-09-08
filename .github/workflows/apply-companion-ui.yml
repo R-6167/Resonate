@@ -16,12 +16,12 @@ jobs:
           ref: Companion_Features_Diagnostics
           fetch-depth: 0
       - name: Apply UI changes
-        shell: python
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
 
-          # Logo: text-only, no Wi-Fi/radio-wave mark.
-          Path('lib/widgets/resonate_logo.dart').write_text(r'''import 'package:flutter/material.dart';
+          Path('lib/widgets/resonate_logo.dart').write_text('''import 'package:flutter/material.dart';
 
 class ResonateLogo extends StatelessWidget {
   final double size;
@@ -45,16 +45,14 @@ class ResonateLogo extends StatelessWidget {
           home = Path('lib/screens/home_screen.dart')
           s = home.read_text(encoding='utf-8')
           old = """          Positioned(\n            right: -8,\n            bottom: 4,\n            child: IgnorePointer(\n              child: Opacity(\n                opacity: .11,\n                child: Text(\n                  'RESONATE',\n                  style: const TextStyle(\n                    fontSize: 48,\n                    fontWeight: FontWeight.w900,\n                    letterSpacing: 3,\n                  ),\n                ),\n              ),\n            ),\n          ),\n"""
-          if old not in s:
-              raise SystemExit('Expected Intelligence hero background artwork not found')
+          if old not in s: raise SystemExit('hero word-art block not found')
           s = s.replace(old, '')
           old = """                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary))),\n                const SizedBox(width: 12),\n"""
           new = """                const SizedBox(width: 30, height: 22, child: _LearningWaveDots()),\n                const SizedBox(width: 10),\n"""
-          if old not in s:
-              raise SystemExit('Expected listening-flow spinner not found')
+          if old not in s: raise SystemExit('learning spinner block not found')
           s = s.replace(old, new)
           marker = "\nclass _AnticipationCard extends StatefulWidget {"
-          widget = r'''
+          widget = '''
 class _LearningWaveDots extends StatefulWidget {
   const _LearningWaveDots();
   @override
@@ -78,85 +76,69 @@ class _LearningWaveDotsState extends State<_LearningWaveDots>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, _) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(3, (index) {
-            final phase = (_controller.value + index * .18) % 1.0;
-            final wave = math.sin(phase * math.pi * 2);
-            final scale = .72 + ((wave + 1) * .14);
-            return Transform.translate(
-              offset: Offset(0, -wave * 3.2),
-              child: Transform.scale(
-                scale: scale,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+      builder: (context, _) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(3, (index) {
+          final phase = (_controller.value + index * .18) % 1.0;
+          final wave = math.sin(phase * math.pi * 2);
+          return Transform.translate(
+            offset: Offset(0, -wave * 3.2),
+            child: Transform.scale(
+              scale: .72 + ((wave + 1) * .14),
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
-            );
-          }),
-        );
-      },
+            ),
+          );
+        }),
+      ),
     );
   }
 }
 '''
-          if marker not in s:
-              raise SystemExit('Expected anticipation-card marker not found')
+          if marker not in s: raise SystemExit('anticipation marker not found')
           s = s.replace(marker, '\n' + widget + marker, 1)
           if "import 'dart:math' as math;" not in s:
               s = s.replace("import 'package:flutter/material.dart';", "import 'dart:math' as math;\n\nimport 'package:flutter/material.dart';", 1)
           home.write_text(s, encoding='utf-8')
 
           player = Path('lib/screens/player_screen.dart')
-          s = player.read_text(encoding='utf-8')
+          s = player.read_text(encoding='utf-8').replace("import 'dart:ui' as ui;\n", '')
           old = """              Container(\n                height: 250,\n                decoration: BoxDecoration(\n                  borderRadius: BorderRadius.circular(26),\n                  color: Theme.of(context).colorScheme.surfaceContainerHighest,\n                ),\n                child: const Icon(Icons.album_rounded, size: 110),\n              ),\n"""
           new = """              ClipRRect(\n                borderRadius: BorderRadius.circular(26),\n                child: SizedBox(\n                  height: 250,\n                  child: Stack(\n                    fit: StackFit.expand,\n                    children: [\n                      DecoratedBox(\n                        decoration: BoxDecoration(\n                          color: Theme.of(context).colorScheme.surfaceContainerHighest,\n                        ),\n                        child: const AudioVisualizationWidget(),\n                      ),\n                      Center(\n                        child: DecoratedBox(\n                          decoration: BoxDecoration(\n                            shape: BoxShape.circle,\n                            color: Theme.of(context).colorScheme.surface.withOpacity(.82),\n                          ),\n                          child: const Padding(\n                            padding: EdgeInsets.all(28),\n                            child: Icon(Icons.album_rounded, size: 86),\n                          ),\n                        ),\n                      ),\n                    ],\n                  ),\n                ),\n              ),\n"""
-          if old not in s:
-              raise SystemExit('Expected player artwork block not found')
+          if old not in s: raise SystemExit('player artwork block not found')
           s = s.replace(old, new, 1)
           old = """              const SizedBox(height: 10),\n              const SizedBox(\n                height: 100,\n                child: AudioVisualizationWidget(),\n              ),\n              _WaveSeekBar(\n"""
           new = """              const SizedBox(height: 8),\n              _WaveSeekBar(\n"""
-          if old not in s:
-              raise SystemExit('Expected standalone visualization block not found')
+          if old not in s: raise SystemExit('standalone visualization block not found')
           s = s.replace(old, new, 1)
           old = """              const SizedBox(height: 14),\n              const AutopilotTakeoverCard(),\n              const SizedBox(height: 10),\n              Consumer<IntelligenceProvider>(\n"""
           new = """              const SizedBox(height: 14),\n              Consumer<IntelligenceProvider>(\n"""
-          if old not in s:
-              raise SystemExit('Expected player intelligence card order block not found')
+          if old not in s: raise SystemExit('intelligence order block not found')
           s = s.replace(old, new, 1)
           old = """                  return _NextCard(item: item, mode: intelligence.autonomyLabel);\n                },\n              ),\n"""
           new = """                  return Column(\n                    children: [\n                      _NextCard(item: item, mode: intelligence.autonomyLabel),\n                      const SizedBox(height: 10),\n                      const AutopilotTakeoverCard(),\n                    ],\n                  );\n                },\n              ),\n"""
-          if old not in s:
-              raise SystemExit('Expected NextCard return block not found')
+          if old not in s: raise SystemExit('next-card return block not found')
           s = s.replace(old, new, 1)
           player.write_text(s, encoding='utf-8')
 
-          # Make the one-time matured Autopilot consent prompt visually float above
-          # the companion memory card without changing its persisted one-time consent.
           card = Path('lib/widgets/autopilot_takeover_card.dart')
           s = card.read_text(encoding='utf-8')
           old = """          if (pendingSong != null)\n            Card(color: scheme.primaryContainer, child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 8, 10), child: Row(children: [\n"""
           new = """          if (pendingSong != null)\n            Padding(\n              padding: const EdgeInsets.only(bottom: 10),\n              child: Material(\n                elevation: 7,\n                shadowColor: scheme.shadow.withOpacity(.28),\n                borderRadius: BorderRadius.circular(20),\n                color: scheme.primaryContainer,\n                child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 8, 10), child: Row(children: [\n"""
-          if old not in s:
-              raise SystemExit('Expected takeover prompt not found')
+          if old not in s: raise SystemExit('takeover prompt block not found')
           s = s.replace(old, new, 1)
           old = """              FilledButton(onPressed: controller.allowPendingTakeover, child: const Text('Let it choose')),\n            ]))),\n          Card(child: Padding("""
           new = """              FilledButton(onPressed: controller.allowPendingTakeover, child: const Text('Let it choose')),\n            ])),\n              ),\n            ),\n          Card(child: Padding("""
-          if old not in s:
-              raise SystemExit('Expected takeover prompt closing block not found')
+          if old not in s: raise SystemExit('takeover prompt closing block not found')
           s = s.replace(old, new, 1)
           card.write_text(s, encoding='utf-8')
-
-          # Remove unused ui import left by earlier visual-overlay experiments.
-          player_text = player.read_text(encoding='utf-8').replace("import 'dart:ui' as ui;\n", '')
-          player.write_text(player_text, encoding='utf-8')
-
+          PY
       - name: Commit changes and remove one-off workflow
         run: |
           git config user.name "github-actions[bot]"
