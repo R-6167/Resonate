@@ -9,6 +9,10 @@ on:
       - Intelligence
       - Notification_BugFix
       - Playback_Stability_Diagnostics
+      - Companion_Features_Diagnostics
+  pull_request:
+    branches:
+      - Playback_Stability_Diagnostics
   workflow_dispatch:
 
 concurrency:
