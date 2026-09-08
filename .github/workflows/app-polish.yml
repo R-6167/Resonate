@@ -1,0 +1,42 @@
+name: Apply Companion UI polish
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+permissions:
+  contents: write
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply edits once
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          home = Path('lib/screens/home_screen.dart')
+          s = home.read_text()
+          s = s.replace("import '../widgets/evolving_mix_card.dart';", "import '../widgets/evolving_mix_card.dart';\nimport '../widgets/resonate_logo.dart';\nimport '../widgets/animated_companion_mark.dart';")
+          s = s.replace("appBar: AppBar(title: const Text('Resonate')),", "appBar: AppBar(title: const ResonateLogo(size: 32)),")
+          s = s.replace("'Welcome back.'", "'Hi'")
+          s = s.replace("child: Icon(\n                  intelligence.isAutopilot\n                      ? Icons.smart_toy_rounded\n                      : Icons.auto_awesome,\n                  key: ValueKey(intelligence.autonomyLabel),\n                ),", "child: AnimatedCompanionMark(\n                  mode: intelligence.autonomyLabel,\n                  size: 27,\n                  key: ValueKey(intelligence.autonomyLabel),\n                ),")
+          s = s.replace("Text(intelligence.sessionSummary),", "Row(\n              crossAxisAlignment: CrossAxisAlignment.center,\n              children: [\n                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Theme.of(context).colorScheme.primary))),\n                const SizedBox(width: 12),\n                Expanded(child: Text(intelligence.sessionSummary)),\n              ],\n            ),")
+          home.write_text(s)
+
+          player = Path('lib/screens/player_screen.dart')
+          p = player.read_text()
+          p = p.replace("import 'dart:math' as math;", "import 'dart:math' as math;\nimport 'dart:ui' as ui;")
+          p = p.replace("duration: const Duration(milliseconds: 3200)", "duration: const Duration(milliseconds: 5200)")
+          p = p.replace("const Duration(milliseconds: 900)", "const Duration(milliseconds: 1400)")
+          autop = """              const AutopilotTakeoverCard(),\n              const SizedBox(height: 10),\n              Consumer<IntelligenceProvider>(\n                builder: (context, intelligence, _) {\n                  final item = intelligence.anticipatedNext;\n                  if (!intelligence.isEnabled || item == null) {\n                    return const SizedBox.shrink();\n                  }\n                  return _NextCard(item: item, mode: intelligence.autonomyLabel);\n                },\n              ),\n"""
+          p = p.replace(autop, "")
+          anchor = "              const SizedBox(height: 14),\n            ],\n          );"
+          cards = """              const SizedBox(height: 14),\n              const AutopilotTakeoverCard(),\n              const SizedBox(height: 10),\n              Consumer<IntelligenceProvider>(\n                builder: (context, intelligence, _) {\n                  final item = intelligence.anticipatedNext;\n                  if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();\n                  return _NextCard(item: item, mode: intelligence.autonomyLabel);\n                },\n              ),\n"""
+          p = p.replace(anchor, cards + "            ],\n          );")
+          player.write_text(p)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/screens/home_screen.dart lib/screens/player_screen.dart
+          if git diff --cached --quiet; then echo 'No changes needed'; exit 0; fi
+          git commit -m 'feat: polish companion presentation and player layout'
+          git push
