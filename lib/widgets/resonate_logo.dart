@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+// Text-only Resonate wordmark; intentionally no radio-wave/Wi-Fi symbol.
 class ResonateLogo extends StatelessWidget {
   final double size;
   const ResonateLogo({super.key, this.size = 34});
