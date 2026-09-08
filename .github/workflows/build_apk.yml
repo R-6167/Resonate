@@ -1,10 +1,14 @@
 name: Build Resonate APK
 
-# Release APK builds are intentionally manual. This keeps normal development
-# pushes from creating a new APK/check for every tiny iteration.
+# Release APK builds are intentionally manual during normal development.
+# This commit temporarily permits the current validated branch to produce the
+# APK needed for the multi-device test.
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
 
 permissions:
   contents: read
