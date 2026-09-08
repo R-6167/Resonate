@@ -23,6 +23,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Repair one-time finishing script
+        if: hashFiles('tools/finish_playback_companion.py') != ''
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/finish_playback_companion.py')
+          s = p.read_text()
+          needle = """      _recommendations = ranked.take(limit).toList();
+          await _evaluateAutopilotGraduation();"""
+          replacement = """      _recommendations = ranked.take(limit).toList();
+          await _evaluateAutopilotGraduation();"""
+          # The current IntelligenceProvider uses a compact ranked-sort line;
+          # insert telemetry immediately before graduation when that form is present.
+          compact = """      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false); await _evaluateAutopilotGraduation(); if (notify) notifyListeners();"""
+          compact_replacement = """      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
+          await ResonateDiagnostics.recordIntelligence('recommendations_generated', data: {
+            'mode': autonomyLabel,
+            'sessionMode': _sessionMode,
+            'count': _recommendations.length,
+            'topSongId': _recommendations.isEmpty ? null : _recommendations.first.song.id,
+            'topConfidence': _recommendations.isEmpty ? 0 : _recommendations.first.confidence,
+            'exploration': exploration,
+          });
+          await _evaluateAutopilotGraduation(); if (notify) notifyListeners();"""
+          if compact not in s:
+              raise SystemExit('Expected compact IntelligenceProvider pattern was not found')
+          p.write_text(s.replace(compact, compact_replacement, 1))
+          PY
+
       - name: Apply one-time playback companion finishing pass
         if: hashFiles('tools/finish_playback_companion.py') != ''
         run: |
