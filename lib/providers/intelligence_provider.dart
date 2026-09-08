@@ -265,7 +265,19 @@ class IntelligenceProvider extends ChangeNotifier {
         }
         ranked.add(IntelligenceRecommendation(song: song, score: score, confidence: confidence, reason: reason, decision: _autonomy == 2 ? 'autopilot' : _autonomy == 1 ? 'assist' : 'suggest', sessionReason: sessionReason));
       }
-      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false); await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
+      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
+      await ResonateDiagnostics.recordIntelligence(
+        'recommendations_generated',
+        data: {
+          'mode': autonomyLabel,
+          'sessionMode': _sessionMode,
+          'count': _recommendations.length,
+          'topSongId': _recommendations.isEmpty ? null : _recommendations.first.song.id,
+          'topConfidence': _recommendations.isEmpty ? 0 : _recommendations.first.confidence,
+          'exploration': exploration,
+        },
+      );
+      await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
     } catch (e, stack) { debugPrint('Intelligence refresh failed: $e'); debugPrint('$stack'); }
   }
 
