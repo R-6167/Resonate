@@ -197,7 +197,9 @@ class MusicProvider extends ChangeNotifier {
       if (ids.isEmpty || currentSong != null || _queue.isNotEmpty) return;
       final savedIndex = prefs.getInt(_savedQueueIndexKey) ?? 0;
       final songs = await _database.getAllSongs();
-      final byId = <String, Song>{for (final song in songs) song.id: song};
+      await _visibility.load();
+      final visibleSongs = _visibility.filter(songs, (song) => song.id);
+      final byId = <String, Song>{for (final song in visibleSongs) song.id: song};
       final restored = ids.map((id) => byId[id]).whereType<Song>().toList();
       if (restored.isEmpty) return;
       _queue = restored; _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt(); currentSong = _queue[_queueIndex]; currentDuration = currentSong!.duration; currentPosition = Duration.zero; notifyListeners();
@@ -380,7 +382,10 @@ class MusicProvider extends ChangeNotifier {
     if (song.filePath.trim().isEmpty) return false;
     try {
       _crossfadeInProgress = false;
-      await _finishHistoryEvent();
+      // History persistence is already serialized. Do not make the user wait
+      // for a SQLite write before the new source starts loading. The queued
+      // finish operation completes before the subsequent history start.
+      unawaited(_finishHistoryEvent());
       await _stopBoth();
       if (!_playbackIntentGate.isCurrent(intentToken)) {
         await ResonateDiagnostics.record('playback_operation_stale', {
@@ -499,9 +504,9 @@ class MusicProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
-  Future<bool> playNext(Song song) async { if (song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async { if (index <= _queueIndex || index >= _queue.length) return false; _queue.removeAt(index); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); notifyListeners(); return true; }
   void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); notifyListeners(); }

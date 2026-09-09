@@ -25,9 +25,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _playSong(List<Song> songs, int index) async {
     final music = context.read<MusicProvider>(); final library = context.read<LibraryProvider>(); final song = songs[index];
-    final ok = await music.playSong(song, queue: List<Song>.from(songs), startIndex: index);
+    // Start playback without making navigation wait for the full source-load
+    // and history pipeline. The player now commits the active source before
+    // its history bookkeeping finishes, so the tap feels immediate.
+    final playback = music.playSong(song, queue: List<Song>.from(songs), startIndex: index);
+    if (mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+    }
+    final ok = await playback;
     if (!mounted) return;
-    if (ok) { await library.updatePlayCount(song.id); if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())); }
+    if (ok) { await library.updatePlayCount(song.id); }
+    else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to play this song. Check that the file is still available.'))); }
     else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to play this song. Check that the file is still available.'))); }
   }
 
