@@ -36,12 +36,38 @@ class _IntelligenceTransferScreenState extends State<IntelligenceTransferScreen>
     return core;
   }
 
+  Future<Uint8List> _encodedBytes() async {
+    final text = IntelligenceSettingsStore.encode(await _document());
+    return Uint8List.fromList(text.codeUnits);
+  }
+
+  Future<void> _exportLocally() async {
+    setState(() => _busy = true);
+    try {
+      final bytes = await _encodedBytes();
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Resonate Intelligence settings',
+        fileName: 'resonate-intelligence-settings.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: bytes,
+      );
+      if (mounted && path != null) {
+        _message('Intelligence settings saved locally.');
+      }
+    } catch (e) {
+      if (mounted) _message('Could not save settings locally: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _export() async {
     setState(() => _busy = true);
     try {
-      final text = IntelligenceSettingsStore.encode(await _document());
+      final bytes = await _encodedBytes();
       await Share.shareXFiles(
-        [XFile.fromData(Uint8List.fromList(text.codeUnits), name: 'resonate-intelligence-settings.json', mimeType: 'application/json')],
+        [XFile.fromData(bytes, name: 'resonate-intelligence-settings.json', mimeType: 'application/json')],
         subject: 'Resonate Intelligence settings',
         text: 'Resonate Intelligence settings export',
       );
@@ -118,7 +144,9 @@ class _IntelligenceTransferScreenState extends State<IntelligenceTransferScreen>
               const Text('Learning history, song feedback and Companion memory are deliberately not included. The destination device should learn from its own listening behavior.'),
             ]))),
             const SizedBox(height: 12),
-            FilledButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.ios_share_rounded), label: const Text('Export settings')),
+            FilledButton.icon(onPressed: _busy ? null : _exportLocally, icon: const Icon(Icons.save_alt_rounded), label: const Text('Save settings locally')),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.ios_share_rounded), label: const Text('Share / export settings')),
             const SizedBox(height: 8),
             OutlinedButton.icon(onPressed: _busy ? null : _import, icon: const Icon(Icons.file_open_rounded), label: const Text('Import settings')),
             if (_busy) ...[const SizedBox(height: 18), const LinearProgressIndicator()],
