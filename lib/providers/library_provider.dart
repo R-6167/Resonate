@@ -6,6 +6,7 @@ import '../services/audio_file_service.dart';
 
 class LibraryProvider extends ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper();
+  static const _restrictedSongIdsKey = 'library_restricted_song_ids';
   List<Song> _allSongs = [];
   List<Song> _filteredSongs = [];
   List<Song> _favoriteSongs = [];
@@ -45,10 +46,16 @@ class LibraryProvider extends ChangeNotifier {
         folderUris: restricted ? folders.map((folder) => folder['uri']!).toList() : const <String>[],
         minimumDurationMs: _minimumScanDurationMs,
       );
-      // A restricted scan is the authoritative visible library for this session.
-      // Keep the database intact so listening history and Intelligence evidence are
-      // not destroyed merely because a user changed which folders are visible.
+      final prefs = await SharedPreferences.getInstance();
       _restrictedSongIds = restricted ? songs.map((song) => song.id).toSet() : null;
+      if (restricted) {
+        await prefs.setStringList(_restrictedSongIdsKey, _restrictedSongIds!.toList());
+      } else {
+        await prefs.remove(_restrictedSongIdsKey);
+      }
+      // A restricted scan is the authoritative visible library for this session.
+      // The database remains intact so changing folder visibility does not erase
+      // listening history or Intelligence evidence for songs outside the selection.
       if (songs.isNotEmpty || restricted) {
         if (songs.isNotEmpty) await _db.insertSongs(songs);
         await loadAllSongs();
@@ -79,5 +86,5 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> _saveFilterPreference() async { final prefs = await SharedPreferences.getInstance(); await prefs.setString('library_filter_by', _filterBy); }
   Future<void> setAutoScanEnabled(bool enabled) async { _autoScanEnabled = enabled; final prefs = await SharedPreferences.getInstance(); await prefs.setBool('library_auto_scan', enabled); notifyListeners(); }
   Future<void> setMinimumScanDuration(int milliseconds) async { _minimumScanDurationMs = milliseconds.clamp(0, 3600000).toInt(); final prefs = await SharedPreferences.getInstance(); await prefs.setInt('library_min_duration_ms', _minimumScanDurationMs); notifyListeners(); }
-  Future<void> _loadPreferences() async { final prefs = await SharedPreferences.getInstance(); _sortBy = prefs.getString('library_sort_by') ?? 'title'; _filterBy = prefs.getString('library_filter_by') ?? 'all'; _autoScanEnabled = prefs.getBool('library_auto_scan') ?? true; _minimumScanDurationMs = prefs.getInt('library_min_duration_ms') ?? 30000; }
+  Future<void> _loadPreferences() async { final prefs = await SharedPreferences.getInstance(); _sortBy = prefs.getString('library_sort_by') ?? 'title'; _filterBy = prefs.getString('library_filter_by') ?? 'all'; _autoScanEnabled = prefs.getBool('library_auto_scan') ?? true; _minimumScanDurationMs = prefs.getInt('library_min_duration_ms') ?? 30000; final restrictedIds = prefs.getStringList(_restrictedSongIdsKey); _restrictedSongIds = restrictedIds == null ? null : restrictedIds.toSet(); }
 }
