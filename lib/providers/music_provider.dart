@@ -13,6 +13,7 @@ import '../services/database_helper.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
+import '../services/library_visibility_store.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -21,6 +22,7 @@ class MusicProvider extends ChangeNotifier {
   final DatabaseHelper _database = DatabaseHelper();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
+  final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
   late final AudioPlayer _playerA;
   late final AudioPlayer _playerB;
   late final AndroidEqualizer _equalizerA;
@@ -360,6 +362,14 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {
+    await _visibility.load();
+    if (!_visibility.isVisible(song.id)) {
+      await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {
+        'songId': song.id,
+        'stage': 'play_song_internal',
+      });
+      return false;
+    }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (!_playbackIntentGate.isCurrent(intentToken)) {
       await ResonateDiagnostics.record('playback_operation_stale', {
