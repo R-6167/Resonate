@@ -1,0 +1,77 @@
+name: Apply library visibility repair
+
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Companion_Features_Diagnostics
+          fetch-depth: 0
+
+      - name: Patch Intelligence and playback visibility
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # Intelligence: recommendations may only contain songs in the
+          # authoritative visible library, while all songs remain available as
+          # evidence for learning/history.
+          p = Path('lib/providers/intelligence_provider.dart')
+          s = p.read_text()
+          if "../services/library_visibility_store.dart" not in s:
+              s = s.replace("import '../services/intelligence_settings_store.dart';", "import '../services/intelligence_settings_store.dart';\nimport '../services/library_visibility_store.dart';")
+          old = """      final songs = await _database.getAllSongs();\n      final current = music.currentSong;"""
+          new = """      final allSongs = await _database.getAllSongs();\n      final visibility = LibraryVisibilityStore.instance;\n      await visibility.load();\n      final songs = visibility.filter(allSongs, (song) => song.id);\n      final current = music.currentSong;"""
+          if old not in s:
+              raise SystemExit('Intelligence target not found')
+          s = s.replace(old, new, 1)
+          # Keep learning evidence from the full database, but build the song
+          # lookup from all indexed songs so historical events still inform the
+          # model even when their songs are currently hidden by folder scope.
+          s = s.replace("final byId = {for (final s in songs) s.id: s};", "final byId = {for (final s in allSongs) s.id: s};", 1)
+          p.write_text(s)
+
+          # Playback: a stale recommendation/queue item outside the current
+          # library scope must never be playable merely because it remains in
+          # the database for historical evidence.
+          p = Path('lib/providers/music_provider.dart')
+          s = p.read_text()
+          if "../services/library_visibility_store.dart" not in s:
+              s = s.replace("import '../services/resonate_diagnostics.dart';", "import '../services/resonate_diagnostics.dart';\nimport '../services/library_visibility_store.dart';")
+          if "final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;" not in s:
+              s = s.replace("  final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();", "  final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();\n  final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;")
+          old = """  Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {\n    final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;"""
+          new = """  Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {\n    await _visibility.load();\n    if (!_visibility.isVisible(song.id)) {\n      await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {\n        'songId': song.id,\n        'stage': 'play_song_internal',\n      });\n      return false;\n    }\n    final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;"""
+          if old not in s:
+              raise SystemExit('MusicProvider target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+      - name: Verify changed files
+        run: |
+          dart format --output=none lib/services/library_visibility_store.dart lib/providers/library_provider.dart lib/providers/intelligence_provider.dart lib/providers/music_provider.dart
+
+      - name: Commit repair and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/intelligence_provider.dart lib/providers/music_provider.dart
+          git rm .github/workflows/apply_library_visibility_fix.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: enforce library scope across intelligence and playback"
+          git push origin HEAD:Companion_Features_Diagnostics
