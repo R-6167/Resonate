@@ -5,6 +5,7 @@ import '../models/song.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../providers/playlist_provider.dart';
+import '../services/audio_file_service.dart';
 import 'liked_songs_screen.dart';
 import 'library_management_screen.dart';
 import 'player_screen.dart';
@@ -17,7 +18,9 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
-  @override void initState() { super.initState(); _searchController.addListener(_onSearchChanged); }
+  bool _hasSelectedFolders = false;
+  @override void initState() { super.initState(); _searchController.addListener(_onSearchChanged); _refreshFolderVisibility(); }
+  Future<void> _refreshFolderVisibility() async { final folders = await AudioFileService.getSelectedFolders(); if (mounted) setState(() => _hasSelectedFolders = folders.isNotEmpty); }
   void _onSearchChanged() { context.read<LibraryProvider>().searchSongs(_searchController.text); setState(() {}); }
 
   Future<void> _playSong(List<Song> songs, int index) async {
@@ -53,20 +56,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => const LibraryManagementScreen()));
     if (!mounted) return;
     await context.read<LibraryProvider>().loadAllSongs();
+    await _refreshFolderVisibility();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Library'), actions: [
-        IconButton(tooltip: 'Choose music folders', icon: const Icon(Icons.folder_open_rounded), onPressed: _chooseFolders),
         IconButton(tooltip: 'Liked Songs', icon: const Icon(Icons.favorite_rounded), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LikedSongsScreen()))),
         IconButton(tooltip: 'Playlists', icon: const Icon(Icons.queue_music_rounded), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlaylistsScreen()))),
         IconButton(tooltip: 'Refresh', icon: const Icon(Icons.refresh_rounded), onPressed: () async { final library = context.read<LibraryProvider>(); await library.loadAllSongs(); await library.loadFavoriteSongs(); if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Library refreshed'))); }),
         PopupMenuButton<String>(onSelected: (value) { final library = context.read<LibraryProvider>(); if (const ['title', 'artist', 'album', 'date_added'].contains(value)) library.setSortBy(value); if (const ['all', 'favorites', 'recent'].contains(value)) library.setFilterBy(value); }, itemBuilder: (_) => const [PopupMenuItem(value: 'title', child: Text('Sort by Title')), PopupMenuItem(value: 'artist', child: Text('Sort by Artist')), PopupMenuItem(value: 'album', child: Text('Sort by Album')), PopupMenuItem(value: 'date_added', child: Text('Sort by Date Added')), PopupMenuDivider(), PopupMenuItem(value: 'all', child: Text('Filter: All')), PopupMenuItem(value: 'favorites', child: Text('Filter: Favorites')), PopupMenuItem(value: 'recent', child: Text('Filter: Recent'))]),
       ]),
       body: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: Card(child: ListTile(leading: const Icon(Icons.folder_open_rounded), title: const Text('Choose music folders'), subtitle: const Text('Limit scanning to folders you select on this device.'), trailing: const Icon(Icons.chevron_right_rounded), onTap: _chooseFolders))),
+        if (!_hasSelectedFolders) Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8), child: Card(child: ListTile(leading: const Icon(Icons.folder_open_rounded), title: const Text('Choose a music folder'), subtitle: const Text('Optional — tap to limit future scans to a folder.'), trailing: const Icon(Icons.chevron_right_rounded), onTap: _chooseFolders))),
         Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8), child: TextField(controller: _searchController, decoration: InputDecoration(hintText: 'Search songs, artists, albums...', prefixIcon: const Icon(Icons.search_rounded), suffixIcon: _searchController.text.isEmpty ? null : IconButton(icon: const Icon(Icons.clear_rounded), onPressed: _searchController.clear), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
         Consumer<LibraryProvider>(builder: (_, library, __) => Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_StatItem(value: '${library.statistics['totalSongs'] ?? 0}', label: 'Songs'), _StatItem(value: '${library.statistics['favoriteCount'] ?? 0}', label: 'Liked'), _StatItem(value: '${library.statistics['totalPlaylists'] ?? 0}', label: 'Playlists')]))),
         const Divider(),

@@ -46,7 +46,7 @@ class MainActivity : AudioServiceActivity() {
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)
                 "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
-                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList()))
+                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000))
                 "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
                 else -> result.notImplemented()
             }
@@ -210,7 +210,7 @@ class MainActivity : AudioServiceActivity() {
         return total
     }
 
-    private fun scanAudio(folders: List<String>): List<Map<String, Any?>> {
+    private fun scanAudio(folders: List<String>, minimumDurationMs: Int): List<Map<String, Any?>> {
         if (!hasAudioPermission()) return emptyList()
         val prefixes = selectedPrefixes(folders)
         val restrict = folders.isNotEmpty()
@@ -230,6 +230,7 @@ class MainActivity : AudioServiceActivity() {
             while (cursor.moveToNext()) {
                 if (!(cursor.getString(mime) ?: "").startsWith("audio/")) continue
                 if (restrict && !isInSelectedFolder(if (relative >= 0) cursor.getString(relative) else null, if (data >= 0) cursor.getString(data) else null, prefixes)) continue
+                if (cursor.getLong(duration) < minimumDurationMs.toLong()) continue
                 val mediaId = cursor.getLong(id)
                 songs.add(mapOf("filePath" to ContentUris.withAppendedId(collection, mediaId).toString(), "title" to cursor.getString(title), "artist" to cursor.getString(artist), "album" to cursor.getString(album), "duration" to cursor.getLong(duration), "dateAdded" to cursor.getLong(dateAdded)))
             }

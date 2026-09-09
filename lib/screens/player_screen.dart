@@ -302,67 +302,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) {
-        return SafeArea(
-          child: StatefulBuilder(
-            builder: (_, setSheetState) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.volume_up_rounded),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Volume',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text('${(music.volume * 100).round()}%'),
-                      ],
-                    ),
-                    Slider(
-                      value: music.volume,
-                      min: 0,
-                      max: 1,
-                      divisions: 100,
-                      onChanged: (value) {
-                        music.setVolume(value);
-                        setSheetState(() {});
-                      },
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          onPressed: () {
-                            music.setVolume(0);
-                            setSheetState(() {});
-                          },
-                          icon: const Icon(Icons.volume_off_rounded),
-                          label: const Text('Mute'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            music.setVolume(1);
-                            setSheetState(() {});
-                          },
-                          child: const Text('100%'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
+      builder: (_) => Consumer<MusicProvider>(
+        builder: (_, current, __) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(children: [
+                  Icon(_volumeIcon(current.volume)),
+                  const SizedBox(width: 12),
+                  const Text('Volume', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  Text('${(current.volume * 100).round()}%'),
+                ]),
+                Slider(value: current.volume, min: 0, max: 1, divisions: 100, onChanged: current.setVolume),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  TextButton.icon(onPressed: () => current.setVolume(0), icon: const Icon(Icons.volume_off_rounded), label: const Text('Mute')),
+                  TextButton(onPressed: () => current.setVolume(1), child: const Text('100%')),
+                ]),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 

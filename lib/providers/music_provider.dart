@@ -55,6 +55,8 @@ class MusicProvider extends ChangeNotifier {
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
+  Timer? _systemVolumePollTimer;
+  String? _lastCompletionSongId;
   Future<void> _playOperation = Future<void>.value();
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<Duration>? _positionSubscription;
@@ -112,6 +114,7 @@ class MusicProvider extends ChangeNotifier {
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
     unawaited(_loadPlaybackSettings());
+    _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
     unawaited(_restoreQueue());
   }
 
@@ -216,13 +219,18 @@ class MusicProvider extends ChangeNotifier {
       final playing = state.playing && state.processingState != ProcessingState.completed;
       if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
       if (state.processingState == ProcessingState.completed) {
+        final completedSongId = currentSong?.id;
+        // just_audio can replay completed while A/B listeners are rebound.
+        // Advance only once per song to prevent competing source loads.
+        if (completedSongId == null || completedSongId == _lastCompletionSongId) return;
+        _lastCompletionSongId = completedSongId;
         currentPosition = currentDuration ?? currentPosition;
         isPlaying = false;
         notifyListeners();
         _publishServiceState();
         final upcoming = _queueIndex < _queue.length - 1 || _repeatMode == PlaybackRepeatMode.all;
         unawaited(ResonateDiagnostics.record('completion_detected', {
-          'songId': currentSong?.id,
+          'songId': completedSongId,
           'queueIndex': _queueIndex,
           'queueLength': _queue.length,
           'upcomingCount': upcoming ? _queue.length - _queueIndex - 1 : 0,
@@ -275,6 +283,7 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _finishHistoryEvent(completed: true);
       if (_repeatMode == PlaybackRepeatMode.one) {
+        _lastCompletionSongId = null;
         currentPosition = Duration.zero;
         await audioPlayer.seek(Duration.zero);
         await audioPlayer.play();
@@ -330,11 +339,11 @@ class MusicProvider extends ChangeNotifier {
       'source': source,
       'userInitiated': userInitiated,
       'intentToken': effectiveIntent,
-      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command) && audioPlayer.audioSource != null
+      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null
           ? 'transport_priority'
           : 'source_serialized',
     });
-    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek', 'next', 'previous'}.contains(command) && audioPlayer.audioSource != null) {
+    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null) {
       return operation();
     }
     final next = _playOperation.then((_) => operation());
@@ -398,6 +407,7 @@ class MusicProvider extends ChangeNotifier {
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentSong = _queue[_queueIndex];
+      _lastCompletionSongId = null;
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
       isPlaying = false;
@@ -511,7 +521,7 @@ class MusicProvider extends ChangeNotifier {
       await _finishHistoryEvent();
       if (!_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
       await outgoing.pause(); await outgoing.setVolume(master); await incoming.setLoopMode(LoopMode.off); await incoming.setVolume(master);
-      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
+      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners(); await outgoing.stop();
       await ResonateDiagnostics.record('crossfade_committed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'queueIndex': _queueIndex, 'intentToken': intentToken});
       return true;
@@ -524,17 +534,8 @@ class MusicProvider extends ChangeNotifier {
     } finally {
       _crossfadeInProgress = false;
       notifyListeners();
-      if (_completionObservedDuringCrossfade) {
-        _completionObservedDuringCrossfade = false;
-        if (currentSong?.id == outgoingSong?.id && !isPlaying && !_completionAdvanceInProgress && _queueIndex < _queue.length - 1) {
-          await ResonateDiagnostics.record('completion_crossfade_recovery', {
-            'songId': currentSong?.id,
-            'queueIndex': _queueIndex,
-            'reason': 'crossfade_finished_without_commit',
-          });
-          unawaited(_advanceAfterCompletion());
-        }
-      }
+      _completionObservedDuringCrossfade = false;
+
     }
   }
 
@@ -550,7 +551,10 @@ class MusicProvider extends ChangeNotifier {
       if (raw is Map) {
         final current = (raw['current'] as num?)?.toDouble() ?? 0;
         final max = (raw['max'] as num?)?.toDouble() ?? 0;
-        if (max > 0) { _volume = (current / max).clamp(0.0, 1.0).toDouble(); notifyListeners(); }
+        if (max > 0) {
+          final next = (current / max).clamp(0.0, 1.0).toDouble();
+          if ((next - _volume).abs() > 0.001) { _volume = next; notifyListeners(); }
+        }
       }
     } catch (_) {}
   }
@@ -566,5 +570,5 @@ class MusicProvider extends ChangeNotifier {
   }
   Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await playSong(songs[index], queue: songs, startIndex: index); }
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
-  @override void dispose() { _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel(); _interruptionSubscription?.cancel(); _noisySubscription?.cancel(); _playerA.dispose(); _playerB.dispose(); super.dispose(); }
+  @override void dispose() { _systemVolumePollTimer?.cancel(); _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel(); _interruptionSubscription?.cancel(); _noisySubscription?.cancel(); _playerA.dispose(); _playerB.dispose(); super.dispose(); }
 }

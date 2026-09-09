@@ -39,6 +39,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final events = summary?['eventCount'] ?? 0;
     final uri = Uri(
       scheme: 'mailto',
+      path: 'innotrepid@gmail.com',
       queryParameters: {
         'subject': 'Resonate problem report',
         'body': 'Hi Resonate team,\n\nI am reporting a problem with Resonate.\n\nSession: $sessionId\nDiagnostic events: $events\nCrash records: $crashes\n\nWhat happened:\n\n',
