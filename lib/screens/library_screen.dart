@@ -24,19 +24,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void _onSearchChanged() { context.read<LibraryProvider>().searchSongs(_searchController.text); setState(() {}); }
 
   Future<void> _playSong(List<Song> songs, int index) async {
-    final music = context.read<MusicProvider>(); final library = context.read<LibraryProvider>(); final song = songs[index];
-    // Start playback without making navigation wait for the full source-load
-    // and history pipeline. The player now commits the active source before
-    // its history bookkeeping finishes, so the tap feels immediate.
+    final music = context.read<MusicProvider>();
+    final library = context.read<LibraryProvider>();
+    final song = songs[index];
     final playback = music.playSong(song, queue: List<Song>.from(songs), startIndex: index);
-    if (mounted) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
-    }
+    if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
     final ok = await playback;
     if (!mounted) return;
-    if (ok) { await library.updatePlayCount(song.id); }
-    else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to play this song. Check that the file is still available.'))); }
-    else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to play this song. Check that the file is still available.'))); }
+    if (ok) {
+      await library.updatePlayCount(song.id);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to play this song. Check that the file is still available.')));
+    }
   }
 
   Future<void> _addToPlaylist(Song song) async {
@@ -99,5 +98,5 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _StatItem extends StatelessWidget {
   final String value; final String label;
   const _StatItem({required this.value, required this.label});
-  @override Widget build(BuildContext context) => Column(children: [Text(value, style: Theme.of(context).textTheme.titleMedium), Text(label, style: Theme.of(context).textTheme.bodySmall)]);
+  @override Widget build(BuildContext context) => Column(children: [Text(value, style: Theme.of(context).textTheme.titleMedium), Text(label, style: Theme.of(context).textTheme.bodySmall]);
 }
