@@ -21,7 +21,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           # Intelligence: recommendations may only contain songs in the
           # authoritative visible library, while all songs remain available as
@@ -35,9 +34,6 @@ jobs:
           if old not in s:
               raise SystemExit('Intelligence target not found')
           s = s.replace(old, new, 1)
-          # Keep learning evidence from the full database, but build the song
-          # lookup from all indexed songs so historical events still inform the
-          # model even when their songs are currently hidden by folder scope.
           s = s.replace("final byId = {for (final s in songs) s.id: s};", "final byId = {for (final s in allSongs) s.id: s};", 1)
           p.write_text(s)
 
@@ -57,10 +53,6 @@ jobs:
           s = s.replace(old, new, 1)
           p.write_text(s)
           PY
-
-      - name: Verify changed files
-        run: |
-          dart format --output=none lib/services/library_visibility_store.dart lib/providers/library_provider.dart lib/providers/intelligence_provider.dart lib/providers/music_provider.dart
 
       - name: Commit repair and remove one-time workflow
         shell: bash
