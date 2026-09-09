@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
+import '../services/resonate_diagnostics.dart';
 import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
@@ -44,9 +45,13 @@ class AutopilotController extends ChangeNotifier {
 
   Future<void> allowPendingTakeover() async {
     if (!hasPendingTakeover) return;
+    final pending = _pendingSongId;
     _consentGranted = true;
     _pendingTakeover = false;
     _pendingSongId = null;
+    await ResonateDiagnostics.record('intelligence_notification_action', {
+      'action': 'accepted', 'songId': pending, 'mode': intelligence.autonomyLabel,
+    });
     await IntelligenceSettingsStore.setAutopilotConsent(true);
     notifyListeners();
     await _evaluate(forceTransition: true);
@@ -57,6 +62,9 @@ class AutopilotController extends ChangeNotifier {
     _pendingTakeover = false;
     _pendingSongId = null;
     if (pending != null) _declinedForSongId = pending;
+    await ResonateDiagnostics.record('intelligence_notification_action', {
+      'action': 'rejected', 'songId': pending, 'mode': intelligence.autonomyLabel,
+    });
     notifyListeners();
   }
 
@@ -90,6 +98,10 @@ class AutopilotController extends ChangeNotifier {
       if (!_pendingTakeover) {
         _pendingTakeover = true;
         _pendingSongId = next.id;
+        await ResonateDiagnostics.record('intelligence_notification_action', {
+          'action': 'shown', 'songId': next.id, 'mode': intelligence.autonomyLabel,
+          'confidence': recommendation.confidence, 'reason': recommendation.reason,
+        });
         notifyListeners();
       }
       return;
@@ -99,6 +111,11 @@ class AutopilotController extends ChangeNotifier {
     _pendingSongId = null;
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
+    await ResonateDiagnostics.record('intelligence_transition', {
+      'stage': 'started', 'mode': intelligence.autonomyLabel,
+      'fromSongId': music.currentSong?.id, 'toSongId': next.id,
+      'confidence': recommendation.confidence, 'reason': recommendation.reason,
+    });
     final userGeneration = _authority.userGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     try {
@@ -113,6 +130,15 @@ class AutopilotController extends ChangeNotifier {
         if (_authority.isStale(automaticGeneration)) return;
         await music.nextSong();
       }
+      await ResonateDiagnostics.record('intelligence_transition', {
+        'stage': 'completed', 'mode': intelligence.autonomyLabel,
+        'fromSongId': music.currentSong?.id, 'queueIndex': music.queueIndex,
+      });
+    } catch (e) {
+      await ResonateDiagnostics.record('intelligence_transition', {
+        'stage': 'failed', 'mode': intelligence.autonomyLabel, 'error': e.toString(),
+      });
+      rethrow;
     } finally {
       _transitionInFlight = false;
       unawaited(_ensurePredictedQueue(threshold));
@@ -135,7 +161,16 @@ class AutopilotController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         count: 2,
       );
-      if (candidates.isNotEmpty) await music.enqueueSongs(candidates);
+      if (candidates.isNotEmpty) {
+        final added = await music.enqueueSongs(candidates);
+        await ResonateDiagnostics.record('intelligence_queue_decision', {
+          'mode': intelligence.autonomyLabel,
+          'candidates': candidates.map((song) => song.id).toList(),
+          'added': added,
+          'queueLength': music.queue.length,
+          'queueIndex': music.queueIndex,
+        });
+      }
     } finally {
       _queueDecisionInFlight = false;
     }

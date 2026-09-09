@@ -1,15 +1,21 @@
 name: Flutter Check
 
+# Keep validation useful on PRs and when explicitly requested, rather than
+# creating a check for every small development commit.
+
 on:
-  push:
-    branches:
-      - Intelligence
-      - Playback_Stability_Diagnostics
   pull_request:
     branches:
       - Intelligence
       - Playback_Stability_Diagnostics
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   flutter-check:

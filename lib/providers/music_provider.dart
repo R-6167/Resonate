@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
@@ -12,6 +13,7 @@ import '../services/database_helper.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
+import '../services/library_visibility_store.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -20,6 +22,7 @@ class MusicProvider extends ChangeNotifier {
   final DatabaseHelper _database = DatabaseHelper();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
+  final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
   late final AudioPlayer _playerA;
   late final AudioPlayer _playerB;
   late final AndroidEqualizer _equalizerA;
@@ -45,6 +48,7 @@ class MusicProvider extends ChangeNotifier {
   PlaybackRepeatMode _repeatMode = PlaybackRepeatMode.off;
   bool _crossfadeInProgress = false;
   bool _completionAdvanceInProgress = false;
+  bool _completionObservedDuringCrossfade = false;
   bool _queueRestoreInProgress = false;
   bool _crossfadeEnabled = false;
   int _crossfadeDurationMs = 3000;
@@ -53,6 +57,8 @@ class MusicProvider extends ChangeNotifier {
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
+  Timer? _systemVolumePollTimer;
+  String? _lastCompletionSongId;
   Future<void> _playOperation = Future<void>.value();
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<Duration>? _positionSubscription;
@@ -88,6 +94,7 @@ class MusicProvider extends ChangeNotifier {
   static const _crossfadeFadeTypeKey = 'crossfade_fade_type';
   static const _resumePositionKey = 'playback_resume_position_ms';
   static const _resumeSongIdKey = 'playback_resume_song_id';
+  static const MethodChannel _systemVolumeChannel = MethodChannel('com.example.resonate/media_store');
 
   MusicProvider({this.audioHandler}) {
     _equalizerA = AndroidEqualizer();
@@ -109,6 +116,7 @@ class MusicProvider extends ChangeNotifier {
     _bindActivePlayerStreams();
     unawaited(_configureAudioSession());
     unawaited(_loadPlaybackSettings());
+    _systemVolumePollTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => unawaited(_syncSystemVolume()));
     unawaited(_restoreQueue());
   }
 
@@ -123,6 +131,7 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeFadeType = prefs.getString(_crossfadeFadeTypeKey) ?? 'linear';
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? 0;
       _resumeSongId = prefs.getString(_resumeSongIdKey);
+      await _syncSystemVolume();
       if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';
       notifyListeners();
     } catch (e) { debugPrint('Playback settings load failed: $e'); }
@@ -175,7 +184,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Audio session setup failed: $e'); }
   }
 
-  Future<void> _duckForInterruption() async { try { await audioPlayer.setVolume(_volume * .35); } catch (_) {} }
+  Future<void> _duckForInterruption() async { try { await audioPlayer.setVolume(.35); } catch (_) {} }
 
   Future<void> _restoreQueue() async {
     if (_queueRestoreInProgress) return;
@@ -188,7 +197,9 @@ class MusicProvider extends ChangeNotifier {
       if (ids.isEmpty || currentSong != null || _queue.isNotEmpty) return;
       final savedIndex = prefs.getInt(_savedQueueIndexKey) ?? 0;
       final songs = await _database.getAllSongs();
-      final byId = <String, Song>{for (final song in songs) song.id: song};
+      await _visibility.load();
+      final visibleSongs = _visibility.filter(songs, (song) => song.id);
+      final byId = <String, Song>{for (final song in visibleSongs) song.id: song};
       final restored = ids.map((id) => byId[id]).whereType<Song>().toList();
       if (restored.isEmpty) return;
       _queue = restored; _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt(); currentSong = _queue[_queueIndex]; currentDuration = currentSong!.duration; currentPosition = Duration.zero; notifyListeners();
@@ -211,11 +222,36 @@ class MusicProvider extends ChangeNotifier {
     _playerStateSubscription = player.playerStateStream.listen((state) {
       final playing = state.playing && state.processingState != ProcessingState.completed;
       if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
-      if (state.processingState == ProcessingState.completed) { currentPosition = currentDuration ?? currentPosition; isPlaying = false; notifyListeners(); _publishServiceState(); if (!_completionAdvanceInProgress && !_crossfadeInProgress) unawaited(_advanceAfterCompletion()); }
+      if (state.processingState == ProcessingState.completed) {
+        final completedSongId = currentSong?.id;
+        // just_audio can replay completed while A/B listeners are rebound.
+        // Advance only once per song to prevent competing source loads.
+        if (completedSongId == null || completedSongId == _lastCompletionSongId) return;
+        _lastCompletionSongId = completedSongId;
+        currentPosition = currentDuration ?? currentPosition;
+        isPlaying = false;
+        notifyListeners();
+        _publishServiceState();
+        final upcoming = _queueIndex < _queue.length - 1 || _repeatMode == PlaybackRepeatMode.all;
+        unawaited(ResonateDiagnostics.record('completion_detected', {
+          'songId': completedSongId,
+          'queueIndex': _queueIndex,
+          'queueLength': _queue.length,
+          'upcomingCount': upcoming ? _queue.length - _queueIndex - 1 : 0,
+          'repeatMode': _repeatMode.name,
+          'crossfadeInProgress': _crossfadeInProgress,
+        }));
+        if (_crossfadeInProgress) {
+          _completionObservedDuringCrossfade = true;
+        } else if (!_completionAdvanceInProgress) {
+          unawaited(_advanceAfterCompletion());
+        }
+      }
     });
     _positionSubscription = player.positionStream.listen((position) { if (currentPosition != position) { currentPosition = position; if (_activeHistoryEvent != null) { _activeHistoryPositionMs = position.inMilliseconds; _persistResumePosition(); } notifyListeners(); _publishServiceState(); } _maybeStartAutomaticCrossfade(position); });
     _durationSubscription = player.durationStream.listen((duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
-    _volumeSubscription = player.volumeStream.listen((value) { if (_volume != value) { _volume = value; notifyListeners(); } });
+    // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
+    // internal gain into _volume or it will overwrite the system-volume value.
   }
 
   void _persistResumePosition({bool force = false}) {
@@ -235,23 +271,64 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _runAutomaticCrossfade() async { final generation = _authority.beginAutomatic('automatic_crossfade'); try { await _performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType, generation: generation); } finally { _automaticCrossfadeInFlight = false; } }
 
   Future<void> _advanceAfterCompletion() async {
-    if (_completionAdvanceInProgress) return; _completionAdvanceInProgress = true;
+    if (_completionAdvanceInProgress) return;
+    _completionAdvanceInProgress = true;
+    final fromSongId = currentSong?.id;
+    final targetIndex = _repeatMode == PlaybackRepeatMode.one
+        ? _queueIndex
+        : (_queueIndex < _queue.length - 1 ? _queueIndex + 1 : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1));
+    await ResonateDiagnostics.record('completion_advance_attempt', {
+      'fromSongId': fromSongId,
+      'queueIndex': _queueIndex,
+      'queueLength': _queue.length,
+      'targetIndex': targetIndex,
+      'repeatMode': _repeatMode.name,
+    });
     try {
       await _finishHistoryEvent(completed: true);
-      if (_repeatMode == PlaybackRepeatMode.one) { currentPosition = Duration.zero; await audioPlayer.seek(Duration.zero); await audioPlayer.play(); isPlaying = true; await _startHistoryEvent(currentSong!); _publishServiceState(); notifyListeners(); return; }
-      if (_queueIndex < _queue.length - 1) { await _playSongInternal(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1, playbackIntentToken: _playbackIntentGate.currentToken); return; }
-      if (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty) { await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: _playbackIntentGate.currentToken); return; }
-      isPlaying = false; currentPosition = currentDuration ?? currentPosition; await _persistQueue(); _publishServiceState(); notifyListeners();
-    } finally { _completionAdvanceInProgress = false; }
+      if (_repeatMode == PlaybackRepeatMode.one) {
+        _lastCompletionSongId = null;
+        currentPosition = Duration.zero;
+        await audioPlayer.seek(Duration.zero);
+        await audioPlayer.play();
+        isPlaying = true;
+        await _startHistoryEvent(currentSong!);
+        _publishServiceState();
+        notifyListeners();
+        await ResonateDiagnostics.record('completion_advance_result', {'result': 'repeated', 'songId': currentSong?.id});
+        return;
+      }
+      if (_queueIndex < _queue.length - 1) {
+        final ok = await _playSongInternal(_queue[_queueIndex + 1], queue: _queue, startIndex: _queueIndex + 1, playbackIntentToken: _playbackIntentGate.currentToken);
+        await ResonateDiagnostics.record('completion_advance_result', {'result': ok ? 'advanced' : 'failed', 'fromSongId': fromSongId, 'toSongId': currentSong?.id, 'queueIndex': _queueIndex});
+        return;
+      }
+      if (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty) {
+        final ok = await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: _playbackIntentGate.currentToken);
+        await ResonateDiagnostics.record('completion_advance_result', {'result': ok ? 'wrapped' : 'failed', 'fromSongId': fromSongId, 'toSongId': currentSong?.id, 'queueIndex': _queueIndex});
+        return;
+      }
+      isPlaying = false;
+      currentPosition = currentDuration ?? currentPosition;
+      await _persistQueue();
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.record('completion_advance_result', {'result': 'queue_exhausted', 'fromSongId': fromSongId, 'queueIndex': _queueIndex});
+    } catch (e) {
+      await ResonateDiagnostics.record('completion_advance_result', {'result': 'exception', 'fromSongId': fromSongId, 'error': e.toString()});
+      rethrow;
+    } finally {
+      _completionAdvanceInProgress = false;
+    }
   }
 
   Uri _audioUri(String value) { final path = value.trim(); if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path); return Uri.file(path); }
 
-  Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(_volume); } catch (_) {} try { await _playerB.setVolume(_volume); } catch (_) {} }
+  Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }
 
-  Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken}) {
+  Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken}) async {
     final effectiveIntent = userInitiated ? (intentToken ?? _playbackIntentGate.issue()) : _playbackIntentGate.currentToken;
     if (userInitiated) {
       _authority.markExternalUserCommand(source, command);
@@ -259,14 +336,20 @@ class MusicProvider extends ChangeNotifier {
         'command': command, 'source': source, 'intentToken': effectiveIntent,
       }));
     }
-    // User intent is the priority lane. Do not put a user command behind an
-    // older load/play operation: that was the source of pause/next appearing
-    // to do nothing until the stale recommendation finished. The intent gate
-    // invalidates older work, while automatic transitions remain serialized.
-    if (userInitiated) {
+    // Transport controls must not wait behind a source load. Source-changing
+    // operations remain serialized to protect just_audio's native player.
+    await ResonateDiagnostics.record('playback_operation_queued', {
+      'command': command,
+      'source': source,
+      'userInitiated': userInitiated,
+      'intentToken': effectiveIntent,
+      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null
+          ? 'transport_priority'
+          : 'source_serialized',
+    });
+    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null) {
       return operation();
     }
-
     final next = _playOperation.then((_) => operation());
     _playOperation = next.then<void>((_) {}, onError: (_, __) {});
     return next;
@@ -281,6 +364,14 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {
+    await _visibility.load();
+    if (!_visibility.isVisible(song.id)) {
+      await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {
+        'songId': song.id,
+        'stage': 'play_song_internal',
+      });
+      return false;
+    }
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (!_playbackIntentGate.isCurrent(intentToken)) {
       await ResonateDiagnostics.record('playback_operation_stale', {
@@ -291,7 +382,10 @@ class MusicProvider extends ChangeNotifier {
     if (song.filePath.trim().isEmpty) return false;
     try {
       _crossfadeInProgress = false;
-      await _finishHistoryEvent();
+      // History persistence is already serialized. Do not make the user wait
+      // for a SQLite write before the new source starts loading. The queued
+      // finish operation completes before the subsequent history start.
+      unawaited(_finishHistoryEvent());
       await _stopBoth();
       if (!_playbackIntentGate.isCurrent(intentToken)) {
         await ResonateDiagnostics.record('playback_operation_stale', {
@@ -328,6 +422,7 @@ class MusicProvider extends ChangeNotifier {
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentSong = _queue[_queueIndex];
+      _lastCompletionSongId = null;
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
       isPlaying = false;
@@ -342,7 +437,7 @@ class MusicProvider extends ChangeNotifier {
         currentPosition = Duration(milliseconds: safeResume);
       }
       await _enableEffects(audioPlayer, equalizer, loudnessEnhancer);
-      await audioPlayer.setVolume(_volume);
+      await audioPlayer.setVolume(1.0);
       if (!_playbackIntentGate.isCurrent(intentToken)) {
         await ResonateDiagnostics.record('playback_operation_stale', {
           'songId': currentSong!.id, 'stage': 'before_play', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken,
@@ -409,14 +504,14 @@ class MusicProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { final additions = songs.where((s) => s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
-  Future<bool> playNext(Song song) async { if (song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async { if (index <= _queueIndex || index >= _queue.length) return false; _queue.removeAt(index); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> reorderQueue(int oldIndex, int newIndex) async { if (oldIndex <= _queueIndex || oldIndex >= _queue.length) return false; if (newIndex > oldIndex) newIndex--; newIndex = newIndex.clamp(_queueIndex + 1, _queue.length - 1).toInt(); final item = _queue.removeAt(oldIndex); _queue.insert(newIndex, item); await _persistQueue(); notifyListeners(); return true; }
   void clearUpcomingQueue() { if (_queueIndex >= _queue.length - 1) return; _queue = [..._queue.take(_queueIndex + 1)]; unawaited(_persistQueue()); notifyListeners(); }
 
-  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setLoopMode(LoopMode.off); await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? _volume : 0.0); if (start) await player.play(); }
+  Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async { await player.setLoopMode(LoopMode.off); await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song)); await _enableEffects(player, eq, loud); await player.setVolume(start ? 1.0 : 0.0); if (start) await player.play(); }
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) => _serializePlayback(() => _performTrueCrossfade(milliseconds: milliseconds, fadeType: fadeType, generation: _authority.beginAutomatic('crossfade')), command: 'crossfade', source: 'automatic_transition');
 
@@ -441,7 +536,7 @@ class MusicProvider extends ChangeNotifier {
       await _finishHistoryEvent();
       if (!_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
       await outgoing.pause(); await outgoing.setVolume(master); await incoming.setLoopMode(LoopMode.off); await incoming.setVolume(master);
-      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
+      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners(); await outgoing.stop();
       await ResonateDiagnostics.record('crossfade_committed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'queueIndex': _queueIndex, 'intentToken': intentToken});
       return true;
@@ -451,7 +546,12 @@ class MusicProvider extends ChangeNotifier {
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
       if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) return false;
       try { await outgoing.stop(); await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken); return true; } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); await ResonateDiagnostics.record('crossfade_fallback_failed', {'incomingSongId': nextSong.id, 'error': fallbackError.toString(), 'intentToken': intentToken}); return false; }
-    } finally { _crossfadeInProgress = false; notifyListeners(); }
+    } finally {
+      _crossfadeInProgress = false;
+      notifyListeners();
+      _completionObservedDuringCrossfade = false;
+
+    }
   }
 
   Future<void> togglePlayPause({String source = 'normal_player'}) { final intentToken = _playbackIntentGate.issue(); return _serializePlayback(() async { if (!_playbackIntentGate.isCurrent(intentToken)) return; try { if (audioPlayer.playing) { await audioPlayer.pause(); isPlaying = false; _persistResumePosition(force: true); _publishServiceState(); notifyListeners(); return; } if (audioPlayer.audioSource != null) { await audioPlayer.play(); isPlaying = true; _publishServiceState(); notifyListeners(); } else if (currentSong != null) { await _playSongInternal(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex, resume: true); } } catch (e) { debugPrint('Playback toggle failed: $e'); } }, command: 'toggle', source: source, userInitiated: true, intentToken: intentToken); }
@@ -460,8 +560,30 @@ class MusicProvider extends ChangeNotifier {
   Future<void> nextSong({String source = 'normal_player'}) { final intentToken = _playbackIntentGate.issue(); return _serializePlayback(() async { if (!_playbackIntentGate.isCurrent(intentToken)) return; if (_queue.isEmpty) return; if (_queueIndex >= _queue.length - 1) { if (_repeatMode == PlaybackRepeatMode.all) await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: _playbackIntentGate.currentToken); else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex); return; } final nextIndex = _queueIndex + 1; if (_crossfadeEnabled && canCrossfadeNext && audioPlayer.playing && source != 'audio_service') { final didCrossfade = await _performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType, generation: _authority.beginAutomatic('manual_next_crossfade'), playbackIntentToken: intentToken); if (didCrossfade) return; } await _playSongInternal(_queue[nextIndex], queue: _queue, startIndex: nextIndex); }, command: 'next', source: source, userInitiated: true, intentToken: intentToken); }
   Future<void> previousSong({String source = 'normal_player'}) { final intentToken = _playbackIntentGate.issue(); return _serializePlayback(() async { if (!_playbackIntentGate.isCurrent(intentToken)) return; if (_queueIndex > 0) { final previousIndex = _queueIndex - 1; await _playSongInternal(_queue[previousIndex], queue: _queue, startIndex: previousIndex); } else { await audioPlayer.seek(Duration.zero); currentPosition = Duration.zero; if (_activeHistoryEvent != null) _activeHistoryPositionMs = 0; _persistResumePosition(force: true); notifyListeners(); } }, command: 'previous', source: source, userInitiated: true, intentToken: intentToken); }
   Future<void> seek(Duration position, {String source = 'normal_player'}) { final intentToken = _playbackIntentGate.issue(); return _serializePlayback(() async { if (!_playbackIntentGate.isCurrent(intentToken)) return; try { final duration = audioPlayer.duration ?? currentDuration ?? Duration.zero; final safe = Duration(milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds).toInt()); await audioPlayer.seek(safe); currentPosition = safe; if (_activeHistoryEvent != null) _activeHistoryPositionMs = safe.inMilliseconds; _persistResumePosition(force: true); _publishServiceState(); notifyListeners(); } catch (_) {} }, command: 'seek', source: source, userInitiated: true, intentToken: intentToken); }
-  Future<void> setVolume(double volume) async { _volume = volume.clamp(0.0, 1.0).toDouble(); try { await audioPlayer.setVolume(_volume); if (!inactivePlayer.playing) await inactivePlayer.setVolume(_volume); notifyListeners(); } catch (_) {} }
+  Future<void> _syncSystemVolume() async {
+    try {
+      final raw = await _systemVolumeChannel.invokeMethod<dynamic>('getSystemVolume');
+      if (raw is Map) {
+        final current = (raw['current'] as num?)?.toDouble() ?? 0;
+        final max = (raw['max'] as num?)?.toDouble() ?? 0;
+        if (max > 0) {
+          final next = (current / max).clamp(0.0, 1.0).toDouble();
+          if ((next - _volume).abs() > 0.001) { _volume = next; notifyListeners(); }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> setVolume(double volume) async {
+    _volume = volume.clamp(0.0, 1.0).toDouble();
+    try {
+      await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
+      await audioPlayer.setVolume(1.0);
+      await inactivePlayer.setVolume(1.0);
+    } catch (_) {}
+    notifyListeners();
+  }
   Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await playSong(songs[index], queue: songs, startIndex: index); }
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
-  @override void dispose() { _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel(); _interruptionSubscription?.cancel(); _noisySubscription?.cancel(); _playerA.dispose(); _playerB.dispose(); super.dispose(); }
+  @override void dispose() { _systemVolumePollTimer?.cancel(); _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel(); _interruptionSubscription?.cancel(); _noisySubscription?.cancel(); _playerA.dispose(); _playerB.dispose(); super.dispose(); }
 }
