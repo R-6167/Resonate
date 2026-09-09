@@ -28,7 +28,14 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
     }
   }
 
-  Future<void> _removeFolder(String uri) async { await AudioFileService.removeFolder(uri); await _loadFolders(); }
+  Future<void> _removeFolder(String uri) async {
+    await AudioFileService.removeFolder(uri);
+    await _loadFolders();
+    if (mounted) {
+      await context.read<LibraryProvider>().scanDeviceAudio();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Folder restriction updated — ${context.read<LibraryProvider>().allSongs.length} songs indexed.')));
+    }
+  }
   Future<void> _scan() async { await context.read<LibraryProvider>().scanDeviceAudio(); }
 
   String _durationLabel(int ms) { if (ms <= 0) return 'Include audio of any length.'; final seconds = ms ~/ 1000; if (seconds < 60) return 'Only audio at least $seconds seconds long.'; final minutes = seconds ~/ 60; return 'Only audio at least $minutes minute${minutes == 1 ? '' : 's'} long.'; }
