@@ -4,6 +4,8 @@ import 'database_helper.dart';
 /// Short-lived local evidence cache for Intelligence recomputation.
 /// Playback boundaries invalidate it; repeated UI/provider notifications do not
 /// repeatedly hit SQLite for the same recent-event window.
+///
+/// The cache is shared by recommendation refresh and learning/graduation checks.
 class IntelligenceEvidenceCache {
   IntelligenceEvidenceCache._();
   static final IntelligenceEvidenceCache instance = IntelligenceEvidenceCache._();
