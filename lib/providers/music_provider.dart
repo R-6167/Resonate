@@ -371,6 +371,7 @@ class MusicProvider extends ChangeNotifier {
     return _serializePlayback(
       () => _playSongInternal(song, queue: queue, startIndex: startIndex, playbackIntentToken: intentToken),
       command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,
+      onSuperseded: () async => false,
     );
   }
 

@@ -67,7 +67,7 @@ class DatabaseHelper {
       final db = _database ??= await _initDatabase();
       _markDatabaseSuccess();
       return db;
-    } catch (e) { _markDatabaseFailure('database_operation', e);
+    } catch (e) {
       _markDatabaseFailure('open_database', e);
       rethrow;
     }
