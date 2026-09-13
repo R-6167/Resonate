@@ -30,7 +30,6 @@ jobs:
           from pathlib import Path
           import re
 
-          # Intelligence evidence cache + reactive visibility invalidation.
           p = Path('lib/providers/intelligence_provider.dart')
           s = p.read_text()
           if "../services/intelligence_evidence_cache.dart" not in s:
@@ -42,7 +41,6 @@ jobs:
               s = s.replace("  void dispose() {", "  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);", 1)
           p.write_text(s)
 
-          # MusicProvider remains the sole queue authority; the media bridge mirrors it.
           p = Path('lib/services/audio_service_handler.dart')
           s = p.read_text()
           old = '''    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);\n    final orderedSongs = <Song>[\n      sourceSongs[requestedIndex],\n      ...sourceSongs.take(requestedIndex),\n      ...sourceSongs.skip(requestedIndex + 1),\n    ];\n    _items\n      ..clear()\n      ..addAll(orderedSongs.map(songToMediaItem));\n    queue.add(List.unmodifiable(_items));\n    mediaItem.add(_items.first);'''
@@ -53,8 +51,6 @@ jobs:
           s = re.sub(r'''\n  Future<void> addQueueItem\(MediaItem item\) async \{.*?\n  Future<void> addQueueItems\(List<MediaItem> mediaItems\) async \{.*?\n  \}\n''', '\n', s, flags=re.S)
           p.write_text(s)
 
-          # Database health semantics. Any database-operation catch marks failure;
-          # every successful database acquisition marks the helper healthy again.
           p = Path('lib/services/database_helper.dart')
           s = p.read_text()
           if 'bool _healthy = true;' not in s:
@@ -67,12 +63,10 @@ jobs:
           replacement = '''  Future<Database> get database async {\n    try {\n      final db = _database ??= await _initDatabase();\n      _markDatabaseSuccess();\n      return db;\n    } catch (e) {\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }\n  }'''
           if getter in s:
               s = s.replace(getter, replacement, 1)
-          s = s.replace('catch (e) {', "catch (e) { _markDatabaseFailure('database_operation', e); ")
+          s = s.replace('catch (e) {', "catch (e) { _markDatabaseFailure('database_operation', e);")
           s = s.replace('catch(e){', "catch(e){_markDatabaseFailure('database_operation',e);")
           p.write_text(s)
 
-          # Diagnostics batching: create entries in memory and flush them in batches,
-          # rather than rewriting the entire SharedPreferences event list per event.
           p = Path('lib/services/resonate_diagnostics.dart')
           s = p.read_text()
           if '_pendingEvents' not in s:
