@@ -2,7 +2,6 @@ import 'package:audio_service/audio_service.dart';
 
 import '../models/song.dart';
 import 'playback_authority.dart';
-import '../models/song.dart';
 
 /// System-media bridge for Resonate. MusicProvider owns the only AudioPlayers;
 /// this service forwards transport commands and mirrors playback state.
