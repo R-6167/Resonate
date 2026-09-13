@@ -1,44 +1,39 @@
 import 'dart:async';
 
-/// Owns the ordering boundary for native playback mutations.
-///
-/// Source-changing operations are strictly serialized because just_audio can
-/// reject overlapping setAudioSource/stop operations. Transport commands are
-/// intentionally not placed behind that queue: pause, seek and stop should
-/// remain responsive while a source operation is resolving.
+/// Serializes native source mutations while allowing newer user source
+/// requests to supersede requests that have not started yet.
 class PlaybackCoordinator {
   Future<void> _sourceTail = Future<void>.value();
   int _operationId = 0;
+  int _latestSourceRequest = 0;
 
   int get lastOperationId => _operationId;
 
   Future<T> runSourceMutation<T>(
     Future<T> Function() operation, {
     required String command,
+    bool supersedePending = false,
+    Future<T> Function()? onSuperseded,
   }) {
     final id = ++_operationId;
+    if (supersedePending) _latestSourceRequest = id;
     final next = _sourceTail.then((_) async {
-      try {
-        return await operation();
-      } catch (_) {
-        rethrow;
+      if (supersedePending && id != _latestSourceRequest) {
+        if (onSuperseded != null) return onSuperseded();
+        return operation();
       }
+      return operation();
     });
     _sourceTail = next.then<void>((_) {}, onError: (_, __) {});
     return next;
   }
 
-  /// Transport operations intentionally bypass the source-mutation queue.
-  /// They still run through one explicit boundary so callers have a single
-  /// place to enforce future transport policy without touching the player.
   Future<T> runTransport<T>(Future<T> Function() operation) => operation();
 
-  /// Wait until every queued source mutation has settled.
   Future<void> drain() => _sourceTail;
 
   void reset() {
-    // A completed tail is enough to release retained futures without touching
-    // an in-flight native operation.
     _sourceTail = Future<void>.value();
+    _latestSourceRequest = _operationId;
   }
 }
