@@ -19,6 +19,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Make repair script tolerant of compact source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/repair_playback_ab.py')
+          s = p.read_text()
+          s = s.replace(
+              r'old = re.search(r"  Future<void> _stopBoth\\(\\) async \\{.*?\\n  \\}\\n\\n  Future<void> _enableEffects", s, re.S)',
+              r'old = re.search(r"  Future<void> _stopBoth\\(\\) async \\{.*?\\}\\s*\\n\\n  Future<void> _enableEffects", s, re.S)',
+          )
+          p.write_text(s)
+          print('Patched repair script stopBoth matcher.')
+          PY
       - name: Apply A-B playback repair
         run: python3 scripts/repair_playback_ab.py
       - name: Write valid PlaybackCoordinator
