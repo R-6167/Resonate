@@ -8,6 +8,7 @@ import '../models/intelligence_recommendation.dart';
 import '../models/listening_event.dart';
 import '../models/song.dart';
 import '../services/database_helper.dart';
+import '../services/intelligence_evidence_cache.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/library_visibility_store.dart';
 import '../services/resonate_diagnostics.dart';
@@ -40,6 +41,7 @@ class IntelligenceProvider extends ChangeNotifier {
   static const int _sessionEventLimit = 12;
 
   IntelligenceProvider({required this.music}) {
+    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);
     music.addListener(_observePlayback);
     unawaited(_loadSettings());
     _observePlayback();
@@ -116,7 +118,7 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> _evaluateAutopilotGraduation() async {
     if (!_enabled || _autopilotGraduated || _autonomy == 2) return;
     try {
-      final events = await _database.getRecentListeningEvents(limit: 200);
+      final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
       if (events.length < _minimumLearningEvents) return;
       if (events.map((e) => e.songId).toSet().length < _minimumDistinctSongs) return;
       if (_recommendations.where((r) => r.confidence >= _graduationConfidence).length < 2) return;
@@ -154,6 +156,11 @@ class IntelligenceProvider extends ChangeNotifier {
     final raw = value?.trim().toLowerCase() ?? '';
     const unknown = {'', 'unknown', 'unknown artist', 'unknown_artist', '<unknown>', 'n/a', 'na', 'none', 'null', 'various artists', 'various artist'};
     return unknown.contains(raw) ? '' : raw;
+  }
+
+  void _onVisibilityChanged() {
+    IntelligenceEvidenceCache.instance.invalidate();
+    if (_enabled) unawaited(refreshRecommendations());
   }
 
   void _observePlayback() {
@@ -291,5 +298,6 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> recordListeningEvent(ListeningEvent event) async => _database.insertListeningEvent(event);
 
   @override
-  void dispose() { music.removeListener(_observePlayback); super.dispose(); }
+  void dispose() {
+    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged); music.removeListener(_observePlayback); super.dispose(); }
 }

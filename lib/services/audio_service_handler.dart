@@ -116,16 +116,11 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       return;
     }
     final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);
-    final orderedSongs = <Song>[
-      sourceSongs[requestedIndex],
-      ...sourceSongs.take(requestedIndex),
-      ...sourceSongs.skip(requestedIndex + 1),
-    ];
     _items
       ..clear()
-      ..addAll(orderedSongs.map(songToMediaItem));
+      ..addAll(sourceSongs.map(songToMediaItem));
     queue.add(List.unmodifiable(_items));
-    mediaItem.add(_items.first);
+    mediaItem.add(_items[requestedIndex]);
   }
 
   @override
@@ -197,14 +192,4 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     await callback();
   }
 
-  Future<void> addQueueItem(MediaItem item) async {
-    _items.add(item);
-    queue.add(List.unmodifiable(_items));
-  }
-
-  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
-    for (final item in mediaItems) {
-      await addQueueItem(item);
-    }
-  }
 }

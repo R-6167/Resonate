@@ -27,6 +27,9 @@ class ResonateDiagnostics {
   static Future<void> _writeSerial = Future<void>.value();
   static String? _sessionId;
   static int _sequence = 0;
+  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];
+  static Timer? _flushTimer;
+  static Future<void> _flushInFlight = Future<void>.value();
 
   static Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -79,16 +82,29 @@ class ResonateDiagnostics {
   }
 
   static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
-    _writeSerial = _writeSerial.then((_) async {
+    try {
+      final entry = await _entry(type, data);
+      _pendingEvents.add(entry);
+      _flushTimer ??= Timer.periodic(const Duration(milliseconds: 750), (_) => unawaited(_flushPendingEvents()));
+      if (_pendingEvents.length >= 32) await _flushPendingEvents();
+    } catch (_) {}
+  }
+
+  static Future<void> _flushPendingEvents() async {
+    if (_pendingEvents.isEmpty) return;
+    _flushInFlight = _flushInFlight.then((_) async {
+      if (_pendingEvents.isEmpty) return;
       try {
+        final batch = List<Map<String, dynamic>>.from(_pendingEvents);
+        _pendingEvents.clear();
         final prefs = await _prefs();
         final items = _decodeList(prefs.getString(_eventsKey));
-        items.add(await _entry(type, data));
+        items.addAll(batch);
         if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
         await prefs.setString(_eventsKey, jsonEncode(items));
       } catch (_) {}
     });
-    await _writeSerial;
+    await _flushInFlight;
   }
 
   /// High-value playback checkpoint. Call this at commands, state changes,
@@ -250,6 +266,7 @@ class ResonateDiagnostics {
   }
 
   static Future<Map<String, dynamic>> snapshot() async {
+    await _flushPendingEvents();
     await _writeSerial;
     final prefs = await _prefs();
     final events = _decodeList(prefs.getString(_eventsKey));
@@ -370,6 +387,7 @@ class ResonateDiagnostics {
   }
 
   static Future<void> clearDiagnostics() async {
+    await _flushPendingEvents();
     await _writeSerial;
     final prefs = await _prefs();
     await prefs.remove(_eventsKey);
