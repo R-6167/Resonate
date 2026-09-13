@@ -1,0 +1,157 @@
+name: Repair Playback Architecture v3
+
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply deterministic repair
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('lib/providers/music_provider.dart')
+          s = p.read_text()
+
+          def once(old, new):
+              global s
+              if old not in s:
+                  raise SystemExit('Missing MusicProvider anchor: ' + old[:120])
+              s = s.replace(old, new, 1)
+
+          once("import '../services/audio_effects_bridge.dart';",
+               "import '../services/audio_effects_bridge.dart';\nimport '../services/audio_effects_controller.dart';\nimport '../services/playback_coordinator.dart';")
+          once("  final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();",
+               "  final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();\n  final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();\n  late final AudioEffectsController _audioEffectsController;")
+          once("    _loudnessB = AndroidLoudnessEnhancer();\n    _playerA = AudioPlayer",
+               "    _loudnessB = AndroidLoudnessEnhancer();\n    _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);\n    _playerA = AudioPlayer")
+
+          s2 = re.sub(r"  Future<void> syncSavedAudioEffects\(\) async \{.*?\n  \}\n\n  Future<void> _configureAudioSession",
+                      "  Future<void> syncSavedAudioEffects() async {\n    try { await _audioEffectsController.syncAll(); } catch (e) { debugPrint('Saved audio effects sync failed: $e'); }\n  }\n\n  Future<void> _configureAudioSession", s, count=1, flags=re.S)
+          if s2 == s:
+              raise SystemExit('syncSavedAudioEffects anchor was not replaced')
+          s = s2
+
+          s2 = re.sub(r"  Future<void> _enableEffects\(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud\) async \{.*?\n  \}\n\n  Future<T> _serializePlayback",
+                      "  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {\n    try { await _audioEffectsController.activateFor(player); } catch (e) { debugPrint('Audio effects activation failed: $e'); }\n  }\n\n  Future<T> _serializePlayback", s, count=1, flags=re.S)
+          if s2 == s:
+              raise SystemExit('_enableEffects anchor was not replaced')
+          s = s2
+
+          s2 = re.sub(r"  Future<T> _serializePlayback<T>\(Future<T> Function\(\) operation, \{required String command, required String source, bool userInitiated = false, int\? intentToken\}\) async \{.*?\n  \}\n\n  Future<bool> playSong",
+                      """  Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken}) async {
+            final effectiveIntent = userInitiated ? (intentToken ?? _playbackIntentGate.issue()) : _playbackIntentGate.currentToken;
+            if (userInitiated) {
+              _authority.markExternalUserCommand(source, command);
+              unawaited(ResonateDiagnostics.record('playback_command_accepted', {
+                'command': command, 'source': source, 'intentToken': effectiveIntent,
+              }));
+            }
+            final transportPriority = userInitiated &&
+                const {'toggle', 'pause', 'stop', 'seek'}.contains(command) &&
+                audioPlayer.audioSource != null;
+            await ResonateDiagnostics.record('playback_operation_queued', {
+              'command': command,
+              'source': source,
+              'userInitiated': userInitiated,
+              'intentToken': effectiveIntent,
+              'lane': transportPriority ? 'transport_priority' : 'source_serialized',
+            });
+            if (transportPriority) return _playbackCoordinator.runTransport(operation);
+            return _playbackCoordinator.runSourceMutation(operation, command: command);
+          }
+
+          Future<bool> playSong""", s, count=1, flags=re.S)
+          if s2 == s:
+              raise SystemExit('_serializePlayback anchor was not replaced')
+          s = s2
+
+          once("  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0); }",
+               "  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0, bufferedPosition: audioPlayer.bufferedPosition, playbackQueue: _queue, queueIndex: _queueIndex); }")
+
+          for (needle in ['final PlaybackCoordinator _playbackCoordinator', 'late final AudioEffectsController _audioEffectsController', '_audioEffectsController = AudioEffectsController']):
+              if needle not in s: raise SystemExit('Repair verification failed: ' + needle)
+          p.write_text(s)
+
+          hpath = Path('lib/services/audio_service_handler.dart')
+          h = hpath.read_text()
+          old = "    required double speed,\n    Duration? bufferedPosition,"
+          new = "    required double speed,\n    Duration? bufferedPosition,\n    List<Song>? playbackQueue,\n    int queueIndex = 0,"
+          if old in h: h = h.replace(old, new, 1)
+          old = "    if (song != null) {\n      final item = songToMediaItem(song);\n      mediaItem.add(item);\n      _items\n        ..clear()\n        ..add(item);\n      queue.add(List.unmodifiable(_items));"
+          new = "    final sourceQueue = (playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]))\n        .where((item) => item.filePath.trim().isNotEmpty)\n        .map(songToMediaItem)\n        .toList();\n    if (sourceQueue.isNotEmpty) {\n      _items\n        ..clear()\n        ..addAll(sourceQueue);\n      queue.add(List.unmodifiable(_items));\n      final safeIndex = queueIndex.clamp(0, _items.length - 1);\n      mediaItem.add(_items[safeIndex]);"
+          if old in h: h = h.replace(old, new, 1)
+          hpath.write_text(h)
+
+          ap = Path('lib/screens/about_screen.dart')
+          a = ap.read_text()
+          a = a.replace('0.1.2 • Local-first intelligent music player', '0.1.3 • Local-first intelligent music player', 1)
+          a = a.replace('Implemented in 0.1.2', 'Implemented in 0.1.3', 1)
+          ap.write_text(a)
+          PY
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Set up Android
+        uses: android-actions/setup-android@v3
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
+      - name: Tests
+        run: flutter test --reporter expanded
+
+      - name: Build release APK
+        run: flutter build apk --release --no-shrink
+
+      - name: Verify APK
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Persist repaired source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f scripts/apply_playback_architecture.py
+          git add lib scripts/apply_playback_architecture.py
+          if ! git diff --cached --quiet; then
+            git commit -m "refactor: centralize playback and audio effects [skip ci]"
+            git push origin HEAD:Companion_Features_Diagnostics
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonate-playback-architecture-v3-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+          if-no-files-found: error
