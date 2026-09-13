@@ -1,0 +1,37 @@
+name: Apply Playback A-B Repair
+
+on:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'fix: repair A/B playback handoff and source queue')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Companion_Features_Diagnostics
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply repair
+        run: python scripts/repair_playback_ab.py
+      - name: Remove one-shot repair files
+        run: |
+          rm -f scripts/repair_playback_ab.py .github/workflows/apply_playback_ab_repair.yml
+      - name: Commit repaired source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/providers/music_provider.dart lib/services/playback_coordinator.dart scripts/repair_playback_ab.py .github/workflows/apply_playback_ab_repair.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: make playback alternate A-B engines and coalesce stale source requests'
+          git push origin HEAD:Companion_Features_Diagnostics
