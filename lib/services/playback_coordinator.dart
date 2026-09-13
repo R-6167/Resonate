@@ -19,8 +19,14 @@ class PlaybackCoordinator {
     if (supersedePending) _latestSourceRequest = id;
     final next = _sourceTail.then((_) async {
       if (supersedePending && id != _latestSourceRequest) {
-        if (onSuperseded != null) return onSuperseded();
-        return operation();
+        // A superseded source request must never reach the native player.
+        // Every current caller that opts into superseding supplies a safe
+        // completion value; keep a defensive error for future misuse rather
+        // than silently executing stale source mutation.
+        if (onSuperseded == null) {
+          throw StateError('Superseded playback request "$command" has no completion handler');
+        }
+        return onSuperseded();
       }
       return operation();
     });
