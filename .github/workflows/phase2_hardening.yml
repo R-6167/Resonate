@@ -12,58 +12,123 @@ jobs:
   harden:
     if: ${{ github.event.head_commit.message != 'feat: complete phase 2 architecture hardening' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Apply phase 2 source changes
+
+      - name: Apply missing Phase 2 implementation
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          # Intelligence: cached evidence + visibility invalidation.
+          # 1) Intelligence evidence cache: actually wire the cache into the provider.
           p = Path('lib/providers/intelligence_provider.dart')
           s = p.read_text()
           if "../services/intelligence_evidence_cache.dart" not in s:
-              s = s.replace("import '../services/database_helper.dart';", "import '../services/database_helper.dart';\nimport '../services/intelligence_evidence_cache.dart';", 1)
-          s = s.replace("final events = await _database.getRecentListeningEvents(limit: 200);", "final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);", 1)
+              s = s.replace(
+                  "import '../services/database_helper.dart';",
+                  "import '../services/database_helper.dart';\nimport '../services/intelligence_evidence_cache.dart';",
+                  1,
+              )
+          s = s.replace(
+              "final events = await _database.getRecentListeningEvents(limit: 200);",
+              "final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);",
+              1,
+          )
           if "LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);" not in s:
-              s = s.replace("IntelligenceProvider({required this.music}) {", "IntelligenceProvider({required this.music}) {\n    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);", 1)
-              s = s.replace("  void _observePlayback() {", "  void _onVisibilityChanged() {\n    IntelligenceEvidenceCache.instance.invalidate();\n    if (_enabled) unawaited(refreshRecommendations());\n  }\n\n  void _observePlayback() {", 1)
-              s = s.replace("  void dispose() {", "  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);", 1)
+              s = s.replace(
+                  "IntelligenceProvider({required this.music}) {",
+                  "IntelligenceProvider({required this.music}) {\n    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);",
+                  1,
+              )
+              anchor = "  void _observePlayback() {"
+              if anchor in s:
+                  s = s.replace(
+                      anchor,
+                      "  void _onVisibilityChanged() {\n    IntelligenceEvidenceCache.instance.invalidate();\n    if (_enabled) unawaited(refreshRecommendations());\n  }\n\n" + anchor,
+                      1,
+                  )
+              s = s.replace(
+                  "  void dispose() {",
+                  "  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);",
+                  1,
+              )
           p.write_text(s)
 
-          # Database: distinguish failed reads from valid empty results.
+          # 2) Queue authority: AudioServiceHandler mirrors MusicProvider's exact queue.
+          p = Path('lib/services/audio_service_handler.dart')
+          s = p.read_text()
+          old = '''    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);\n    final orderedSongs = <Song>[\n      sourceSongs[requestedIndex],\n      ...sourceSongs.take(requestedIndex),\n      ...sourceSongs.skip(requestedIndex + 1),\n    ];\n    _items\n      ..clear()\n      ..addAll(orderedSongs.map(songToMediaItem));\n    queue.add(List.unmodifiable(_items));\n    mediaItem.add(_items.first);'''
+          new = '''    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);\n    _items\n      ..clear()\n      ..addAll(sourceSongs.map(songToMediaItem));\n    queue.add(List.unmodifiable(_items));\n    mediaItem.add(_items[requestedIndex]);'''
+          if old not in s:
+              raise SystemExit('AudioServiceHandler queue authority anchor missing')
+          s = s.replace(old, new, 1)
+          s = re.sub(r'''\n  Future<void> addQueueItem\(MediaItem item\) async \{.*?\n  Future<void> addQueueItems\(List<MediaItem> mediaItems\) async \{.*?\n  \}\n''', '\n', s, flags=re.S)
+          p.write_text(s)
+
+          # 3) Database semantics: record failures instead of silently treating them as empty data.
           p = Path('lib/services/database_helper.dart')
           s = p.read_text()
           if 'bool _healthy = true;' not in s:
-              needle = '  static Database? _database;'
-              if needle not in s: raise SystemExit('database anchor missing')
-              insert = '''  static Database? _database;\n  bool _healthy = true;\n  String? _lastDatabaseError;\n\n  bool get isHealthy => _healthy;\n  String? get lastDatabaseError => _lastDatabaseError;\n\n  void _markDatabaseFailure(String operation, Object error) {\n    _healthy = false;\n    _lastDatabaseError = '$operation: $error';\n  }\n\n  void _markDatabaseSuccess() {\n    _healthy = true;\n    _lastDatabaseError = null;\n  }'''
-              s = s.replace(needle, insert, 1)
+              anchor = '  static Database? _database;'
+              health = '''  static Database? _database;\n  bool _healthy = true;\n  String? _lastDatabaseError;\n\n  bool get isHealthy => _healthy;\n  String? get lastDatabaseError => _lastDatabaseError;\n\n  void _markDatabaseFailure(String operation, Object error) {\n    _healthy = false;\n    _lastDatabaseError = '$operation: $error';\n  }\n\n  void _markDatabaseSuccess() {\n    _healthy = true;\n    _lastDatabaseError = null;\n  }'''
+              if anchor not in s:
+                  raise SystemExit('Database health anchor missing')
+              s = s.replace(anchor, health, 1)
+          old_getter = '  Future<Database> get database async => _database ??= await _initDatabase();'
+          new_getter = '''  Future<Database> get database async {\n    try {\n      final db = _database ??= await _initDatabase();\n      _markDatabaseSuccess();\n      return db;\n    } catch (e) {\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }\n  }'''
+          if old_getter in s:
+              s = s.replace(old_getter, new_getter, 1)
+          # All database operation catches in this file must mark the database unhealthy.\n          # The getter above marks successful opens healthy again.
+          s = s.replace('catch (e) {', "catch (e) { _markDatabaseFailure('database_operation', e); ")
+          s = s.replace('catch(e){', "catch(e){_markDatabaseFailure('database_operation',e);")
           p.write_text(s)
 
-          # Diagnostics: batch SharedPreferences writes.
+          # 4) Diagnostics: buffer event entries and flush them as a single SharedPreferences write.
           p = Path('lib/services/resonate_diagnostics.dart')
           s = p.read_text()
           if '_pendingEvents' not in s:
-              needle = '  static int _sequence = 0;'
-              if needle not in s: raise SystemExit('diagnostics anchor missing')
-              s = s.replace(needle, needle + '''\n  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];\n  static Timer? _flushTimer;\n  static bool _flushInFlight = false;''', 1)
+              s = s.replace(
+                  '  static int _sequence = 0;',
+                  '''  static int _sequence = 0;\n  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];\n  static Timer? _flushTimer;\n  static Future<void> _flushInFlight = Future<void>.value();''',
+                  1,
+              )
+          old_record = '''  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {\n    _writeSerial = _writeSerial.then((_) async {\n      try {\n        final prefs = await _prefs();\n        final items = _decodeList(prefs.getString(_eventsKey));\n        items.add(await _entry(type, data));\n        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);\n        await prefs.setString(_eventsKey, jsonEncode(items));\n      } catch (_) {}\n    });\n    await _writeSerial;\n  }'''
+          new_record = '''  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {\n    try {\n      final entry = await _entry(type, data);\n      _pendingEvents.add(entry);\n      _flushTimer ??= Timer.periodic(const Duration(milliseconds: 750), (_) => unawaited(_flushPendingEvents()));\n      if (_pendingEvents.length >= 32) {\n        await _flushPendingEvents();\n      }\n    } catch (_) {}\n  }\n\n  static Future<void> _flushPendingEvents() async {\n    if (_pendingEvents.isEmpty) return;\n    _flushInFlight = _flushInFlight.then((_) async {\n      if (_pendingEvents.isEmpty) return;\n      try {\n        final batch = List<Map<String, dynamic>>.from(_pendingEvents);\n        _pendingEvents.clear();\n        final prefs = await _prefs();\n        final items = _decodeList(prefs.getString(_eventsKey));\n        items.addAll(batch);\n        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);\n        await prefs.setString(_eventsKey, jsonEncode(items));\n      } catch (_) {}\n    });\n    await _flushInFlight;\n  }'''
+          if old_record not in s:
+              raise SystemExit('Diagnostics record anchor missing')
+          s = s.replace(old_record, new_record, 1)
+          s = s.replace('  static Future<Map<String, dynamic>> snapshot() async {\n    await _writeSerial;', '  static Future<Map<String, dynamic>> snapshot() async {\n    await _flushPendingEvents();\n    await _writeSerial;', 1)
+          s = s.replace('  static Future<void> clearDiagnostics() async {\n    await _writeSerial;', '  static Future<void> clearDiagnostics() async {\n    await _flushPendingEvents();\n    await _writeSerial;', 1)
+          p.write_text(s)
+
+          # 5) Make stale source requests explicitly safe: a superseded request is a no-op
+          # only when the caller supplied its safe fallback. This is enforced by validation below.
+          p = Path('lib/services/playback_coordinator.dart')
+          s = p.read_text()
+          if 'onSuperseded != null' not in s:
+              raise SystemExit('PlaybackCoordinator supersede implementation missing')
           p.write_text(s)
           PY
 
-      - name: Verify phase 2 source
+      - name: Validate Phase 2 wiring
         run: |
+          set -e
           grep -q "IntelligenceEvidenceCache.instance.recentEvents" lib/providers/intelligence_provider.dart
           grep -q "LibraryVisibilityStore.instance.addListener(_onVisibilityChanged)" lib/providers/intelligence_provider.dart
           grep -q "bool get isHealthy" lib/services/database_helper.dart
+          grep -q "_markDatabaseFailure" lib/services/database_helper.dart
           grep -q "_pendingEvents" lib/services/resonate_diagnostics.dart
+          grep -q "_flushPendingEvents" lib/services/resonate_diagnostics.dart
           grep -q "PlaybackEventKind" lib/services/playback_authority.dart
           grep -q "_onAuthorityEvent" lib/providers/autopilot_controller.dart
+          ! grep -q "addQueueItem(MediaItem" lib/services/audio_service_handler.dart
           git diff --check
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -81,32 +146,36 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
       - name: Install Android components
-        run: |
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
       - name: Create local.properties
         run: |
           cat > android/local.properties <<EOF
           sdk.dir=${ANDROID_SDK_ROOT}
           flutter.sdk=${FLUTTER_ROOT}
           EOF
-      - name: Validate
+
+      - name: Analyze and test the finished Phase 2 source
         run: |
           flutter pub get
           flutter analyze --no-fatal-warnings --no-fatal-infos
           flutter test --reporter expanded
-      - name: Build release APK
+
+      - name: Build finished Phase 2 APK
         run: flutter build apk --release
-      - name: Verify APK
+
+      - name: Verify finished APK
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
-      - name: Upload APK
+
+      - name: Upload finished Phase 2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: resonate-phase2-apk
+          name: resonate-phase2-complete-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 7
-      - name: Persist source
+          retention-days: 14
+
+      - name: Persist finished source
         run: |
           git config user.name 'Resonate Automation'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
