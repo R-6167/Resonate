@@ -11,6 +11,8 @@ import 'music_provider.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
+/// PlaybackAuthority events wake this controller for command-sensitive work;
+/// the provider listener remains only as a state-boundary fallback.
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
@@ -24,18 +26,38 @@ class AutopilotController extends ChangeNotifier {
   bool _pendingTakeover = false;
   bool _consentLoaded = false;
   bool _consentGranted = false;
+  DateTime? _lastEvaluation;
+  bool _evaluationScheduled = false;
 
   AutopilotController({required this.music, required this.intelligence}) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
+    _authority.addListener(_onAuthorityEvent);
     unawaited(_loadConsentAndEvaluate());
   }
 
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
   String? get pendingSongId => _pendingSongId;
 
-  void _onPlaybackChanged() => unawaited(_evaluate());
-  void _onIntelligenceChanged() => unawaited(_evaluate());
+  void _onPlaybackChanged() => _scheduleEvaluate();
+  void _onIntelligenceChanged() => _scheduleEvaluate();
+
+  void _onAuthorityEvent() {
+    final event = _authority.lastEvent;
+    if (event == null) return;
+    if (event.kind == PlaybackEventKind.userCommand || event.kind == PlaybackEventKind.automaticCommand) {
+      _scheduleEvaluate();
+    }
+  }
+
+  void _scheduleEvaluate() {
+    if (_evaluationScheduled) return;
+    _evaluationScheduled = true;
+    scheduleMicrotask(() async {
+      _evaluationScheduled = false;
+      await _evaluate();
+    });
+  }
 
   Future<void> _loadConsentAndEvaluate() async {
     _consentGranted = await IntelligenceSettingsStore.autopilotConsent();
@@ -71,6 +93,9 @@ class AutopilotController extends ChangeNotifier {
   Future<void> _evaluate({bool forceTransition = false}) async {
     if (!_consentLoaded || !intelligence.isAutopilot || music.currentSong == null) return;
     if (!music.isPlaying && !forceTransition) return;
+    final now = DateTime.now();
+    if (!forceTransition && _lastEvaluation != null && now.difference(_lastEvaluation!) < const Duration(milliseconds: 250)) return;
+    _lastEvaluation = now;
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
@@ -120,8 +145,6 @@ class AutopilotController extends ChangeNotifier {
     final userGeneration = _authority.userGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     try {
-      // A direct user command always invalidates this transition before it can
-      // take effect, regardless of Intelligence confidence.
       if (_authority.isStale(automaticGeneration) || userGeneration != _authority.userGeneration) return;
       if (useCrossfade) {
         final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
@@ -181,6 +204,7 @@ class AutopilotController extends ChangeNotifier {
   void dispose() {
     music.removeListener(_onPlaybackChanged);
     intelligence.removeListener(_onIntelligenceChanged);
+    _authority.removeListener(_onAuthorityEvent);
     super.dispose();
   }
 }
