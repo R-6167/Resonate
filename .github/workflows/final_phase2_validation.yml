@@ -1,0 +1,94 @@
+name: Final Phase 2 Validation
+
+on:
+  push:
+    branches: [Companion_Features_Diagnostics]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  final-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.4'
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Apply final hardening
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          music = Path('lib/providers/music_provider.dart')
+          text = music.read_text()
+          old = """      () => _playSongInternal(song, queue: queue, startIndex: startIndex, playbackIntentToken: intentToken),\n      command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,\n    );"""
+          new = """      () => _playSongInternal(song, queue: queue, startIndex: startIndex, playbackIntentToken: intentToken),\n      command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,\n      onSuperseded: () async => false,\n    );"""
+          if old not in text:
+              raise SystemExit('Expected playSong source block not found')
+          music.write_text(text.replace(old, new, 1))
+
+          db = Path('lib/services/database_helper.dart')
+          text = db.read_text()
+          old = """    } catch (e) { _markDatabaseFailure('database_operation', e);\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }"""
+          new = """    } catch (e) {\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }"""
+          if old not in text:
+              raise SystemExit('Expected duplicate database failure marker not found')
+          db.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify final hardening
+        run: |
+          grep -q "onSuperseded: () async => false" lib/providers/music_provider.dart
+          ! grep -q "_markDatabaseFailure('database_operation', e)" lib/services/database_helper.dart
+          grep -q "IntelligenceEvidenceCache.instance.recentEvents(limit: 200)" lib/providers/intelligence_provider.dart
+          grep -q "Superseded playback request" lib/services/playback_coordinator.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Verify APK
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          sha256sum build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Commit final source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/providers/music_provider.dart lib/services/database_helper.dart
+          if git diff --cached --quiet; then
+            echo 'No final source changes needed'
+          else
+            git commit -m 'feat: finish phase 2 hardening'
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
+
+      - name: Upload final APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonate-final-phase2-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
