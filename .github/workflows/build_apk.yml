@@ -1,9 +1,5 @@
 name: Build Resonate APK
 
-# Release APK builds are intentionally manual during normal development.
-# This commit temporarily permits the current validated branch to produce the
-# APK needed for the multi-device test.
-
 on:
   workflow_dispatch:
   push:
@@ -11,10 +7,10 @@ on:
       - Companion_Features_Diagnostics
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: resonate-apk-manual
+  group: resonate-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,128 +21,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Apply playback repairs
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          def replace(path, old, new):
-              p=Path(path); s=p.read_text()
-              if old not in s: raise SystemExit(f'Expected text not found in {path}: {old[:100]!r}')
-              p.write_text(s.replace(old,new,1))
-          replace('lib/providers/music_provider.dart', "import '../services/library_visibility_store.dart';", "import '../services/library_visibility_store.dart';\nimport '../services/audio_effects_bridge.dart';")
-          replace('lib/providers/music_provider.dart', "      await _syncSystemVolume();\n      if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';", "      await _syncSystemVolume();\n      await syncSavedAudioEffects();\n      if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';")
-          p=Path('lib/providers/music_provider.dart'); s=p.read_text(); marker='  Future<void> _configureAudioSession() async {'
-          helper=r'''  Future<void> syncSavedAudioEffects() async {
-            try {
-              final prefs=await SharedPreferences.getInstance();
-              final enabled=prefs.getBool('equalizer_enabled') ?? true;
-              final effectsEnabled=prefs.getBool('effects_enabled') ?? true;
-              final bassBoost=prefs.getDouble('bassBoost') ?? 0.0;
-              final virtualizer=prefs.getDouble('virtualizer') ?? 0.0;
-              final reverb=prefs.getDouble('reverb') ?? 0.0;
-              final loudness=prefs.getDouble('loudness') ?? 0.0;
-              for (final pair in <(AndroidEqualizer, AndroidLoudnessEnhancer)>[(_equalizerA,_loudnessA),(_equalizerB,_loudnessB)]) {
-                final eq=pair.$1; final loud=pair.$2;
-                try {
-                  final parameters=await eq.parameters;
-                  for (final band in parameters.bands) { final saved=prefs.getDouble('eq_band_${band.index}'); if (saved != null) await band.setGain(saved.clamp(parameters.minDecibels,parameters.maxDecibels).toDouble()); }
-                  await eq.setEnabled(enabled);
-                } catch (_) {}
-                try { await loud.setTargetGain(effectsEnabled ? loudness*600.0 : 0.0); await loud.setEnabled(effectsEnabled && loudness>0); } catch (_) {}
-              }
-              final sessionId=audioPlayer.androidAudioSessionId;
-              if (sessionId != null && sessionId > 0) { await AudioEffectsBridge.attachToSession(sessionId); await AudioEffectsBridge.setBassBoost(effectsEnabled ? bassBoost : 0.0); await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virtualizer : 0.0); await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0); }
-            } catch (e) { debugPrint('Saved audio effects sync failed: $e'); }
-          }
-
-'''
-          if marker not in s: raise SystemExit('MusicProvider marker missing')
-          p.write_text(s.replace(marker,helper+marker,1))
-          replace('lib/providers/music_provider.dart', "  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }", """  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-            try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); }
-            try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); }
-            try {
-              final sessionId=player.androidAudioSessionId;
-              if (sessionId != null && sessionId > 0) {
-                final prefs=await SharedPreferences.getInstance(); final enabled=prefs.getBool('effects_enabled') ?? true;
-                await AudioEffectsBridge.attachToSession(sessionId);
-                await AudioEffectsBridge.setBassBoost(enabled ? (prefs.getDouble('bassBoost') ?? 0.0) : 0.0);
-                await AudioEffectsBridge.setVirtualizer(enabled ? (prefs.getDouble('virtualizer') ?? 0.0) : 0.0);
-                await AudioEffectsBridge.setReverb(enabled ? (prefs.getDouble('reverb') ?? 0.0) : 0.0);
-              }
-              await syncSavedAudioEffects();
-            } catch (e) { debugPrint('Audio effects activation failed: $e'); }
-          }""")
-          replace('lib/providers/music_provider.dart', "  Future<void> _advanceAfterCompletion() async {\n    if (_completionAdvanceInProgress) return;\n    _completionAdvanceInProgress = true;", "  Future<void> _advanceAfterCompletion() {\n    if (_completionAdvanceInProgress) return Future<void>.value();\n    return _serializePlayback(() => _advanceAfterCompletionInternal(), command: 'completion_advance', source: 'automatic_transition');\n  }\n\n  Future<void> _advanceAfterCompletionInternal() async {\n    if (_completionAdvanceInProgress) return;\n    _completionAdvanceInProgress = true;")
-          replace('lib/providers/autopilot_controller.dart', "    if (!_consentLoaded || !intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;\n\n    final automaticQueue = await IntelligenceSettingsStore.automaticQueue();", "    if (!_consentLoaded || !intelligence.isAutopilot || music.currentSong == null) return;\n    if (!music.isPlaying && !forceTransition) return;\n\n    final automaticQueue = await IntelligenceSettingsStore.automaticQueue();")
-          replace('lib/providers/library_provider.dart', "  Future<void> loadStatistics() async { try { _statistics = await _db.getStatistics(); notifyListeners(); } catch (e) { debugPrint('Error loading statistics: $e'); } }", """  Future<void> loadStatistics() async {
-            try {
-              final raw=await _db.getStatistics(); _statistics=Map<String,dynamic>.from(raw);
-              _statistics['totalSongs']=_allSongs.length; _statistics['favoriteCount']=_favoriteSongs.length; notifyListeners();
-            } catch (e) { debugPrint('Error loading statistics: $e'); }
-          }""")
-          PY
-          dart format lib/providers/music_provider.dart lib/providers/autopilot_controller.dart lib/providers/library_provider.dart
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/providers/music_provider.dart lib/providers/autopilot_controller.dart lib/providers/library_provider.dart
-          if ! git diff --cached --quiet; then
-            git commit -m "fix: stabilize playback effects autopilot and scoped stats [skip ci]"
-            git push origin HEAD:Companion_Features_Diagnostics
-          fi
-
+          fetch-depth: 1
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
           channel: stable
           cache: true
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.14'
           cache-read-only: false
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install required Android components
+      - name: Install Android components
         run: |
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-36"
           sdkmanager "build-tools;36.0.0"
           sdkmanager "ndk;28.2.13676358"
-
       - name: Create Android local.properties
         run: |
           cat > android/local.properties <<EOF
           sdk.dir=${ANDROID_SDK_ROOT}
           flutter.sdk=${FLUTTER_ROOT}
           EOF
-
-      - name: Verify Gradle
-        working-directory: android
-        run: gradle --version
-
       - name: Get Flutter dependencies
         run: flutter pub get
-
       - name: Analyze project
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
-
       - name: Run Flutter tests
         run: flutter test --reporter expanded
-
+      - name: Verify architecture wiring
+        run: |
+          test -f lib/services/playback_coordinator.dart
+          test -f lib/services/audio_effects_controller.dart
+          grep -q "final PlaybackCoordinator _playbackCoordinator" lib/providers/music_provider.dart
+          grep -q "AudioEffectsController" lib/providers/music_provider.dart
+          grep -q "_playbackCoordinator.runSourceMutation" lib/providers/music_provider.dart
+          grep -q "_playbackCoordinator.runTransport" lib/providers/music_provider.dart
+          ! grep -q "final AudioPlayer _fallbackPlayer" lib/services/audio_service_handler.dart
+          grep -q "playbackQueue" lib/services/audio_service_handler.dart
       - name: Build release APK
         run: |
           set -o pipefail
@@ -158,30 +79,24 @@ jobs:
             fi
             if grep -Eq '429|Too Many Requests|Could not GET|Could not HEAD|Could not resolve' build.log && [ "$attempt" -lt 3 ]; then
               delay=$((attempt * 20))
-              echo "Transient dependency-resolution failure detected; waiting ${delay}s before retry."
+              echo "Transient dependency-resolution failure; waiting ${delay}s."
               sleep "$delay"
             else
               exit 1
             fi
           done
-
-      - name: Verify APK exists
+      - name: Verify APK
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Verify APK signature
-        run: |
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
-
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
       - name: Show build log on failure
         if: failure()
         run: tail -300 build.log || true
-
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: resonate-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 3
+          retention-days: 14
           if-no-files-found: error
