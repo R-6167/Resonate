@@ -15,6 +15,8 @@ import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
+import '../services/audio_effects_controller.dart';
+import '../services/playback_coordinator.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -23,6 +25,8 @@ class MusicProvider extends ChangeNotifier {
   final DatabaseHelper _database = DatabaseHelper();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
+  final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
+  late final AudioEffectsController _audioEffectsController;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
   late final AudioPlayer _playerA;
   late final AudioPlayer _playerB;
@@ -102,6 +106,7 @@ class MusicProvider extends ChangeNotifier {
     _equalizerB = AndroidEqualizer();
     _loudnessA = AndroidLoudnessEnhancer();
     _loudnessB = AndroidLoudnessEnhancer();
+    _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
     if (audioHandler is AudioServiceHandler) {
@@ -174,45 +179,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> syncSavedAudioEffects() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final equalizerEnabled = prefs.getBool('equalizer_enabled') ?? true;
-      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
-      final bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
-      final virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
-      final reverb = prefs.getDouble('reverb') ?? 0.0;
-      final loudness = prefs.getDouble('loudness') ?? 0.0;
-      for (final pair in <(AndroidEqualizer, AndroidLoudnessEnhancer)>[
-        (_equalizerA, _loudnessA),
-        (_equalizerB, _loudnessB),
-      ]) {
-        final eq = pair.$1;
-        final loud = pair.$2;
-        try {
-          final parameters = await eq.parameters;
-          for (final band in parameters.bands) {
-            final saved = prefs.getDouble('eq_band_${band.index}');
-            if (saved != null) {
-              await band.setGain(saved.clamp(parameters.minDecibels, parameters.maxDecibels).toDouble());
-            }
-          }
-          await eq.setEnabled(equalizerEnabled);
-        } catch (_) {}
-        try {
-          await loud.setTargetGain(effectsEnabled ? loudness * 600.0 : 0.0);
-          await loud.setEnabled(effectsEnabled && loudness > 0);
-        } catch (_) {}
-      }
-      final sessionId = audioPlayer.androidAudioSessionId;
-      if (sessionId != null && sessionId > 0) {
-        await AudioEffectsBridge.attachToSession(sessionId);
-        await AudioEffectsBridge.setBassBoost(effectsEnabled ? bassBoost : 0.0);
-        await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virtualizer : 0.0);
-        await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
-      }
-    } catch (e) {
-      debugPrint('Saved audio effects sync failed: $e');
-    }
+    try { await _audioEffectsController.syncAll(); } catch (e) { debugPrint('Saved audio effects sync failed: $e'); }
   }
 
   Future<void> _configureAudioSession() async {
@@ -258,7 +225,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Playback queue persistence failed: $e'); }
   }
 
-  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0); }
+  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0, bufferedPosition: audioPlayer.bufferedPosition, playbackQueue: _queue, queueIndex: _queueIndex); }
 
   void _bindActivePlayerStreams() {
     _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
@@ -380,20 +347,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-    try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); }
-    try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); }
-    try {
-      final sessionId = player.androidAudioSessionId;
-      if (sessionId != null && sessionId > 0) {
-        final prefs = await SharedPreferences.getInstance();
-        final enabled = prefs.getBool('effects_enabled') ?? true;
-        await AudioEffectsBridge.attachToSession(sessionId);
-        await AudioEffectsBridge.setBassBoost(enabled ? (prefs.getDouble('bassBoost') ?? 0.0) : 0.0);
-        await AudioEffectsBridge.setVirtualizer(enabled ? (prefs.getDouble('virtualizer') ?? 0.0) : 0.0);
-        await AudioEffectsBridge.setReverb(enabled ? (prefs.getDouble('reverb') ?? 0.0) : 0.0);
-      }
-      await syncSavedAudioEffects();
-    } catch (e) { debugPrint('Audio effects activation failed: $e'); }
+    try { await _audioEffectsController.activateFor(player); } catch (e) { debugPrint('Audio effects activation failed: $e'); }
   }
 
   Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken}) async {
@@ -404,23 +358,20 @@ class MusicProvider extends ChangeNotifier {
         'command': command, 'source': source, 'intentToken': effectiveIntent,
       }));
     }
-    // Transport controls must not wait behind a source load. Source-changing
-    // operations remain serialized to protect just_audio's native player.
+    final transportPriority = userInitiated &&
+        const {'toggle', 'pause', 'stop', 'seek'}.contains(command) &&
+        audioPlayer.audioSource != null;
     await ResonateDiagnostics.record('playback_operation_queued', {
       'command': command,
       'source': source,
       'userInitiated': userInitiated,
       'intentToken': effectiveIntent,
-      'lane': userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null
-          ? 'transport_priority'
-          : 'source_serialized',
+      'lane': transportPriority ? 'transport_priority' : 'source_serialized',
     });
-    if (userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null) {
-      return operation();
+    if (transportPriority) {
+      return _playbackCoordinator.runTransport(operation);
     }
-    final next = _playOperation.then((_) => operation());
-    _playOperation = next.then<void>((_) {}, onError: (_, __) {});
-    return next;
+    return _playbackCoordinator.runSourceMutation(operation, command: command);
   }
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) {

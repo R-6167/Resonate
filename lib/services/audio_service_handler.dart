@@ -39,14 +39,20 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     required Duration? duration,
     required double speed,
     Duration? bufferedPosition,
+    List<Song>? playbackQueue,
+    int queueIndex = 0,
   }) {
-    if (song != null) {
-      final item = songToMediaItem(song);
-      mediaItem.add(item);
+    final sourceQueue = (playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]))
+        .where((item) => item.filePath.trim().isNotEmpty)
+        .map(songToMediaItem)
+        .toList();
+    if (sourceQueue.isNotEmpty) {
       _items
         ..clear()
-        ..add(item);
+        ..addAll(sourceQueue);
       queue.add(List.unmodifiable(_items));
+      final safeIndex = queueIndex.clamp(0, _items.length - 1);
+      mediaItem.add(_items[safeIndex]);
     } else {
       mediaItem.add(null);
       _items.clear();
