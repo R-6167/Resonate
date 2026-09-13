@@ -1,0 +1,66 @@
+name: Complete Architecture 1-3
+
+on:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    if: !contains(github.event.head_commit.message, 'complete architecture 1-3')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Apply deterministic source cleanup
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/providers/music_provider.dart')
+          s = p.read_text()
+
+          old = "  Future<void> _playOperation = Future<void>.value();\n"
+          if old not in s:
+              raise SystemExit('Expected obsolete _playOperation field was not found')
+          s = s.replace(old, '', 1)
+
+          required = [
+              "final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();",
+              "late final AudioEffectsController _audioEffectsController;",
+              "_audioEffectsController = AudioEffectsController(",
+              "return _playbackCoordinator.runTransport(operation);",
+              "return _playbackCoordinator.runSourceMutation(operation, command: command);",
+              "await _audioEffectsController.activateFor(player);",
+          ]
+          for needle in required:
+              if needle not in s:
+                  raise SystemExit(f'Missing required architecture wiring: {needle}')
+
+          p.write_text(s)
+
+          h = Path('lib/services/audio_service_handler.dart').read_text()
+          if 'final AudioPlayer _fallbackPlayer' in h:
+              raise SystemExit('Fallback AudioPlayer still exists in AudioServiceHandler')
+          for needle in ['bindPlaybackController(', 'playbackQueue:', 'bufferedPosition:']:
+              if needle not in h:
+                  raise SystemExit(f'Missing media-authority wiring: {needle}')
+
+          print('Architecture source assertions passed.')
+          PY
+      - name: Commit source changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/providers/music_provider.dart
+          git diff --cached --check
+          git diff --cached --exit-code && { echo 'No source change required'; exit 0; } || true
+          git commit -m 'complete architecture 1-3'
+          git push
