@@ -230,7 +230,7 @@ class IntelligenceProvider extends ChangeNotifier {
       await visibility.load();
       final songs = visibility.filter(allSongs, (song) => song.id);
       final current = music.currentSong;
-      final events = await _database.getRecentListeningEvents(limit: 200);
+      final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
       final transitions = <String, int>{};
       if (current != null) {
         for (final row in await _database.getTransitionCounts(current.id)) {
