@@ -24,6 +24,10 @@ replace_once('lib/providers/music_provider.dart',
     "    _loudnessB = AndroidLoudnessEnhancer();\n    _playerA = AudioPlayer",
     "    _loudnessB = AndroidLoudnessEnhancer();\n    _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);\n    _playerA = AudioPlayer")
 
+# Refresh the in-memory source after replace_once writes. The previous migration
+# accidentally overwrote these successful insertions with the stale pre-edit buffer.
+s = p.read_text()
+
 # Replace the provider's duplicated A/B effect implementation with the single controller.
 s = re.sub(
     r"  Future<void> syncSavedAudioEffects\(\) async \{.*?\n  \}\n\n  Future<void> _configureAudioSession",
