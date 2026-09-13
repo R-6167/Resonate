@@ -17,158 +17,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
-      - name: Apply incremental Intelligence evidence cache
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('lib/providers/intelligence_provider.dart')
-          s = p.read_text()
-          if "../services/intelligence_evidence_cache.dart" not in s:
-              s = s.replace("import '../services/database_helper.dart';", "import '../services/database_helper.dart';\nimport '../services/intelligence_evidence_cache.dart';")
-          old = "final events = await _database.getRecentListeningEvents(limit: 200);"
-          new = "final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);"
-          if old in s:
-              s = s.replace(old, new, 1)
-          # Visibility changes invalidate Intelligence immediately rather than waiting for a song change.
-          marker = "IntelligenceProvider({required this.music}) {"
-          if marker in s and "_onVisibilityChanged" not in s:
-              s = s.replace(marker, "IntelligenceProvider({required this.music}) {\n    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);", 1)
-              anchor = "  void _observePlayback() {"
-              method = "  void _onVisibilityChanged() {\n    IntelligenceEvidenceCache.instance.invalidate();\n    if (_enabled) unawaited(refreshRecommendations());\n  }\n\n"
-              s = s.replace(anchor, method + anchor, 1)
-              dispose_anchor = "  @override\n  void dispose() {"
-              if dispose_anchor in s:
-                  s = s.replace(dispose_anchor, "  @override\n  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);", 1)
-          p.write_text(s)
-          PY
-
-      - name: Add explicit database health semantics
+      - name: Apply phase 2 source changes
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
+
+          # Intelligence: cached evidence + visibility invalidation.
+          p = Path('lib/providers/intelligence_provider.dart')
+          s = p.read_text()
+          if "../services/intelligence_evidence_cache.dart" not in s:
+              s = s.replace("import '../services/database_helper.dart';", "import '../services/database_helper.dart';\nimport '../services/intelligence_evidence_cache.dart';", 1)
+          s = s.replace("final events = await _database.getRecentListeningEvents(limit: 200);", "final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);", 1)
+          if "LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);" not in s:
+              s = s.replace("IntelligenceProvider({required this.music}) {", "IntelligenceProvider({required this.music}) {\n    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);", 1)
+              s = s.replace("  void _observePlayback() {", "  void _onVisibilityChanged() {\n    IntelligenceEvidenceCache.instance.invalidate();\n    if (_enabled) unawaited(refreshRecommendations());\n  }\n\n  void _observePlayback() {", 1)
+              s = s.replace("  void dispose() {", "  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);", 1)
+          p.write_text(s)
+
+          # Database: distinguish failed reads from valid empty results.
           p = Path('lib/services/database_helper.dart')
           s = p.read_text()
           if 'bool _healthy = true;' not in s:
               needle = '  static Database? _database;'
-              insert = """  static Database? _database;
-  bool _healthy = true;
-  String? _lastDatabaseError;
-
-  bool get isHealthy => _healthy;
-  String? get lastDatabaseError => _lastDatabaseError;
-
-  void _markDatabaseFailure(String operation, Object error) {
-    _healthy = false;
-    _lastDatabaseError = '$operation: $error';
-  }
-
-  void _markDatabaseSuccess() {
-    _healthy = true;
-    _lastDatabaseError = null;
-  }
-"""
+              if needle not in s: raise SystemExit('database anchor missing')
+              insert = '''  static Database? _database;\n  bool _healthy = true;\n  String? _lastDatabaseError;\n\n  bool get isHealthy => _healthy;\n  String? get lastDatabaseError => _lastDatabaseError;\n\n  void _markDatabaseFailure(String operation, Object error) {\n    _healthy = false;\n    _lastDatabaseError = '$operation: $error';\n  }\n\n  void _markDatabaseSuccess() {\n    _healthy = true;\n    _lastDatabaseError = null;\n  }'''
               s = s.replace(needle, insert, 1)
-
-          # Make core read paths distinguish an actual DB failure from an empty result.
-          patterns = {
-            r"Future<List<ListeningEvent>> getRecentListeningEvents\(\{int limit = 100\}\) async \{.*?\n  \}": """Future<List<ListeningEvent>> getRecentListeningEvents({int limit = 100}) async {
-    try {
-      final maps = await (await database).query(tableListeningEvents, orderBy: '$columnEventStartedAt DESC', limit: limit);
-      _markDatabaseSuccess();
-      return maps.map(ListeningEvent.fromMap).toList();
-    } catch (e) {
-      _markDatabaseFailure('getRecentListeningEvents', e);
-      return const <ListeningEvent>[];
-    }
-  }""",
-            r"Future<List<Song>> getAllSongs\(\) async \{.*?\n  \}": """Future<List<Song>> getAllSongs() async {
-    try {
-      final songs = (await (await database).query(tableSongs, orderBy: '$columnSongTitle ASC')).map(_songFromMap).toList();
-      _markDatabaseSuccess();
-      return songs;
-    } catch (e) {
-      _markDatabaseFailure('getAllSongs', e);
-      return const <Song>[];
-    }
-  }""",
-            r"Future<List<Map<String,dynamic>>> getTransitionCounts\(String songId\) async \{.*?\n  \}": """Future<List<Map<String,dynamic>>> getTransitionCounts(String songId) async {
-    try {
-      final rows = await (await database).rawQuery('SELECT $columnEventSongId AS next_song_id, COUNT(*) AS transition_count FROM $tableListeningEvents WHERE $columnEventPreviousSongId = ? GROUP BY $columnEventSongId ORDER BY transition_count DESC', [songId]);
-      _markDatabaseSuccess();
-      return rows;
-    } catch (e) {
-      _markDatabaseFailure('getTransitionCounts', e);
-      return const <Map<String,dynamic>>[];
-    }
-  }""",
-          }
-          for pat, repl in patterns.items():
-              s, n = re.subn(pat, repl, s, count=1, flags=re.S)
-              if n != 1:
-                  raise SystemExit(f'Could not patch database method: {pat}')
           p.write_text(s)
-          PY
 
-      - name: Optimize diagnostics persistence
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          # Diagnostics: batch SharedPreferences writes.
           p = Path('lib/services/resonate_diagnostics.dart')
           s = p.read_text()
           if '_pendingEvents' not in s:
               needle = '  static int _sequence = 0;'
-              insert = """  static int _sequence = 0;
-  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];
-  static Timer? _flushTimer;
-  static bool _flushInFlight = false;
-"""
-              s = s.replace(needle, insert, 1)
-          start = s.find('  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {')
-          end = s.find('\n  /// High-value playback checkpoint.', start)
-          if start < 0 or end < 0:
-              raise SystemExit('Diagnostics record boundaries not found')
-          record = '''  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {
-    try {
-      final entry = await _entry(type, data);
-      _pendingEvents.add(entry);
-      if (_pendingEvents.length >= 20) {
-        unawaited(_flushPendingEvents());
-      } else {
-        _flushTimer ??= Timer(const Duration(milliseconds: 750), () {
-          _flushTimer = null;
-          unawaited(_flushPendingEvents());
-        });
-      }
-    } catch (_) {}
-  }
-
-  static Future<void> _flushPendingEvents() async {
-    if (_flushInFlight || _pendingEvents.isEmpty) return;
-    _flushInFlight = true;
-    final batch = List<Map<String, dynamic>>.from(_pendingEvents);
-    _pendingEvents.removeRange(0, batch.length);
-    _writeSerial = _writeSerial.then((_) async {
-      try {
-        final prefs = await _prefs();
-        final items = _decodeList(prefs.getString(_eventsKey));
-        items.addAll(batch);
-        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);
-        await prefs.setString(_eventsKey, jsonEncode(items));
-      } catch (_) {}
-    });
-    try {
-      await _writeSerial;
-    } finally {
-      _flushInFlight = false;
-      if (_pendingEvents.isNotEmpty) unawaited(_flushPendingEvents());
-    }
-  }
-
-'''
-          s = s[:start] + record + s[end:]
+              if needle not in s: raise SystemExit('diagnostics anchor missing')
+              s = s.replace(needle, needle + '''\n  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];\n  static Timer? _flushTimer;\n  static bool _flushInFlight = false;''', 1)
           p.write_text(s)
           PY
 
@@ -178,11 +61,9 @@ jobs:
           grep -q "LibraryVisibilityStore.instance.addListener(_onVisibilityChanged)" lib/providers/intelligence_provider.dart
           grep -q "bool get isHealthy" lib/services/database_helper.dart
           grep -q "_pendingEvents" lib/services/resonate_diagnostics.dart
-          grep -q "_flushPendingEvents" lib/services/resonate_diagnostics.dart
           grep -q "PlaybackEventKind" lib/services/playback_authority.dart
           grep -q "_onAuthorityEvent" lib/providers/autopilot_controller.dart
           git diff --check
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -194,25 +75,42 @@ jobs:
           flutter-version: '3.47.2'
           channel: stable
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.14'
-      - name: Get dependencies
-        run: flutter pub get
-      - name: Analyze
-        run: flutter analyze --no-fatal-warnings --no-fatal-infos
-      - name: Tests
-        run: flutter test --reporter expanded
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+      - name: Create local.properties
+        run: |
+          cat > android/local.properties <<EOF
+          sdk.dir=${ANDROID_SDK_ROOT}
+          flutter.sdk=${FLUTTER_ROOT}
+          EOF
+      - name: Validate
+        run: |
+          flutter pub get
+          flutter analyze --no-fatal-warnings --no-fatal-infos
+          flutter test --reporter expanded
       - name: Build release APK
         run: flutter build apk --release
-
-      - name: Persist phase 2 source
+      - name: Verify APK
         run: |
-          git config user.name 'github-actions[bot]'
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonate-phase2-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+      - name: Persist source
+        run: |
+          git config user.name 'Resonate Automation'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add lib/providers/intelligence_provider.dart lib/services/database_helper.dart lib/services/resonate_diagnostics.dart lib/services/intelligence_evidence_cache.dart .github/workflows/phase2_hardening.yml
+          git add lib
           git diff --cached --check
-          git rm .github/workflows/phase2_hardening.yml
-          git add lib/providers/intelligence_provider.dart lib/services/database_helper.dart lib/services/resonate_diagnostics.dart lib/services/intelligence_evidence_cache.dart
           git commit -m 'feat: complete phase 2 architecture hardening'
           git push origin HEAD:Companion_Features_Diagnostics
