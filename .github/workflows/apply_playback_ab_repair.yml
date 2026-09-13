@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   repair:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'fix: repair A/B playback handoff and source queue')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'ci: trigger playback repair')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
