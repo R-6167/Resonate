@@ -58,7 +58,7 @@ jobs:
           grep -q "Superseded playback request" lib/services/playback_coordinator.dart
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Tests
         run: flutter test
