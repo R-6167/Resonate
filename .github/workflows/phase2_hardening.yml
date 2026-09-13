@@ -83,7 +83,6 @@ jobs:
           new_getter = '''  Future<Database> get database async {\n    try {\n      final db = _database ??= await _initDatabase();\n      _markDatabaseSuccess();\n      return db;\n    } catch (e) {\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }\n  }'''
           if old_getter in s:
               s = s.replace(old_getter, new_getter, 1)
-          # All database operation catches in this file must mark the database unhealthy.\n          # The getter above marks successful opens healthy again.
           s = s.replace('catch (e) {', "catch (e) { _markDatabaseFailure('database_operation', e); ")
           s = s.replace('catch(e){', "catch(e){_markDatabaseFailure('database_operation',e);")
           p.write_text(s)
@@ -106,8 +105,7 @@ jobs:
           s = s.replace('  static Future<void> clearDiagnostics() async {\n    await _writeSerial;', '  static Future<void> clearDiagnostics() async {\n    await _flushPendingEvents();\n    await _writeSerial;', 1)
           p.write_text(s)
 
-          # 5) Make stale source requests explicitly safe: a superseded request is a no-op
-          # only when the caller supplied its safe fallback. This is enforced by validation below.
+          # 5) PlaybackCoordinator supersede implementation is already part of Phase 1.
           p = Path('lib/services/playback_coordinator.dart')
           s = p.read_text()
           if 'onSuperseded != null' not in s:
