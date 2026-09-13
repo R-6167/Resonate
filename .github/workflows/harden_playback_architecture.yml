@@ -1,0 +1,98 @@
+name: Playback Architecture Hardening
+
+on:
+  push:
+    branches:
+      - Companion_Features_Diagnostics
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: resonate-playback-architecture
+  cancel-in-progress: true
+
+jobs:
+  harden-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply architecture migration
+        run: python3 scripts/apply_playback_architecture.py
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.14'
+          cache-read-only: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android components
+        run: |
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-36"
+          sdkmanager "build-tools;36.0.0"
+          sdkmanager "ndk;28.2.13676358"
+
+      - name: Create local.properties
+        run: |
+          cat > android/local.properties <<EOF
+          sdk.dir=${ANDROID_SDK_ROOT}
+          flutter.sdk=${FLUTTER_ROOT}
+          EOF
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
+      - name: Tests
+        run: flutter test --reporter expanded
+
+      - name: Build release APK
+        run: flutter build apk --release --no-shrink
+
+      - name: Verify APK
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Persist migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/providers/music_provider.dart lib/services/audio_service_handler.dart lib/services/playback_coordinator.dart lib/services/audio_effects_controller.dart lib/screens/about_screen.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "refactor: centralize playback architecture [skip ci]"
+            git push origin HEAD:Companion_Features_Diagnostics
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: resonate-playback-architecture-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
+          if-no-files-found: error
