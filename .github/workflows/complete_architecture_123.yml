@@ -19,18 +19,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Make repair script tolerant of compact source
+      - name: Patch repair script matcher
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('scripts/repair_playback_ab.py')
           s = p.read_text()
-          s = s.replace(
-              r'old = re.search(r"  Future<void> _stopBoth\\(\\) async \\{.*?\\n  \\}\\n\\n  Future<void> _enableEffects", s, re.S)',
-              r'old = re.search(r"  Future<void> _stopBoth\\(\\) async \\{.*?\\}\\s*\\n\\n  Future<void> _enableEffects", s, re.S)',
-          )
-          p.write_text(s)
-          print('Patched repair script stopBoth matcher.')
+          needle = "if not old:\n    raise SystemExit('Could not locate _stopBoth block')"
+          replacement = "if not old:\n    old = re.search(r\"  Future<void> _stopBoth\\\\(\\\\) async \\\\{.*?\\\\}\\\\s*\\\\n\\\\n  Future<void> _enableEffects\", s, re.S)\nif not old:\n    raise SystemExit('Could not locate _stopBoth block')"
+          if needle not in s:
+              raise SystemExit('Repair script marker not found')
+          p.write_text(s.replace(needle, replacement, 1))
+          print('Repair script matcher patched.')
           PY
       - name: Apply A-B playback repair
         run: python3 scripts/repair_playback_ab.py
