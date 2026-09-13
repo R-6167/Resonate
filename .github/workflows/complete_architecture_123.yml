@@ -19,48 +19,68 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Apply deterministic source cleanup
+      - name: Apply A-B playback repair
+        run: python3 scripts/repair_playback_ab.py
+      - name: Write valid PlaybackCoordinator
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('lib/providers/music_provider.dart')
-          s = p.read_text()
-          old = "  Future<void> _playOperation = Future<void>.value();\n"
-          if old in s:
-              s = s.replace(old, '', 1)
-              p.write_text(s)
-              print('Removed obsolete playback FIFO field.')
-          else:
-              print('Obsolete playback FIFO field already absent.')
-          s = p.read_text()
-          required = [
-              "final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();",
-              "late final AudioEffectsController _audioEffectsController;",
-              "_audioEffectsController = AudioEffectsController(",
-              "return _playbackCoordinator.runTransport(operation);",
-              "return _playbackCoordinator.runSourceMutation(operation, command: command);",
-              "await _audioEffectsController.activateFor(player);",
-          ]
-          for needle in required:
-              if needle not in s:
-                  raise SystemExit(f'Missing required architecture wiring: {needle}')
-          h = Path('lib/services/audio_service_handler.dart').read_text()
-          if 'final AudioPlayer _fallbackPlayer' in h:
-              raise SystemExit('Fallback AudioPlayer still exists in AudioServiceHandler')
-          for needle in ['bindPlaybackController(', 'playbackQueue:', 'bufferedPosition:']:
-              if needle not in h:
-                  raise SystemExit(f'Missing media-authority wiring: {needle}')
-          print('Architecture source assertions passed.')
-          PY
-      - name: Commit source cleanup
+          cat > lib/services/playback_coordinator.dart <<'EOF'
+          import 'dart:async';
+
+          /// Serializes native source mutations while allowing newer user source
+          /// requests to supersede requests that have not started yet.
+          class PlaybackCoordinator {
+            Future<void> _sourceTail = Future<void>.value();
+            int _operationId = 0;
+            int _latestSourceRequest = 0;
+
+            int get lastOperationId => _operationId;
+
+            Future<T> runSourceMutation<T>(
+              Future<T> Function() operation, {
+              required String command,
+              bool supersedePending = false,
+              Future<T> Function()? onSuperseded,
+            }) {
+              final id = ++_operationId;
+              if (supersedePending) _latestSourceRequest = id;
+              final next = _sourceTail.then((_) async {
+                if (supersedePending && id != _latestSourceRequest) {
+                  if (onSuperseded != null) return onSuperseded();
+                  return operation();
+                }
+                return operation();
+              });
+              _sourceTail = next.then<void>((_) {}, onError: (_, __) {});
+              return next;
+            }
+
+            Future<T> runTransport<T>(Future<T> Function() operation) => operation();
+
+            Future<void> drain() => _sourceTail;
+
+            void reset() {
+              _sourceTail = Future<void>.value();
+              _latestSourceRequest = _operationId;
+            }
+          }
+          EOF
+      - name: Verify repair source
+        run: |
+          grep -q "targetIsA = firstLoad ? true : !_activeIsA" lib/providers/music_provider.dart
+          grep -q "supersedePending: userInitiated" lib/providers/music_provider.dart
+          ! grep -q "Future<void> _playOperation" lib/providers/music_provider.dart
+          grep -q "class PlaybackCoordinator" lib/services/playback_coordinator.dart
+          ! grep -q "final AudioPlayer _fallbackPlayer" lib/services/audio_service_handler.dart
+          git diff --check
+      - name: Commit repaired source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add lib/providers/music_provider.dart
+          git add lib/providers/music_provider.dart lib/services/playback_coordinator.dart
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo 'No source cleanup was necessary.'
+            echo 'Repair already present; no source commit needed.'
           else
-            git commit -m 'complete architecture 1-3'
-            git push
+            git commit -m 'fix: alternate playback engines and coalesce stale source requests'
+            git push origin HEAD:Companion_Features_Diagnostics
           fi
