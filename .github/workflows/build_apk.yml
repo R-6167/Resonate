@@ -28,7 +28,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path('lib/providers/intelligence_provider.dart')
           s = p.read_text()
@@ -39,45 +38,6 @@ jobs:
               s = s.replace("IntelligenceProvider({required this.music}) {", "IntelligenceProvider({required this.music}) {\n    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);", 1)
               s = s.replace("  void _observePlayback() {", "  void _onVisibilityChanged() {\n    IntelligenceEvidenceCache.instance.invalidate();\n    if (_enabled) unawaited(refreshRecommendations());\n  }\n\n  void _observePlayback() {", 1)
               s = s.replace("  void dispose() {", "  void dispose() {\n    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);", 1)
-          p.write_text(s)
-
-          p = Path('lib/services/audio_service_handler.dart')
-          s = p.read_text()
-          old = '''    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);\n    final orderedSongs = <Song>[\n      sourceSongs[requestedIndex],\n      ...sourceSongs.take(requestedIndex),\n      ...sourceSongs.skip(requestedIndex + 1),\n    ];\n    _items\n      ..clear()\n      ..addAll(orderedSongs.map(songToMediaItem));\n    queue.add(List.unmodifiable(_items));\n    mediaItem.add(_items.first);'''
-          new = '''    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);\n    _items\n      ..clear()\n      ..addAll(sourceSongs.map(songToMediaItem));\n    queue.add(List.unmodifiable(_items));\n    mediaItem.add(_items[requestedIndex]);'''
-          if old not in s:
-              raise SystemExit('AudioServiceHandler queue anchor missing')
-          s = s.replace(old, new, 1)
-          s = re.sub(r'''\n  Future<void> addQueueItem\(MediaItem item\) async \{.*?\n  Future<void> addQueueItems\(List<MediaItem> mediaItems\) async \{.*?\n  \}\n''', '\n', s, flags=re.S)
-          p.write_text(s)
-
-          p = Path('lib/services/database_helper.dart')
-          s = p.read_text()
-          if 'bool _healthy = true;' not in s:
-              anchor = '  static Database? _database;'
-              health = '''  static Database? _database;\n  bool _healthy = true;\n  String? _lastDatabaseError;\n\n  bool get isHealthy => _healthy;\n  String? get lastDatabaseError => _lastDatabaseError;\n\n  void _markDatabaseFailure(String operation, Object error) {\n    _healthy = false;\n    _lastDatabaseError = '$operation: $error';\n  }\n\n  void _markDatabaseSuccess() {\n    _healthy = true;\n    _lastDatabaseError = null;\n  }'''
-              if anchor not in s:
-                  raise SystemExit('Database health anchor missing')
-              s = s.replace(anchor, health, 1)
-          getter = '  Future<Database> get database async => _database ??= await _initDatabase();'
-          replacement = '''  Future<Database> get database async {\n    try {\n      final db = _database ??= await _initDatabase();\n      _markDatabaseSuccess();\n      return db;\n    } catch (e) {\n      _markDatabaseFailure('open_database', e);\n      rethrow;\n    }\n  }'''
-          if getter in s:
-              s = s.replace(getter, replacement, 1)
-          s = s.replace('catch (e) {', "catch (e) { _markDatabaseFailure('database_operation', e);")
-          s = s.replace('catch(e){', "catch(e){_markDatabaseFailure('database_operation',e);")
-          p.write_text(s)
-
-          p = Path('lib/services/resonate_diagnostics.dart')
-          s = p.read_text()
-          if '_pendingEvents' not in s:
-              s = s.replace('  static int _sequence = 0;', '''  static int _sequence = 0;\n  static final List<Map<String, dynamic>> _pendingEvents = <Map<String, dynamic>>[];\n  static Timer? _flushTimer;\n  static Future<void> _flushInFlight = Future<void>.value();''', 1)
-          old_record = '''  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {\n    _writeSerial = _writeSerial.then((_) async {\n      try {\n        final prefs = await _prefs();\n        final items = _decodeList(prefs.getString(_eventsKey));\n        items.add(await _entry(type, data));\n        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);\n        await prefs.setString(_eventsKey, jsonEncode(items));\n      } catch (_) {}\n    });\n    await _writeSerial;\n  }'''
-          new_record = '''  static Future<void> record(String type, [Map<String, dynamic> data = const {}]) async {\n    try {\n      final entry = await _entry(type, data);\n      _pendingEvents.add(entry);\n      _flushTimer ??= Timer.periodic(const Duration(milliseconds: 750), (_) => unawaited(_flushPendingEvents()));\n      if (_pendingEvents.length >= 32) await _flushPendingEvents();\n    } catch (_) {}\n  }\n\n  static Future<void> _flushPendingEvents() async {\n    if (_pendingEvents.isEmpty) return;\n    _flushInFlight = _flushInFlight.then((_) async {\n      if (_pendingEvents.isEmpty) return;\n      try {\n        final batch = List<Map<String, dynamic>>.from(_pendingEvents);\n        _pendingEvents.clear();\n        final prefs = await _prefs();\n        final items = _decodeList(prefs.getString(_eventsKey));\n        items.addAll(batch);\n        if (items.length > _maxEvents) items.removeRange(0, items.length - _maxEvents);\n        await prefs.setString(_eventsKey, jsonEncode(items));\n      } catch (_) {}\n    });\n    await _flushInFlight;\n  }'''
-          if old_record not in s:
-              raise SystemExit('Diagnostics record anchor missing')
-          s = s.replace(old_record, new_record, 1)
-          s = s.replace('  static Future<Map<String, dynamic>> snapshot() async {\n    await _writeSerial;', '  static Future<Map<String, dynamic>> snapshot() async {\n    await _flushPendingEvents();\n    await _writeSerial;', 1)
-          s = s.replace('  static Future<void> clearDiagnostics() async {\n    await _writeSerial;', '  static Future<void> clearDiagnostics() async {\n    await _flushPendingEvents();\n    await _writeSerial;', 1)
           p.write_text(s)
           PY
 
@@ -92,7 +52,7 @@ jobs:
           grep -q "_flushPendingEvents" lib/services/resonate_diagnostics.dart
           grep -q "PlaybackEventKind" lib/services/playback_authority.dart
           grep -q "_onAuthorityEvent" lib/providers/autopilot_controller.dart
-          ! grep -q "addQueueItem(MediaItem" lib/services/audio_service_handler.dart
+          ! grep -q "final AudioPlayer _fallbackPlayer" lib/services/audio_service_handler.dart
           grep -q "playbackQueue" lib/services/audio_service_handler.dart
           git diff --check
 
