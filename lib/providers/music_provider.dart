@@ -14,6 +14,7 @@ import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
+import '../services/audio_effects_bridge.dart';
 
 enum PlaybackRepeatMode { off, all, one }
 
@@ -132,6 +133,7 @@ class MusicProvider extends ChangeNotifier {
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? 0;
       _resumeSongId = prefs.getString(_resumeSongIdKey);
       await _syncSystemVolume();
+      await syncSavedAudioEffects();
       if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';
       notifyListeners();
     } catch (e) { debugPrint('Playback settings load failed: $e'); }
@@ -169,6 +171,48 @@ class MusicProvider extends ChangeNotifier {
       await prefs.setDouble(_crossfadeDurationKey, _crossfadeDurationMs.toDouble());
       await prefs.setString(_crossfadeFadeTypeKey, _crossfadeFadeType);
     } catch (e) { debugPrint('Playback crossfade save failed: $e'); }
+  }
+
+  Future<void> syncSavedAudioEffects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final equalizerEnabled = prefs.getBool('equalizer_enabled') ?? true;
+      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
+      final bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
+      final virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
+      final reverb = prefs.getDouble('reverb') ?? 0.0;
+      final loudness = prefs.getDouble('loudness') ?? 0.0;
+      for (final pair in <(AndroidEqualizer, AndroidLoudnessEnhancer)>[
+        (_equalizerA, _loudnessA),
+        (_equalizerB, _loudnessB),
+      ]) {
+        final eq = pair.$1;
+        final loud = pair.$2;
+        try {
+          final parameters = await eq.parameters;
+          for (final band in parameters.bands) {
+            final saved = prefs.getDouble('eq_band_${band.index}');
+            if (saved != null) {
+              await band.setGain(saved.clamp(parameters.minDecibels, parameters.maxDecibels).toDouble());
+            }
+          }
+          await eq.setEnabled(equalizerEnabled);
+        } catch (_) {}
+        try {
+          await loud.setTargetGain(effectsEnabled ? loudness * 600.0 : 0.0);
+          await loud.setEnabled(effectsEnabled && loudness > 0);
+        } catch (_) {}
+      }
+      final sessionId = audioPlayer.androidAudioSessionId;
+      if (sessionId != null && sessionId > 0) {
+        await AudioEffectsBridge.attachToSession(sessionId);
+        await AudioEffectsBridge.setBassBoost(effectsEnabled ? bassBoost : 0.0);
+        await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virtualizer : 0.0);
+        await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
+      }
+    } catch (e) {
+      debugPrint('Saved audio effects sync failed: $e');
+    }
   }
 
   Future<void> _configureAudioSession() async {
@@ -244,7 +288,7 @@ class MusicProvider extends ChangeNotifier {
         if (_crossfadeInProgress) {
           _completionObservedDuringCrossfade = true;
         } else if (!_completionAdvanceInProgress) {
-          unawaited(_advanceAfterCompletion());
+          unawaited(_advanceAfterCompletion(completedSongId));
         }
       }
     });
@@ -270,8 +314,17 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _runAutomaticCrossfade() async { final generation = _authority.beginAutomatic('automatic_crossfade'); try { await _performTrueCrossfade(milliseconds: _crossfadeDurationMs, fadeType: _crossfadeFadeType, generation: generation); } finally { _automaticCrossfadeInFlight = false; } }
 
-  Future<void> _advanceAfterCompletion() async {
-    if (_completionAdvanceInProgress) return;
+  Future<void> _advanceAfterCompletion(String completedSongId) {
+    if (_completionAdvanceInProgress) return Future<void>.value();
+    return _serializePlayback(
+      () => _advanceAfterCompletionInternal(completedSongId),
+      command: 'completion_advance',
+      source: 'automatic_transition',
+    );
+  }
+
+  Future<void> _advanceAfterCompletionInternal(String completedSongId) async {
+    if (_completionAdvanceInProgress || currentSong?.id != completedSongId) return;
     _completionAdvanceInProgress = true;
     final fromSongId = currentSong?.id;
     final targetIndex = _repeatMode == PlaybackRepeatMode.one
@@ -326,7 +379,22 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
-  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async { try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); } try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); } }
+  Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
+    try { await eq.setEnabled(true); } catch (e) { debugPrint('Equalizer unavailable: $e'); }
+    try { await loud.setEnabled(true); } catch (e) { debugPrint('Loudness enhancer unavailable: $e'); }
+    try {
+      final sessionId = player.androidAudioSessionId;
+      if (sessionId != null && sessionId > 0) {
+        final prefs = await SharedPreferences.getInstance();
+        final enabled = prefs.getBool('effects_enabled') ?? true;
+        await AudioEffectsBridge.attachToSession(sessionId);
+        await AudioEffectsBridge.setBassBoost(enabled ? (prefs.getDouble('bassBoost') ?? 0.0) : 0.0);
+        await AudioEffectsBridge.setVirtualizer(enabled ? (prefs.getDouble('virtualizer') ?? 0.0) : 0.0);
+        await AudioEffectsBridge.setReverb(enabled ? (prefs.getDouble('reverb') ?? 0.0) : 0.0);
+      }
+      await syncSavedAudioEffects();
+    } catch (e) { debugPrint('Audio effects activation failed: $e'); }
+  }
 
   Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken}) async {
     final effectiveIntent = userInitiated ? (intentToken ?? _playbackIntentGate.issue()) : _playbackIntentGate.currentToken;

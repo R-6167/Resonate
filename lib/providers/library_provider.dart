@@ -62,7 +62,15 @@ class LibraryProvider extends ChangeNotifier {
   }
   Future<void> loadAllSongs() async { try { await _visibility.load(); final songs = await _db.getAllSongs(); _allSongs = _visibility.filter(songs, (song) => song.id); _applyFiltersAndSort(); notifyListeners(); } catch (e) { debugPrint('Error loading all songs: $e'); } }
   Future<void> loadFavoriteSongs() async { try { await _visibility.load(); final favorites = await _db.getFavoriteSongs(); _favoriteSongs = _visibility.filter(favorites, (song) => song.id); _applyFiltersAndSort(); notifyListeners(); } catch (e) { debugPrint('Error loading favorite songs: $e'); } }
-  Future<void> loadStatistics() async { try { _statistics = await _db.getStatistics(); notifyListeners(); } catch (e) { debugPrint('Error loading statistics: $e'); } }
+  Future<void> loadStatistics() async {
+    try {
+      final raw = await _db.getStatistics();
+      _statistics = Map<String, dynamic>.from(raw);
+      _statistics['totalSongs'] = _allSongs.length;
+      _statistics['favoriteCount'] = _favoriteSongs.length;
+      notifyListeners();
+    } catch (e) { debugPrint('Error loading statistics: $e'); }
+  }
   Future<void> addSongs(List<Song> songs) async { try { await _db.insertSongs(songs); await loadAllSongs(); await loadStatistics(); } catch (e) { debugPrint('Error adding songs: $e'); } }
   Future<void> searchSongs(String query) async { _searchQuery = query; try { await _visibility.load(); if (query.isEmpty) await loadAllSongs(); else { _filteredSongs = _visibility.filter(await _db.searchSongs(query), (song) => song.id); _applySorting(); } notifyListeners(); } catch (e) { debugPrint('Error searching songs: $e'); } }
   Future<void> setSortBy(String sortBy) async { _sortBy = sortBy; await _saveSortPreference(); _applySorting(); notifyListeners(); }

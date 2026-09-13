@@ -69,7 +69,8 @@ class AutopilotController extends ChangeNotifier {
   }
 
   Future<void> _evaluate({bool forceTransition = false}) async {
-    if (!_consentLoaded || !intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;
+    if (!_consentLoaded || !intelligence.isAutopilot || music.currentSong == null) return;
+    if (!music.isPlaying && !forceTransition) return;
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
