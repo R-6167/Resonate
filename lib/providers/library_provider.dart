@@ -33,7 +33,35 @@ class LibraryProvider extends ChangeNotifier {
   int get minimumScanDurationMs => _minimumScanDurationMs;
   bool isFavoriteSync(String songId) => _favoriteSongs.any((song) => song.id == songId);
 
-  LibraryProvider() { _initializeLibraryAsync(); }
+  LibraryProvider() {
+    _visibility.addListener(_onVisibilityChanged);
+    _initializeLibraryAsync();
+  }
+
+  void _onVisibilityChanged() {
+    final next = _visibility.restrictedSongIds;
+    final changed = !_sameSet(_restrictedSongIds, next);
+    if (!changed) return;
+    _restrictedSongIds = next;
+    unawaitedRefresh();
+  }
+
+  Future<void> unawaitedRefresh() async {
+    try {
+      await loadAllSongs();
+      await loadFavoriteSongs();
+      await loadStatistics();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Library visibility refresh failed: $e');
+    }
+  }
+
+  bool _sameSet(Set<String>? a, Set<String>? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.length == b.length && a.containsAll(b);
+  }
+
   Future<void> _initializeLibraryAsync() async { try { await _loadPreferences(); await loadAllSongs(); await loadFavoriteSongs(); await loadStatistics(); _isInitialized = true; notifyListeners(); await _autoScanOnStartup(); } catch (e) { debugPrint('LibraryProvider initialization error: $e'); _isInitialized = true; notifyListeners(); } }
   Future<void> _autoScanOnStartup() async { try { final granted = await AudioFileService.requestAudioPermission(); if (!granted || !_autoScanEnabled) return; await scanDeviceAudio(); } catch (e) { debugPrint('Startup audio scan failed: $e'); } }
   Future<void> scanDeviceAudio() async {
@@ -43,34 +71,19 @@ class LibraryProvider extends ChangeNotifier {
     try {
       final folders = await AudioFileService.getSelectedFolders();
       final restricted = folders.isNotEmpty;
-      final songs = await AudioFileService.scanAudioFiles(
-        folderUris: restricted ? folders.map((folder) => folder['uri']!).toList() : const <String>[],
-        minimumDurationMs: _minimumScanDurationMs,
-      );
+      final songs = await AudioFileService.scanAudioFiles(folderUris: restricted ? folders.map((folder) => folder['uri']!).toList() : const <String>[], minimumDurationMs: _minimumScanDurationMs);
       _restrictedSongIds = restricted ? songs.map((song) => song.id).toSet() : null;
       await _visibility.setRestrictedSongIds(_restrictedSongIds);
-      // The database remains intact so changing folder visibility does not erase
-      // listening history or Intelligence evidence for songs outside the selection.
       if (songs.isNotEmpty || restricted) {
         if (songs.isNotEmpty) await _db.insertSongs(songs);
-        await loadAllSongs();
-        await loadFavoriteSongs();
-        await loadStatistics();
+        await loadAllSongs(); await loadFavoriteSongs(); await loadStatistics();
       }
     } catch (e) { debugPrint('LibraryProvider device scan failed: $e'); }
     finally { _isScanning = false; notifyListeners(); }
   }
   Future<void> loadAllSongs() async { try { await _visibility.load(); final songs = await _db.getAllSongs(); _allSongs = _visibility.filter(songs, (song) => song.id); _applyFiltersAndSort(); notifyListeners(); } catch (e) { debugPrint('Error loading all songs: $e'); } }
   Future<void> loadFavoriteSongs() async { try { await _visibility.load(); final favorites = await _db.getFavoriteSongs(); _favoriteSongs = _visibility.filter(favorites, (song) => song.id); _applyFiltersAndSort(); notifyListeners(); } catch (e) { debugPrint('Error loading favorite songs: $e'); } }
-  Future<void> loadStatistics() async {
-    try {
-      final raw = await _db.getStatistics();
-      _statistics = Map<String, dynamic>.from(raw);
-      _statistics['totalSongs'] = _allSongs.length;
-      _statistics['favoriteCount'] = _favoriteSongs.length;
-      notifyListeners();
-    } catch (e) { debugPrint('Error loading statistics: $e'); }
-  }
+  Future<void> loadStatistics() async { try { final raw = await _db.getStatistics(); _statistics = Map<String, dynamic>.from(raw); _statistics['totalSongs'] = _allSongs.length; _statistics['favoriteCount'] = _favoriteSongs.length; notifyListeners(); } catch (e) { debugPrint('Error loading statistics: $e'); } }
   Future<void> addSongs(List<Song> songs) async { try { await _db.insertSongs(songs); await loadAllSongs(); await loadStatistics(); } catch (e) { debugPrint('Error adding songs: $e'); } }
   Future<void> searchSongs(String query) async { _searchQuery = query; try { await _visibility.load(); if (query.isEmpty) await loadAllSongs(); else { _filteredSongs = _visibility.filter(await _db.searchSongs(query), (song) => song.id); _applySorting(); } notifyListeners(); } catch (e) { debugPrint('Error searching songs: $e'); } }
   Future<void> setSortBy(String sortBy) async { _sortBy = sortBy; await _saveSortPreference(); _applySorting(); notifyListeners(); }
@@ -81,7 +94,7 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> removeFavorite(String songId) async { try { await _db.removeFavorite(songId); await loadFavoriteSongs(); await loadStatistics(); } catch (e) { debugPrint('Error removing favorite: $e'); } }
   Future<void> toggleFavorite(Song song) async { if (isFavoriteSync(song.id)) { await removeFavorite(song.id); } else { await addFavorite(song); } }
   Future<bool> isFavorite(String songId) async => _db.isFavorite(songId);
-  Future<void> updatePlayCount(String songId) async { try { await _db.updateSongPlayCount(songId); await loadStatistics(); } catch (e) { debugPrint('Error updating play count: $e'); } }
+  Future<void> updatePlayCount(String songId) async { try { await _db.updateSongPlayCount(songId); await loadStatistics(); } catch (e) { debugPrint('Error updating song play count: $e'); } }
   Future<void> deleteSong(String songId) async { try { await _db.deleteSong(songId); await loadAllSongs(); await loadFavoriteSongs(); await loadStatistics(); } catch (e) { debugPrint('Error deleting song: $e'); } }
   void _applyFiltersAndSort() { _filteredSongs = List.from(_allSongs); if (_filterBy == 'favorites') _filteredSongs = _filteredSongs.where((song) => isFavoriteSync(song.id)).toList(); if (_filterBy == 'recent') _filteredSongs.sort((a, b) => b.dateAdded.compareTo(a.dateAdded)); if (_searchQuery.isNotEmpty) { final query = _searchQuery.toLowerCase(); _filteredSongs = _filteredSongs.where((song) => song.title.toLowerCase().contains(query) || song.artist.toLowerCase().contains(query) || song.album.toLowerCase().contains(query)).toList(); } _applySorting(); }
   void _applySorting() { switch (_sortBy) { case 'title': _filteredSongs.sort((a,b)=>a.title.toLowerCase().compareTo(b.title.toLowerCase())); break; case 'artist': _filteredSongs.sort((a,b)=>a.artist.toLowerCase().compareTo(b.artist.toLowerCase())); break; case 'album': _filteredSongs.sort((a,b)=>a.album.toLowerCase().compareTo(b.album.toLowerCase())); break; case 'date_added': _filteredSongs.sort((a,b)=>b.dateAdded.compareTo(a.dateAdded)); break; } }
@@ -90,4 +103,10 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> setAutoScanEnabled(bool enabled) async { _autoScanEnabled = enabled; final prefs = await SharedPreferences.getInstance(); await prefs.setBool('library_auto_scan', enabled); notifyListeners(); }
   Future<void> setMinimumScanDuration(int milliseconds) async { _minimumScanDurationMs = milliseconds.clamp(0, 3600000).toInt(); final prefs = await SharedPreferences.getInstance(); await prefs.setInt('library_min_duration_ms', _minimumScanDurationMs); notifyListeners(); }
   Future<void> _loadPreferences() async { await _visibility.load(); final prefs = await SharedPreferences.getInstance(); _sortBy = prefs.getString('library_sort_by') ?? 'title'; _filterBy = prefs.getString('library_filter_by') ?? 'all'; _autoScanEnabled = prefs.getBool('library_auto_scan') ?? true; _minimumScanDurationMs = prefs.getInt('library_min_duration_ms') ?? 30000; _restrictedSongIds = _visibility.restrictedSongIds; }
+
+  @override
+  void dispose() {
+    _visibility.removeListener(_onVisibilityChanged);
+    super.dispose();
+  }
 }
