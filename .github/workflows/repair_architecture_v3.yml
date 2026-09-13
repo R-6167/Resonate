@@ -83,7 +83,7 @@ jobs:
           once("  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0); }",
                "  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0, bufferedPosition: audioPlayer.bufferedPosition, playbackQueue: _queue, queueIndex: _queueIndex); }")
 
-          for (needle in ['final PlaybackCoordinator _playbackCoordinator', 'late final AudioEffectsController _audioEffectsController', '_audioEffectsController = AudioEffectsController']):
+          for needle in ['final PlaybackCoordinator _playbackCoordinator', 'late final AudioEffectsController _audioEffectsController', '_audioEffectsController = AudioEffectsController']:
               if needle not in s: raise SystemExit('Repair verification failed: ' + needle)
           p.write_text(s)
 
