@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   migrate-and-validate:
-    if: !contains(github.event.head_commit.message, 'complete architecture 1-3')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -26,12 +25,14 @@ jobs:
           from pathlib import Path
           p = Path('lib/providers/music_provider.dart')
           s = p.read_text()
-
           old = "  Future<void> _playOperation = Future<void>.value();\n"
-          if old not in s:
-              raise SystemExit('Expected obsolete _playOperation field was not found')
-          s = s.replace(old, '', 1)
-
+          if old in s:
+              s = s.replace(old, '', 1)
+              p.write_text(s)
+              print('Removed obsolete playback FIFO field.')
+          else:
+              print('Obsolete playback FIFO field already absent.')
+          s = p.read_text()
           required = [
               "final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();",
               "late final AudioEffectsController _audioEffectsController;",
@@ -43,24 +44,23 @@ jobs:
           for needle in required:
               if needle not in s:
                   raise SystemExit(f'Missing required architecture wiring: {needle}')
-
-          p.write_text(s)
-
           h = Path('lib/services/audio_service_handler.dart').read_text()
           if 'final AudioPlayer _fallbackPlayer' in h:
               raise SystemExit('Fallback AudioPlayer still exists in AudioServiceHandler')
           for needle in ['bindPlaybackController(', 'playbackQueue:', 'bufferedPosition:']:
               if needle not in h:
                   raise SystemExit(f'Missing media-authority wiring: {needle}')
-
           print('Architecture source assertions passed.')
           PY
-      - name: Commit source changes
+      - name: Commit source cleanup
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add lib/providers/music_provider.dart
           git diff --cached --check
-          git diff --cached --exit-code && { echo 'No source change required'; exit 0; } || true
-          git commit -m 'complete architecture 1-3'
-          git push
+          if git diff --cached --quiet; then
+            echo 'No source cleanup was necessary.'
+          else
+            git commit -m 'complete architecture 1-3'
+            git push
+          fi
