@@ -107,17 +107,34 @@ class AutopilotController extends ChangeNotifier {
       await _ensurePredictedQueue(threshold);
     }
 
-    if (_transitionInFlight || music.queueIndex >= music.queue.length - 1) return;
+    if (_transitionInFlight) return;
     final currentDuration = music.currentDuration;
     if (currentDuration == null) return;
     final currentRemaining = currentDuration - music.currentPosition;
     if (!forceTransition && currentRemaining > const Duration(seconds: 8)) return;
+    if (_transitionSongId == music.currentSong?.id) return;
+
+    // Ensure there is a next track. When graduated autopilot is active but the
+    // queue is exhausted, inject the top recommendation so control is not lost.
+    if (music.queueIndex >= music.queue.length - 1) {
+      await _ensurePredictedQueue(threshold);
+      if (music.queueIndex >= music.queue.length - 1) {
+        final top = intelligence.anticipatedNext?.song;
+        if (top != null && top.id != music.currentSong?.id) {
+          await music.enqueueSongs([top]);
+        }
+      }
+      if (music.queueIndex >= music.queue.length - 1) return;
+    }
 
     final next = music.queue[music.queueIndex + 1];
     final matching = intelligence.recommendations.where((r) => r.song.id == next.id);
     final recommendation = matching.isEmpty ? null : matching.first;
-    if (recommendation == null || recommendation.confidence < threshold) return;
-    if (_transitionSongId == music.currentSong?.id) return;
+    // Graduated autopilot may drive any queued next track; assist mode still
+    // requires a confident recommendation match.
+    final confident = recommendation != null && recommendation.confidence >= threshold;
+    if (!confident && !intelligence.isAutopilotGraduated) return;
+    if (!confident && recommendation == null && !intelligence.isAutopilotGraduated) return;
 
     if (!_consentGranted && !forceTransition) {
       if (_declinedForSongId == next.id) return;
@@ -126,7 +143,8 @@ class AutopilotController extends ChangeNotifier {
         _pendingSongId = next.id;
         await ResonateDiagnostics.record('intelligence_notification_action', {
           'action': 'shown', 'songId': next.id, 'mode': intelligence.autonomyLabel,
-          'confidence': recommendation.confidence, 'reason': recommendation.reason,
+          'confidence': recommendation?.confidence ?? 0,
+          'reason': recommendation?.reason ?? 'graduated_autopilot',
         });
         notifyListeners();
       }
@@ -140,19 +158,21 @@ class AutopilotController extends ChangeNotifier {
     await ResonateDiagnostics.record('intelligence_transition', {
       'stage': 'started', 'mode': intelligence.autonomyLabel,
       'fromSongId': music.currentSong?.id, 'toSongId': next.id,
-      'confidence': recommendation.confidence, 'reason': recommendation.reason,
+      'confidence': recommendation?.confidence ?? 0,
+      'reason': recommendation?.reason ?? 'graduated_autopilot',
     });
     final userGeneration = _authority.userGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     try {
       if (_authority.isStale(automaticGeneration) || userGeneration != _authority.userGeneration) return;
-      if (useCrossfade) {
+      if (useCrossfade && music.canCrossfadeNext && music.isPlaying) {
         final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
         if (_authority.isStale(automaticGeneration)) return;
-        await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+        final ok = await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+        if (!ok) await music.nextSong(source: 'automatic_transition');
       } else {
         if (_authority.isStale(automaticGeneration)) return;
-        await music.nextSong();
+        await music.nextSong(source: 'automatic_transition');
       }
       await ResonateDiagnostics.record('intelligence_transition', {
         'stage': 'completed', 'mode': intelligence.autonomyLabel,
@@ -162,7 +182,9 @@ class AutopilotController extends ChangeNotifier {
       await ResonateDiagnostics.record('intelligence_transition', {
         'stage': 'failed', 'mode': intelligence.autonomyLabel, 'error': e.toString(),
       });
-      rethrow;
+      // Do not rethrow — a failed intelligence transition must not poison the
+      // evaluation loop or leave playback without a recovery path.
+      debugPrint('Autopilot transition failed: $e');
     } finally {
       _transitionInFlight = false;
       unawaited(_ensurePredictedQueue(threshold));
