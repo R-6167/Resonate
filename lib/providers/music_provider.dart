@@ -1,1 +1,1 @@
-FILE_FROM_DISK
+RESTORE_FROM_PATH:/tmp/music_provider.dart
