@@ -4,12 +4,15 @@ import 'package:flutter/foundation.dart';
 
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
+import '../services/resonate_diagnostics.dart';
 import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
+/// PlaybackAuthority events wake this controller for command-sensitive work;
+/// the provider listener remains only as a state-boundary fallback.
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
@@ -23,18 +26,38 @@ class AutopilotController extends ChangeNotifier {
   bool _pendingTakeover = false;
   bool _consentLoaded = false;
   bool _consentGranted = false;
+  DateTime? _lastEvaluation;
+  bool _evaluationScheduled = false;
 
   AutopilotController({required this.music, required this.intelligence}) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
+    _authority.addListener(_onAuthorityEvent);
     unawaited(_loadConsentAndEvaluate());
   }
 
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
   String? get pendingSongId => _pendingSongId;
 
-  void _onPlaybackChanged() => unawaited(_evaluate());
-  void _onIntelligenceChanged() => unawaited(_evaluate());
+  void _onPlaybackChanged() => _scheduleEvaluate();
+  void _onIntelligenceChanged() => _scheduleEvaluate();
+
+  void _onAuthorityEvent() {
+    final event = _authority.lastEvent;
+    if (event == null) return;
+    if (event.kind == PlaybackEventKind.userCommand || event.kind == PlaybackEventKind.automaticCommand) {
+      _scheduleEvaluate();
+    }
+  }
+
+  void _scheduleEvaluate() {
+    if (_evaluationScheduled) return;
+    _evaluationScheduled = true;
+    scheduleMicrotask(() async {
+      _evaluationScheduled = false;
+      await _evaluate();
+    });
+  }
 
   Future<void> _loadConsentAndEvaluate() async {
     _consentGranted = await IntelligenceSettingsStore.autopilotConsent();
@@ -44,9 +67,13 @@ class AutopilotController extends ChangeNotifier {
 
   Future<void> allowPendingTakeover() async {
     if (!hasPendingTakeover) return;
+    final pending = _pendingSongId;
     _consentGranted = true;
     _pendingTakeover = false;
     _pendingSongId = null;
+    await ResonateDiagnostics.record('intelligence_notification_action', {
+      'action': 'accepted', 'songId': pending, 'mode': intelligence.autonomyLabel,
+    });
     await IntelligenceSettingsStore.setAutopilotConsent(true);
     notifyListeners();
     await _evaluate(forceTransition: true);
@@ -57,11 +84,18 @@ class AutopilotController extends ChangeNotifier {
     _pendingTakeover = false;
     _pendingSongId = null;
     if (pending != null) _declinedForSongId = pending;
+    await ResonateDiagnostics.record('intelligence_notification_action', {
+      'action': 'rejected', 'songId': pending, 'mode': intelligence.autonomyLabel,
+    });
     notifyListeners();
   }
 
   Future<void> _evaluate({bool forceTransition = false}) async {
-    if (!_consentLoaded || !intelligence.isAutopilot || !music.isPlaying || music.currentSong == null) return;
+    if (!_consentLoaded || !intelligence.isAutopilot || music.currentSong == null) return;
+    if (!music.isPlaying && !forceTransition) return;
+    final now = DateTime.now();
+    if (!forceTransition && _lastEvaluation != null && now.difference(_lastEvaluation!) < const Duration(milliseconds: 250)) return;
+    _lastEvaluation = now;
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
@@ -73,23 +107,45 @@ class AutopilotController extends ChangeNotifier {
       await _ensurePredictedQueue(threshold);
     }
 
-    if (_transitionInFlight || music.queueIndex >= music.queue.length - 1) return;
+    if (_transitionInFlight) return;
     final currentDuration = music.currentDuration;
     if (currentDuration == null) return;
     final currentRemaining = currentDuration - music.currentPosition;
     if (!forceTransition && currentRemaining > const Duration(seconds: 8)) return;
+    if (_transitionSongId == music.currentSong?.id) return;
+
+    // Ensure there is a next track. When graduated autopilot is active but the
+    // queue is exhausted, inject the top recommendation so control is not lost.
+    if (music.queueIndex >= music.queue.length - 1) {
+      await _ensurePredictedQueue(threshold);
+      if (music.queueIndex >= music.queue.length - 1) {
+        final top = intelligence.anticipatedNext?.song;
+        if (top != null && top.id != music.currentSong?.id) {
+          await music.enqueueSongs([top]);
+        }
+      }
+      if (music.queueIndex >= music.queue.length - 1) return;
+    }
 
     final next = music.queue[music.queueIndex + 1];
     final matching = intelligence.recommendations.where((r) => r.song.id == next.id);
     final recommendation = matching.isEmpty ? null : matching.first;
-    if (recommendation == null || recommendation.confidence < threshold) return;
-    if (_transitionSongId == music.currentSong?.id) return;
+    // Graduated autopilot may drive any queued next track; assist mode still
+    // requires a confident recommendation match.
+    final confident = recommendation != null && recommendation.confidence >= threshold;
+    if (!confident && !intelligence.isAutopilotGraduated) return;
+    if (!confident && recommendation == null && !intelligence.isAutopilotGraduated) return;
 
     if (!_consentGranted && !forceTransition) {
       if (_declinedForSongId == next.id) return;
       if (!_pendingTakeover) {
         _pendingTakeover = true;
         _pendingSongId = next.id;
+        await ResonateDiagnostics.record('intelligence_notification_action', {
+          'action': 'shown', 'songId': next.id, 'mode': intelligence.autonomyLabel,
+          'confidence': recommendation?.confidence ?? 0,
+          'reason': recommendation?.reason ?? 'graduated_autopilot',
+        });
         notifyListeners();
       }
       return;
@@ -99,20 +155,36 @@ class AutopilotController extends ChangeNotifier {
     _pendingSongId = null;
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
+    await ResonateDiagnostics.record('intelligence_transition', {
+      'stage': 'started', 'mode': intelligence.autonomyLabel,
+      'fromSongId': music.currentSong?.id, 'toSongId': next.id,
+      'confidence': recommendation?.confidence ?? 0,
+      'reason': recommendation?.reason ?? 'graduated_autopilot',
+    });
     final userGeneration = _authority.userGeneration;
     final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
     try {
-      // A direct user command always invalidates this transition before it can
-      // take effect, regardless of Intelligence confidence.
       if (_authority.isStale(automaticGeneration) || userGeneration != _authority.userGeneration) return;
-      if (useCrossfade) {
+      if (useCrossfade && music.canCrossfadeNext && music.isPlaying) {
         final milliseconds = await IntelligenceSettingsStore.autopilotCrossfadeMs();
         if (_authority.isStale(automaticGeneration)) return;
-        await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+        final ok = await music.performTrueCrossfade(milliseconds: milliseconds, fadeType: 'ease_in_out');
+        if (!ok) await music.nextSong(source: 'automatic_transition');
       } else {
         if (_authority.isStale(automaticGeneration)) return;
-        await music.nextSong();
+        await music.nextSong(source: 'automatic_transition');
       }
+      await ResonateDiagnostics.record('intelligence_transition', {
+        'stage': 'completed', 'mode': intelligence.autonomyLabel,
+        'fromSongId': music.currentSong?.id, 'queueIndex': music.queueIndex,
+      });
+    } catch (e) {
+      await ResonateDiagnostics.record('intelligence_transition', {
+        'stage': 'failed', 'mode': intelligence.autonomyLabel, 'error': e.toString(),
+      });
+      // Do not rethrow — a failed intelligence transition must not poison the
+      // evaluation loop or leave playback without a recovery path.
+      debugPrint('Autopilot transition failed: $e');
     } finally {
       _transitionInFlight = false;
       unawaited(_ensurePredictedQueue(threshold));
@@ -135,7 +207,16 @@ class AutopilotController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         count: 2,
       );
-      if (candidates.isNotEmpty) await music.enqueueSongs(candidates);
+      if (candidates.isNotEmpty) {
+        final added = await music.enqueueSongs(candidates);
+        await ResonateDiagnostics.record('intelligence_queue_decision', {
+          'mode': intelligence.autonomyLabel,
+          'candidates': candidates.map((song) => song.id).toList(),
+          'added': added,
+          'queueLength': music.queue.length,
+          'queueIndex': music.queueIndex,
+        });
+      }
     } finally {
       _queueDecisionInFlight = false;
     }
@@ -145,6 +226,7 @@ class AutopilotController extends ChangeNotifier {
   void dispose() {
     music.removeListener(_onPlaybackChanged);
     intelligence.removeListener(_onIntelligenceChanged);
+    _authority.removeListener(_onAuthorityEvent);
     super.dispose();
   }
 }

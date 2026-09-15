@@ -8,7 +8,10 @@ import '../models/intelligence_recommendation.dart';
 import '../models/listening_event.dart';
 import '../models/song.dart';
 import '../services/database_helper.dart';
+import '../services/intelligence_evidence_cache.dart';
 import '../services/intelligence_settings_store.dart';
+import '../services/library_visibility_store.dart';
+import '../services/resonate_diagnostics.dart';
 import 'music_provider.dart';
 
 class IntelligenceProvider extends ChangeNotifier {
@@ -38,6 +41,7 @@ class IntelligenceProvider extends ChangeNotifier {
   static const int _sessionEventLimit = 12;
 
   IntelligenceProvider({required this.music}) {
+    LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);
     music.addListener(_observePlayback);
     unawaited(_loadSettings());
     _observePlayback();
@@ -114,7 +118,7 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> _evaluateAutopilotGraduation() async {
     if (!_enabled || _autopilotGraduated || _autonomy == 2) return;
     try {
-      final events = await _database.getRecentListeningEvents(limit: 200);
+      final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
       if (events.length < _minimumLearningEvents) return;
       if (events.map((e) => e.songId).toSet().length < _minimumDistinctSongs) return;
       if (_recommendations.where((r) => r.confidence >= _graduationConfidence).length < 2) return;
@@ -152,6 +156,11 @@ class IntelligenceProvider extends ChangeNotifier {
     final raw = value?.trim().toLowerCase() ?? '';
     const unknown = {'', 'unknown', 'unknown artist', 'unknown_artist', '<unknown>', 'n/a', 'na', 'none', 'null', 'various artists', 'various artist'};
     return unknown.contains(raw) ? '' : raw;
+  }
+
+  void _onVisibilityChanged() {
+    IntelligenceEvidenceCache.instance.invalidate();
+    if (_enabled) unawaited(refreshRecommendations());
   }
 
   void _observePlayback() {
@@ -216,9 +225,12 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
     if (!_enabled) { _recommendations = const []; if (notify) notifyListeners(); return; }
     try {
-      final songs = await _database.getAllSongs();
+      final allSongs = await _database.getAllSongs();
+      final visibility = LibraryVisibilityStore.instance;
+      await visibility.load();
+      final songs = visibility.filter(allSongs, (song) => song.id);
       final current = music.currentSong;
-      final events = await _database.getRecentListeningEvents(limit: 200);
+      final events = await IntelligenceEvidenceCache.instance.recentEvents(limit: 200);
       final transitions = <String, int>{};
       if (current != null) {
         for (final row in await _database.getTransitionCounts(current.id)) {
@@ -226,7 +238,7 @@ class IntelligenceProvider extends ChangeNotifier {
           if (id != null) transitions[id] = (row['transition_count'] as num?)?.toInt() ?? 0;
         }
       }
-      final plays = <String, int>{}; final completes = <String, int>{}; final skips = <String, int>{}; final artistAffinity = <String, double>{}; final songHourAffinity = <String, double>{}; final recentSongIds = <String>{}; final byId = {for (final s in songs) s.id: s}; final now = DateTime.now(); final currentHourBucket = now.hour ~/ 3;
+      final plays = <String, int>{}; final completes = <String, int>{}; final skips = <String, int>{}; final artistAffinity = <String, double>{}; final songHourAffinity = <String, double>{}; final recentSongIds = <String>{}; final byId = {for (final s in allSongs) s.id: s}; final now = DateTime.now(); final currentHourBucket = now.hour ~/ 3;
       final sessionEnabled = await IntelligenceSettingsStore.sessionIntelligence();
       final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0; final familiarity = 1.0 - exploration; final explanationsEnabled = await IntelligenceSettingsStore.explanations();
       final sessionEvents = sessionEnabled ? _extractCurrentSession(events) : const <ListeningEvent>[]; final sessionSongIds = sessionEvents.map((e) => e.songId).toSet(); final sessionArtistCounts = <String, int>{}; var recentRank = 0;
@@ -264,7 +276,17 @@ class IntelligenceProvider extends ChangeNotifier {
         }
         ranked.add(IntelligenceRecommendation(song: song, score: score, confidence: confidence, reason: reason, decision: _autonomy == 2 ? 'autopilot' : _autonomy == 1 ? 'assist' : 'suggest', sessionReason: sessionReason));
       }
-      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false); await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
+      ranked.sort((a, b) => b.score.compareTo(a.score)); _recommendations = ranked.take(limit).toList(growable: false);
+      await ResonateDiagnostics.record('intelligence_recommendations_generated', {
+        'stage': 'recommendations_generated',
+        'mode': autonomyLabel,
+        'sessionMode': _sessionMode,
+        'count': _recommendations.length,
+        'topSongId': _recommendations.isEmpty ? null : _recommendations.first.song.id,
+        'topConfidence': _recommendations.isEmpty ? 0 : _recommendations.first.confidence,
+        'exploration': exploration,
+      });
+      await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
     } catch (e, stack) { debugPrint('Intelligence refresh failed: $e'); debugPrint('$stack'); }
   }
 
@@ -276,5 +298,6 @@ class IntelligenceProvider extends ChangeNotifier {
   Future<void> recordListeningEvent(ListeningEvent event) async => _database.insertListeningEvent(event);
 
   @override
-  void dispose() { music.removeListener(_observePlayback); super.dispose(); }
+  void dispose() {
+    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged); music.removeListener(_observePlayback); super.dispose(); }
 }

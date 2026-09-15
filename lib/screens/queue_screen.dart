@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
+import '../services/library_visibility_store.dart';
 import 'player_screen.dart';
 
 class QueueScreen extends StatelessWidget {

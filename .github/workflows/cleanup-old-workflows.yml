@@ -12,14 +12,16 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete workflow runs older than 3 days
+      - name: Delete workflow runs and artifacts older than 3 days
         uses: actions/github-script@v8
         with:
           script: |
             const cutoff = Date.now() - (3 * 24 * 60 * 60 * 1000);
+            const oldRunIds = [];
             let page = 1;
-            let deleted = 0;
 
+            // Collect IDs first so deleting runs cannot shift pagination and
+            // cause older runs to be skipped.
             while (true) {
               const { data } = await github.rest.actions.listWorkflowRunsForRepo({
                 owner: context.repo.owner,
@@ -31,18 +33,60 @@ jobs:
               if (!data.workflow_runs.length) break;
 
               for (const run of data.workflow_runs) {
-                if (new Date(run.created_at).getTime() >= cutoff) continue;
-
-                await github.rest.actions.deleteWorkflowRun({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  run_id: run.id,
-                });
-                deleted++;
+                if (new Date(run.created_at).getTime() < cutoff) {
+                  oldRunIds.push(run.id);
+                }
               }
 
               if (data.workflow_runs.length < 100) break;
               page++;
             }
 
-            core.info(`Deleted ${deleted} workflow runs older than 3 days.`);
+            let deletedRuns = 0;
+            for (const runId of oldRunIds) {
+              try {
+                await github.rest.actions.deleteWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: runId,
+                });
+                deletedRuns++;
+              } catch (error) {
+                core.warning(`Could not delete workflow run ${runId}: ${error.message}`);
+              }
+            }
+
+            // Also clean any orphaned/standalone artifacts older than 3 days.
+            let artifactPage = 1;
+            let deletedArtifacts = 0;
+            while (true) {
+              const { data } = await github.rest.actions.listArtifactsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+                page: artifactPage,
+              });
+
+              if (!data.artifacts.length) break;
+
+              for (const artifact of data.artifacts) {
+                const created = new Date(artifact.created_at).getTime();
+                if (created >= cutoff) continue;
+
+                try {
+                  await github.rest.actions.deleteArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: artifact.id,
+                  });
+                  deletedArtifacts++;
+                } catch (error) {
+                  core.warning(`Could not delete artifact ${artifact.id}: ${error.message}`);
+                }
+              }
+
+              if (data.artifacts.length < 100) break;
+              artifactPage++;
+            }
+
+            core.info(`Deleted ${deletedRuns} workflow runs and ${deletedArtifacts} artifacts older than 3 days.`);

@@ -1,9 +1,8 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent, local-only tuning controls for Resonate Intelligence.
-///
-/// Defaults are intentionally conservative so existing playback behavior is
-/// unchanged until the user opts into stronger automation.
 class IntelligenceSettingsStore {
   static const _explorationKey = 'intelligence_exploration';
   static const _confidenceKey = 'intelligence_confidence_threshold';
@@ -39,6 +38,66 @@ class IntelligenceSettingsStore {
   static Future<void> setAutopilotCrossfade(bool value) async => (await _prefs()).setBool(_crossfadeKey, value);
   static Future<void> setAutopilotCrossfadeMs(int value) async => (await _prefs()).setInt(_crossfadeDurationKey, value.clamp(1000, 12000));
   static Future<void> setAutopilotConsent(bool value) async => (await _prefs()).setBool(_autopilotConsentKey, value);
+
+  static Future<Map<String, dynamic>> exportSettings() async => {
+        'format': 'resonate_intelligence_settings',
+        'version': 1,
+        'exportedAt': DateTime.now().toUtc().toIso8601String(),
+        'settings': {
+          'exploration': await exploration(),
+          'confidenceThreshold': await confidenceThreshold(),
+          'automaticQueue': await automaticQueue(),
+          'artistRepeat': await artistRepeat(),
+          'sessionIntelligence': await sessionIntelligence(),
+          'explanations': await explanations(),
+          'learnedEq': await learnedEq(),
+          'autopilotCrossfade': await autopilotCrossfade(),
+          'autopilotCrossfadeMs': await autopilotCrossfadeMs(),
+          'autopilotConsent': await autopilotConsent(),
+        },
+      };
+
+  /// Imports only recognized Intelligence tuning fields. Unknown fields are ignored
+  /// so newer/older Resonate versions can exchange settings safely.
+  static Future<void> importSettings(Map<String, dynamic> document) async {
+    final raw = document['settings'];
+    if (raw is! Map) throw const FormatException('Missing Intelligence settings.');
+    final s = raw.map((key, value) => MapEntry(key.toString(), value));
+    final prefs = await _prefs();
+    Future<void> intValue(String key, String prefKey, int min, int max) async {
+      final value = s[key];
+      if (value is num) await prefs.setInt(prefKey, value.round().clamp(min, max));
+    }
+    Future<void> doubleValue(String key, String prefKey, double min, double max) async {
+      final value = s[key];
+      if (value is num) await prefs.setDouble(prefKey, value.toDouble().clamp(min, max));
+    }
+    Future<void> boolValue(String key, String prefKey) async {
+      final value = s[key];
+      if (value is bool) await prefs.setBool(prefKey, value);
+    }
+    await intValue('exploration', _explorationKey, 0, 100);
+    await doubleValue('confidenceThreshold', _confidenceKey, .45, .90);
+    await boolValue('automaticQueue', _autoQueueKey);
+    await boolValue('artistRepeat', _artistRepeatKey);
+    await boolValue('sessionIntelligence', _sessionKey);
+    await boolValue('explanations', _explanationsKey);
+    await boolValue('learnedEq', _learnedEqKey);
+    await boolValue('autopilotCrossfade', _crossfadeKey);
+    await intValue('autopilotCrossfadeMs', _crossfadeDurationKey, 1000, 12000);
+    await boolValue('autopilotConsent', _autopilotConsentKey);
+  }
+
+  static String encode(Map<String, dynamic> document) => const JsonEncoder.withIndent('  ').convert(document);
+
+  static Map<String, dynamic> decode(String text) {
+    final decoded = jsonDecode(text);
+    if (decoded is! Map) throw const FormatException('Invalid Resonate settings file.');
+    if (decoded['format'] != 'resonate_intelligence_settings') {
+      throw const FormatException('This file is not a Resonate Intelligence settings export.');
+    }
+    return decoded.map((key, value) => MapEntry(key.toString(), value));
+  }
 
   static Future<void> reset() async {
     final prefs = await _prefs();

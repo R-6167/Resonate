@@ -28,8 +28,17 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
     }
   }
 
-  Future<void> _removeFolder(String uri) async { await AudioFileService.removeFolder(uri); await _loadFolders(); }
+  Future<void> _removeFolder(String uri) async {
+    await AudioFileService.removeFolder(uri);
+    await _loadFolders();
+    if (mounted) {
+      await context.read<LibraryProvider>().scanDeviceAudio();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Folder restriction updated — ${context.read<LibraryProvider>().allSongs.length} songs indexed.')));
+    }
+  }
   Future<void> _scan() async { await context.read<LibraryProvider>().scanDeviceAudio(); }
+
+  String _durationLabel(int ms) { if (ms <= 0) return 'Include audio of any length.'; final seconds = ms ~/ 1000; if (seconds < 60) return 'Only audio at least $seconds seconds long.'; final minutes = seconds ~/ 60; return 'Only audio at least $minutes minute${minutes == 1 ? '' : 's'} long.'; }
 
   @override Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
@@ -47,6 +56,38 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
           const SizedBox(height: 8),
           OutlinedButton.icon(onPressed: _addFolder, icon: const Icon(Icons.create_new_folder_outlined), label: const Text('Choose folders to scan')),
         ]))),
+        const SizedBox(height: 14),
+        Card(
+          child: Consumer<LibraryProvider>(
+            builder: (_, current, __) => Column(children: [
+              SwitchListTile.adaptive(
+                secondary: const Icon(Icons.auto_awesome_rounded),
+                title: const Text('Scan music automatically'),
+                subtitle: const Text('Scan local audio when Resonate starts. Selected folders are used when you add a folder restriction.'),
+                value: current.autoScanEnabled,
+                onChanged: current.setAutoScanEnabled,
+              ),
+              ListTile(
+                leading: const Icon(Icons.timer_outlined),
+                title: const Text('Minimum audio length'),
+                subtitle: Text(_durationLabel(current.minimumScanDurationMs)),
+                trailing: DropdownButton<int>(
+                  value: [0, 30000, 60000, 120000, 300000, 600000].contains(current.minimumScanDurationMs) ? current.minimumScanDurationMs : 30000,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Any length')),
+                    DropdownMenuItem(value: 30000, child: Text('30 seconds')),
+                    DropdownMenuItem(value: 60000, child: Text('1 minute')),
+                    DropdownMenuItem(value: 120000, child: Text('2 minutes')),
+                    DropdownMenuItem(value: 300000, child: Text('5 minutes')),
+                    DropdownMenuItem(value: 600000, child: Text('10 minutes')),
+                  ],
+                  onChanged: (value) { if (value != null) current.setMinimumScanDuration(value); },
+                ),
+              ),
+            ]),
+          ),
+        ),
         const SizedBox(height: 14),
         Card(child: ListTile(leading: const Icon(Icons.music_note_rounded), title: Text('${library.allSongs.length} songs indexed', style: text.titleMedium), subtitle: Text(hasFolders ? 'Restricted to your selected folders' : 'Discovered from local Android audio', style: text.bodyMedium))),
         const SizedBox(height: 12),

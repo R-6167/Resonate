@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -76,25 +77,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
-              Container(
-                height: 250,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(26),
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: SizedBox(
+                  height: 250,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        ),
+                        child: const AudioVisualizationWidget(),
+                      ),
+                      Center(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+                          ),
+                          child: const Padding(
+                            padding: EdgeInsets.all(28),
+                            child: Icon(Icons.album_rounded, size: 86),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: const Icon(Icons.album_rounded, size: 110),
               ),
               const SizedBox(height: 18),
-              Text(
-                song.title,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
+              _MarqueeSongTitle(title: song.title),
               const SizedBox(height: 5),
               Text(
                 song.artist,
@@ -108,11 +121,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 14),
-              const SizedBox(
-                height: 100,
-                child: AudioVisualizationWidget(),
-              ),
+              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               _WaveSeekBar(
                 value: position,
                 max: max,
@@ -265,14 +275,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
               Consumer<IntelligenceProvider>(
                 builder: (context, intelligence, _) {
                   final item = intelligence.anticipatedNext;
-                  if (!intelligence.isEnabled || item == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return _NextCard(item: item);
+                  if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
+                  return Column(
+                    children: [
+                      _NextCard(item: item, mode: intelligence.autonomyLabel),
+                      const SizedBox(height: 10),
+                      const AutopilotTakeoverCard(),
+                    ],
+                  );
                 },
               ),
-              const SizedBox(height: 8),
-              const AutopilotTakeoverCard(),
             ],
           );
         },
@@ -290,67 +302,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) {
-        return SafeArea(
-          child: StatefulBuilder(
-            builder: (_, setSheetState) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.volume_up_rounded),
-                        const SizedBox(width: 12),
-                        const Text(
-                          'Volume',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text('${(music.volume * 100).round()}%'),
-                      ],
-                    ),
-                    Slider(
-                      value: music.volume,
-                      min: 0,
-                      max: 1,
-                      divisions: 100,
-                      onChanged: (value) {
-                        music.setVolume(value);
-                        setSheetState(() {});
-                      },
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          onPressed: () {
-                            music.setVolume(0);
-                            setSheetState(() {});
-                          },
-                          icon: const Icon(Icons.volume_off_rounded),
-                          label: const Text('Mute'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            music.setVolume(1);
-                            setSheetState(() {});
-                          },
-                          child: const Text('100%'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
+      builder: (_) => Consumer<MusicProvider>(
+        builder: (_, current, __) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(children: [
+                  Icon(_volumeIcon(current.volume)),
+                  const SizedBox(width: 12),
+                  const Text('Volume', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  Text('${(current.volume * 100).round()}%'),
+                ]),
+                Slider(value: current.volume, min: 0, max: 1, divisions: 100, onChanged: current.setVolume),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  TextButton.icon(onPressed: () => current.setVolume(0), icon: const Icon(Icons.volume_off_rounded), label: const Text('Mute')),
+                  TextButton(onPressed: () => current.setVolume(1), child: const Text('100%')),
+                ]),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -417,15 +392,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   _showPitch(context, playback);
                 },
               ),
-              SwitchListTile(
-                secondary: const Icon(Icons.volume_down_rounded),
-                title: const Text('Volume normalization'),
-                subtitle: Text(
-                  'Target ${playback.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available',
-                ),
-                value: playback.normalizationEnabled,
-                onChanged: playback.setNormalizationEnabled,
-              ),
+              Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'), value: current.normalizationEnabled, onChanged: current.setNormalizationEnabled)),
               ListTile(
                 leading: const Icon(Icons.timer_outlined),
                 title: const Text('Sleep timer'),
@@ -565,55 +532,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-class _WaveSeekBar extends StatelessWidget {
-  final double value;
-  final double max;
-  final ValueChanged<double> onStart;
-  final ValueChanged<double> onUpdate;
-  final ValueChanged<double> onEnd;
-
-  const _WaveSeekBar({
-    required this.value,
-    required this.max,
-    required this.onStart,
-    required this.onUpdate,
-    required this.onEnd,
-  });
-
-  double _valueFor(Offset local, double width) {
-    if (width <= 0) return 0;
-    return (local.dx / width).clamp(0.0, 1.0) * max;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onHorizontalDragStart: (details) =>
-              onStart(_valueFor(details.localPosition, constraints.maxWidth)),
-          onHorizontalDragUpdate: (details) =>
-              onUpdate(_valueFor(details.localPosition, constraints.maxWidth)),
-          onHorizontalDragEnd: (_) => onEnd(value),
-          onTapDown: (details) =>
-              onStart(_valueFor(details.localPosition, constraints.maxWidth)),
-          onTapUp: (details) =>
-              onEnd(_valueFor(details.localPosition, constraints.maxWidth)),
-          child: SizedBox(
-            height: 64,
-            child: CustomPaint(
-              painter: _WaveSeekPainter(
-                progress: max <= 0 ? 0 : value / max,
-                color: Theme.of(context).colorScheme.primary,
-                muted: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
+class _WaveSeekBar extends StatefulWidget {
+  final double value; final double max; final ValueChanged<double> onStart; final ValueChanged<double> onUpdate; final ValueChanged<double> onEnd;
+  const _WaveSeekBar({required this.value, required this.max, required this.onStart, required this.onUpdate, required this.onEnd});
+  @override State<_WaveSeekBar> createState() => _WaveSeekBarState();
+}
+class _WaveSeekBarState extends State<_WaveSeekBar> {
+  double? _interactionValue;
+  double _valueFor(Offset local, double width) => width <= 0 ? 0 : (local.dx / width).clamp(0.0,1.0) * widget.max;
+  @override Widget build(BuildContext context) => LayoutBuilder(builder:(context,constraints){ final display=_interactionValue ?? widget.value; return GestureDetector(behavior:HitTestBehavior.opaque, onHorizontalDragStart:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onStart(v);}, onHorizontalDragUpdate:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onUpdate(v);}, onHorizontalDragEnd:(_){final v=_interactionValue ?? widget.value;setState(()=>_interactionValue=null);widget.onEnd(v);}, onTapDown:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onStart(v);}, onTapUp:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=null);widget.onEnd(v);}, child:SizedBox(height:64,child:CustomPaint(painter:_WaveSeekPainter(progress:widget.max<=0?0:display/widget.max,color:Theme.of(context).colorScheme.primary,muted:Theme.of(context).colorScheme.outlineVariant)))); });
 }
 
 class _WaveSeekPainter extends CustomPainter {
@@ -669,10 +596,29 @@ class _WaveSeekPainter extends CustomPainter {
   }
 }
 
+
+class _MarqueeSongTitle extends StatefulWidget {
+  final String title;
+  const _MarqueeSongTitle({required this.title});
+  @override State<_MarqueeSongTitle> createState() => _MarqueeSongTitleState();
+}
+
+class _MarqueeSongTitleState extends State<_MarqueeSongTitle> {
+  late final ScrollController _controller;
+  Timer? _timer;
+  @override void initState() { super.initState(); _controller = ScrollController(); WidgetsBinding.instance.addPostFrameCallback((_) => _schedule()); }
+  @override void didUpdateWidget(covariant _MarqueeSongTitle oldWidget) { super.didUpdateWidget(oldWidget); if (oldWidget.title != widget.title) { _timer?.cancel(); if (_controller.hasClients) _controller.jumpTo(0); WidgetsBinding.instance.addPostFrameCallback((_) => _schedule()); } }
+  void _schedule() { if (!mounted || !_controller.hasClients || _controller.position.maxScrollExtent <= 1) return; _timer?.cancel(); _timer = Timer(const Duration(milliseconds: 1200), _run); }
+  Future<void> _run() async { if (!mounted || !_controller.hasClients) return; final max = _controller.position.maxScrollExtent; if (max <= 1) return; await _controller.animateTo(max, duration: const Duration(milliseconds: 5200), curve: Curves.easeInOut); if (!mounted || !_controller.hasClients) return; await Future<void>.delayed(const Duration(milliseconds: 1400)); if (!mounted || !_controller.hasClients) return; await _controller.animateTo(0, duration: const Duration(milliseconds: 5200), curve: Curves.easeInOut); if (mounted) _timer = Timer(const Duration(milliseconds: 1200), _run); }
+  @override void dispose() { _timer?.cancel(); _controller.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) { final style = Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold); return LayoutBuilder(builder: (context, constraints) => SizedBox(height: 34, child: SingleChildScrollView(controller: _controller, scrollDirection: Axis.horizontal, physics: const NeverScrollableScrollPhysics(), child: ConstrainedBox(constraints: BoxConstraints(minWidth: constraints.maxWidth), child: Text(widget.title, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.visible, style: style))))); }
+}
+
 class _NextCard extends StatelessWidget {
   final IntelligenceRecommendation item;
+  final String mode;
 
-  const _NextCard({required this.item});
+  const _NextCard({required this.item, required this.mode});
 
   @override
   Widget build(BuildContext context) {
@@ -684,7 +630,12 @@ class _NextCard extends StatelessWidget {
       color: Theme.of(context).colorScheme.primaryContainer,
       child: ListTile(
         leading: const Icon(Icons.auto_awesome),
-        title: const Text('A thought for your next track'),
+        title: Row(
+          children: [
+            const Expanded(child: Text('A thought for your next track')),
+            Chip(label: Text(mode), visualDensity: VisualDensity.compact),
+          ],
+        ),
         subtitle: Text(
           '${item.song.title}\n$confidence% confidence • ${item.reason}',
           maxLines: 4,
