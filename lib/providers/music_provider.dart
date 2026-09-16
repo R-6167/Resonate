@@ -275,14 +275,27 @@ class MusicProvider extends ChangeNotifier {
           _userWantsPlaying &&
           !_loadingSource &&
           player.audioSource != null) {
-        // Kick play only when a source is loaded and we are not mid source-swap.
+        // Kick play when a source is loaded and we still want audio.
+        // Shorter throttle so auto-next / library taps recover quickly if the
+        // first play() after setAudioSource did not stick.
         final now = DateTime.now();
         final due = _lastPlayKickAt == null ||
-            now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 500);
+            now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 250);
         if (due) {
           _lastPlayKickAt = now;
           isPlaying = true;
-          unawaited(player.play().catchError((_) {}));
+          unawaited(() async {
+            try {
+              final session = await AudioSession.instance;
+              await session.setActive(true);
+            } catch (_) {}
+            try {
+              await player.seek(player.position);
+            } catch (_) {}
+            try {
+              await player.play();
+            } catch (_) {}
+          }());
           notifyListeners();
           _publishServiceState();
         }
@@ -603,11 +616,17 @@ class MusicProvider extends ChangeNotifier {
       _automaticCrossfadeInFlight = false;
       unawaited(_finishHistoryEvent());
 
+      // Keep Engine B quiet, but do NOT stop Engine A before swapping source.
+      // stop() can drop audio focus; auto-next then loads the next file but
+      // stays paused until a fresh user gesture (manual next / resume).
       try {
-        await _playerB.stop();
+        await _playerB.pause();
       } catch (_) {}
       try {
-        await target.stop();
+        await _playerB.setVolume(0.0);
+      } catch (_) {}
+      try {
+        if (target.playing) await target.pause();
       } catch (_) {}
 
       // Build queue: prefer the provided list; empty path songs dropped.
@@ -629,6 +648,14 @@ class MusicProvider extends ChangeNotifier {
             }()
           : normalized;
       final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
+
+      // Hold audio session across the source swap so auto-next keeps focus.
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (e) {
+        debugPrint('AudioSession setActive (pre-source) failed: $e');
+      }
 
       await target.setLoopMode(LoopMode.off);
       await target.setAudioSource(
@@ -656,8 +683,8 @@ class MusicProvider extends ChangeNotifier {
         await target.seek(Duration(milliseconds: safeResume));
         currentPosition = Duration(milliseconds: safeResume);
       } else {
-        // After a completed track, just_audio can stay in completed until seek.
-        // Explicit zero seek makes auto-next actually start instead of loading paused.
+        // After completed/paused, just_audio needs an explicit seek before play
+        // will actually start on many Android devices.
         try {
           await target.seek(Duration.zero);
         } catch (_) {}
@@ -674,28 +701,55 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive failed: $e');
       }
 
-      // Poll until native is playing (or give up after ~2s). Slightly more
-      // patient for auto-next after completion on slower devices.
-      for (var attempt = 0; attempt < 12; attempt++) {
+      // Poll until native is playing. Re-seek + play on early attempts — this
+      // is what makes library taps and auto-next start without a manual resume.
+      for (var attempt = 0; attempt < 15; attempt++) {
         try {
+          if (attempt > 0 && attempt % 3 == 0) {
+            await target.seek(target.position);
+          }
           await target.play();
         } catch (e) {
           debugPrint('play() attempt $attempt failed: $e');
         }
         if (target.playing) break;
-        await Future<void>.delayed(Duration(milliseconds: 60 + attempt * 30));
+        await Future<void>.delayed(Duration(milliseconds: 50 + attempt * 25));
       }
       // Keep desire to play even if native has not reported playing yet;
       // the state-stream kick will retry while _userWantsPlaying is true.
-      isPlaying = target.playing || _userWantsPlaying;
+      isPlaying = true;
       _userWantsPlaying = true;
       await _startHistoryEvent(currentSong!);
       _publishServiceState();
       notifyListeners();
 
+      // Safety: if still not playing after the loop, one more deferred kick
+      // once _loadingSource is cleared (see finally) so the stream listener
+      // and this delayed play both can recover.
+      if (!target.playing) {
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 120), () async {
+          if (!_userWantsPlaying || currentSong?.id != selectedSong.id) return;
+          try {
+            final session = await AudioSession.instance;
+            await session.setActive(true);
+          } catch (_) {}
+          try {
+            await target.play();
+          } catch (_) {}
+          if (target.playing) {
+            isPlaying = true;
+            _publishServiceState();
+            notifyListeners();
+          }
+        }));
+      }
+
       if (outgoing != null) {
         try {
-          await outgoing.stop();
+          await outgoing.pause();
+        } catch (_) {}
+        try {
+          await outgoing.setVolume(0.0);
         } catch (_) {}
       }
 
@@ -880,6 +934,7 @@ class MusicProvider extends ChangeNotifier {
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       try {
+        _userWantsPlaying = false;
         await audioPlayer.pause();
         isPlaying = false;
         _persistResumePosition(force: true);
