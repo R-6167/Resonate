@@ -74,6 +74,7 @@ class MusicProvider extends ChangeNotifier {
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
   bool _userWantsPlaying = false;
+  bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
   int _resumePositionMs = 0;
   String? _resumeSongId;
@@ -271,12 +272,15 @@ class MusicProvider extends ChangeNotifier {
           notifyListeners();
           _publishServiceState();
         }
-      } else if (!loading && !state.playing && _userWantsPlaying) {
-        // Native idle after load while we still want audio — kick play()
-        // instead of leaving the UI on "resume". Throttle to avoid a loop.
+      } else if (!loading &&
+          !state.playing &&
+          _userWantsPlaying &&
+          !_loadingSource &&
+          player.audioSource != null) {
+        // Kick play only when a source is loaded and we are not mid source-swap.
         final now = DateTime.now();
         final due = _lastPlayKickAt == null ||
-            now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 400);
+            now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 500);
         if (due) {
           _lastPlayKickAt = now;
           isPlaying = true;
@@ -420,22 +424,21 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _advanceAfterCompletion(String completedSongId) {
     if (_completionAdvanceInProgress) return Future<void>.value();
-    // Fresh intent so automatic advance is never blocked by a stale user token.
+    // Direct path — do not queue behind other source mutations or a stuck token.
     final intentToken = _playbackIntentGate.issue();
-    return _serializePlayback(
-      () => _advanceAfterCompletionInternal(completedSongId, intentToken),
-      command: 'completion_advance',
-      source: 'automatic_transition',
-      intentToken: intentToken,
-    );
+    return _advanceAfterCompletionInternal(completedSongId, intentToken);
   }
 
   Future<void> _advanceAfterCompletionInternal(String completedSongId, int intentToken) async {
     if (_completionAdvanceInProgress) return;
-    if (currentSong?.id != completedSongId && _lastCompletionSongId != completedSongId) {
+    // Accept if this is the song that just completed (by id match).
+    if (completedSongId.isEmpty) return;
+    if (currentSong?.id != completedSongId &&
+        _lastCompletionSongId != completedSongId) {
       return;
     }
     _completionAdvanceInProgress = true;
+    _userWantsPlaying = true;
     final fromSongId = completedSongId;
     final fromIndex = _queueIndex;
     await ResonateDiagnostics.record('completion_advance_attempt', {
@@ -595,12 +598,12 @@ class MusicProvider extends ChangeNotifier {
     final targetLoud = _loudnessA;
     final outgoing = _activeIsA ? null : _playerB;
 
+    _loadingSource = true;
     try {
       _crossfadeInProgress = false;
       _automaticCrossfadeInFlight = false;
       unawaited(_finishHistoryEvent());
 
-      // Stop the other engine if it was active; keep A as the only active path.
       try {
         await _playerB.stop();
       } catch (_) {}
@@ -666,29 +669,15 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive failed: $e');
       }
 
-      try {
-        await target.play();
-      } catch (e) {
-        debugPrint('play() failed: $e');
-      }
-      if (!target.playing) {
-        try {
-          await Future<void>.delayed(const Duration(milliseconds: 120));
-          await target.play();
-        } catch (_) {}
-      }
-      if (!target.playing) {
-        try {
-          await Future<void>.delayed(const Duration(milliseconds: 200));
-          await target.play();
-        } catch (_) {}
-      }
-
-      // If still not playing, one last kick.
-      if (!target.playing) {
+      // Poll until native is playing (or give up after ~1.5s).
+      for (var attempt = 0; attempt < 8; attempt++) {
         try {
           await target.play();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('play() attempt $attempt failed: $e');
+        }
+        if (target.playing) break;
+        await Future<void>.delayed(Duration(milliseconds: 80 + attempt * 40));
       }
       isPlaying = true;
       _userWantsPlaying = true;
@@ -710,6 +699,7 @@ class MusicProvider extends ChangeNotifier {
       return true;
     } catch (e, stack) {
       isPlaying = false;
+      _userWantsPlaying = false;
       debugPrint('Error playing song: $e');
       debugPrint('$stack');
       await ResonateDiagnostics.record('playback_operation_failed', {
@@ -720,6 +710,8 @@ class MusicProvider extends ChangeNotifier {
       _publishServiceState();
       notifyListeners();
       return false;
+    } finally {
+      _loadingSource = false;
     }
   }
 
