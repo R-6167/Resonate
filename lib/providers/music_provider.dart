@@ -254,11 +254,9 @@ class MusicProvider extends ChangeNotifier {
       // Do not force isPlaying=false while loading/buffering after a user play request.
       // That was the main "loaded but needs resume" bug.
       if (completed) {
-        if (isPlaying) {
-          isPlaying = false;
-          notifyListeners();
-          _publishServiceState();
-        }
+        // Do not force isPlaying=false here when auto-next is intended.
+        // Clearing it races with _playSongInternal and causes "loaded but needs resume".
+        // Advance / queue-exhaust paths own the final isPlaying value.
       } else if (state.playing) {
         if (!isPlaying) {
           isPlaying = true;
@@ -296,8 +294,9 @@ class MusicProvider extends ChangeNotifier {
         if (completedSongId == null || completedSongId == _lastCompletionSongId) return;
         _lastCompletionSongId = completedSongId;
         currentPosition = currentDuration ?? currentPosition;
-        isPlaying = false;
         // Stay "want playing" so the next track auto-starts (not resume).
+        // Do NOT set isPlaying=false here — that raced with the advance play()
+        // and left the new track loaded but paused.
         _userWantsPlaying = true;
         notifyListeners();
         _publishServiceState();
@@ -656,6 +655,12 @@ class MusicProvider extends ChangeNotifier {
         final safeResume = _resumePositionMs.clamp(0, durationMs).toInt();
         await target.seek(Duration(milliseconds: safeResume));
         currentPosition = Duration(milliseconds: safeResume);
+      } else {
+        // After a completed track, just_audio can stay in completed until seek.
+        // Explicit zero seek makes auto-next actually start instead of loading paused.
+        try {
+          await target.seek(Duration.zero);
+        } catch (_) {}
       }
 
       await _enableEffects(target, targetEq, targetLoud);
@@ -669,17 +674,20 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive failed: $e');
       }
 
-      // Poll until native is playing (or give up after ~1.5s).
-      for (var attempt = 0; attempt < 8; attempt++) {
+      // Poll until native is playing (or give up after ~2s). Slightly more
+      // patient for auto-next after completion on slower devices.
+      for (var attempt = 0; attempt < 12; attempt++) {
         try {
           await target.play();
         } catch (e) {
           debugPrint('play() attempt $attempt failed: $e');
         }
         if (target.playing) break;
-        await Future<void>.delayed(Duration(milliseconds: 80 + attempt * 40));
+        await Future<void>.delayed(Duration(milliseconds: 60 + attempt * 30));
       }
-      isPlaying = true;
+      // Keep desire to play even if native has not reported playing yet;
+      // the state-stream kick will retry while _userWantsPlaying is true.
+      isPlaying = target.playing || _userWantsPlaying;
       _userWantsPlaying = true;
       await _startHistoryEvent(currentSong!);
       _publishServiceState();
