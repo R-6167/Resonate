@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
+import '../models/song.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
@@ -298,8 +299,8 @@ class _AnticipationCardState extends State<_AnticipationCard> {
     final music = context.read<MusicProvider>();
     final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
     try {
-      final list = widget.songs.cast();
-      final q = index >= 0 ? list.sublist(index) : [widget.item.song];
+      final list = widget.songs.whereType<Song>().toList();
+      final q = index >= 0 && index < list.length ? list.sublist(index) : <Song>[widget.item.song];
       await music.playSong(widget.item.song, queue: q, startIndex: 0);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -338,8 +339,8 @@ class _RecommendationTileState extends State<_RecommendationTile> {
     final music = context.read<MusicProvider>();
     final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
     try {
-      final list = widget.songs.cast();
-      final q = index >= 0 ? list.sublist(index) : [widget.item.song];
+      final list = widget.songs.whereType<Song>().toList();
+      final q = index >= 0 && index < list.length ? list.sublist(index) : <Song>[widget.item.song];
       await music.playSong(widget.item.song, queue: q, startIndex: 0);
     } finally {
       if (mounted) setState(() => _loading = false);
