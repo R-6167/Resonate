@@ -18,6 +18,20 @@ import '../services/audio_effects_bridge.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/playback_coordinator.dart';
 
+/// Resonate playback core — public contract (Phase 0)
+///
+/// UI and Intelligence should only drive playback through:
+///   playSong / playQueueIndex  — start a song (set queue + index + play)
+///   nextSong / previousSong    — transport
+///   togglePlayPause / pause / seek / stop
+///   enqueueSongs / playNext / removeFromQueue / reorderQueue
+///
+/// Internal only:
+///   onTrackEnded (completion)  — advance / repeat / stop
+///
+/// Intelligence must not set engines, intent tokens, or isPlaying directly.
+/// Engine A is the primary player; Engine B is for crossfade / Autopilot preload.
+
 enum PlaybackRepeatMode { off, all, one }
 
 class MusicProvider extends ChangeNotifier {
@@ -258,7 +272,7 @@ class MusicProvider extends ChangeNotifier {
           // We will force an advance after the crossfade finishes (or fails).
           _completionObservedDuringCrossfade = true;
         } else if (!_completionAdvanceInProgress) {
-          unawaited(_advanceAfterCompletion(completedSongId));
+          unawaited(onTrackEnded(completedSongId));
         }
       }
     });
@@ -330,7 +344,7 @@ class MusicProvider extends ChangeNotifier {
           'isPlaying': isPlaying,
           'positionMs': currentPosition.inMilliseconds,
         }));
-        unawaited(_advanceAfterCompletion(currentSong!.id));
+        unawaited(onTrackEnded(currentSong!.id));
       }
     });
   }
@@ -359,7 +373,7 @@ class MusicProvider extends ChangeNotifier {
       debugPrint('Post-crossfade continue failed: $e');
       // Fallback: force a normal advance from the current position in the queue.
       if (_queueIndex < _queue.length - 1) {
-        await _advanceAfterCompletion(currentSong?.id ?? '');
+        await onTrackEnded(currentSong?.id ?? '');
       }
     }
   }
@@ -446,6 +460,9 @@ class MusicProvider extends ChangeNotifier {
       _completionAdvanceInProgress = false;
     }
   }
+
+  /// Single entry for "this track finished" (completion + watchdog).
+  Future<void> onTrackEnded(String completedSongId) => _advanceAfterCompletion(completedSongId);
 
   /// Jump to any index in the current queue and start playback.
   Future<bool> playQueueIndex(int index) {
