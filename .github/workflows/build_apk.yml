@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - Companion_Features_Diagnostics
+      - Resonate_Remake
 
 permissions:
   contents: write
