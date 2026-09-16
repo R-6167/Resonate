@@ -526,120 +526,144 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {
-  await _visibility.load();
-  if (!_visibility.isVisible(song.id)) {
-    await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {'songId': song.id, 'stage': 'play_song_internal'});
-    return false;
-  }
-  final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
-  if (!_playbackIntentGate.isCurrent(intentToken)) {
-    await ResonateDiagnostics.record('playback_operation_stale', {'songId': song.id, 'stage': 'before_start', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken});
-    return false;
-  }
-  if (song.filePath.trim().isEmpty) return false;
-
-  final firstLoad = currentSong == null;
-  final targetIsA = firstLoad ? true : !_activeIsA;
-  final target = targetIsA ? _playerA : _playerB;
-  final outgoing = firstLoad ? null : audioPlayer;
-  final targetEq = targetIsA ? _equalizerA : _equalizerB;
-  final targetLoud = targetIsA ? _loudnessA : _loudnessB;
-
-  try {
-    _crossfadeInProgress = false;
-    unawaited(_finishHistoryEvent());
-
-    if (outgoing != null && outgoing != target) {
-      try { await outgoing.pause(); } catch (_) {}
-    }
-    try { await target.stop(); } catch (_) {}
-    if (!_playbackIntentGate.isCurrent(intentToken)) {
-      await ResonateDiagnostics.record('playback_operation_stale', {'songId': song.id, 'stage': 'after_stop', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken});
+    await _visibility.load();
+    // Visibility: only reject when restricted mode is active and song is outside scope.
+    if (_visibility.isRestricted && !_visibility.isVisible(song.id)) {
+      await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {
+        'songId': song.id,
+        'stage': 'play_song_internal',
+      });
       return false;
     }
+    final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
+    if (song.filePath.trim().isEmpty) return false;
 
-    final requested = queue != null && queue.isNotEmpty ? List<Song>.from(queue) : <Song>[song];
-    final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList();
-    if (normalized.isEmpty) return false;
-    var selectedIndex = normalized.indexWhere((s) => s.id == song.id);
-    if (selectedIndex < 0) selectedIndex = startIndex.clamp(0, normalized.length - 1).toInt();
-    final selectedSong = normalized[selectedIndex];
-    final nextQueue = _shuffleEnabled && normalized.length > 1
-        ? (() { final selected = normalized[selectedIndex]; final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(Random()); return <Song>[selected, ...upcoming]; })()
-        : normalized;
-    final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
+    // Phase 2 (partial): normal play always uses Engine A. Engine B is reserved
+    // for crossfade / Autopilot preload and is not switched on every tap.
+    final target = _playerA;
+    final targetEq = _equalizerA;
+    final targetLoud = _loudnessA;
+    final outgoing = _activeIsA ? null : _playerB;
 
-    await target.setLoopMode(LoopMode.off);
-    await target.setAudioSource(AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong));
-    if (!_playbackIntentGate.isCurrent(intentToken)) {
-      await ResonateDiagnostics.record('playback_operation_stale', {'songId': selectedSong.id, 'stage': 'after_source_load', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken});
-      try { await target.stop(); } catch (_) {}
-      return false;
-    }
+    try {
+      _crossfadeInProgress = false;
+      _automaticCrossfadeInFlight = false;
+      unawaited(_finishHistoryEvent());
 
-    _queue = nextQueue;
-    _queueIndex = nextIndex;
-    currentSong = _queue[_queueIndex];
-    _activeIsA = targetIsA;
-    _lastCompletionSongId = null;
-    currentDuration = currentSong!.duration;
-    currentPosition = Duration.zero;
-    isPlaying = false;
-    await _persistQueue();
-    _bindActivePlayerStreams();
-    notifyListeners();
-
-    if (resume && _resumeSongId == currentSong!.id && _resumePositionMs > 0) {
-      final durationMs = currentDuration?.inMilliseconds ?? _resumePositionMs;
-      final safeResume = _resumePositionMs.clamp(0, durationMs).toInt();
-      await target.seek(Duration(milliseconds: safeResume));
-      currentPosition = Duration(milliseconds: safeResume);
-    }
-    await _enableEffects(target, targetEq, targetLoud);
-    await target.setVolume(1.0);
-    if (!_playbackIntentGate.isCurrent(intentToken)) {
-      await ResonateDiagnostics.record('playback_operation_stale', {'songId': currentSong!.id, 'stage': 'before_play', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken});
-      try { await target.stop(); } catch (_) {}
-      isPlaying = false;
-      return false;
-    }
-    await target.play();
-    if (!_playbackIntentGate.isCurrent(intentToken)) {
-      try { await target.stop(); } catch (_) {}
-      isPlaying = false;
-      await ResonateDiagnostics.record('playback_operation_stale', {'songId': currentSong!.id, 'stage': 'after_play', 'intentToken': intentToken, 'currentIntentToken': _playbackIntentGate.currentToken});
-      return false;
-    }
-    // Ensure audio actually starts (some devices need a second kick after source load).
-    if (!target.playing) {
+      // Stop the other engine if it was active; keep A as the only active path.
       try {
-        await Future<void>.delayed(const Duration(milliseconds: 80));
-        await target.play();
+        await _playerB.stop();
       } catch (_) {}
+      try {
+        await target.stop();
+      } catch (_) {}
+
+      // Build queue: prefer the provided list; empty path songs dropped.
+      final requested = queue != null && queue.isNotEmpty ? List<Song>.from(queue) : <Song>[song];
+      final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList();
+      if (normalized.isEmpty) return false;
+
+      var selectedIndex = normalized.indexWhere((s) => s.id == song.id);
+      if (selectedIndex < 0) {
+        selectedIndex = startIndex.clamp(0, normalized.length - 1).toInt();
+      }
+      final selectedSong = normalized[selectedIndex];
+
+      final nextQueue = _shuffleEnabled && normalized.length > 1
+          ? () {
+              final selected = normalized[selectedIndex];
+              final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(Random());
+              return <Song>[selected, ...upcoming];
+            }()
+          : normalized;
+      final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
+
+      await target.setLoopMode(LoopMode.off);
+      await target.setAudioSource(
+        AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
+      );
+
+      // Commit queue/state before play so UI shows the track even if play is delayed.
+      _queue = nextQueue;
+      _queueIndex = nextIndex;
+      currentSong = _queue[_queueIndex];
+      _activeIsA = true;
+      _lastCompletionSongId = null;
+      currentDuration = currentSong!.duration;
+      currentPosition = Duration.zero;
+      isPlaying = false;
+      await _persistQueue();
+      _bindActivePlayerStreams();
+      notifyListeners();
+
+      if (resume && _resumeSongId == currentSong!.id && _resumePositionMs > 0) {
+        final durationMs = currentDuration?.inMilliseconds ?? _resumePositionMs;
+        final safeResume = _resumePositionMs.clamp(0, durationMs).toInt();
+        await target.seek(Duration(milliseconds: safeResume));
+        currentPosition = Duration(milliseconds: safeResume);
+      }
+
+      await _enableEffects(target, targetEq, targetLoud);
+      await target.setVolume(1.0);
+
+      // User-initiated / completion play: do not abort solely on token churn after load.
+      // Only skip play if a *newer* user play command clearly superseded this one.
+      if (playbackIntentToken != null && !_playbackIntentGate.isCurrent(intentToken)) {
+        // Still leave the track loaded; UI can press play. Prefer starting anyway
+        // for completion advances that issued their own token.
+        debugPrint('playSongInternal: intent moved during load (token=$intentToken current=${_playbackIntentGate.currentToken}) — still attempting play');
+      }
+
+      try {
+        await target.play();
+      } catch (e) {
+        debugPrint('play() failed: $e');
+      }
+      if (!target.playing) {
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 120));
+          await target.play();
+        } catch (_) {}
+      }
+      if (!target.playing) {
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await target.play();
+        } catch (_) {}
+      }
+
+      isPlaying = target.playing || true; // optimistically true; stream will correct
+      isPlaying = true;
+      await _startHistoryEvent(currentSong!);
+      _publishServiceState();
+      notifyListeners();
+
+      if (outgoing != null) {
+        try {
+          await outgoing.stop();
+        } catch (_) {}
+      }
+
+      await ResonateDiagnostics.record('playback_engine_handoff', {
+        'engine': 'A',
+        'songId': currentSong!.id,
+        'playing': target.playing,
+      });
+      return true;
+    } catch (e, stack) {
+      isPlaying = false;
+      debugPrint('Error playing song: $e');
+      debugPrint('$stack');
+      await ResonateDiagnostics.record('playback_operation_failed', {
+        'songId': song.id,
+        'error': e.toString(),
+        'intentToken': intentToken,
+      });
+      _publishServiceState();
+      notifyListeners();
+      return false;
     }
-    isPlaying = true;
-    await _startHistoryEvent(currentSong!);
-    _publishServiceState();
-    notifyListeners();
-    if (outgoing != null && outgoing != target) {
-      try { await outgoing.stop(); } catch (_) {}
-    }
-    await ResonateDiagnostics.record('playback_engine_handoff', {
-      'engine': targetIsA ? 'A' : 'B',
-      'songId': currentSong!.id,
-      'previousEngine': firstLoad ? null : (targetIsA ? 'B' : 'A'),
-    });
-    return true;
-  } catch (e, stack) {
-    isPlaying = false;
-    debugPrint('Error playing song: $e');
-    debugPrint('$stack');
-    await ResonateDiagnostics.record('playback_operation_failed', {'songId': song.id, 'error': e.toString(), 'intentToken': intentToken});
-    _publishServiceState();
-    notifyListeners();
-    return false;
   }
-}
 
   Future<void> _startHistoryEvent(Song song) async {
     await _queueHistoryOperation(() async {
