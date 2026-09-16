@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
-import '../services/library_visibility_store.dart';
 import 'player_screen.dart';
 
 class QueueScreen extends StatelessWidget {
@@ -20,66 +19,66 @@ class QueueScreen extends StatelessWidget {
       ],
     ),
     body: Consumer<MusicProvider>(builder: (context, music, _) {
-      if (music.currentSong == null) return const Center(child: Text('Nothing is playing.'));
-      final played = music.queue.take(music.queueIndex).toList();
-      final upcoming = music.upcomingQueue;
-      return ListView(
+      if (music.currentSong == null && music.queue.isEmpty) {
+        return const Center(child: Text('Nothing in the queue.'));
+      }
+      final queue = music.queue;
+      final currentIndex = music.queueIndex;
+      return ListView.builder(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        children: [
-          Card(child: ListTile(
-            leading: const Icon(Icons.play_circle_fill_rounded),
-            title: const Text('Now playing'),
-            subtitle: Text(music.currentSong!.title),
-            trailing: Text('${music.queueIndex + 1}/${music.queue.length}'),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())),
-          )),
-          if (played.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4),
-              child: Text('Played', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(height: 6),
-            ...played.asMap().entries.map((entry) => Card(
-              child: ListTile(
-                enabled: false,
-                leading: const Icon(Icons.check_circle_outline_rounded),
-                title: Text(entry.value.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(entry.value.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+        itemCount: queue.length,
+        itemBuilder: (context, index) {
+          final song = queue[index];
+          final isCurrent = index == currentIndex;
+          final isPast = index < currentIndex;
+          return Card(
+            color: isCurrent
+                ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35)
+                : null,
+            child: ListTile(
+              leading: Icon(
+                isCurrent
+                    ? Icons.play_circle_fill_rounded
+                    : (isPast ? Icons.replay_rounded : Icons.queue_music_rounded),
               ),
-            )),
-          ],
-          const SizedBox(height: 14),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4),
-            child: Text('Up next', style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(height: 6),
-          if (upcoming.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
-              child: Center(child: Text('No upcoming songs. Add songs from your library or let Autopilot choose.')),
-            )
-          else
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: upcoming.length,
-              onReorder: (oldIndex, newIndex) async {
-                await music.reorderQueue(music.queueIndex + 1 + oldIndex, music.queueIndex + 1 + newIndex);
-              },
-              itemBuilder: (context, index) {
-                final song = upcoming[index];
-                final absoluteIndex = music.queueIndex + 1 + index;
-                return Card(key: ValueKey('${song.id}-$absoluteIndex'), child: ListTile(
-                  leading: ReorderableDragStartListener(index: index, child: const Icon(Icons.drag_handle_rounded)),
-                  title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(tooltip: 'Remove from queue', icon: const Icon(Icons.close_rounded), onPressed: () => music.removeFromQueue(absoluteIndex)),
-                ));
+              title: Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500),
+              ),
+              subtitle: Text(
+                isCurrent
+                    ? 'Now playing • ${song.artist}'
+                    : (isPast ? 'Played • tap to play again • ${song.artist}' : song.artist),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: isCurrent
+                  ? Text('${index + 1}/${queue.length}')
+                  : IconButton(
+                      tooltip: 'Remove',
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => music.removeFromQueue(index),
+                    ),
+              onTap: () async {
+                if (isCurrent) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                  return;
+                }
+                final ok = await music.playQueueIndex(index);
+                if (!context.mounted) return;
+                if (ok) {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not play that track.')),
+                  );
+                }
               },
             ),
-        ],
+          );
+        },
       );
     }),
   );
