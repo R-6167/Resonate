@@ -11,27 +11,28 @@ Musicolet-like reliability for normal play, with Intelligence as an optional lay
 
 ## Phases
 
-### Phase 0 — Contract (done in code comments)
+### Phase 0 — Contract
 Public APIs only: `playSong`, `playQueueIndex`, `nextSong`, `previousSong`, transport, enqueue.
 Intelligence must not set engines/tokens/`isPlaying` directly.
 
-### Phase 1 — Flexible queue (in progress)
-- [x] `playQueueIndex(i)` — jump to any queue slot and play
-- [x] Queue UI: every row tappable (including past)
+### Phase 1 — Flexible queue
+- [x] `playQueueIndex(i)`
+- [x] Queue UI: every row tappable
 - [x] `removeFromQueue` for non-current indices
-- [ ] Library/home always start audio on tap (verify `playSong` + play retry)
+- [x] `playSong` cancels automatic work so library tap wins
 
-### Phase 3 — Single completion path (in progress)
-- [x] `onTrackEnded` → `_advanceAfterCompletion` with fresh intent token
-- [x] Watchdog near end of track
-- [x] Completion uses next-index play with fresh intent
-- [ ] Crossfade failure falls through cleanly to `onTrackEnded`
+### Phase 3 — Single completion path
+- [x] `onTrackEnded` + fresh intent token
+- [x] End-of-track watchdog
+- [x] Advance via internal next play
 
-### Phase 4 — Transport always wins (next)
-- User next/pause/seek cancels auto crossfade/advance
-- Play retry if native player did not start
+### Phase 4 — Transport always wins
+- [x] `_cancelAutomaticPlaybackWork()` shared by play / toggle / pause / stop / next / prev / seek
+- [x] Clears crossfade, auto-advance, watchdog
+- [x] Play / toggle retries `play()` if native player did not start
+- [x] Media-session and Intelligence next stay instant (no forced crossfade)
 
-### Phase 2 — Engine A default (after 4)
+### Phase 2 — Engine A default (next)
 - Non-crossfade path stays on Engine A only
 - Engine B only for crossfade / consented Autopilot preload
 
