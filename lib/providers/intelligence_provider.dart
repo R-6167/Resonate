@@ -124,6 +124,10 @@ class IntelligenceProvider extends ChangeNotifier {
       if (_recommendations.where((r) => r.confidence >= _graduationConfidence).length < 2) return;
       _autonomy = 2;
       _autopilotGraduated = true;
+
+      // Auto-grant consent so Autopilot can actually take control after graduation
+      await IntelligenceSettingsStore.setAutopilotConsent(true);
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('intelligence_autonomy', 2);
       await prefs.setBool('intelligence_autopilot_graduated', true);
@@ -259,15 +263,28 @@ class IntelligenceProvider extends ChangeNotifier {
       final ranked = <IntelligenceRecommendation>[];
       for (final song in songs) {
         if (song.id == current?.id || song.filePath.trim().isEmpty) continue;
-        final t = transitions[song.id] ?? 0; final p = plays[song.id] ?? 0; final c = completes[song.id] ?? 0; final s = skips[song.id] ?? 0; final completion = p == 0 ? 0.0 : c / p; final artistKey = _artistKey(song.artist); final artist = artistKey.isEmpty ? 0.0 : (artistAffinity[artistKey] ?? 0.0); final timeAffinity = songHourAffinity[song.id] ?? 0.0; final recencyPenalty = recentSongIds.contains(song.id) ? 1.5 : 0.0; final feedback = _feedback[song.id] ?? 0.0; final currentArtist = _artistKey(current?.artist); final sameArtistBoost = currentArtist.isNotEmpty && artistKey.isNotEmpty && artistKey == currentArtist ? .75 * familiarity : 0.0; final inSession = sessionSongIds.contains(song.id); final sessionArtistCount = artistKey.isEmpty ? 0 : (sessionArtistCounts[artistKey] ?? 0); final sessionContinuity = sessionEnabled && sessionArtistCount > 0 ? sessionArtistCount * .7 * familiarity : 0.0; final explorationBonus = sessionEnabled && !inSession && !recentSongIds.contains(song.id) ? .9 * exploration : 0.0; final familiarityBonus = (completion >= .65 || feedback > 0) ? .7 * familiarity : 0.0; final repeatPenalty = await IntelligenceSettingsStore.artistRepeat() ? .15 : .55; final sessionFatiguePenalty = sessionEnabled && sessionArtistCount >= 3 && artistKey.isNotEmpty ? (sessionArtistCount - 2) * repeatPenalty : 0.0; final score = t * 5.0 * familiarity + completion * 4.0 * familiarity + artist * 1.5 * familiarity + timeAffinity * 1.25 + feedback * 3.0 + sameArtistBoost + sessionContinuity + explorationBonus + familiarityBonus - s * 2.0 - recencyPenalty - sessionFatiguePenalty; final evidence = t * 2.0 + completion * 2.0 + artist.abs() + timeAffinity + feedback.abs() + sessionContinuity + (p > 0 ? 1.0 : 0.0); final confidence = (evidence / (evidence + 4.0)).clamp(.08, .97).toDouble();
-        String reason = ''; String sessionReason = '';
+        final play = plays[song.id] ?? 0;
+        final complete = completes[song.id] ?? 0;
+        final skip = skips[song.id] ?? 0;
+        final t = transitions[song.id] ?? 0;
+        final artist = _artistKey(song.artist);
+        final artistScore = artist.isEmpty ? 0.0 : (artistAffinity[artist] ?? 0.0);
+        final timeAffinity = songHourAffinity[song.id] ?? 0.0;
+        final completion = play == 0 ? 0.5 : complete / play;
+        final explorationBonus = recentSongIds.contains(song.id) ? 0.0 : exploration * 0.15;
+        final familiarityBonus = (play > 0 ? familiarity * 0.2 : 0.0) + (completion * 0.25);
+        final sessionContinuity = sessionArtistCounts[artist] != null ? 0.12 : 0.0;
+        final feedback = _feedback[song.id] ?? 0.0;
+        final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08);
+        final confidence = (0.35 + (t > 0 ? 0.25 : 0) + (completion > 0.6 ? 0.2 : 0) + (artistScore > 0 ? 0.1 : 0) + (timeAffinity > 0 ? 0.05 : 0) + (feedback.abs() > 0 ? 0.05 : 0)).clamp(0.0, 1.0);
+        String reason = 'A local pick.';
+        String sessionReason = '';
         if (explanationsEnabled) {
-          if (feedback >= 1) reason = 'You told me you like this.';
-          else if (feedback <= -1) reason = 'Kept low because you previously passed on it.';
+          if (t > 2) reason = 'You often play this after the current track.';
           else if (t > 0) reason = 'You often move to this after ${current?.title ?? 'your current track'}.';
           else if (timeAffinity > 0) reason = 'You tend to enjoy this around this time.';
           else if (completion >= .65) reason = 'You tend to finish this one.';
-          else if (artist > 0) reason = 'You have been enjoying more from ${song.artist}.';
+          else if (artistScore > 0) reason = 'You have been enjoying more from ${song.artist}.';
           else reason = 'A fresh local pick while I learn your pattern.';
           if (_sessionMode == 'Exploring' && explorationBonus > 0) sessionReason = 'Keeping the session moving with a fresh direction.';
           else if (_sessionMode == 'Familiar flow' && familiarityBonus > 0) sessionReason = 'Keeping the strong flow you have established.';
