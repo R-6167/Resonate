@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/intelligence_recommendation.dart';
+import '../models/song.dart';
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/resonate_diagnostics.dart';
