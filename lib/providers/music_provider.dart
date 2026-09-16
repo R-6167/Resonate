@@ -516,6 +516,8 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) {
     final intentToken = _playbackIntentGate.issue();
+    _cancelAutomaticPlaybackWork();
+    _lastCompletionSongId = null;
     return _serializePlayback(
       () => _playSongInternal(song, queue: queue, startIndex: startIndex, playbackIntentToken: intentToken),
       command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,
@@ -737,10 +739,20 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+
+  /// Phase 4: user transport always wins over automatic work.
+  void _cancelAutomaticPlaybackWork() {
+    _automaticCrossfadeInFlight = false;
+    _crossfadeInProgress = false;
+    _completionAdvanceInProgress = false;
+    _completionObservedDuringCrossfade = false;
+    _endOfTrackWatchdog?.cancel();
+    _endOfTrackWatchdog = null;
+  }
+
   Future<void> togglePlayPause({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    // Cancel automatic work so a pause/play always wins
-    _automaticCrossfadeInFlight = false;
+    _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       if (!_playbackIntentGate.isCurrent(intentToken)) return;
       try {
@@ -754,11 +766,21 @@ class MusicProvider extends ChangeNotifier {
         }
         if (audioPlayer.audioSource != null) {
           await audioPlayer.play();
+          if (!audioPlayer.playing) {
+            await Future<void>.delayed(const Duration(milliseconds: 80));
+            await audioPlayer.play();
+          }
           isPlaying = true;
           _publishServiceState();
           notifyListeners();
         } else if (currentSong != null) {
-          await _playSongInternal(currentSong!, queue: _queue.isEmpty ? null : _queue, startIndex: _queueIndex, resume: true, playbackIntentToken: intentToken);
+          await _playSongInternal(
+            currentSong!,
+            queue: _queue.isEmpty ? null : _queue,
+            startIndex: _queueIndex,
+            resume: true,
+            playbackIntentToken: intentToken,
+          );
         }
       } catch (e) {
         debugPrint('Playback toggle failed: $e');
@@ -768,7 +790,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> pause({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    _automaticCrossfadeInFlight = false;
+    _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       if (!_playbackIntentGate.isCurrent(intentToken)) return;
       try {
@@ -783,9 +805,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> stop({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
-    _completionAdvanceInProgress = false;
+    _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
       if (!_playbackIntentGate.isCurrent(intentToken)) return;
       await _finishHistoryEvent();
@@ -799,10 +819,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> nextSong({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    // Cancel any in-flight automatic work immediately so user commands always win
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
-    _completionAdvanceInProgress = false;
+    _cancelAutomaticPlaybackWork();
 
     return _serializePlayback(
       () async {
@@ -820,12 +837,14 @@ class MusicProvider extends ChangeNotifier {
 
         final nextIndex = _queueIndex + 1;
 
-        // Prefer a true crossfade only when it is safe and the user is not
-        // coming from the system media controls (those should be instant).
+        // Phase 4: media-session next is always instant. In-app next may
+        // crossfade only if still enabled and the player is actively playing.
+        // Automatic work was already cancelled so this path cannot race.
         if (_crossfadeEnabled &&
             canCrossfadeNext &&
             audioPlayer.playing &&
-            source != 'audio_service') {
+            source != 'audio_service' &&
+            source != 'intelligence') {
           final didCrossfade = await _performTrueCrossfade(
             milliseconds: _crossfadeDurationMs,
             fadeType: _crossfadeFadeType,
@@ -847,9 +866,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> previousSong({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
-    _completionAdvanceInProgress = false;
+    _cancelAutomaticPlaybackWork();
 
     return _serializePlayback(
       () async {
@@ -875,6 +892,7 @@ class MusicProvider extends ChangeNotifier {
   }
   Future<void> seek(Duration position, {String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
+    _cancelAutomaticPlaybackWork();
     return _serializePlayback(
       () async {
         if (!_playbackIntentGate.isCurrent(intentToken)) return;
