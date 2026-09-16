@@ -73,6 +73,7 @@ class MusicProvider extends ChangeNotifier {
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
+  bool _userWantsPlaying = false;
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
@@ -245,9 +246,34 @@ class MusicProvider extends ChangeNotifier {
     _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStateSubscription = player.playerStateStream.listen((state) {
-      final playing = state.playing && state.processingState != ProcessingState.completed;
-      if (isPlaying != playing) { isPlaying = playing; notifyListeners(); _publishServiceState(); }
-      if (state.processingState == ProcessingState.completed) {
+      final completed = state.processingState == ProcessingState.completed;
+      final loading = state.processingState == ProcessingState.loading ||
+          state.processingState == ProcessingState.buffering;
+      // Do not force isPlaying=false while loading/buffering after a user play request.
+      // That was the main "loaded but needs resume" bug.
+      if (completed) {
+        if (isPlaying) {
+          isPlaying = false;
+          notifyListeners();
+          _publishServiceState();
+        }
+      } else if (state.playing) {
+        if (!isPlaying) {
+          isPlaying = true;
+          _userWantsPlaying = true;
+          notifyListeners();
+          _publishServiceState();
+        }
+      } else if (!loading && !state.playing && !_userWantsPlaying) {
+        if (isPlaying) {
+          isPlaying = false;
+          notifyListeners();
+          _publishServiceState();
+        }
+      } else if (!loading && !state.playing && _userWantsPlaying) {
+        // Native paused against our will mid-start; keep UI optimistic briefly.
+      }
+      if (completed) {
         final completedSongId = currentSong?.id;
         // just_audio can replay completed while A/B listeners are rebound.
         // Advance only once per song to prevent competing source loads.
@@ -255,6 +281,7 @@ class MusicProvider extends ChangeNotifier {
         _lastCompletionSongId = completedSongId;
         currentPosition = currentDuration ?? currentPosition;
         isPlaying = false;
+        _userWantsPlaying = false;
         notifyListeners();
         _publishServiceState();
         final upcoming = _queueIndex < _queue.length - 1 || _repeatMode == PlaybackRepeatMode.all;
@@ -503,8 +530,18 @@ class MusicProvider extends ChangeNotifier {
     _authority.markExternalUserCommand(source, command);
     unawaited(ResonateDiagnostics.record('playback_command_accepted', {'command': command, 'source': source, 'intentToken': effectiveIntent}));
   }
-  final transportPriority = userInitiated && const {'toggle', 'pause', 'stop', 'seek'}.contains(command) && audioPlayer.audioSource != null;
-  await ResonateDiagnostics.record('playback_operation_queued', {'command': command, 'source': source, 'userInitiated': userInitiated, 'intentToken': effectiveIntent, 'lane': transportPriority ? 'transport_priority' : 'source_serialized'});
+  // Phase 4 hardened: user play/next/previous/toggle/pause/stop/seek run immediately
+  // (transport lane) so they cannot sit behind a stuck source queue.
+  final transportPriority = userInitiated && const {
+    'toggle', 'pause', 'stop', 'seek', 'play', 'next', 'previous',
+  }.contains(command);
+  await ResonateDiagnostics.record('playback_operation_queued', {
+    'command': command,
+    'source': source,
+    'userInitiated': userInitiated,
+    'intentToken': effectiveIntent,
+    'lane': transportPriority ? 'transport_priority' : 'source_serialized',
+  });
   if (transportPriority) return _playbackCoordinator.runTransport(operation);
   return _playbackCoordinator.runSourceMutation(
     operation,
@@ -606,12 +643,12 @@ class MusicProvider extends ChangeNotifier {
       await _enableEffects(target, targetEq, targetLoud);
       await target.setVolume(1.0);
 
-      // User-initiated / completion play: do not abort solely on token churn after load.
-      // Only skip play if a *newer* user play command clearly superseded this one.
-      if (playbackIntentToken != null && !_playbackIntentGate.isCurrent(intentToken)) {
-        // Still leave the track loaded; UI can press play. Prefer starting anyway
-        // for completion advances that issued their own token.
-        debugPrint('playSongInternal: intent moved during load (token=$intentToken current=${_playbackIntentGate.currentToken}) — still attempting play');
+      _userWantsPlaying = true;
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (e) {
+        debugPrint('AudioSession setActive failed: $e');
       }
 
       try {
@@ -778,9 +815,9 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
-      if (!_playbackIntentGate.isCurrent(intentToken)) return;
       try {
-        if (audioPlayer.playing) {
+        if (audioPlayer.playing || isPlaying) {
+          _userWantsPlaying = false;
           await audioPlayer.pause();
           isPlaying = false;
           _persistResumePosition(force: true);
@@ -789,9 +826,14 @@ class MusicProvider extends ChangeNotifier {
           return;
         }
         if (audioPlayer.audioSource != null) {
+          _userWantsPlaying = true;
+          try {
+            final session = await AudioSession.instance;
+            await session.setActive(true);
+          } catch (_) {}
           await audioPlayer.play();
           if (!audioPlayer.playing) {
-            await Future<void>.delayed(const Duration(milliseconds: 80));
+            await Future<void>.delayed(const Duration(milliseconds: 100));
             await audioPlayer.play();
           }
           isPlaying = true;
@@ -816,7 +858,6 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
-      if (!_playbackIntentGate.isCurrent(intentToken)) return;
       try {
         await audioPlayer.pause();
         isPlaying = false;
@@ -847,7 +888,7 @@ class MusicProvider extends ChangeNotifier {
 
     return _serializePlayback(
       () async {
-        if (!_playbackIntentGate.isCurrent(intentToken)) return;
+        // Do not bail on token churn — user next must always attempt advance.
         if (_queue.isEmpty) return;
 
         if (_queueIndex >= _queue.length - 1) {
@@ -860,25 +901,14 @@ class MusicProvider extends ChangeNotifier {
         }
 
         final nextIndex = _queueIndex + 1;
-
-        // Phase 4: media-session next is always instant. In-app next may
-        // crossfade only if still enabled and the player is actively playing.
-        // Automatic work was already cancelled so this path cannot race.
-        if (_crossfadeEnabled &&
-            canCrossfadeNext &&
-            audioPlayer.playing &&
-            source != 'audio_service' &&
-            source != 'intelligence') {
-          final didCrossfade = await _performTrueCrossfade(
-            milliseconds: _crossfadeDurationMs,
-            fadeType: _crossfadeFadeType,
-            generation: _authority.beginAutomatic('manual_next_crossfade'),
-            playbackIntentToken: intentToken,
-          );
-          if (didCrossfade) return;
-        }
-
-        await _playSongInternal(_queue[nextIndex], queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken);
+        // Core reliability: next is always a direct load on Engine A (no crossfade).
+        // Crossfade remains available via explicit performTrueCrossfade / Autopilot later.
+        await _playSongInternal(
+          _queue[nextIndex],
+          queue: _queue,
+          startIndex: nextIndex,
+          playbackIntentToken: intentToken,
+        );
       },
       command: 'next',
       source: source,
@@ -894,7 +924,6 @@ class MusicProvider extends ChangeNotifier {
 
     return _serializePlayback(
       () async {
-        if (!_playbackIntentGate.isCurrent(intentToken)) return;
         if (_queueIndex > 0) {
           final previousIndex = _queueIndex - 1;
           await _playSongInternal(_queue[previousIndex], queue: _queue, startIndex: previousIndex, playbackIntentToken: intentToken);
