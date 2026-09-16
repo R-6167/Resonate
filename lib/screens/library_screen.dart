@@ -46,11 +46,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final library = context.read<LibraryProvider>();
     final song = songs[index];
 
-    // Start playback without making the UI wait for the source operation.
+    // Queue = from this song through the rest of the list (not songs above).
+    // Avoids treating every prior library row as "already played".
+    final fromHere = songs.sublist(index);
     final playback = music.playSong(
       song,
-      queue: List<Song>.from(songs),
-      startIndex: index,
+      queue: List<Song>.from(fromHere),
+      startIndex: 0,
     );
 
     if (mounted) {
