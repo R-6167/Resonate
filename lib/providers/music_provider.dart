@@ -74,6 +74,7 @@ class MusicProvider extends ChangeNotifier {
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
   bool _userWantsPlaying = false;
+  DateTime? _lastPlayKickAt;
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
@@ -271,7 +272,18 @@ class MusicProvider extends ChangeNotifier {
           _publishServiceState();
         }
       } else if (!loading && !state.playing && _userWantsPlaying) {
-        // Native paused against our will mid-start; keep UI optimistic briefly.
+        // Native idle after load while we still want audio — kick play()
+        // instead of leaving the UI on "resume". Throttle to avoid a loop.
+        final now = DateTime.now();
+        final due = _lastPlayKickAt == null ||
+            now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 400);
+        if (due) {
+          _lastPlayKickAt = now;
+          isPlaying = true;
+          unawaited(player.play().catchError((_) {}));
+          notifyListeners();
+          _publishServiceState();
+        }
       }
       if (completed) {
         final completedSongId = currentSong?.id;
@@ -281,7 +293,8 @@ class MusicProvider extends ChangeNotifier {
         _lastCompletionSongId = completedSongId;
         currentPosition = currentDuration ?? currentPosition;
         isPlaying = false;
-        _userWantsPlaying = false;
+        // Stay "want playing" so the next track auto-starts (not resume).
+        _userWantsPlaying = true;
         notifyListeners();
         _publishServiceState();
         final upcoming = _queueIndex < _queue.length - 1 || _repeatMode == PlaybackRepeatMode.all;
@@ -620,7 +633,7 @@ class MusicProvider extends ChangeNotifier {
         AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
       );
 
-      // Commit queue/state before play so UI shows the track even if play is delayed.
+      // Commit queue/state. Keep isPlaying optimistic when user/advance wants audio.
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentSong = _queue[_queueIndex];
@@ -628,9 +641,11 @@ class MusicProvider extends ChangeNotifier {
       _lastCompletionSongId = null;
       currentDuration = currentSong!.duration;
       currentPosition = Duration.zero;
-      isPlaying = false;
+      // Engine A is always active — do not rebind streams on every track (that
+      // dropped play state and forced manual resume).
+      _userWantsPlaying = true;
+      isPlaying = true;
       await _persistQueue();
-      _bindActivePlayerStreams();
       notifyListeners();
 
       if (resume && _resumeSongId == currentSong!.id && _resumePositionMs > 0) {
@@ -669,8 +684,14 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
-      isPlaying = target.playing || true; // optimistically true; stream will correct
+      // If still not playing, one last kick.
+      if (!target.playing) {
+        try {
+          await target.play();
+        } catch (_) {}
+      }
       isPlaying = true;
+      _userWantsPlaying = true;
       await _startHistoryEvent(currentSong!);
       _publishServiceState();
       notifyListeners();
