@@ -298,7 +298,9 @@ class _AnticipationCardState extends State<_AnticipationCard> {
     final music = context.read<MusicProvider>();
     final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
     try {
-      await music.playSong(widget.item.song, queue: index >= 0 ? widget.songs.cast() : [widget.item.song], startIndex: index >= 0 ? index : 0);
+      final list = widget.songs.cast();
+      final q = index >= 0 ? list.sublist(index) : [widget.item.song];
+      await music.playSong(widget.item.song, queue: q, startIndex: 0);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -336,7 +338,9 @@ class _RecommendationTileState extends State<_RecommendationTile> {
     final music = context.read<MusicProvider>();
     final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
     try {
-      await music.playSong(widget.item.song, queue: index >= 0 ? widget.songs.cast() : [widget.item.song], startIndex: index >= 0 ? index : 0);
+      final list = widget.songs.cast();
+      final q = index >= 0 ? list.sublist(index) : [widget.item.song];
+      await music.playSong(widget.item.song, queue: q, startIndex: 0);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
