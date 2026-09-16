@@ -169,8 +169,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       IconButton(
                         iconSize: 36,
                         icon: const Icon(Icons.skip_previous_rounded),
-                        onPressed: () =>
-                            PlaybackAuthority.instance.userPrevious(music),
+                        onPressed: () {
+                          PlaybackAuthority.instance.userPrevious(music);
+                        },
                       ),
                       IconButton(
                         iconSize: 30,
@@ -181,8 +182,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                       ),
                       FilledButton(
-                        onPressed: () =>
-                            PlaybackAuthority.instance.userToggle(music),
+                        onPressed: () {
+                          music.togglePlayPause();
+                        },
                         child: Icon(
                           playing
                               ? Icons.pause_rounded
@@ -200,8 +202,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       IconButton(
                         iconSize: 36,
                         icon: const Icon(Icons.skip_next_rounded),
-                        onPressed: () =>
-                            PlaybackAuthority.instance.userNext(music),
+                        onPressed: () {
+                          music.nextSong();
+                        },
                       ),
                     ],
                   );
