@@ -50,7 +50,7 @@ class QueueScreen extends StatelessWidget {
               subtitle: Text(
                 isCurrent
                     ? 'Now playing • ${song.artist}'
-                    : (isPast ? 'Played • tap to play again • ${song.artist}' : song.artist),
+                    : (isPast ? 'Earlier • tap to play • ${song.artist}' : song.artist),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
