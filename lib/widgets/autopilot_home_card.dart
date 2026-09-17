@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../providers/autopilot_controller.dart';
 import '../providers/intelligence_provider.dart';
+import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../screens/intelligence_settings_screen.dart';
+import 'animated_companion_mark.dart';
 
-/// Always-visible Autopilot status + controls on the For you (Home) dashboard.
+/// Combined Intelligence + Autopilot surface for the For you dashboard.
+/// Replaces the old separate hero tile, Autopilot card, and “A little nudge” card.
 class AutopilotHomeCard extends StatelessWidget {
-  const AutopilotHomeCard({super.key});
+  final int songCount;
+
+  const AutopilotHomeCard({super.key, this.songCount = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -17,22 +23,7 @@ class AutopilotHomeCard extends StatelessWidget {
     final autopilot = context.watch<AutopilotController>();
     final music = context.watch<MusicProvider>();
     final scheme = Theme.of(context).colorScheme;
-
-    if (!intelligence.isEnabled) {
-      return Card(
-        elevation: 0,
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        child: ListTile(
-          leading: const Icon(Icons.auto_awesome_outlined),
-          title: const Text('Autopilot'),
-          subtitle: const Text('Intelligence is off — enable it to use Autopilot'),
-          trailing: TextButton(
-            onPressed: () => intelligence.setEnabled(true),
-            child: const Text('Enable'),
-          ),
-        ),
-      );
-    }
+    final next = intelligence.anticipatedNext;
 
     Song? pendingSong;
     if (autopilot.hasPendingTakeover && autopilot.pendingSongId != null) {
@@ -52,33 +43,70 @@ class AutopilotHomeCard extends StatelessWidget {
       }
     }
 
-    final next = intelligence.anticipatedNext;
+    final headline = !intelligence.isEnabled
+        ? 'Your player is fully manual'
+        : intelligence.isAutopilot
+            ? (autopilot.consentGranted
+                ? 'Autopilot can guide what plays next'
+                : 'Autopilot is ready — waiting for your say')
+            : intelligence.autonomy == 1
+                ? 'Assisting with local suggestions'
+                : 'Quiet suggestions from your library';
+
     final status = _statusLabel(intelligence, autopilot);
     final statusColor = _statusColor(scheme, intelligence, autopilot);
 
-    return Card(
-      elevation: 0,
-      clipBehavior: Clip.antiAlias,
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primaryContainer.withValues(alpha: 0.95),
+            scheme.surfaceContainerHighest.withValues(alpha: 0.9),
+          ],
+        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.65)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // —— Hero header ——
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 14, 0),
+            child: Row(
               children: [
-                Icon(Icons.auto_awesome_rounded, color: scheme.primary),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 420),
+                  child: AnimatedCompanionMark(
+                    mode: intelligence.isEnabled ? intelligence.autonomyLabel : 'OFF',
+                    size: 28,
+                    key: ValueKey(intelligence.isEnabled ? intelligence.autonomyLabel : 'off'),
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    'Autopilot',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resonate Intelligence',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      Text(
+                        intelligence.isEnabled
+                            ? 'Local-first · stays on this device'
+                            : 'Predictions and Autopilot are off',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.18),
                     borderRadius: BorderRadius.circular(20),
@@ -87,129 +115,134 @@ class AutopilotHomeCard extends StatelessWidget {
                     status,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                           color: statusColor,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text('Mode', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 6),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text('Suggest'), icon: Icon(Icons.lightbulb_outline, size: 16)),
-                ButtonSegment(value: 1, label: Text('Assist'), icon: Icon(Icons.assistant_outlined, size: 16)),
-                ButtonSegment(value: 2, label: Text('Auto'), icon: Icon(Icons.auto_awesome, size: 16)),
-              ],
-              selected: {intelligence.autonomy},
-              onSelectionChanged: (v) => intelligence.setAutonomy(v.first),
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('May change tracks'),
-              subtitle: Text(
-                autopilot.consentGranted
-                    ? 'Autopilot can enqueue, skip, and crossfade'
-                    : 'Advisory only — will not change the current track',
-              ),
-              value: autopilot.consentGranted,
-              onChanged: intelligence.isAutopilot
-                  ? (v) => autopilot.setConsent(v)
-                  : null,
-            ),
-            if (pendingSong != null) ...[
-              const SizedBox(height: 8),
-              Material(
-                color: scheme.primaryContainer.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Wants to play next',
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      Text(
-                        pendingSong.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        pendingSong.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          FilledButton(
-                            onPressed: () => autopilot.allowPendingTakeover(),
-                            child: const Text('Allow'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: () => autopilot.denyPendingTakeover(),
-                            child: const Text('Not now'),
-                          ),
-                        ],
-                      ),
-                    ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: Text(
+              headline,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
                   ),
-                ),
-              ),
-            ] else if (next != null) ...[
-              const SizedBox(height: 4),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.skip_next_rounded),
-                title: Text(
-                  next.song.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${(next.confidence * 100).round()}% · ${next.reason}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: intelligence.isAutopilot && autopilot.consentGranted
-                    ? IconButton(
-                        tooltip: 'Play next now',
-                        icon: const Icon(Icons.playlist_play_rounded),
-                        onPressed: () async {
-                          await music.playNext(next.song);
-                          await music.nextSong(source: 'autopilot_home_card');
-                        },
-                      )
-                    : null,
-              ),
-            ],
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen()),
-                ),
-                child: const Text('Intelligence settings'),
-              ),
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                const Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Local-first'),
+                ),
+                const Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Explainable'),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('$songCount songs'),
+                ),
+              ],
+            ),
+          ),
+
+          // —— Mode + consent ——
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!intelligence.isEnabled)
+                  SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    title: const Text('Enable Intelligence'),
+                    subtitle: const Text('Turn on local suggestions and Autopilot options'),
+                    value: false,
+                    onChanged: (v) {
+                      if (v) intelligence.setEnabled(true);
+                    },
+                  )
+                else ...[
+                  Text('Mode', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 6),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Suggest')),
+                      ButtonSegment(value: 1, label: Text('Assist')),
+                      ButtonSegment(value: 2, label: Text('Auto')),
+                    ],
+                    selected: {intelligence.autonomy},
+                    onSelectionChanged: (v) => intelligence.setAutonomy(v.first),
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  ),
+                  SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    title: const Text('May change tracks'),
+                    subtitle: Text(
+                      autopilot.consentGranted
+                          ? 'Can enqueue, skip, and crossfade'
+                          : 'Advisory only — won’t change the current track',
+                    ),
+                    value: autopilot.consentGranted,
+                    onChanged: intelligence.isAutopilot ? (v) => autopilot.setConsent(v) : null,
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // —— Nudge / next pick (single place, not duplicated elsewhere) ——
+          if (intelligence.isEnabled && (pendingSong != null || next != null))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+              child: pendingSong != null
+                  ? _PendingTakeoverBlock(
+                      song: pendingSong,
+                      onAllow: () => autopilot.allowPendingTakeover(),
+                      onDeny: () => autopilot.denyPendingTakeover(),
+                    )
+                  : _NudgeBlock(
+                      item: next!,
+                      canPlayNext: intelligence.isAutopilot && autopilot.consentGranted,
+                      onPlayNext: () async {
+                        await music.playNext(next.song);
+                        await music.nextSong(source: 'autopilot_home_card');
+                      },
+                      onPlayNow: () async {
+                        final list = intelligence.recommendations.map((r) => r.song).toList();
+                        final index = list.indexWhere((s) => s.id == next.song.id);
+                        final queue = index >= 0 ? list.sublist(index) : <Song>[next.song];
+                        await music.playSong(next.song, queue: queue, startIndex: 0);
+                      },
+                    ),
+            ),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen()),
+              ),
+              child: const Text('Intelligence settings'),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   static String _statusLabel(IntelligenceProvider intel, AutopilotController ap) {
     if (!intel.isEnabled) return 'Off';
-    if (ap.hasPendingTakeover) return 'Waiting for you';
+    if (ap.hasPendingTakeover) return 'Waiting';
     if (intel.isAutopilot && ap.consentGranted) return 'Controlling';
     if (intel.isAutopilot) return 'Ready';
     if (intel.isAutopilotGraduated) return 'Graduated';
@@ -221,5 +254,119 @@ class AutopilotHomeCard extends StatelessWidget {
     if (intel.isAutopilot && ap.consentGranted) return scheme.primary;
     if (intel.isAutopilot) return scheme.secondary;
     return scheme.onSurfaceVariant;
+  }
+}
+
+class _PendingTakeoverBlock extends StatelessWidget {
+  final Song song;
+  final VoidCallback onAllow;
+  final VoidCallback onDeny;
+
+  const _PendingTakeoverBlock({
+    required this.song,
+    required this.onAllow,
+    required this.onDeny,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer.withValues(alpha: 0.65),
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Wants to play next', style: Theme.of(context).textTheme.labelLarge),
+            Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                FilledButton(onPressed: onAllow, child: const Text('Allow')),
+                const SizedBox(width: 8),
+                TextButton(onPressed: onDeny, child: const Text('Not now')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NudgeBlock extends StatelessWidget {
+  final IntelligenceRecommendation item;
+  final bool canPlayNext;
+  final VoidCallback onPlayNext;
+  final VoidCallback onPlayNow;
+
+  const _NudgeBlock({
+    required this.item,
+    required this.canPlayNext,
+    required this.onPlayNext,
+    required this.onPlayNow,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final confidence = (item.confidence.clamp(0.0, 1.0) * 100).round();
+
+    return Material(
+      color: scheme.surface.withValues(alpha: 0.55),
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: scheme.primary.withValues(alpha: 0.15),
+              child: Icon(Icons.auto_awesome_rounded, color: scheme.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'A little nudge',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  Text(
+                    item.song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    '${item.song.artist} · $confidence% · ${item.reason}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Play now',
+              icon: const Icon(Icons.play_arrow_rounded),
+              onPressed: onPlayNow,
+            ),
+            if (canPlayNext)
+              IconButton(
+                tooltip: 'Queue as next',
+                icon: const Icon(Icons.playlist_play_rounded),
+                onPressed: onPlayNext,
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
