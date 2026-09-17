@@ -86,6 +86,7 @@ class MusicProvider extends ChangeNotifier {
   String? _lastCompletionSongId;
   StreamSubscription<PlayerState>? _playerStateSubscription;
   StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<int?>? _currentIndexSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<double>? _volumeSubscription;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
@@ -102,7 +103,28 @@ class MusicProvider extends ChangeNotifier {
   List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
   bool get shuffleEnabled => _shuffleEnabled;
   PlaybackRepeatMode get repeatMode => _repeatMode;
-  bool get canCrossfadeNext => _queueIndex >= 0 && _queueIndex < _queue.length - 1 && !_crossfadeInProgress;
+  bool get canCrossfadeNext {
+    if (_crossfadeInProgress || _queue.isEmpty || _queueIndex < 0) return false;
+    if (_repeatMode == PlaybackRepeatMode.one) return false;
+    if (_queueIndex < _queue.length - 1) return true;
+    if (_repeatMode == PlaybackRepeatMode.all && _queue.length > 1) return true;
+    return false;
+  }
+
+  Song? get _crossfadeTargetSong {
+    if (_queue.isEmpty || _queueIndex < 0) return null;
+    if (_repeatMode == PlaybackRepeatMode.one) return null;
+    if (_queueIndex < _queue.length - 1) return _queue[_queueIndex + 1];
+    if (_repeatMode == PlaybackRepeatMode.all && _queue.length > 1) return _queue.first;
+    return null;
+  }
+
+  int get _crossfadeTargetIndex {
+    if (_queueIndex < _queue.length - 1) return _queueIndex + 1;
+    if (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty) return 0;
+    return _queueIndex;
+  }
+
   bool get crossfadeEnabled => _crossfadeEnabled;
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
@@ -331,7 +353,7 @@ class MusicProvider extends ChangeNotifier {
   void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0, bufferedPosition: audioPlayer.bufferedPosition, playbackQueue: _queue, queueIndex: _queueIndex); }
 
   void _bindActivePlayerStreams() {
-    _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
+    _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _currentIndexSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStateSubscription = player.playerStateStream.listen((state) {
       final completed = state.processingState == ProcessingState.completed;
@@ -418,6 +440,27 @@ class MusicProvider extends ChangeNotifier {
         }
       }
     });
+    _currentIndexSubscription?.cancel();
+    _currentIndexSubscription = player.currentIndexStream.listen((index) {
+      if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
+      if (index < 0 || index >= _queue.length) return;
+      if (index == _queueIndex) return;
+      // Gapless engine advanced — sync app queue/song without reloading.
+      _queueIndex = index;
+      currentSong = _queue[index];
+      currentDuration = currentSong?.duration ?? player.duration;
+      currentPosition = player.position;
+      isPlaying = player.playing || _userWantsPlaying;
+      unawaited(_persistQueue());
+      unawaited(_startHistoryEvent(currentSong!));
+      _publishServiceState();
+      notifyListeners();
+      unawaited(ResonateDiagnostics.record('playback_gapless_index', {
+        'index': index,
+        'songId': currentSong?.id,
+      }));
+    });
+
     _positionSubscription = player.positionStream.listen((position) {
       if (currentPosition != position) {
         currentPosition = position;
@@ -473,8 +516,8 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _preloadNextForCrossfade() async {
     if (!_crossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
-    if (_queueIndex < 0 || _queueIndex >= _queue.length - 1) return;
-    final next = _queue[_queueIndex + 1];
+    final next = _crossfadeTargetSong;
+    if (next == null) return;
     if (_preloadedNextSongId == next.id) return;
     _crossfadePreloadInFlight = true;
     try {
@@ -503,8 +546,9 @@ class MusicProvider extends ChangeNotifier {
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('crossfade_preloaded', {
         'songId': next.id,
-        'queueIndex': _queueIndex + 1,
+        'queueIndex': _crossfadeTargetIndex,
         'playing': incoming.playing,
+        'repeatMode': _repeatMode.name,
       });
     } catch (e) {
       _preloadedNextSongId = null;
@@ -994,19 +1038,61 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive (pre-source) failed: $e');
       }
 
-      await timed('setLoopMode', target.setLoopMode(LoopMode.off), ms: 2000);
+      final loopMode = (!_crossfadeEnabled)
+          ? switch (_repeatMode) {
+              PlaybackRepeatMode.one => LoopMode.one,
+              PlaybackRepeatMode.all => LoopMode.all,
+              PlaybackRepeatMode.off => LoopMode.off,
+            }
+          : LoopMode.off;
+      await timed('setLoopMode', target.setLoopMode(loopMode), ms: 2000);
       await step('set_source_start', {'path': selectedSong.filePath});
 
-      final durationFromSource = await timedValue<Duration?>(
-        'setAudioSource',
-        target.setAudioSource(
-          AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
-        ),
-        ms: 15000,
-      );
+      Duration? durationFromSource;
+      // Gapless playlist when crossfade is off and we have multiple tracks.
+      // just_audio advances inside ConcatenatingAudioSource without a hard cut.
+      final wantGapless = !_crossfadeEnabled && nextQueue.length > 1;
+      if (wantGapless) {
+        try {
+          final children = nextQueue
+              .where((s) => s.filePath.trim().isNotEmpty)
+              .map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s))
+              .toList();
+          if (children.length > 1) {
+            final idx = nextIndex.clamp(0, children.length - 1);
+            durationFromSource = await timedValue<Duration?>(
+              'setAudioSource_gapless',
+              target.setAudioSource(
+                ConcatenatingAudioSource(children: children, useLazyPreparation: true),
+                initialIndex: idx,
+                initialPosition: Duration.zero,
+              ),
+              ms: 15000,
+            );
+            await ResonateDiagnostics.record('playback_gapless_source', {
+              'children': children.length,
+              'index': idx,
+              'repeatMode': _repeatMode.name,
+            });
+          }
+        } catch (e) {
+          debugPrint('Gapless setAudioSource failed: $e');
+          durationFromSource = null;
+        }
+      }
+      if (durationFromSource == null) {
+        durationFromSource = await timedValue<Duration?>(
+          'setAudioSource',
+          target.setAudioSource(
+            AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
+          ),
+          ms: 15000,
+        );
+      }
       await step('set_source_done', {
         'durationMs': durationFromSource?.inMilliseconds,
         'processingState': target.processingState.name,
+        'gapless': wantGapless && durationFromSource != null,
       });
 
       // Commit UI state immediately so library shows the selected track.
@@ -1219,7 +1305,9 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (!_playbackIntentGate.isCurrent(intentToken)) return false;
     if (!canCrossfadeNext || currentSong == null || !audioPlayer.playing) return false;
-    final nextIndex = _queueIndex + 1; final nextSong = _queue[nextIndex]; if (nextSong.filePath.trim().isEmpty) return false;
+    final nextIndex = _crossfadeTargetIndex;
+    final nextSong = _crossfadeTargetSong;
+    if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
     _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _volume;
     try {
       await outgoing.setLoopMode(LoopMode.off);
