@@ -808,19 +808,30 @@ class MusicProvider extends ChangeNotifier {
 
       await step('play_loop_start', {'processingState': target.processingState.name});
 
-      // Never await play() without a timeout — on some OEMs play() can hang
-      // after content:// setAudioSource while still eventually starting.
+      // Phase 6: on this OEM, await play() often never completes even when audio
+      // is already running (diagnostics showed TimeoutException + playing:true).
+      // Fire play without awaiting the Future; poll player.playing instead.
       var started = false;
-      for (var attempt = 0; attempt < 12; attempt++) {
-        await timed('play_$attempt', target.play(), ms: 2500);
+      for (var attempt = 0; attempt < 16; attempt++) {
+        if (attempt == 0 || attempt == 4 || attempt == 8) {
+          try {
+            // ignore: unawaited_futures
+            target.play();
+          } catch (e) {
+            debugPrint('play() fire attempt $attempt failed: $e');
+          }
+        }
         if (target.playing) {
           started = true;
           break;
         }
-        if (attempt == 2 || attempt == 5 || attempt == 8) {
-          await timed('reseek_$attempt', target.seek(Duration.zero), ms: 2000);
+        if (attempt == 6 || attempt == 12) {
+          await timed('reseek_$attempt', target.seek(Duration.zero), ms: 1500);
+          try {
+            target.play();
+          } catch (_) {}
         }
-        await Future<void>.delayed(Duration(milliseconds: 50 + attempt * 40));
+        await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
       }
 
       isPlaying = started || target.playing;
@@ -830,6 +841,7 @@ class MusicProvider extends ChangeNotifier {
         'playing': target.playing,
         'processingState': target.processingState.name,
         'positionMs': target.position.inMilliseconds,
+        'strategy': 'fire_and_poll',
       });
 
       // History must not block the play path.
@@ -849,8 +861,9 @@ class MusicProvider extends ChangeNotifier {
             await target.seek(Duration.zero);
           } catch (_) {}
           try {
-            await target.play().timeout(const Duration(seconds: 3));
+            target.play();
           } catch (_) {}
+          await Future<void>.delayed(const Duration(milliseconds: 200));
           if (target.playing) {
             isPlaying = true;
             _publishServiceState();
@@ -1034,14 +1047,16 @@ class MusicProvider extends ChangeNotifier {
               await audioPlayer.seek(Duration.zero);
             } catch (_) {}
           }
-          for (var attempt = 0; attempt < 10; attempt++) {
-            try {
-              await audioPlayer.play();
-            } catch (e) {
-              debugPrint('resumePlayback play() attempt $attempt failed: $e');
+          for (var attempt = 0; attempt < 12; attempt++) {
+            if (attempt == 0 || attempt == 3 || attempt == 6) {
+              try {
+                audioPlayer.play();
+              } catch (e) {
+                debugPrint('resumePlayback play() fire $attempt failed: $e');
+              }
             }
             if (audioPlayer.playing) break;
-            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 30));
+            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
           }
           isPlaying = audioPlayer.playing || _userWantsPlaying;
           _publishServiceState();
@@ -1091,14 +1106,16 @@ class MusicProvider extends ChangeNotifier {
               await audioPlayer.seek(Duration.zero);
             } catch (_) {}
           }
-          for (var attempt = 0; attempt < 10; attempt++) {
-            try {
-              await audioPlayer.play();
-            } catch (e) {
-              debugPrint('toggle play() attempt $attempt failed: $e');
+          for (var attempt = 0; attempt < 12; attempt++) {
+            if (attempt == 0 || attempt == 3 || attempt == 6) {
+              try {
+                audioPlayer.play();
+              } catch (e) {
+                debugPrint('toggle play() fire $attempt failed: $e');
+              }
             }
             if (audioPlayer.playing) break;
-            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 30));
+            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
           }
           isPlaying = audioPlayer.playing || _userWantsPlaying;
           _publishServiceState();
