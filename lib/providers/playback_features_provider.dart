@@ -94,21 +94,56 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Active playback feature sync failed: $e'); }
   }
 
+  static const int _fadeOutSeconds = 45;
+  double? _volumeBeforeSleepFade;
+
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
+    // Restore volume if a previous fade was interrupted.
+    await _restoreVolumeAfterSleep();
     sleepRemainingSeconds = duration.inSeconds.clamp(1, 24 * 60 * 60);
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (sleepRemainingSeconds <= 1) {
-        timer.cancel(); sleepRemainingSeconds = 0;
-        try { await player.pause(); } catch (_) {}
-        notifyListeners(); return;
+        timer.cancel();
+        sleepRemainingSeconds = 0;
+        try {
+          await player.pause();
+        } catch (_) {}
+        await _restoreVolumeAfterSleep();
+        notifyListeners();
+        return;
       }
-      sleepRemainingSeconds--; notifyListeners();
+      sleepRemainingSeconds--;
+      // Last N seconds: linear fade-out on the active engine.
+      if (sleepRemainingSeconds <= _fadeOutSeconds) {
+        try {
+          _volumeBeforeSleepFade ??= player.volume;
+          final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
+          final base = _volumeBeforeSleepFade ?? 1.0;
+          await player.setVolume((base * t).clamp(0.0, 1.0));
+        } catch (_) {}
+      }
+      notifyListeners();
     });
     notifyListeners();
   }
 
-  void cancelSleepTimer() { _sleepTimer?.cancel(); _sleepTimer = null; sleepRemainingSeconds = 0; notifyListeners(); }
+  Future<void> _restoreVolumeAfterSleep() async {
+    final restore = _volumeBeforeSleepFade;
+    _volumeBeforeSleepFade = null;
+    if (restore == null) return;
+    try {
+      await player.setVolume(restore.clamp(0.0, 1.0));
+    } catch (_) {}
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    sleepRemainingSeconds = 0;
+    unawaited(_restoreVolumeAfterSleep());
+    notifyListeners();
+  }
 
   String get sleepTimerLabel {
     if (sleepRemainingSeconds <= 0) return 'Off';
