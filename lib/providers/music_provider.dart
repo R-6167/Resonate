@@ -73,6 +73,8 @@ class MusicProvider extends ChangeNotifier {
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
+  String? _preloadedNextSongId;
+  bool _crossfadePreloadInFlight = false;
   bool _userWantsPlaying = false;
   bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
@@ -389,10 +391,71 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _maybeStartAutomaticCrossfade(Duration position) {
-    if (!_crossfadeEnabled || _automaticCrossfadeInFlight || !canCrossfadeNext || !audioPlayer.playing) return;
-    final duration = audioPlayer.duration ?? currentDuration; if (duration == null || duration <= Duration.zero) return;
-    final remaining = duration - position; if (remaining <= Duration.zero || remaining > Duration(milliseconds: _crossfadeDurationMs)) return;
-    _automaticCrossfadeInFlight = true; unawaited(_runAutomaticCrossfade());
+    if (!_crossfadeEnabled || !canCrossfadeNext || !audioPlayer.playing) return;
+    final duration = audioPlayer.duration ?? currentDuration;
+    if (duration == null || duration <= Duration.zero) return;
+    final remaining = duration - position;
+    if (remaining <= Duration.zero) return;
+
+    // Phase 1: preload next on the inactive engine well before the fade window
+    // so setAudioSource is not racing the end of the track.
+    final preloadMs = (_crossfadeDurationMs + 8000).clamp(8000, 22000);
+    if (remaining <= Duration(milliseconds: preloadMs) &&
+        remaining > Duration(milliseconds: _crossfadeDurationMs + 400)) {
+      unawaited(_preloadNextForCrossfade());
+      return;
+    }
+
+    if (_automaticCrossfadeInFlight) return;
+    if (remaining > Duration(milliseconds: _crossfadeDurationMs)) return;
+    _automaticCrossfadeInFlight = true;
+    unawaited(_runAutomaticCrossfade());
+  }
+
+  Future<void> _preloadNextForCrossfade() async {
+    if (!_crossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
+    if (_queueIndex < 0 || _queueIndex >= _queue.length - 1) return;
+    final next = _queue[_queueIndex + 1];
+    if (_preloadedNextSongId == next.id) return;
+    _crossfadePreloadInFlight = true;
+    try {
+      final incoming = inactivePlayer;
+      final incomingEq = inactiveEqualizer;
+      final incomingLoud = inactiveLoudnessEnhancer;
+      await incoming.setLoopMode(LoopMode.off);
+      try {
+        await incoming.stop();
+      } catch (_) {}
+      await incoming.setAudioSource(AudioSource.uri(_audioUri(next.filePath), tag: next));
+      unawaited(_enableEffects(incoming, incomingEq, incomingLoud));
+      await incoming.setVolume(0.0);
+      try {
+        incoming.play();
+      } catch (_) {}
+      // Brief wait so the decoder attaches without blocking the position stream long.
+      for (var i = 0; i < 8 && !incoming.playing; i++) {
+        await Future<void>.delayed(Duration(milliseconds: 40 + i * 20));
+        if (i % 3 == 0) {
+          try {
+            incoming.play();
+          } catch (_) {}
+        }
+      }
+      _preloadedNextSongId = next.id;
+      await ResonateDiagnostics.record('crossfade_preloaded', {
+        'songId': next.id,
+        'queueIndex': _queueIndex + 1,
+        'playing': incoming.playing,
+      });
+    } catch (e) {
+      _preloadedNextSongId = null;
+      debugPrint('crossfade preload failed: $e');
+      await ResonateDiagnostics.record('crossfade_preload_failed', {
+        'error': e.toString(),
+      });
+    } finally {
+      _crossfadePreloadInFlight = false;
+    }
   }
 
   Future<void> _runAutomaticCrossfade() async {
@@ -1095,15 +1158,28 @@ class MusicProvider extends ChangeNotifier {
     final nextIndex = _queueIndex + 1; final nextSong = _queue[nextIndex]; if (nextSong.filePath.trim().isEmpty) return false;
     _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _volume;
     try {
-      await outgoing.setLoopMode(LoopMode.off); await incoming.stop();
-      await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false);
+      await outgoing.setLoopMode(LoopMode.off);
+      final alreadyPreloaded = _preloadedNextSongId == nextSong.id;
+      if (!alreadyPreloaded) {
+        try {
+          await incoming.stop();
+        } catch (_) {}
+        await _loadSingle(incoming, incomingEq, incomingLoud, nextSong, start: false);
+      } else {
+        await ResonateDiagnostics.record('crossfade_using_preload', {
+          'songId': nextSong.id,
+        });
+        try {
+          await incoming.seek(Duration.zero);
+        } catch (_) {}
+      }
       await incoming.setVolume(0.0);
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
       } catch (_) {}
-      var incomingStarted = false;
-      for (var i = 0; i < 15; i++) {
+      var incomingStarted = incoming.playing;
+      for (var i = 0; i < 15 && !incomingStarted; i++) {
         if (incoming.playing) {
           incomingStarted = true;
           break;
@@ -1117,8 +1193,10 @@ class MusicProvider extends ChangeNotifier {
           } catch (_) {}
         }
         await Future<void>.delayed(Duration(milliseconds: 50 + i * 20));
+        incomingStarted = incoming.playing;
       }
       if (!incomingStarted) {
+        _preloadedNextSongId = null;
         throw StateError('crossfade incoming engine failed to start');
       }
       final total = milliseconds.clamp(500, 12000).toInt(); final steps = (total / 50).round().clamp(10, 240).toInt();
@@ -1136,6 +1214,7 @@ class MusicProvider extends ChangeNotifier {
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners(); await outgoing.stop();
+      _preloadedNextSongId = null;
       await ResonateDiagnostics.record('crossfade_committed', {
         'outgoingSongId': outgoingSong?.id,
         'incomingSongId': nextSong.id,
@@ -1175,6 +1254,8 @@ class MusicProvider extends ChangeNotifier {
     _crossfadeInProgress = false;
     _completionAdvanceInProgress = false;
     _completionObservedDuringCrossfade = false;
+    _preloadedNextSongId = null;
+    _crossfadePreloadInFlight = false;
     _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
   }
