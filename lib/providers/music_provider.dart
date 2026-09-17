@@ -410,12 +410,27 @@ class MusicProvider extends ChangeNotifier {
         return false;
       });
       if (ok) return;
-      // Crossfade failed or timed out — fall back to a normal Engine A advance
-      // so auto-next still works with crossfade enabled.
+      // Watchdog or user may already have advanced — do not double-load the next URI
+      // (causes MediaStore "Connection aborted" + static on this OEM).
+      if (currentSong?.id != fromSongId || _queueIndex != fromIndex) {
+        await ResonateDiagnostics.record('crossfade_fallback_skipped_already_advanced', {
+          'fromSongId': fromSongId,
+          'fromIndex': fromIndex,
+          'nowSongId': currentSong?.id,
+          'nowIndex': _queueIndex,
+        });
+        try {
+          await inactivePlayer.stop();
+        } catch (_) {}
+        return;
+      }
       await ResonateDiagnostics.record('crossfade_fallback_to_play', {
         'fromSongId': fromSongId,
         'queueIndex': fromIndex,
       });
+      try {
+        await inactivePlayer.stop();
+      } catch (_) {}
       if (fromIndex < _queue.length - 1) {
         final next = _queue[fromIndex + 1];
         final token = _playbackIntentGate.issue();
@@ -423,13 +438,16 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('automatic crossfade error: $e');
-      try {
-        if (fromIndex < _queue.length - 1) {
+      if (currentSong?.id == fromSongId && _queueIndex == fromIndex && fromIndex < _queue.length - 1) {
+        try {
+          await inactivePlayer.stop();
+        } catch (_) {}
+        try {
           final next = _queue[fromIndex + 1];
           final token = _playbackIntentGate.issue();
           await _playSongInternal(next, queue: _queue, startIndex: fromIndex + 1, playbackIntentToken: token);
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     } finally {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
@@ -445,23 +463,44 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - currentPosition;
     if (remaining > const Duration(seconds: 4)) return;
 
-    _endOfTrackWatchdog = Timer(remaining + const Duration(milliseconds: 1200), () {
-      if (currentSong == null || _completionAdvanceInProgress) {
-        return;
-      }
-      // If a crossfade claimed the end but is still stuck, clear flags and advance.
+    // With crossfade on, give the dual-engine fade the full window before intervening.
+    // The previous 1.2s grace fired mid-fade, raced Engine A load, and caused
+    // "Connection aborted" + static on content:// URIs.
+    final expectedSongId = currentSong?.id;
+    final expectedIndex = _queueIndex;
+    final graceMs = _crossfadeEnabled
+        ? (_crossfadeDurationMs + 4500).clamp(5000, 20000)
+        : 1200;
+
+    _endOfTrackWatchdog = Timer(remaining + Duration(milliseconds: graceMs), () {
+      if (currentSong == null || _completionAdvanceInProgress) return;
+      // Already moved on (successful crossfade or manual next).
+      if (currentSong?.id != expectedSongId || _queueIndex != expectedIndex) return;
+
       if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
         unawaited(ResonateDiagnostics.record('end_of_track_watchdog_crossfade_stuck', {
           'songId': currentSong?.id,
           'crossfadeInProgress': _crossfadeInProgress,
           'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+          'graceMs': graceMs,
         }));
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
         _completionObservedDuringCrossfade = false;
+        // Silence B so a half-started fade cannot keep making static.
+        unawaited(() async {
+          try {
+            await _playerB.stop();
+          } catch (_) {}
+          try {
+            await _playerB.setVolume(0.0);
+          } catch (_) {}
+        }());
       }
+
       final atEnd = !isPlaying ||
-          currentPosition >= duration - const Duration(milliseconds: 400);
+          currentPosition >= duration - const Duration(milliseconds: 400) ||
+          audioPlayer.processingState == ProcessingState.completed;
       final canAdvance = _queueIndex < _queue.length - 1 ||
           _repeatMode != PlaybackRepeatMode.off;
       if (atEnd && canAdvance) {
