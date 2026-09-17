@@ -40,6 +40,23 @@ class AutopilotController extends ChangeNotifier {
 
   bool get hasPendingTakeover => _pendingTakeover && _pendingSongId != null;
   String? get pendingSongId => _pendingSongId;
+  bool get consentGranted => _consentGranted;
+
+  /// Home card / settings — user explicitly allows or revokes track control.
+  Future<void> setConsent(bool value) async {
+    _consentGranted = value;
+    await IntelligenceSettingsStore.setAutopilotConsent(value);
+    if (!value) {
+      _pendingTakeover = false;
+      _pendingSongId = null;
+    }
+    notifyListeners();
+    await ResonateDiagnostics.record('intelligence_notification_action', {
+      'action': value ? 'consent_granted' : 'consent_revoked',
+      'mode': intelligence.autonomyLabel,
+    });
+    if (value) await _evaluate();
+  }
 
   void _onPlaybackChanged() => _scheduleEvaluate();
   void _onIntelligenceChanged() => _scheduleEvaluate();
