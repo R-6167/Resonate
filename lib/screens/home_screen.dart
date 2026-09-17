@@ -14,6 +14,13 @@ import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
 
+String _homeFormatClock(int ms) {
+  final totalSec = (ms / 1000).floor().clamp(0, 24 * 3600);
+  final m = totalSec ~/ 60;
+  final s = totalSec % 60;
+  return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -117,7 +124,7 @@ class _HomeDashboard extends StatelessWidget {
             leading: const CircleAvatar(child: Icon(Icons.history_rounded)),
             title: const Text('Continue listening', style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(
-              '${song.title}\n${_formatClock(pos)} / ${_formatClock(dur)}',
+              '${song.title}\n${_homeFormatClock(pos)} / ${_homeFormatClock(dur)}',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
