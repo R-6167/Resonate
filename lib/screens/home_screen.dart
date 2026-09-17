@@ -8,6 +8,7 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/playback_authority.dart';
 import '../widgets/evolving_mix_card.dart';
+import '../widgets/autopilot_home_card.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/animated_companion_mark.dart';
 import 'library_screen.dart';
@@ -105,6 +106,8 @@ class _HomeDashboard extends StatelessWidget {
       Text('Something good is waiting in your library.', style: Theme.of(context).textTheme.bodyLarge),
       const SizedBox(height: 18),
       _IntelligenceHero(intelligence: intelligence, songCount: songs.length),
+      const SizedBox(height: 14),
+      const AutopilotHomeCard(),
     ];
 
     if (intelligence.isEnabled) {
