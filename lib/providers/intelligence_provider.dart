@@ -125,8 +125,14 @@ class IntelligenceProvider extends ChangeNotifier {
       _autonomy = 2;
       _autopilotGraduated = true;
 
-      // Auto-grant consent so Autopilot can actually take control after graduation
-      await IntelligenceSettingsStore.setAutopilotConsent(true);
+      // Phase 5: graduation only raises autonomy. Consent stays user-granted.
+      // Without consent, Autopilot may show a takeover prompt but must not
+      // call play / next / crossfade / enqueue APIs.
+      await ResonateDiagnostics.record('intelligence_graduation', {
+        'stage': 'graduated',
+        'autonomy': 2,
+        'consentRequired': true,
+      });
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('intelligence_autonomy', 2);
