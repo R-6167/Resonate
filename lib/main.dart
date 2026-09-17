@@ -107,5 +107,42 @@ class ResonateApp extends StatelessWidget {
     ChangeNotifierProvider(create: (_) => LibraryProvider()),
     ChangeNotifierProvider(create: (_) => PlaylistProvider()),
     ChangeNotifierProvider(create: (_) => ListeningHistoryProvider()),
-  ], child: Consumer<ThemeProvider>(builder: (context, themeProvider, _) => MaterialApp(title: 'Resonate', debugShowCheckedModeBanner: false, theme: _theme(Brightness.light), darkTheme: _theme(Brightness.dark), themeMode: themeProvider.useSystemTheme ? ThemeMode.system : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light), home: const HomeScreen())));
+  ], child: Consumer<ThemeProvider>(builder: (context, themeProvider, _) => MaterialApp(title: 'Resonate', debugShowCheckedModeBanner: false, theme: _theme(Brightness.light), darkTheme: _theme(Brightness.dark), themeMode: themeProvider.useSystemTheme ? ThemeMode.system : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light), home: const _LifecycleHome())));
 }
+
+/// Persists resume position when the app is backgrounded or detached.
+class _LifecycleHome extends StatefulWidget {
+  const _LifecycleHome();
+  @override
+  State<_LifecycleHome> createState() => _LifecycleHomeState();
+}
+
+class _LifecycleHomeState extends State<_LifecycleHome> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      try {
+        context.read<MusicProvider>().onAppBackgrounded();
+      } catch (_) {}
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => const HomeScreen();
+}
+
