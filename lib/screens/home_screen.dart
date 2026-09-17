@@ -10,7 +10,6 @@ import '../services/playback_authority.dart';
 import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/resonate_logo.dart';
-import '../widgets/animated_companion_mark.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -98,20 +97,19 @@ class _HomeDashboard extends StatelessWidget {
     final intelligence = context.watch<IntelligenceProvider>();
     final songs = library.allSongs;
     final recommendationQueue = intelligence.recommendations.map((item) => item.song).toList();
-    final next = intelligence.anticipatedNext;
     final children = <Widget>[
-      const SizedBox(height: 8),
-      Text('Hi', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 4),
-      Text('Something good is waiting in your library.', style: Theme.of(context).textTheme.bodyLarge),
-      const SizedBox(height: 18),
-      _IntelligenceHero(intelligence: intelligence, songCount: songs.length),
-      const SizedBox(height: 14),
-      const AutopilotHomeCard(),
+      const SizedBox(height: 6),
+      // Combined Intelligence + Autopilot + nudge (single card, no duplicate sections)
+      AutopilotHomeCard(songCount: songs.length),
     ];
 
     if (intelligence.isEnabled) {
-      children.addAll([const SizedBox(height: 16), _SessionCard(intelligence: intelligence), const SizedBox(height: 14), const EvolvingMixCard()]);
+      children.addAll([
+        const SizedBox(height: 16),
+        _SessionCard(intelligence: intelligence),
+        const SizedBox(height: 14),
+        const EvolvingMixCard(),
+      ]);
     }
 
     if (music.currentSong != null) {
@@ -128,14 +126,7 @@ class _HomeDashboard extends StatelessWidget {
       ]);
     }
 
-    if (intelligence.isEnabled && next != null) {
-      children.addAll([
-        const SizedBox(height: 20),
-        _sectionTitle(context, intelligence.isAutopilot ? 'Next up, intelligently' : 'A little nudge'),
-        _AnticipationCard(item: next, songs: recommendationQueue.isEmpty ? songs : recommendationQueue),
-      ]);
-    }
-
+    // “More music…” keeps additional recommendations (skip #1 is already the nudge inside the card)
     children.addAll([
       const SizedBox(height: 20),
       _sectionTitle(context, intelligence.isEnabled ? 'More music for this moment' : 'Suggested from your library'),
@@ -144,7 +135,7 @@ class _HomeDashboard extends StatelessWidget {
     ]);
 
     return Scaffold(
-      appBar: AppBar(title: const ResonateLogo(size: 32)),
+      appBar: AppBar(title: const ResonateLogo(size: 40)),
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(padding: const EdgeInsets.fromLTRB(18, 0, 18, 34), children: children),
@@ -156,50 +147,6 @@ class _HomeDashboard extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 10),
         child: Text(text, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
       );
-}
-
-class _IntelligenceHero extends StatelessWidget {
-  final IntelligenceProvider intelligence;
-  final int songCount;
-
-  const _IntelligenceHero({required this.intelligence, required this.songCount});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final title = intelligence.isAutopilot
-        ? 'You can just listen.'
-        : intelligence.isAutopilotGraduated
-            ? 'Resonate has your rhythm.'
-            : 'Let Resonate learn your rhythm.';
-
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.surfaceContainerHighest]),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 520),
-            transitionBuilder: (child, animation) => RotationTransition(turns: Tween(begin: .88, end: 1.0).animate(animation), child: FadeTransition(opacity: animation, child: child)),
-            child: AnimatedCompanionMark(mode: intelligence.autonomyLabel, size: 27, key: ValueKey(intelligence.autonomyLabel)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text('Resonate Intelligence', style: Theme.of(context).textTheme.titleLarge)),
-          Text(intelligence.isEnabled ? intelligence.autonomyLabel : 'OFF'),
-        ]),
-        const SizedBox(height: 14),
-        Text(intelligence.isEnabled ? title : 'Your player is fully manual.', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 7),
-        Text(intelligence.isEnabled ? 'Your listening patterns stay on this device and gradually shape what appears next.' : 'Intelligence is disabled. Nothing will predict or alter your playback.'),
-        const SizedBox(height: 14),
-        Wrap(spacing: 8, children: [const Chip(label: Text('Local-first')), const Chip(label: Text('Explainable')), Chip(label: Text('$songCount songs'))]),
-      ]),
-    );
-  }
 }
 
 class _SessionCard extends StatelessWidget {
@@ -281,46 +228,6 @@ double mathSin(double value) {
   while (x < -3.1415926535) x += 6.283185307;
   final x2 = x * x;
   return x * (1 - x2 / 6 + (x2 * x2) / 120 - (x2 * x2 * x2) / 5040);
-}
-
-class _AnticipationCard extends StatefulWidget {
-  final IntelligenceRecommendation item;
-  final List<dynamic> songs;
-
-  const _AnticipationCard({required this.item, required this.songs});
-
-  @override
-  State<_AnticipationCard> createState() => _AnticipationCardState();
-}
-
-class _AnticipationCardState extends State<_AnticipationCard> {
-  bool _loading = false;
-
-  Future<void> _play() async {
-    if (_loading) return;
-    setState(() => _loading = true);
-    final music = context.read<MusicProvider>();
-    final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
-    try {
-      final list = widget.songs.whereType<Song>().toList();
-      final q = index >= 0 && index < list.length ? list.sublist(index) : <Song>[widget.item.song];
-      await music.playSong(widget.item.song, queue: q, startIndex: 0);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
-    return Card(child: ListTile(
-      leading: const Icon(Icons.auto_awesome),
-      title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text('$confidence% confidence • ${widget.item.reason}', maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play),
-      onTap: _loading ? null : _play,
-    ));
-  }
 }
 
 class _RecommendationTile extends StatefulWidget {
