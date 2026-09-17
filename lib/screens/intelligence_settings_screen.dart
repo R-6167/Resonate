@@ -27,6 +27,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
   int _minimumLongMix = 20;
   int _replaySensitivity = 2;
   bool _autoEvolution = true;
+  bool _consent = false;
 
   @override void initState() { super.initState(); _load(); }
 
@@ -35,9 +36,10 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
       IntelligenceSettingsStore.exploration(), IntelligenceSettingsStore.confidenceThreshold(), IntelligenceSettingsStore.automaticQueue(), IntelligenceSettingsStore.artistRepeat(),
       IntelligenceSettingsStore.sessionIntelligence(), IntelligenceSettingsStore.explanations(), IntelligenceSettingsStore.learnedEq(), IntelligenceSettingsStore.autopilotCrossfade(), IntelligenceSettingsStore.autopilotCrossfadeMs(),
       IntelligenceMixSettingsStore.targetMinutes(), IntelligenceMixSettingsStore.longFormEnabled(), IntelligenceMixSettingsStore.minimumLongFormMinutes(), IntelligenceMixSettingsStore.replaySensitivity(), IntelligenceMixSettingsStore.autoEvolutionEnabled(),
+      IntelligenceSettingsStore.autopilotConsent(),
     ]);
     if (!mounted) return;
-    setState(() { _exploration = values[0] as int; _confidence = values[1] as double; _automaticQueue = values[2] as bool; _artistRepeat = values[3] as bool; _sessionIntelligence = values[4] as bool; _explanations = values[5] as bool; _learnedEq = values[6] as bool; _crossfade = values[7] as bool; _crossfadeMs = values[8] as int; _mixMinutes = values[9] as int; _longMix = values[10] as bool; _minimumLongMix = values[11] as int; _replaySensitivity = values[12] as int; _autoEvolution = values[13] as bool; _loading = false; });
+    setState(() { _exploration = values[0] as int; _confidence = values[1] as double; _automaticQueue = values[2] as bool; _artistRepeat = values[3] as bool; _sessionIntelligence = values[4] as bool; _explanations = values[5] as bool; _learnedEq = values[6] as bool; _crossfade = values[7] as bool; _crossfadeMs = values[8] as int; _mixMinutes = values[9] as int; _longMix = values[10] as bool; _minimumLongMix = values[11] as int; _replaySensitivity = values[12] as int; _autoEvolution = values[13] as bool; _consent = values[14] as bool; _loading = false; });
   }
 
   Future<void> _resetTuning() async { await IntelligenceSettingsStore.reset(); await IntelligenceMixSettingsStore.reset(); await _load(); }
@@ -51,7 +53,24 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
         SwitchListTile.adaptive(title: const Text('Intelligence'), subtitle: Text(intelligence.isEnabled ? 'Learning and anticipating locally' : 'Completely inactive; normal player behavior continues'), value: intelligence.isEnabled, onChanged: intelligence.setEnabled),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Autonomy', style: Theme.of(context).textTheme.titleMedium)),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SegmentedButton<int>(segments: const [ButtonSegment(value: 0, label: Text('Suggest')), ButtonSegment(value: 1, label: Text('Assist')), ButtonSegment(value: 2, label: Text('Autopilot'))], selected: {intelligence.autonomy}, onSelectionChanged: (value) => intelligence.setAutonomy(value.first))),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(intelligence.isAutopilot ? 'Autopilot may prepare and choose the next track when confidence is high enough.' : 'Your normal player remains in control until you allow more autonomy.', style: Theme.of(context).textTheme.bodySmall)),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Text(intelligence.isAutopilot ? 'Autopilot can only change tracks after you grant playback consent below.' : 'Your normal player remains in control until you allow more autonomy.', style: Theme.of(context).textTheme.bodySmall)),
+        SwitchListTile.adaptive(
+          title: const Text('Autopilot playback consent'),
+          subtitle: Text(_consent
+              ? 'Autopilot may enqueue, skip, and crossfade using public player APIs'
+              : 'Autopilot stays advisory only — it will not change the current track'),
+          value: _consent,
+          onChanged: (v) async {
+            setState(() => _consent = v);
+            await IntelligenceSettingsStore.setAutopilotConsent(v);
+          },
+        ),
+        if (intelligence.isAutopilotGraduated)
+          const ListTile(
+            leading: Icon(Icons.school_outlined),
+            title: Text('Graduated to Autopilot'),
+            subtitle: Text('Learning threshold met. Consent is still required before it can take control.'),
+          ),
         _header(context, 'Recommendation behavior', 'Shape how Resonate balances confidence, discovery and repetition.'),
         ListTile(title: const Text('Exploration ↔ familiarity'), subtitle: Text('$_exploration% exploration • higher values discover more new music')),
         Slider(value: _exploration.toDouble(), min: 0, max: 100, divisions: 20, label: '$_exploration%', onChanged: (v) => setState(() => _exploration = v.round()), onChangeEnd: (v) => IntelligenceSettingsStore.setExploration(v.round())),
