@@ -15,10 +15,15 @@ class ListeningHistoryScreen extends StatelessWidget {
     return '${minutes}m';
   }
 
-  Future<void> _play(BuildContext context, Song song) async {
+  Future<void> _play(BuildContext context, Song song, {int? resumeAtMs}) async {
     final music = context.read<MusicProvider>();
-    if (await music.playSong(song)) {
-      if (context.mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+    final ok = await music.playSong(
+      song,
+      resumeIfPossible: resumeAtMs != null,
+      resumeAtMs: resumeAtMs,
+    );
+    if (ok && context.mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
     }
   }
 
@@ -72,7 +77,17 @@ class ListeningHistoryScreen extends StatelessWidget {
                 leading: CircleAvatar(child: Icon(event.completed ? Icons.check_rounded : event.skipped ? Icons.fast_forward_rounded : Icons.music_note_rounded)),
                 title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('$artist • $status • $when', maxLines: 2, overflow: TextOverflow.ellipsis),
-                trailing: song == null ? null : IconButton(icon: const Icon(Icons.play_arrow_rounded), tooltip: 'Play', onPressed: () => _play(context, song)),
+                trailing: song == null
+                    ? null
+                    : IconButton(
+                        icon: Icon(event.completed ? Icons.replay_rounded : Icons.play_arrow_rounded),
+                        tooltip: event.completed ? 'Play from start' : 'Resume',
+                        onPressed: () => _play(
+                          context,
+                          song,
+                          resumeAtMs: event.completed ? null : event.durationPlayedMs,
+                        ),
+                      ),
               );
             }),
           ],
