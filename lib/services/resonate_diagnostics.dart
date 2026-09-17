@@ -153,6 +153,56 @@ class ResonateDiagnostics {
     });
   }
 
+  /// Dense native+app playback snapshot for silent-load / auto-next bugs.
+  static Future<void> recordPlayerSnapshot({
+    required String stage,
+    String? command,
+    String? source,
+    String? songId,
+    String? songTitle,
+    String? filePath,
+    int? positionMs,
+    int? durationMs,
+    bool? appIsPlaying,
+    bool? nativePlaying,
+    bool? userWantsPlaying,
+    bool? loadingSource,
+    String? processingState,
+    int? queueIndex,
+    int? queueLength,
+    int? androidAudioSessionId,
+    int? intentToken,
+    String? engine,
+    String? error,
+    Map<String, dynamic> extra = const {},
+  }) async {
+    final mismatch = (appIsPlaying == true && nativePlaying == false) ||
+        (userWantsPlaying == true && nativePlaying == false);
+    await record('player_snapshot', {
+      'stage': stage,
+      if (command != null) 'command': command,
+      if (source != null) 'source': source,
+      if (songId != null) 'songId': songId,
+      if (songTitle != null) 'songTitle': songTitle,
+      if (filePath != null) 'filePath': filePath.length > 180 ? filePath.substring(0, 180) : filePath,
+      if (positionMs != null) 'positionMs': positionMs,
+      if (durationMs != null) 'durationMs': durationMs,
+      if (appIsPlaying != null) 'appIsPlaying': appIsPlaying,
+      if (nativePlaying != null) 'nativePlaying': nativePlaying,
+      if (userWantsPlaying != null) 'userWantsPlaying': userWantsPlaying,
+      if (loadingSource != null) 'loadingSource': loadingSource,
+      if (processingState != null) 'processingState': processingState,
+      if (queueIndex != null) 'queueIndex': queueIndex,
+      if (queueLength != null) 'queueLength': queueLength,
+      if (androidAudioSessionId != null) 'androidAudioSessionId': androidAudioSessionId,
+      if (intentToken != null) 'intentToken': intentToken,
+      if (engine != null) 'engine': engine,
+      if (error != null) 'error': error,
+      'wantPlayMismatch': mismatch,
+      ...extra,
+    });
+  }
+
   static Future<void> recordQueueSnapshot({
     required String reason,
     required List<String> songIds,
@@ -233,7 +283,7 @@ class ResonateDiagnostics {
         final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
         final file = File('${directory.path}/resonate-crash-$stamp.json');
         await file.writeAsString(const JsonEncoder.withIndent('  ').convert({
-          'reportVersion': 4,
+          'reportVersion': 5,
           'app': 'Resonate',
           'createdAt': DateTime.now().toIso8601String(),
           ...entry,
@@ -273,7 +323,7 @@ class ResonateDiagnostics {
     final crashes = _decodeList(prefs.getString(_crashesKey));
     final feedback = _decodeList(prefs.getString(_feedbackKey));
     return {
-      'reportVersion': 4,
+      'reportVersion': 5,
       'createdAt': DateTime.now().toIso8601String(),
       'app': 'Resonate',
       'diagnosticsSessionId': await _getSessionId(),
@@ -296,31 +346,73 @@ class ResonateDiagnostics {
     final errorCounts = <String, int>{};
     final transitionOutcomes = <String, int>{};
     final intelligenceStages = <String, int>{};
+    final playSteps = <String, int>{};
+    final playTimeouts = <String, int>{};
+    final handoffPlaying = <String, int>{'true': 0, 'false': 0};
     var playbackCheckpoints = 0;
     var completedSignals = 0;
     var stopWhileUpcomingSignals = 0;
+    var playerSnapshots = 0;
+    var wantPlayMismatches = 0;
+    var playCommands = 0;
+    var completionAdvanceAttempts = 0;
+    var completionAdvanceResults = 0;
+    var engineHandoffs = 0;
+    String? lastPlayStep;
+    String? lastHandoffPlaying;
+    String? lastMismatchStage;
+
     for (final event in events) {
       final type = event['type']?.toString() ?? 'unknown';
       counts[type] = (counts[type] ?? 0) + 1;
       final data = event['data'];
       if (data is Map) {
         final error = data['error']?.toString();
-        if (error != null && error.isNotEmpty) errorCounts[error] = (errorCounts[error] ?? 0) + 1;
+        if (error != null && error.isNotEmpty) {
+          final short = error.length > 120 ? error.substring(0, 120) : error;
+          errorCounts[short] = (errorCounts[short] ?? 0) + 1;
+        }
         if (type == 'playback_checkpoint') {
           playbackCheckpoints++;
           if (data['stage'] == 'completion_detected') completedSignals++;
-          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) stopWhileUpcomingSignals++;
+          if (data['playing'] == false && (data['upcomingCount'] as num? ?? 0) > 0) {
+            stopWhileUpcomingSignals++;
+          }
         }
-        // Completion is also recorded as its own event. Count that authoritative
-        // signal directly so the exported summary cannot report zero when the
-        // event stream clearly contains completion detections.
         if (type == 'completion_detected') completedSignals++;
+        if (type == 'completion_advance_attempt') completionAdvanceAttempts++;
+        if (type == 'completion_advance_result') completionAdvanceResults++;
+        if (type == 'playback_engine_handoff') {
+          engineHandoffs++;
+          final p = data['playing'] == true ? 'true' : 'false';
+          handoffPlaying[p] = (handoffPlaying[p] ?? 0) + 1;
+          lastHandoffPlaying = p;
+        }
+        if (type == 'playback_command' || type == 'playback_command_accepted') {
+          if (data['command'] == 'play') playCommands++;
+        }
+        if (type == 'playback_play_step') {
+          final step = data['step']?.toString() ?? data['label']?.toString() ?? 'unknown';
+          playSteps[step] = (playSteps[step] ?? 0) + 1;
+          lastPlayStep = step;
+          if (step == 'timeout_or_error') {
+            final label = data['label']?.toString() ?? 'unknown';
+            playTimeouts[label] = (playTimeouts[label] ?? 0) + 1;
+          }
+        }
+        if (type == 'player_snapshot') {
+          playerSnapshots++;
+          if (data['wantPlayMismatch'] == true) {
+            wantPlayMismatches++;
+            lastMismatchStage = data['stage']?.toString();
+          }
+        }
         if (type == 'crossfade_committed' || type == 'crossfade_failed' || type == 'crossfade_cancelled') {
           final outcome = type.replaceFirst('crossfade_', '');
           transitionOutcomes[outcome] = (transitionOutcomes[outcome] ?? 0) + 1;
         }
-        if (type == 'intelligence_event') {
-          final stage = data['stage']?.toString() ?? 'unknown';
+        if (type == 'intelligence_event' || type == 'intelligence_recommendations_generated') {
+          final stage = data['stage']?.toString() ?? type;
           intelligenceStages[stage] = (intelligenceStages[stage] ?? 0) + 1;
         }
       }
@@ -332,12 +424,63 @@ class ResonateDiagnostics {
       'eventTypes': counts,
       'playbackCheckpointCount': playbackCheckpoints,
       'completionDetectedCount': completedSignals,
+      'completionAdvanceAttempts': completionAdvanceAttempts,
+      'completionAdvanceResults': completionAdvanceResults,
+      'engineHandoffs': engineHandoffs,
+      'handoffPlaying': handoffPlaying,
+      'lastHandoffPlaying': lastHandoffPlaying,
+      'playCommands': playCommands,
+      'playSteps': playSteps,
+      'playTimeouts': playTimeouts,
+      'lastPlayStep': lastPlayStep,
+      'playerSnapshots': playerSnapshots,
+      'wantPlayMismatches': wantPlayMismatches,
+      'lastMismatchStage': lastMismatchStage,
       'stopsWithUpcomingSongs': stopWhileUpcomingSignals,
       'transitionOutcomes': transitionOutcomes,
       'intelligenceStages': intelligenceStages,
       'topErrors': Map<String, int>.fromEntries(rankedErrors.take(25)),
-      'diagnosticPurpose': 'Reconstruct playback, queue, transition, interruption, Intelligence and lifecycle behaviour without requiring manual memory.',
+      'playbackHealthHint': _playbackHealthHint(
+        playCommands: playCommands,
+        engineHandoffs: engineHandoffs,
+        completionAdvanceAttempts: completionAdvanceAttempts,
+        completionAdvanceResults: completionAdvanceResults,
+        wantPlayMismatches: wantPlayMismatches,
+        playTimeouts: playTimeouts,
+        lastHandoffPlaying: lastHandoffPlaying,
+      ),
+      'diagnosticPurpose': 'Reconstruct playback, queue, transition, interruption, Intelligence and lifecycle behaviour without requiring manual memory. Focus on playSteps, playTimeouts, player_snapshot.wantPlayMismatch, engineHandoffs, completionAdvance*.',
     };
+  }
+
+  static String _playbackHealthHint({
+    required int playCommands,
+    required int engineHandoffs,
+    required int completionAdvanceAttempts,
+    required int completionAdvanceResults,
+    required int wantPlayMismatches,
+    required Map<String, int> playTimeouts,
+    required String? lastHandoffPlaying,
+  }) {
+    if (playCommands > 0 && engineHandoffs == 0) {
+      return 'play_started_but_no_handoff — _playSongInternal likely hung or failed before finish';
+    }
+    if (completionAdvanceAttempts > completionAdvanceResults) {
+      return 'auto_next_advance_incomplete — completion advance did not finish';
+    }
+    if (playTimeouts.isNotEmpty) {
+      return 'play_path_timeouts — see summary.playTimeouts for which await hung';
+    }
+    if (wantPlayMismatches > 0) {
+      return 'want_play_but_native_silent — app wanted audio but player.playing was false';
+    }
+    if (lastHandoffPlaying == 'false') {
+      return 'handoff_with_playing_false — source loaded but native play did not stick';
+    }
+    if (lastHandoffPlaying == 'true') {
+      return 'handoffs_look_ok — if still silent, check OS audio focus / session outside app logic';
+    }
+    return 'insufficient_playback_signal — play a track then export again';
   }
 
   static Future<String?> exportReport() async {
