@@ -181,10 +181,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     );
   }
 
-  static String formatFrequency(double hz) {
-    if (hz >= 1000) return '${(hz / 1000).toStringAsFixed(hz >= 10000 ? 0 : 1)}k';
-    return '${hz.round()}';
-  }
+}
+
+String _eqFormatFrequency(double hz) {
+  if (hz >= 1000) return '${(hz / 1000).toStringAsFixed(hz >= 10000 ? 0 : 1)}k';
+  return '${hz.round()}';
 }
 
 class _BandSlider extends StatelessWidget {
@@ -214,7 +215,7 @@ class _BandSlider extends StatelessWidget {
           ),
         ),
         Text(
-          EqualizerScreen.formatFrequency(band.centerFrequency),
+          _eqFormatFrequency(band.centerFrequency),
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.labelSmall,
         ),
