@@ -107,6 +107,34 @@ class MusicProvider extends ChangeNotifier {
   String get activeEngineLabel => _authority.engineLabel(this);
   bool get transitionInProgress => _crossfadeInProgress || _automaticCrossfadeInFlight;
 
+  /// Phase 2: normal listening is always Engine A. Engine B is only for an
+  /// in-progress crossfade (or a track that was handed off via crossfade).
+  bool get isEngineA => _activeIsA;
+
+  /// Switch active engine to A and rebind streams if we were on B.
+  /// Safe to call at the start of any non-crossfade play path.
+  void _ensureEngineA({String reason = 'default'}) {
+    if (_activeIsA) return;
+    _activeIsA = true;
+    _bindActivePlayerStreams();
+    unawaited(ResonateDiagnostics.record('engine_policy', {
+      'action': 'promote_a',
+      'reason': reason,
+      'songId': currentSong?.id,
+      'queueIndex': _queueIndex,
+    }));
+    // Quiet B so it cannot steal focus after a crossfade.
+    unawaited(() async {
+      try {
+        await _playerB.pause();
+      } catch (_) {}
+      try {
+        await _playerB.setVolume(0.0);
+      } catch (_) {}
+    }());
+  }
+
+
   static const _savedQueueIdsKey = 'playback_queue_song_ids';
   static const _savedQueueIndexKey = 'playback_queue_index';
   static const _shuffleEnabledKey = 'playback_shuffle_enabled';
@@ -638,10 +666,12 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
 
+    // Phase 2: non-crossfade play always on Engine A (rebind if we were on B).
+    _ensureEngineA(reason: 'play_song_internal');
     final target = _playerA;
     final targetEq = _equalizerA;
     final targetLoud = _loudnessA;
-    final outgoing = _activeIsA ? null : _playerB;
+    final outgoing = null; // never hand off from B on the normal path
 
     _loadingSource = true;
     _userWantsPlaying = true;
@@ -939,9 +969,16 @@ class MusicProvider extends ChangeNotifier {
       await _finishHistoryEvent();
       if (!_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
       await outgoing.pause(); await outgoing.setVolume(master); await incoming.setLoopMode(LoopMode.off); await incoming.setVolume(master);
-      _activeIsA = !_activeIsA; _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
+      _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
+      _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners(); await outgoing.stop();
-      await ResonateDiagnostics.record('crossfade_committed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'queueIndex': _queueIndex, 'intentToken': intentToken});
+      await ResonateDiagnostics.record('crossfade_committed', {
+        'outgoingSongId': outgoingSong?.id,
+        'incomingSongId': nextSong.id,
+        'queueIndex': _queueIndex,
+        'intentToken': intentToken,
+        'activeEngine': _activeIsA ? 'A' : 'B',
+      });
       return true;
     } catch (e, stack) {
       debugPrint('True crossfade failed: $e'); debugPrint('$stack');
