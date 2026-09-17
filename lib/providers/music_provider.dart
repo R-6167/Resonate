@@ -113,6 +113,41 @@ class MusicProvider extends ChangeNotifier {
   /// in-progress crossfade (or a track that was handed off via crossfade).
   bool get isEngineA => _activeIsA;
 
+  /// True when we have a saved mid-track position for the current queue song.
+  bool get canContinueListening {
+    final song = currentSong;
+    if (song == null) return false;
+    if (_resumeSongId != song.id) return false;
+    if (_resumePositionMs < 1500) return false;
+    final dur = (currentDuration ?? song.duration).inMilliseconds;
+    if (dur > 0 && _resumePositionMs >= dur - 2000) return false;
+    return true;
+  }
+
+  int get resumePositionMs => _resumePositionMs;
+  String? get resumeSongId => _resumeSongId;
+
+  /// Resume the restored queue song from the last saved position.
+  Future<bool> continueListening({String source = 'continue_listening'}) {
+    final song = currentSong;
+    if (song == null) return Future<bool>.value(false);
+    final intentToken = _playbackIntentGate.issue();
+    _cancelAutomaticPlaybackWork();
+    return _serializePlayback(
+      () => _playSongInternal(
+        song,
+        queue: _queue.isNotEmpty ? _queue : [song],
+        startIndex: _queueIndex.clamp(0, _queue.isEmpty ? 0 : _queue.length - 1),
+        resume: true,
+        playbackIntentToken: intentToken,
+      ),
+      command: 'play',
+      source: source,
+      userInitiated: true,
+      intentToken: intentToken,
+    );
+  }
+
   /// Switch active engine to A and rebind streams if we were on B.
   /// Safe to call at the start of any non-crossfade play path.
   void _ensureEngineA({String reason = 'default'}) {
@@ -263,7 +298,25 @@ class MusicProvider extends ChangeNotifier {
       final byId = <String, Song>{for (final song in visibleSongs) song.id: song};
       final restored = ids.map((id) => byId[id]).whereType<Song>().toList();
       if (restored.isEmpty) return;
-      _queue = restored; _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt(); currentSong = _queue[_queueIndex]; currentDuration = currentSong!.duration; currentPosition = Duration.zero; notifyListeners();
+      _queue = restored;
+      _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt();
+      currentSong = _queue[_queueIndex];
+      currentDuration = currentSong!.duration;
+      // Restore last known position for the current song (if any).
+      if (_resumeSongId == currentSong!.id && _resumePositionMs > 1500) {
+        final cap = currentDuration?.inMilliseconds ?? _resumePositionMs;
+        final ms = _resumePositionMs.clamp(0, cap).toInt();
+        // Don't resume at the very end — treat as finished.
+        if (cap > 0 && ms >= cap - 2000) {
+          currentPosition = Duration.zero;
+          _resumePositionMs = 0;
+        } else {
+          currentPosition = Duration(milliseconds: ms);
+        }
+      } else {
+        currentPosition = Duration.zero;
+      }
+      notifyListeners();
     } catch (e) { debugPrint('Playback queue restore failed: $e'); } finally { _queueRestoreInProgress = false; }
   }
 
@@ -381,6 +434,12 @@ class MusicProvider extends ChangeNotifier {
     _durationSubscription = player.durationStream.listen((duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
     // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
     // internal gain into _volume or it will overwrite the system-volume value.
+  }
+
+  /// Call from app lifecycle (paused/inactive/detached) so position survives process death.
+  void onAppBackgrounded() {
+    _persistResumePosition(force: true);
+    unawaited(_persistQueue());
   }
 
   void _persistResumePosition({bool force = false}) {
@@ -814,12 +873,17 @@ class MusicProvider extends ChangeNotifier {
   );
 }
 
-  Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0}) {
+  Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0, bool resumeIfPossible = false, int? resumeAtMs}) {
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     _lastCompletionSongId = null;
+    if (resumeAtMs != null && resumeAtMs > 1500) {
+      _resumeSongId = song.id;
+      _resumePositionMs = resumeAtMs;
+    }
+    final shouldResume = resumeIfPossible && _resumeSongId == song.id && _resumePositionMs > 1500;
     return _serializePlayback(
-      () => _playSongInternal(song, queue: queue, startIndex: startIndex, playbackIntentToken: intentToken),
+      () => _playSongInternal(song, queue: queue, startIndex: startIndex, resume: shouldResume, playbackIntentToken: intentToken),
       command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,
       onSuperseded: () async => false,
     );
