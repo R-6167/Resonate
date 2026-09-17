@@ -93,7 +93,9 @@ class AutopilotController extends ChangeNotifier {
   }
 
   Future<void> _evaluate({bool forceTransition = false}) async {
-    if (!_consentLoaded || !intelligence.isAutopilot || music.currentSong == null) return;
+    // Phase 5: Intelligence off or not in Autopilot mode → never drive playback.
+    if (!_consentLoaded || !intelligence.isEnabled || !intelligence.isAutopilot) return;
+    if (music.currentSong == null) return;
     if (!music.isPlaying && !forceTransition) return;
 
     final now = DateTime.now();
@@ -108,10 +110,10 @@ class AutopilotController extends ChangeNotifier {
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
     final useCrossfade = await IntelligenceSettingsStore.autopilotCrossfade();
 
-    // Keep the queue topped up early
+    // Keep the queue topped up early — Phase 5: only with explicit consent.
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
-    if (automaticQueue && (remaining == null || remaining <= const Duration(seconds: 30))) {
+    if (_consentGranted && automaticQueue && (remaining == null || remaining <= const Duration(seconds: 30))) {
       await _ensurePredictedQueue(threshold);
     }
 
@@ -137,11 +139,10 @@ class AutopilotController extends ChangeNotifier {
       recommendation = candidates.first;
       nextSong = recommendation.song;
     } else if (intelligence.isAutopilotGraduated) {
-      // Graduated autopilot can still drive whatever is already next in the queue
+      // Prefer existing queue next. Phase 5: only enqueue with consent.
       if (music.queueIndex < music.queue.length - 1) {
         nextSong = music.queue[music.queueIndex + 1];
-      } else {
-        // Queue exhausted – inject top recommendation if available
+      } else if (_consentGranted) {
         await _ensurePredictedQueue(threshold);
         final top = intelligence.anticipatedNext?.song;
         if (top != null && top.id != music.currentSong?.id) {
@@ -153,8 +154,9 @@ class AutopilotController extends ChangeNotifier {
 
     if (nextSong == null) return;
 
-    // Consent gate
-    if (!_consentGranted && !forceTransition) {
+    // Phase 5 consent gate: no play APIs without consent (forceTransition only
+    // after allowPendingTakeover which sets _consentGranted = true).
+    if (!_consentGranted) {
       if (_declinedForSongId == nextSong.id) return;
       if (!_pendingTakeover) {
         _pendingTakeover = true;
@@ -165,13 +167,14 @@ class AutopilotController extends ChangeNotifier {
           'mode': intelligence.autonomyLabel,
           'confidence': recommendation?.confidence ?? 0,
           'reason': recommendation?.reason ?? 'graduated_autopilot',
+          'consentGranted': false,
         });
         notifyListeners();
       }
       return;
     }
 
-    // We have consent – take control
+    // Consent granted – may call public play APIs only
     _pendingTakeover = false;
     _pendingSongId = null;
     _transitionSongId = music.currentSong?.id;
@@ -233,6 +236,8 @@ class AutopilotController extends ChangeNotifier {
   }
 
   Future<void> _ensurePredictedQueue(double threshold) async {
+    // Phase 5: queue mutation is a playback API — require consent + autopilot.
+    if (!_consentGranted || !intelligence.isEnabled || !intelligence.isAutopilot) return;
     if (_queueDecisionInFlight) return;
     _queueDecisionInFlight = true;
     try {
