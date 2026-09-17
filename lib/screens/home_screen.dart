@@ -103,6 +103,40 @@ class _HomeDashboard extends StatelessWidget {
       AutopilotHomeCard(songCount: songs.length),
     ];
 
+    if (music.canContinueListening && music.currentSong != null && !music.isPlaying) {
+      final song = music.currentSong!;
+      final pos = music.resumePositionMs;
+      final dur = (music.currentDuration ?? song.duration).inMilliseconds;
+      final progress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
+      children.addAll([
+        const SizedBox(height: 14),
+        Card(
+          elevation: 0,
+          color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.45),
+          child: ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.history_rounded)),
+            title: const Text('Continue listening', style: TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text(
+              '${song.title}\n${_formatClock(pos)} / ${_formatClock(dur)}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: FilledButton.tonalIcon(
+              onPressed: () => music.continueListening(),
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('Resume'),
+            ),
+            onTap: () => music.continueListening(),
+          ),
+        ),
+        if (progress > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: LinearProgressIndicator(value: progress, minHeight: 3),
+          ),
+      ]);
+    }
+
     if (intelligence.isEnabled) {
       children.addAll([
         const SizedBox(height: 16),
