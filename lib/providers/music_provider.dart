@@ -628,7 +628,6 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {
     await _visibility.load();
-    // Visibility: only reject when restricted mode is active and song is outside scope.
     if (_visibility.isRestricted && !_visibility.isVisible(song.id)) {
       await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {
         'songId': song.id,
@@ -639,21 +638,61 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
 
-    // Phase 2 (partial): normal play always uses Engine A. Engine B is reserved
-    // for crossfade / Autopilot preload and is not switched on every tap.
     final target = _playerA;
     final targetEq = _equalizerA;
     final targetLoud = _loudnessA;
     final outgoing = _activeIsA ? null : _playerB;
 
     _loadingSource = true;
+    _userWantsPlaying = true;
+
+    Future<void> step(String name, [Map<String, Object?> extra = const {}]) async {
+      await ResonateDiagnostics.record('playback_play_step', {
+        'step': name,
+        'songId': song.id,
+        'intentToken': intentToken,
+        ...extra,
+      });
+    }
+
+    Future<bool> timed(String label, Future<void> future, {int ms = 8000}) async {
+      try {
+        await future.timeout(Duration(milliseconds: ms));
+        return true;
+      } catch (e) {
+        await ResonateDiagnostics.record('playback_play_step', {
+          'step': 'timeout_or_error',
+          'label': label,
+          'error': e.toString(),
+          'songId': song.id,
+        });
+        debugPrint('playback timed/error $label: $e');
+        return false;
+      }
+    }
+
+    Future<T?> timedValue<T>(String label, Future<T> future, {int ms = 8000}) async {
+      try {
+        return await future.timeout(Duration(milliseconds: ms));
+      } catch (e) {
+        await ResonateDiagnostics.record('playback_play_step', {
+          'step': 'timeout_or_error',
+          'label': label,
+          'error': e.toString(),
+          'songId': song.id,
+        });
+        debugPrint('playback timed/error $label: $e');
+        return null;
+      }
+    }
+
     try {
       _crossfadeInProgress = false;
       _automaticCrossfadeInFlight = false;
       unawaited(_finishHistoryEvent());
+      await step('begin');
 
-      // Quiet Engine B without hard-stopping A (stop() can drop audio focus and
-      // leave the next source loaded but silent until a user gesture).
+      // Quiet B; pause A only if needed. Avoid stop() — drops focus on some OEMs.
       try {
         await _playerB.pause();
       } catch (_) {}
@@ -664,7 +703,6 @@ class MusicProvider extends ChangeNotifier {
         if (target.playing) await target.pause();
       } catch (_) {}
 
-      // Build queue: prefer the provided list; empty path songs dropped.
       final requested = queue != null && queue.isNotEmpty ? List<Song>.from(queue) : <Song>[song];
       final normalized = requested.where((s) => s.filePath.trim().isNotEmpty).toList();
       if (normalized.isEmpty) return false;
@@ -684,7 +722,6 @@ class MusicProvider extends ChangeNotifier {
           : normalized;
       final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
 
-      // Hold audio focus across the source swap.
       try {
         final session = await AudioSession.instance;
         await session.setActive(true);
@@ -692,13 +729,22 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive (pre-source) failed: $e');
       }
 
-      await target.setLoopMode(LoopMode.off);
-      // Await setAudioSource so the first frame is ready before play().
-      final durationFromSource = await target.setAudioSource(
-        AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
-      );
+      await timed('setLoopMode', target.setLoopMode(LoopMode.off), ms: 2000);
+      await step('set_source_start', {'path': selectedSong.filePath});
 
-      // Commit queue/state. UI may show the new song immediately.
+      final durationFromSource = await timedValue<Duration?>(
+        'setAudioSource',
+        target.setAudioSource(
+          AudioSource.uri(_audioUri(selectedSong.filePath), tag: selectedSong),
+        ),
+        ms: 15000,
+      );
+      await step('set_source_done', {
+        'durationMs': durationFromSource?.inMilliseconds,
+        'processingState': target.processingState.name,
+      });
+
+      // Commit UI state immediately so library shows the selected track.
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentSong = _queue[_queueIndex];
@@ -707,8 +753,6 @@ class MusicProvider extends ChangeNotifier {
       currentDuration = durationFromSource ?? currentSong!.duration;
       currentPosition = Duration.zero;
       _userWantsPlaying = true;
-      // Do NOT force isPlaying=true until native is playing — avoids toggle/
-      // media-session treating a silent load as "playing" and pausing it.
       await _persistQueue();
       notifyListeners();
       _publishServiceState();
@@ -716,73 +760,78 @@ class MusicProvider extends ChangeNotifier {
       if (resume && _resumeSongId == currentSong!.id && _resumePositionMs > 0) {
         final durationMs = currentDuration?.inMilliseconds ?? _resumePositionMs;
         final safeResume = _resumePositionMs.clamp(0, durationMs).toInt();
-        await target.seek(Duration(milliseconds: safeResume));
+        await timed('seek_resume', target.seek(Duration(milliseconds: safeResume)), ms: 3000);
         currentPosition = Duration(milliseconds: safeResume);
       } else {
-        try {
-          await target.seek(Duration.zero);
-        } catch (_) {}
+        await timed('seek_zero', target.seek(Duration.zero), ms: 3000);
       }
 
-      await _enableEffects(target, targetEq, targetLoud);
-      await target.setVolume(1.0);
+      await timed('setVolume', target.setVolume(1.0), ms: 2000);
+
+      // Effects after source is up — never block play on effects failure/slowness.
+      unawaited(_enableEffects(target, targetEq, targetLoud));
 
       try {
         final session = await AudioSession.instance;
         await session.setActive(true);
-      } catch (e) {
-        debugPrint('AudioSession setActive failed: $e');
-      }
+      } catch (_) {}
 
-      // Hard play loop — this is the single place that must make sound.
+      await step('play_loop_start', {'processingState': target.processingState.name});
+
+      // Never await play() without a timeout — on some OEMs play() can hang
+      // after content:// setAudioSource while still eventually starting.
       var started = false;
-      for (var attempt = 0; attempt < 20; attempt++) {
-        try {
-          await target.play();
-        } catch (e) {
-          debugPrint('play() attempt $attempt failed: $e');
-        }
+      for (var attempt = 0; attempt < 12; attempt++) {
+        await timed('play_$attempt', target.play(), ms: 2500);
         if (target.playing) {
           started = true;
           break;
         }
-        // Periodically re-seek; helps after ProcessingState.completed.
-        if (attempt == 3 || attempt == 8 || attempt == 14) {
-          try {
-            await target.seek(Duration.zero);
-          } catch (_) {}
+        if (attempt == 2 || attempt == 5 || attempt == 8) {
+          await timed('reseek_$attempt', target.seek(Duration.zero), ms: 2000);
         }
-        await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 20));
+        await Future<void>.delayed(Duration(milliseconds: 50 + attempt * 40));
       }
 
       isPlaying = started || target.playing;
       _userWantsPlaying = true;
-      await _startHistoryEvent(currentSong!);
+      await step('play_loop_end', {
+        'started': started,
+        'playing': target.playing,
+        'processingState': target.processingState.name,
+        'positionMs': target.position.inMilliseconds,
+      });
+
+      // History must not block the play path.
+      unawaited(_startHistoryEvent(currentSong!));
       _publishServiceState();
       notifyListeners();
 
-      // If still silent, schedule a final kick after loading flag clears.
       if (!target.playing) {
         final kickSongId = selectedSong.id;
-        unawaited(Future<void>.delayed(const Duration(milliseconds: 150), () async {
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 200), () async {
           if (!_userWantsPlaying || currentSong?.id != kickSongId) return;
           try {
             final session = await AudioSession.instance;
             await session.setActive(true);
           } catch (_) {}
           try {
-            if (target.processingState == ProcessingState.completed) {
-              await target.seek(Duration.zero);
-            }
-            await target.play();
+            await target.seek(Duration.zero);
+          } catch (_) {}
+          try {
+            await target.play().timeout(const Duration(seconds: 3));
           } catch (_) {}
           if (target.playing) {
             isPlaying = true;
             _publishServiceState();
             notifyListeners();
-          } else {
-            debugPrint('play kick still not playing for $kickSongId state=${target.processingState}');
           }
+          await ResonateDiagnostics.record('playback_play_step', {
+            'step': 'deferred_kick',
+            'songId': kickSongId,
+            'playing': target.playing,
+            'processingState': target.processingState.name,
+          });
         }));
       }
 
@@ -799,6 +848,7 @@ class MusicProvider extends ChangeNotifier {
         'engine': 'A',
         'songId': currentSong!.id,
         'playing': target.playing,
+        'processingState': target.processingState.name,
       });
       return true;
     } catch (e, stack) {
