@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' hide PlaybackEvent;
 
 import '../providers/music_provider.dart';
 import 'playback_authority.dart';
@@ -14,7 +14,7 @@ class PlaybackDiagnosticsObserver extends ChangeNotifier {
   final PlaybackAuthority authority = PlaybackAuthority.instance;
   Timer? _heartbeat;
   StreamSubscription<PlayerState>? _playerStateSub;
-  StreamSubscription<PlaybackEvent>? _playbackEventSub;
+  StreamSubscription<dynamic>? _playbackEventSub;
 
   bool _lastAppPlaying = false;
   bool _lastNativePlaying = false;
