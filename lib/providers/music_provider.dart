@@ -1049,29 +1049,34 @@ class MusicProvider extends ChangeNotifier {
       await step('set_source_start', {'path': selectedSong.filePath});
 
       Duration? durationFromSource;
-      // Gapless playlist when crossfade is off and we have multiple tracks.
-      // just_audio advances inside ConcatenatingAudioSource without a hard cut.
+      // Gapless: only a short window around the current track — never the entire
+      // library (270+ content:// URIs caused Loading interrupted / stalled UI).
+      const gaplessWindow = 12;
       final wantGapless = !_crossfadeEnabled && nextQueue.length > 1;
       if (wantGapless) {
         try {
-          final children = nextQueue
+          final start = (nextIndex - 1).clamp(0, nextQueue.length - 1);
+          final end = (nextIndex + gaplessWindow).clamp(0, nextQueue.length);
+          final window = nextQueue.sublist(start, end);
+          final children = window
               .where((s) => s.filePath.trim().isNotEmpty)
               .map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s))
               .toList();
+          final localIndex = (nextIndex - start).clamp(0, children.length - 1);
           if (children.length > 1) {
-            final idx = nextIndex.clamp(0, children.length - 1);
             durationFromSource = await timedValue<Duration?>(
               'setAudioSource_gapless',
               target.setAudioSource(
                 ConcatenatingAudioSource(children: children, useLazyPreparation: true),
-                initialIndex: idx,
+                initialIndex: localIndex,
                 initialPosition: Duration.zero,
               ),
               ms: 15000,
             );
             await ResonateDiagnostics.record('playback_gapless_source', {
               'children': children.length,
-              'index': idx,
+              'index': localIndex,
+              'windowStart': start,
               'repeatMode': _repeatMode.name,
             });
           }
