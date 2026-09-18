@@ -5,8 +5,9 @@ import '../models/intelligence_mix.dart';
 import '../providers/intelligence_mix_controller.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
+import '../services/intelligence_mix_memory.dart';
 
-/// Deep Companion mix surface — compact journey card on For you.
+/// Deep Companion mix surface — journey memory + continuity on For you.
 class EvolvingMixCard extends StatefulWidget {
   const EvolvingMixCard({super.key});
   @override
@@ -22,6 +23,12 @@ class _EvolvingMixCardState extends State<EvolvingMixCard> {
     _memoryFuture ??= context.read<IntelligenceMixController>().recentGeneratedMixes();
   }
 
+  void _refreshMemory() {
+    setState(() {
+      _memoryFuture = context.read<IntelligenceMixController>().recentGeneratedMixes();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<IntelligenceMixController>();
@@ -34,6 +41,7 @@ class _EvolvingMixCardState extends State<EvolvingMixCard> {
         continuity: controller.currentContinuity,
         canEvolve: current.songs.isNotEmpty,
         loading: controller.isLoading,
+        onChanged: _refreshMemory,
       );
     }
 
@@ -41,14 +49,15 @@ class _EvolvingMixCardState extends State<EvolvingMixCard> {
       future: _memoryFuture,
       builder: (context, snapshot) {
         final values = snapshot.data ?? const <Map<String, dynamic>>[];
-        if (values.isEmpty) return _GenerateCard(loading: controller.isLoading);
+        if (values.isEmpty) return _GenerateCard(loading: controller.isLoading, onCreated: _refreshMemory);
         final latest = _metadataMix(values.first);
-        if (latest == null) return _GenerateCard(loading: controller.isLoading);
+        if (latest == null) return _GenerateCard(loading: controller.isLoading, onCreated: _refreshMemory);
         return _JourneyCard(
           mix: latest,
           continuity: {'score': latest.previousContinuityScore},
           canEvolve: false,
           loading: controller.isLoading,
+          onChanged: _refreshMemory,
         );
       },
     );
@@ -72,14 +81,17 @@ class _EvolvingMixCardState extends State<EvolvingMixCard> {
       targetDuration: Duration(minutes: targetMinutes),
       reason: reason,
       createdAt: createdAt,
-      previousContinuityScore: (value['continuityScore'] as num?)?.toDouble() ?? 0,
+      parentMixId: value['parentMixId'] as String?,
+      edition: (value['edition'] as num?)?.toInt() ?? 1,
+      previousContinuityScore: (value['previousContinuityScore'] as num?)?.toDouble(),
     );
   }
 }
 
 class _GenerateCard extends StatelessWidget {
   final bool loading;
-  const _GenerateCard({required this.loading});
+  final VoidCallback onCreated;
+  const _GenerateCard({required this.loading, required this.onCreated});
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +127,7 @@ class _GenerateCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'A short local journey from your library — evolves as you listen.',
+                  'A local journey from your library — evolves as you listen and remember.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -123,7 +135,12 @@ class _GenerateCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton.tonal(
-            onPressed: loading ? null : () => controller.generateMix(),
+            onPressed: loading
+                ? null
+                : () async {
+                    await controller.generateMix();
+                    onCreated();
+                  },
             child: loading
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('Create'),
@@ -139,12 +156,14 @@ class _JourneyCard extends StatelessWidget {
   final Map<String, dynamic>? continuity;
   final bool canEvolve;
   final bool loading;
+  final VoidCallback onChanged;
 
   const _JourneyCard({
     required this.mix,
     this.continuity,
     required this.canEvolve,
     required this.loading,
+    required this.onChanged,
   });
 
   @override
@@ -178,6 +197,24 @@ class _JourneyCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
+                if (mix.edition > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: scheme.secondary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Ed. ${mix.edition}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: scheme.secondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                  ),
                 if (score != null)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -201,6 +238,37 @@ class _JourneyCard extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            // Journey lineage from mix-to-mix memory
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: IntelligenceMixMemory().lineageFor(mix.id),
+              builder: (context, snap) {
+                final chain = snap.data ?? const <Map<String, dynamic>>[];
+                if (chain.length < 2) return const SizedBox.shrink();
+                final titles = chain.reversed.map((m) => m['title'] as String? ?? 'Mix').toList();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Journey memory',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: scheme.primary,
+                            ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        titles.join(' → '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 8),
             Row(
@@ -248,14 +316,24 @@ class _JourneyCard extends StatelessWidget {
                 if (canEvolve) ...[
                   const SizedBox(width: 8),
                   TextButton(
-                    onPressed: loading ? null : () => controller.evolveCurrentMix(),
+                    onPressed: loading
+                        ? null
+                        : () async {
+                            await controller.evolveCurrentMix();
+                            onChanged();
+                          },
                     child: const Text('Evolve'),
                   ),
                 ],
                 const Spacer(),
                 IconButton(
                   tooltip: 'New mix',
-                  onPressed: loading ? null : () => controller.generateMix(),
+                  onPressed: loading
+                      ? null
+                      : () async {
+                          await controller.generateMix();
+                          onChanged();
+                        },
                   icon: loading
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.refresh_rounded),
