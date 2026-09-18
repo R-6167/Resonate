@@ -331,10 +331,13 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _applyPreamp() async {
     if (_loudnessEnhancer == null) return;
     try {
-      // LoudnessEnhancer target gain is millibels (1 dB = 100 mB).
-      final mb = (isEnabled ? preamp : 0.0) * 100.0;
-      await _loudnessEnhancer!.setTargetGain(mb.clamp(-1200.0, 600.0));
-      await _loudnessEnhancer!.setEnabled(isEnabled && preamp.abs() > 0.05);
+      // Android LoudnessEnhancer uses millibels (100 mB = 1 dB).
+      // Keep a conservative clamp: some OEMs treat large negative gains as mute
+      // and large positive gains as hard clipping.
+      final effectiveDb = isEnabled ? preamp.clamp(-6.0, 3.0) : 0.0;
+      final mb = effectiveDb * 100.0;
+      await _loudnessEnhancer!.setTargetGain(mb);
+      await _loudnessEnhancer!.setEnabled(isEnabled && effectiveDb.abs() > 0.05);
     } catch (e) {
       debugPrint('preamp apply failed: $e');
     }
@@ -401,7 +404,7 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setPreamp(double value) async {
-    preamp = value.clamp(-12.0, 6.0).toDouble();
+    preamp = value.clamp(-6.0, 3.0).toDouble();
     await _applyPreamp();
     await _save();
     notifyListeners();
