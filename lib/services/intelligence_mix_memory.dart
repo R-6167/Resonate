@@ -4,11 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/intelligence_mix.dart';
 
-/// Small local memory for generated mixes. It stores only mix metadata and
-/// song ids, never audio bytes or external analytics.
+/// Small local memory for generated mixes. Metadata only — never audio bytes.
 class IntelligenceMixMemory {
   static const _key = 'intelligence_generated_mix_memory_v1';
-  static const _maxMixes = 12;
+  static const _maxMixes = 16;
 
   Future<void> remember(IntelligenceMix mix) async {
     try {
@@ -25,12 +24,21 @@ class IntelligenceMixMemory {
         'parentMixId': mix.parentMixId,
         'edition': mix.edition,
         'previousContinuityScore': mix.previousContinuityScore,
+        'artistHints': mix.songs.map((s) => s.artist).toSet().take(4).toList(),
       });
-      final updated = <String>[entry, ...existing.where((item) => item != entry)];
+      final updated = <String>[
+        entry,
+        ...existing.where((item) {
+          try {
+            final m = jsonDecode(item);
+            return m is Map && m['id'] != mix.id;
+          } catch (_) {
+            return true;
+          }
+        }),
+      ];
       await prefs.setStringList(_key, updated.take(_maxMixes).toList());
-    } catch (_) {
-      // Mix memory is optional; it must never affect playback.
-    }
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> recent() async {
@@ -50,6 +58,27 @@ class IntelligenceMixMemory {
     } catch (_) {
       return const <Map<String, dynamic>>[];
     }
+  }
+
+  /// Walk parentMixId chain for the journey surface (newest first).
+  Future<List<Map<String, dynamic>>> lineageFor(String? mixId) async {
+    if (mixId == null || mixId.isEmpty) return const [];
+    final all = await recent();
+    final byId = <String, Map<String, dynamic>>{
+      for (final m in all)
+        if (m['id'] is String) m['id'] as String: m,
+    };
+    final chain = <Map<String, dynamic>>[];
+    var current = byId[mixId];
+    final seen = <String>{};
+    while (current != null) {
+      final id = current['id'] as String?;
+      if (id == null || !seen.add(id)) break;
+      chain.add(current);
+      final parent = current['parentMixId'] as String?;
+      current = parent == null ? null : byId[parent];
+    }
+    return chain;
   }
 
   Future<void> clear() async {
