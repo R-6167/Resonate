@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/blur_sheet.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
@@ -28,6 +30,22 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   double? _dragPosition;
+  bool _swipeTutorialChecked = false;
+
+  Future<void> _maybeShowSwipeTutorial() async {
+    if (_swipeTutorialChecked) return;
+    _swipeTutorialChecked = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('player_swipe_tutorial_seen') == true) return;
+      if (!mounted) return;
+      await showBlurredDialog(
+        context: context,
+        builder: (ctx) => const _SwipeTutorialDialog(),
+      );
+      await prefs.setBool('player_swipe_tutorial_seen', true);
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +77,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         builder: (context, music, _) {
           final song = music.currentSong;
           if (song == null) {
-            return const Center(child: Text('No song selected'));
+            return _PlayerEmptyState();
           }
 
           final duration = music.currentDuration ?? song.duration;
@@ -73,6 +91,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           final position = (_dragPosition ?? livePosition)
               .clamp(0.0, max)
               .toDouble();
+
+          WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowSwipeTutorial());
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
@@ -111,17 +131,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                           ),
                         ),
-                        Positioned(
-                          bottom: 10,
+                        const Positioned(
+                          bottom: 8,
                           left: 0,
                           right: 0,
-                          child: Text(
-                            'Swipe for previous / next',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
-                                ),
-                          ),
+                          child: _SwipeHintBadge(),
                         ),
                       ],
                     ),
@@ -324,7 +338,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _showVolume(BuildContext context, MusicProvider music) async {
-    await showModalBottomSheet<void>(
+    await showBlurredModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) => Consumer<MusicProvider>(
@@ -359,7 +373,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final eq = context.read<EqualizerProvider>();
     final effects = context.read<AudioEffectsProvider>();
 
-    await showModalBottomSheet<void>(
+    await showBlurredModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) {
@@ -541,7 +555,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
 
-    await showModalBottomSheet<void>(
+    await showBlurredModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) => SafeArea(
@@ -672,6 +686,135 @@ class _NextCard extends StatelessWidget {
             item.song,
             queue: [item.song],
             startIndex: 0,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+class _PlayerEmptyState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.music_note_rounded, size: 56, color: scheme.primary),
+            const SizedBox(height: 16),
+            Text(
+              'Nothing playing yet',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose a song from Library to start. Equalizer, Crossfade, and other audio tools are always available under Settings — no need to play first.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Library · Settings → Audio / Playback',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(color: scheme.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SwipeHintBadge extends StatelessWidget {
+  const _SwipeHintBadge();
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'Swipe artwork for previous / next',
+      textAlign: TextAlign.center,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+          ),
+    );
+  }
+}
+
+class _SwipeTutorialDialog extends StatefulWidget {
+  const _SwipeTutorialDialog();
+  @override
+  State<_SwipeTutorialDialog> createState() => _SwipeTutorialDialogState();
+}
+
+class _SwipeTutorialDialogState extends State<_SwipeTutorialDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Material(
+        color: scheme.surface.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Swipe to change tracks',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Swipe the artwork left for next, right for previous.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 72,
+                width: 200,
+                child: AnimatedBuilder(
+                  animation: _c,
+                  builder: (_, __) {
+                    final x = (_c.value - 0.5) * 100;
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          height: 4,
+                          width: 160,
+                          decoration: BoxDecoration(
+                            color: scheme.outlineVariant,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        Transform.translate(
+                          offset: Offset(x, 0),
+                          child: Icon(Icons.touch_app_rounded, size: 40, color: scheme.primary),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Got it'),
+              ),
+            ],
           ),
         ),
       ),
