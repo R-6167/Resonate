@@ -8,6 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/eq_lean_store.dart';
+import 'music_provider.dart';
+
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
   final int index;
@@ -95,13 +98,59 @@ class EqualizerProvider extends ChangeNotifier {
   static const double studioMinDb = -12.0;
   static const double studioMaxDb = 12.0;
 
+  MusicProvider? _music;
+  bool _learnedEqEnabled = false;
+  String? _lastLeanSongId;
+
   EqualizerProvider({
     AndroidEqualizer? equalizer,
     AndroidLoudnessEnhancer? loudnessEnhancer,
+    MusicProvider? music,
   })  : _androidEqualizer = equalizer,
-        _loudnessEnhancer = loudnessEnhancer {
+        _loudnessEnhancer = loudnessEnhancer,
+        _music = music {
     _initStudioBands();
     _initialize();
+    _music?.addListener(_onMusicChanged);
+  }
+
+  bool get learnedEqEnabled => _learnedEqEnabled;
+
+  Future<void> setLearnedEqEnabled(bool value) async {
+    _learnedEqEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('equalizer_learned_eq', value);
+    } catch (_) {}
+    if (value) unawaited(_applyLeanForCurrent());
+    notifyListeners();
+  }
+
+  Future<void> rememberLeanForCurrent({bool forArtist = false}) async {
+    final song = _music?.currentSong;
+    if (song == null) return;
+    if (forArtist) {
+      await EqLeanStore.rememberArtist(song.artist, preset);
+    } else {
+      await EqLeanStore.rememberSong(song.id, preset);
+    }
+    notifyListeners();
+  }
+
+  void _onMusicChanged() {
+    final id = _music?.currentSong?.id;
+    if (id == null || id == _lastLeanSongId) return;
+    _lastLeanSongId = id;
+    unawaited(_applyLeanForCurrent());
+  }
+
+  Future<void> _applyLeanForCurrent() async {
+    if (!_learnedEqEnabled) return;
+    final song = _music?.currentSong;
+    if (song == null) return;
+    final lean = await EqLeanStore.presetFor(songId: song.id, artist: song.artist);
+    if (lean == null || lean == preset) return;
+    await applyPreset(lean, persistSelection: false);
   }
 
   bool get isAvailable => true; // software curve always available
