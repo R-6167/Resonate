@@ -6,6 +6,7 @@ import '../services/intelligence_mix_settings_store.dart';
 import '../services/intelligence_pattern_store.dart';
 import '../services/intelligence_settings_store.dart';
 import 'intelligence_transfer_screen.dart';
+import '../services/companion_decision_log.dart';
 
 class IntelligenceSettingsScreen extends StatefulWidget {
   const IntelligenceSettingsScreen({super.key});
@@ -136,6 +137,51 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
             ListTile(leading: const Icon(Icons.psychology_rounded), title: Text('This window: $state'), subtitle: Text(IntelligencePatternStore.explanationFor(state, bucket))),
             ListTile(leading: const Icon(Icons.history_rounded), title: Text('Across sessions: $global'), subtitle: Text(confidence == 0 ? 'Still learning your recurring listening pattern.' : '${(confidence * 100).round()}% of learned states point here${momentum >= .5 ? ' • pattern is holding' : ''}.')),
             ListTile(leading: const Icon(Icons.auto_awesome_rounded), title: Text(intelligence.anticipatedNext?.song.title ?? 'No prediction yet'), subtitle: Text(intelligence.anticipatedNext == null ? 'Keep listening and Resonate will build local evidence.' : '${(intelligence.anticipatedNext!.confidence * 100).round()}% confidence • ${intelligence.anticipatedNext!.reason}')),
+            _header(context, 'Companion log', 'Recent Autopilot and Ask Resonate decisions stored only on this device.'),
+            FutureBuilder<List<CompanionDecisionEntry>>(
+              future: CompanionDecisionLog.recent(limit: 12),
+              builder: (context, snap) {
+                final items = snap.data ?? const <CompanionDecisionEntry>[];
+                if (items.isEmpty) {
+                  return const ListTile(
+                    leading: Icon(Icons.history_rounded),
+                    title: Text('No decisions yet'),
+                    subtitle: Text('Autopilot actions and Ask Resonate commands will appear here.'),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final e in items)
+                      ListTile(
+                        dense: true,
+                        leading: Icon(
+                          e.source == 'autopilot' ? Icons.flight_rounded : Icons.auto_awesome,
+                          size: 20,
+                        ),
+                        title: Text(e.action, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(
+                          '${e.detail}
+${e.at.toLocal()}',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        isThreeLine: true,
+                      ),
+                    TextButton(
+                      onPressed: () async {
+                        await CompanionDecisionLog.clear();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Decision log cleared')),
+                          );
+                        }
+                      },
+                      child: const Text('Clear decision log'),
+                    ),
+                  ],
+                );
+              },
+            ),
             ListTile(leading: const Icon(Icons.swap_vert_rounded), title: const Text('Transfer Intelligence settings'), subtitle: const Text('Export this setup or import it on another Resonate installation.'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceTransferScreen()))),
             ListTile(leading: const Icon(Icons.restart_alt_rounded), title: const Text('Reset advanced tuning'), subtitle: const Text('Return decision and mix controls to conservative defaults; learned memory stays intact.'), onTap: () => _confirmReset(context)),
           ]);
