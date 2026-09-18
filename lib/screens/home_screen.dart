@@ -10,6 +10,7 @@ import '../providers/music_provider.dart';
 import '../services/playback_authority.dart';
 import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
+import '../widgets/ask_resonate_sheet.dart';
 import '../widgets/resonate_logo.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
@@ -89,6 +90,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // FAB on For You (0), Library (1), Player (2) — not Settings (3).
+    final showAsk = _selectedIndex <= 2;
+
     return Scaffold(
       body: PageView.builder(
         controller: _pageController,
@@ -96,6 +100,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onPageChanged: (index) => setState(() => _selectedIndex = index),
         itemBuilder: (_, index) => _screens[index],
       ),
+      floatingActionButton: showAsk ? const AskResonateFab() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _selectPage,
