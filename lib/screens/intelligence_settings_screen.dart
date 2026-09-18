@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/autopilot_controller.dart';
 import '../providers/intelligence_provider.dart';
 import '../services/intelligence_mix_settings_store.dart';
 import '../services/intelligence_pattern_store.dart';
@@ -60,17 +61,48 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
               ? 'Autopilot may enqueue, skip, and crossfade using public player APIs'
               : 'Autopilot stays advisory only — it will not change the current track'),
           value: _consent,
-          onChanged: (v) async {
-            setState(() => _consent = v);
-            await IntelligenceSettingsStore.setAutopilotConsent(v);
-          },
+          onChanged: intelligence.isEnabled
+              ? (v) async {
+                  setState(() => _consent = v);
+                  await IntelligenceSettingsStore.setAutopilotConsent(v);
+                  if (context.mounted) {
+                    await context.read<AutopilotController>().setConsent(v);
+                  }
+                }
+              : null,
         ),
-        if (intelligence.isAutopilotGraduated)
-          const ListTile(
-            leading: Icon(Icons.school_outlined),
-            title: Text('Graduated to Autopilot'),
-            subtitle: Text('Learning threshold met. Consent is still required before it can take control.'),
+        Card(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Status', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Text(
+                  !intelligence.isEnabled
+                      ? 'Intelligence is off. The player is fully manual.'
+                      : intelligence.isAutopilot && _consent
+                          ? 'Autopilot is controlling playback within your consent.'
+                          : intelligence.isAutopilot
+                              ? 'Autopilot mode is on, but needs consent before it can change tracks.'
+                              : intelligence.isAutopilotGraduated
+                                  ? 'Graduated — you can switch to Autopilot and grant consent when ready.'
+                                  : 'Learning from local listens. Mode: ${intelligence.autonomyLabel}.',
+                ),
+                if (intelligence.anticipatedNext != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Next lean: ${intelligence.anticipatedNext!.song.title} '
+                    '(${(intelligence.anticipatedNext!.confidence * 100).round()}%)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
           ),
+        ),
         _header(context, 'Recommendation behavior', 'Shape how Resonate balances confidence, discovery and repetition.'),
         ListTile(title: const Text('Exploration ↔ familiarity'), subtitle: Text('$_exploration% exploration • higher values discover more new music')),
         Slider(value: _exploration.toDouble(), min: 0, max: 100, divisions: 20, label: '$_exploration%', onChanged: (v) => setState(() => _exploration = v.round()), onChangeEnd: (v) => IntelligenceSettingsStore.setExploration(v.round())),
