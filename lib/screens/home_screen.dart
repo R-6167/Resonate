@@ -147,8 +147,6 @@ class _HomeDashboard extends StatelessWidget {
     if (intelligence.isEnabled) {
       children.addAll([
         const SizedBox(height: 16),
-        _SessionCard(intelligence: intelligence),
-        const SizedBox(height: 14),
         const EvolvingMixCard(),
       ]);
     }
