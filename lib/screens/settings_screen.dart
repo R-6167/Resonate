@@ -204,10 +204,8 @@ class BluetoothSettingsScreen extends StatelessWidget {
                 title: const Text('Current device context'),
                 subtitle: Text(
                   bt.bluetoothConnected
-                      ? '${bt.connectedDeviceName}
-${bt.audioContextLabel} — ${bt.audioContextHint}'
-                      : 'No device connected.
-${bt.audioContextHint}',
+                      ? '${bt.connectedDeviceName}\n${bt.audioContextLabel} - ${bt.audioContextHint}'
+                      : 'No device connected.\n${bt.audioContextHint}',
                 ),
                 isThreeLine: true,
               ),
@@ -216,7 +214,7 @@ ${bt.audioContextHint}',
                 subtitle: Text(
                   bt.contextExplorationAdjust
                       ? 'Car/speaker nudge exploration (bias ${bt.explorationBias}).'
-                      : 'Context classification only — no exploration change.',
+                      : 'Context classification only - no exploration change.',
                 ),
                 value: bt.contextExplorationAdjust,
                 onChanged: bt.setContextExplorationAdjust,
