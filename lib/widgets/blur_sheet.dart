@@ -7,21 +7,44 @@ Future<T?> showBlurredModalBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = true,
+  bool showDragHandle = false,
+  bool isDismissible = true,
+  bool enableDrag = true,
 }) {
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: isScrollControlled,
+    isDismissible: isDismissible,
+    enableDrag: enableDrag,
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
       return BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Container(
           decoration: BoxDecoration(
-            color: Theme.of(ctx).colorScheme.surface.withValues(alpha: 0.92),
+            color: scheme.surface.withValues(alpha: 0.92),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
           ),
-          child: builder(ctx),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showDragHandle)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 4),
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+              builder(ctx),
+            ],
+          ),
         ),
       );
     },
