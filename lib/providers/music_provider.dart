@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../services/intelligence_seek_memory.dart';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -1770,6 +1771,7 @@ class MusicProvider extends ChangeNotifier {
         if (!_playbackIntentGate.isCurrent(intentToken)) return;
         try {
           final duration = audioPlayer.duration ?? currentDuration ?? Duration.zero;
+          final fromMs = currentPosition.inMilliseconds;
           final safe = Duration(
             milliseconds: position.inMilliseconds.clamp(0, duration.inMilliseconds).toInt(),
           );
@@ -1777,6 +1779,15 @@ class MusicProvider extends ChangeNotifier {
           currentPosition = safe;
           if (_activeHistoryEvent != null) {
             _activeHistoryPositionMs = safe.inMilliseconds;
+          }
+          // Local seek/replay evidence for Intelligence ranking (no audio content).
+          final songId = currentSong?.id;
+          if (songId != null && (fromMs - safe.inMilliseconds).abs() > 2500) {
+            unawaited(IntelligenceSeekMemory().record(
+              songId: songId,
+              fromMs: fromMs,
+              toMs: safe.inMilliseconds,
+            ));
           }
           _persistResumePosition(force: true);
           _publishServiceState();
