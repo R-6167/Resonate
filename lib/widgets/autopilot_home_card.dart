@@ -5,13 +5,12 @@ import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../providers/autopilot_controller.dart';
 import '../providers/intelligence_provider.dart';
-import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../screens/intelligence_settings_screen.dart';
 import 'animated_companion_mark.dart';
 
-/// Combined Intelligence + Autopilot surface for the For you dashboard.
-/// Replaces the old separate hero tile, Autopilot card, and “A little nudge” card.
+/// Combined Intelligence surface for For you — hierarchy without mode picker
+/// (mode lives in Settings). Session flow + nudge live inside this card.
 class AutopilotHomeCard extends StatelessWidget {
   final int songCount;
 
@@ -24,6 +23,7 @@ class AutopilotHomeCard extends StatelessWidget {
     final music = context.watch<MusicProvider>();
     final scheme = Theme.of(context).colorScheme;
     final next = intelligence.anticipatedNext;
+    final textTheme = Theme.of(context).textTheme;
 
     Song? pendingSong;
     if (autopilot.hasPendingTakeover && autopilot.pendingSongId != null) {
@@ -72,40 +72,48 @@ class AutopilotHomeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // —— Hero header ——
+          // —— Level 1: identity ——
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 14, 0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 420),
                   child: AnimatedCompanionMark(
                     mode: intelligence.isEnabled ? intelligence.autonomyLabel : 'OFF',
-                    size: 28,
+                    size: 34,
                     key: ValueKey(intelligence.isEnabled ? intelligence.autonomyLabel : 'off'),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Resonate Intelligence',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style: textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                          letterSpacing: -0.3,
+                        ),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         intelligence.isEnabled
                             ? 'Local-first · stays on this device'
                             : 'Predictions and Autopilot are off',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13.5,
+                        ),
                       ),
                     ],
                   ),
                 ),
                 Container(
+                  margin: const EdgeInsets.only(top: 2),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: statusColor.withValues(alpha: 0.18),
@@ -113,96 +121,123 @@ class AutopilotHomeCard extends StatelessWidget {
                   ),
                   child: Text(
                     status,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: statusColor,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    style: textTheme.labelMedium?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
+
+          // —— Level 2: status line (smaller) ——
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
             child: Text(
               headline,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
-                  ),
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                height: 1.25,
+                color: scheme.onSurface.withValues(alpha: 0.88),
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
             child: Wrap(
-              spacing: 8,
-              runSpacing: 6,
+              spacing: 6,
+              runSpacing: 4,
               children: [
-                const Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text('Local-first'),
-                ),
-                const Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text('Explainable'),
-                ),
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text('$songCount songs'),
-                ),
+                _SmallChip(label: 'Local-first'),
+                _SmallChip(label: 'Explainable'),
+                _SmallChip(label: '$songCount songs'),
+                if (intelligence.isEnabled)
+                  _SmallChip(label: intelligence.autonomyLabel),
               ],
             ),
           ),
 
-          // —— Mode + consent ——
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (!intelligence.isEnabled)
-                  SwitchListTile.adaptive(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    title: const Text('Enable Intelligence'),
-                    subtitle: const Text('Turn on local suggestions and Autopilot options'),
-                    value: false,
-                    onChanged: (v) {
-                      if (v) intelligence.setEnabled(true);
-                    },
-                  )
-                else ...[
-                  Text('Mode', style: Theme.of(context).textTheme.labelLarge),
-                  const SizedBox(height: 6),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('Suggest')),
-                      ButtonSegment(value: 1, label: Text('Assist')),
-                      ButtonSegment(value: 2, label: Text('Auto')),
+          // —— Level 3: listening flow (was separate card) ——
+          if (intelligence.isEnabled) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+              child: Material(
+                color: scheme.surface.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(16),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const SizedBox(width: 42, height: 22, child: _InlineWaveDots()),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Your listening flow',
+                            style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        intelligence.sessionSummary,
+                        style: textTheme.bodySmall?.copyWith(height: 1.35),
+                      ),
+                      if (intelligence.sessionArtists.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Flow: ${intelligence.sessionArtists.take(3).join(' · ')}',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
-                    selected: {intelligence.autonomy},
-                    onSelectionChanged: (v) => intelligence.setAutonomy(v.first),
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
                   ),
-                  SwitchListTile.adaptive(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    title: const Text('May change tracks'),
-                    subtitle: Text(
-                      autopilot.consentGranted
-                          ? 'Can enqueue, skip, and crossfade'
-                          : 'Advisory only — won’t change the current track',
-                    ),
-                    value: autopilot.consentGranted,
-                    onChanged: intelligence.isAutopilot ? (v) => autopilot.setConsent(v) : null,
-                  ),
-                ],
-              ],
+                ),
+              ),
             ),
-          ),
+          ],
 
-          // —— Nudge / next pick (single place, not duplicated elsewhere) ——
+          // —— Consent only when Autopilot (no mode segmented control) ——
+          if (intelligence.isEnabled && intelligence.isAutopilot)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                title: const Text('May change tracks', style: TextStyle(fontSize: 14)),
+                subtitle: Text(
+                  autopilot.consentGranted
+                      ? 'Can enqueue, skip, and crossfade'
+                      : 'Advisory only — won’t change the current track',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                value: autopilot.consentGranted,
+                onChanged: (v) => autopilot.setConsent(v),
+              ),
+            )
+          else if (!intelligence.isEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                title: const Text('Enable Intelligence'),
+                subtitle: const Text('Local suggestions and Autopilot options'),
+                value: false,
+                onChanged: (v) {
+                  if (v) intelligence.setEnabled(true);
+                },
+              ),
+            ),
+
+          // —— Nudge / pending ——
           if (intelligence.isEnabled && (pendingSong != null || next != null))
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
               child: pendingSong != null
                   ? _PendingTakeoverBlock(
                       song: pendingSong,
@@ -254,6 +289,87 @@ class AutopilotHomeCard extends StatelessWidget {
     if (intel.isAutopilot && ap.consentGranted) return scheme.primary;
     if (intel.isAutopilot) return scheme.secondary;
     return scheme.onSurfaceVariant;
+  }
+}
+
+class _SmallChip extends StatelessWidget {
+  final String label;
+  const _SmallChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+class _InlineWaveDots extends StatefulWidget {
+  const _InlineWaveDots();
+  @override
+  State<_InlineWaveDots> createState() => _InlineWaveDotsState();
+}
+
+class _InlineWaveDotsState extends State<_InlineWaveDots> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(3, (i) {
+          final phase = (_c.value + i * 0.18) % 1.0;
+          final wave = (0.5 + 0.5 * _sin(phase * 6.283185307)).clamp(0.0, 1.0);
+          return Transform.translate(
+            offset: Offset(0, -5 * wave),
+            child: Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  double _sin(double x) {
+    while (x > 3.1415926535) {
+      x -= 6.283185307;
+    }
+    while (x < -3.1415926535) {
+      x += 6.283185307;
+    }
+    final x2 = x * x;
+    return x * (1 - x2 / 6 + (x2 * x2) / 120);
   }
 }
 
