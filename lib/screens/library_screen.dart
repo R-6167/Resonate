@@ -49,10 +49,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // Queue = from this song through the rest of the list (not songs above).
     // Avoids treating every prior library row as "already played".
     final fromHere = songs.sublist(index);
+    final resumeAt = music.resumePositionFor(song.id);
     final playback = music.playSong(
       song,
       queue: List<Song>.from(fromHere),
       startIndex: 0,
+      resumeIfPossible: resumeAt != null,
+      resumeAtMs: resumeAt,
     );
 
     if (mounted) {
@@ -75,6 +78,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       );
+    }
+  }
+
+
+  Future<void> _queuePlayNext(Song song) async {
+    final music = context.read<MusicProvider>();
+    await music.playNext(song);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Queued next: ${song.title}'), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _playWithResume(List<Song> songs, int index) async {
+    final music = context.read<MusicProvider>();
+    final song = songs[index];
+    final resumeAt = music.resumePositionFor(song.id);
+    final fromHere = songs.sublist(index);
+    final ok = await music.playSong(
+      song,
+      queue: List<Song>.from(fromHere),
+      startIndex: 0,
+      resumeIfPossible: resumeAt != null,
+      resumeAtMs: resumeAt,
+    );
+    if (!mounted) return;
+    if (ok) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
     }
   }
 
@@ -423,6 +454,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         ],
                       ),
                       onTap: () => _playSong(songs, index),
+                      onLongPress: () => _queuePlayNext(song),
                     );
                   },
                 );
