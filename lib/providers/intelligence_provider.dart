@@ -36,7 +36,7 @@ class IntelligenceProvider extends ChangeNotifier {
 
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
-  static const double _graduationConfidence = .72;
+  static const double _graduationConfidence = .78;
   static const Duration _sessionGap = Duration(minutes: 30);
   static const int _sessionEventLimit = 12;
 
@@ -282,7 +282,19 @@ class IntelligenceProvider extends ChangeNotifier {
         final sessionContinuity = sessionArtistCounts[artist] != null ? 0.12 : 0.0;
         final feedback = _feedback[song.id] ?? 0.0;
         final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08);
-        final confidence = (0.35 + (t > 0 ? 0.25 : 0) + (completion > 0.6 ? 0.2 : 0) + (artistScore > 0 ? 0.1 : 0) + (timeAffinity > 0 ? 0.05 : 0) + (feedback.abs() > 0 ? 0.05 : 0)).clamp(0.0, 1.0);
+        // Phase B: slow confidence — base stays low until repeated local evidence.
+        // Single transitions must not jump 0.35 → 0.65.
+        final evidenceBits = (t > 0 ? 1 : 0) +
+            (completion > 0.55 ? 1 : 0) +
+            (play >= 3 ? 1 : 0) +
+            (play >= 8 ? 1 : 0) +
+            (artistScore > 0 ? 1 : 0) +
+            (timeAffinity > 0 ? 1 : 0) +
+            (feedback.abs() > 0 ? 1 : 0);
+        final rawConfidence = 0.22 + evidenceBits * 0.07 + (completion > 0.7 ? 0.05 : 0);
+        // Dampen by observation count (logistic-ish toward full strength).
+        final playDamp = play <= 0 ? 0.35 : (1.0 - (1.0 / (1.0 + play / 4.0)));
+        final confidence = (rawConfidence * (0.55 + 0.45 * playDamp)).clamp(0.15, 0.92);
         String reason = 'A local pick.';
         String sessionReason = '';
         if (explanationsEnabled) {
