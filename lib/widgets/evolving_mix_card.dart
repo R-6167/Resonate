@@ -168,7 +168,7 @@ class _JourneyCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.auto_fix_rounded, color: scheme.primary, size: 22),
+                Icon(Icons.alt_route_rounded, color: scheme.primary, size: 22),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
