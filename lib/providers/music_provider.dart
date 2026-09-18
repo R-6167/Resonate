@@ -76,6 +76,10 @@ class MusicProvider extends ChangeNotifier {
   bool _automaticCrossfadeInFlight = false;
   String? _preloadedNextSongId;
   bool _crossfadePreloadInFlight = false;
+  int _gaplessWindowStart = 0;
+  List<String> _gaplessWindowIds = const [];
+  bool _gaplessSourceActive = false;
+  bool _transportInFlight = false;
   bool _userWantsPlaying = false;
   bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
@@ -448,11 +452,14 @@ class MusicProvider extends ChangeNotifier {
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
       if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
-      if (index < 0 || index >= _queue.length) return;
-      if (index == _queueIndex) return;
-      // Gapless engine advanced — sync app queue/song without reloading.
-      _queueIndex = index;
-      currentSong = _queue[index];
+      if (!_gaplessSourceActive || _transportInFlight) return;
+      if (index < 0 || index >= _gaplessWindowIds.length) return;
+      final songId = _gaplessWindowIds[index];
+      final globalIndex = _queue.indexWhere((s) => s.id == songId);
+      if (globalIndex < 0) return;
+      if (globalIndex == _queueIndex && currentSong?.id == songId) return;
+      _queueIndex = globalIndex;
+      currentSong = _queue[globalIndex];
       currentDuration = currentSong?.duration ?? player.duration;
       currentPosition = player.position;
       isPlaying = player.playing || _userWantsPlaying;
@@ -461,7 +468,9 @@ class MusicProvider extends ChangeNotifier {
       _publishServiceState();
       notifyListeners();
       unawaited(ResonateDiagnostics.record('playback_gapless_index', {
-        'index': index,
+        'localIndex': index,
+        'queueIndex': globalIndex,
+        'windowStart': _gaplessWindowStart,
         'songId': currentSong?.id,
       }));
     });
@@ -1102,6 +1111,15 @@ class MusicProvider extends ChangeNotifier {
           : normalized;
       final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
 
+      // Pin UI to the song we intend to play before any native load races.
+      currentSong = selectedSong;
+      _queue = nextQueue;
+      _queueIndex = nextIndex;
+      currentDuration = selectedSong.duration;
+      currentPosition = Duration.zero;
+      notifyListeners();
+      _publishServiceState();
+
       try {
         final session = await AudioSession.instance;
         await session.setActive(true);
@@ -1124,36 +1142,46 @@ class MusicProvider extends ChangeNotifier {
       // library (270+ content:// URIs caused Loading interrupted / stalled UI).
       const gaplessWindow = 12;
       final wantGapless = !_crossfadeEnabled && nextQueue.length > 1;
+      _gaplessSourceActive = false;
+      _gaplessWindowIds = const [];
       if (wantGapless) {
         try {
           final start = (nextIndex - 1).clamp(0, nextQueue.length - 1);
           final end = (nextIndex + gaplessWindow).clamp(0, nextQueue.length);
-          final window = nextQueue.sublist(start, end);
-          final children = window
+          final window = nextQueue.sublist(start, end)
               .where((s) => s.filePath.trim().isNotEmpty)
+              .toList();
+          final children = window
               .map((s) => AudioSource.uri(_audioUri(s.filePath), tag: s))
               .toList();
-          final localIndex = (nextIndex - start).clamp(0, children.length - 1);
+          final localIndex = window.indexWhere((s) => s.id == selectedSong.id);
+          final safeLocal = localIndex >= 0 ? localIndex : 0;
           if (children.length > 1) {
             durationFromSource = await timedValue<Duration?>(
               'setAudioSource_gapless',
               target.setAudioSource(
                 ConcatenatingAudioSource(children: children, useLazyPreparation: true),
-                initialIndex: localIndex,
+                initialIndex: safeLocal,
                 initialPosition: Duration.zero,
               ),
               ms: 15000,
             );
+            _gaplessSourceActive = true;
+            _gaplessWindowStart = start;
+            _gaplessWindowIds = window.map((s) => s.id).toList();
             await ResonateDiagnostics.record('playback_gapless_source', {
               'children': children.length,
-              'index': localIndex,
+              'localIndex': safeLocal,
               'windowStart': start,
+              'songId': selectedSong.id,
               'repeatMode': _repeatMode.name,
             });
           }
         } catch (e) {
           debugPrint('Gapless setAudioSource failed: $e');
           durationFromSource = null;
+          _gaplessSourceActive = false;
+          _gaplessWindowIds = const [];
         }
       }
       if (durationFromSource == null) {
@@ -1484,6 +1512,7 @@ class MusicProvider extends ChangeNotifier {
     _completionObservedDuringCrossfade = false;
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
+    // Keep gapless window; transport may seek inside it.
     _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
   }
@@ -1624,33 +1653,70 @@ class MusicProvider extends ChangeNotifier {
     }, command: 'stop', source: source, userInitiated: true, intentToken: intentToken);
   }
 
+
+  /// If the target queue index is already inside the active gapless window,
+  /// seek to that local index instead of rebuilding ConcatenatingAudioSource.
+  Future<bool> _tryGaplessSeekToQueueIndex(int queueIndex) async {
+    if (!_gaplessSourceActive || _crossfadeEnabled) return false;
+    if (queueIndex < 0 || queueIndex >= _queue.length) return false;
+    final song = _queue[queueIndex];
+    final local = _gaplessWindowIds.indexOf(song.id);
+    if (local < 0) return false;
+    try {
+      await audioPlayer.seek(Duration.zero, index: local);
+      _queueIndex = queueIndex;
+      currentSong = song;
+      currentDuration = song.duration ?? audioPlayer.duration;
+      currentPosition = Duration.zero;
+      isPlaying = true;
+      _userWantsPlaying = true;
+      try {
+        audioPlayer.play();
+      } catch (_) {}
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.record('playback_gapless_seek', {
+        'localIndex': local,
+        'queueIndex': queueIndex,
+        'songId': song.id,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Gapless seek failed: $e');
+      return false;
+    }
+  }
+
   Future<void> nextSong({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
 
     return _serializePlayback(
       () async {
-        // Do not bail on token churn — user next must always attempt advance.
         if (_queue.isEmpty) return;
-
-        if (_queueIndex >= _queue.length - 1) {
-          if (_repeatMode == PlaybackRepeatMode.all) {
-            await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
-          } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
-            await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
+        _transportInFlight = true;
+        try {
+          if (_queueIndex >= _queue.length - 1) {
+            if (_repeatMode == PlaybackRepeatMode.all) {
+              await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
+            } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
+              await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
+            }
+            return;
           }
-          return;
-        }
 
-        final nextIndex = _queueIndex + 1;
-        // Core reliability: next is always a direct load on Engine A (no crossfade).
-        // Crossfade remains available via explicit performTrueCrossfade / Autopilot later.
-        await _playSongInternal(
-          _queue[nextIndex],
-          queue: _queue,
-          startIndex: nextIndex,
-          playbackIntentToken: intentToken,
-        );
+          final nextIndex = _queueIndex + 1;
+          // Prefer in-window gapless seek so title and audio stay aligned.
+          if (await _tryGaplessSeekToQueueIndex(nextIndex)) return;
+          await _playSongInternal(
+            _queue[nextIndex],
+            queue: _queue,
+            startIndex: nextIndex,
+            playbackIntentToken: intentToken,
+          );
+        } finally {
+          _transportInFlight = false;
+        }
       },
       command: 'next',
       source: source,
@@ -1666,16 +1732,27 @@ class MusicProvider extends ChangeNotifier {
 
     return _serializePlayback(
       () async {
-        if (_queueIndex > 0) {
-          final previousIndex = _queueIndex - 1;
-          await _playSongInternal(_queue[previousIndex], queue: _queue, startIndex: previousIndex, playbackIntentToken: intentToken);
-        } else {
-          await audioPlayer.seek(Duration.zero);
-          currentPosition = Duration.zero;
-          if (_activeHistoryEvent != null) _activeHistoryPositionMs = 0;
-          _persistResumePosition(force: true);
-          notifyListeners();
-          _publishServiceState();
+        _transportInFlight = true;
+        try {
+          if (_queueIndex > 0) {
+            final previousIndex = _queueIndex - 1;
+            if (await _tryGaplessSeekToQueueIndex(previousIndex)) return;
+            await _playSongInternal(
+              _queue[previousIndex],
+              queue: _queue,
+              startIndex: previousIndex,
+              playbackIntentToken: intentToken,
+            );
+          } else {
+            await audioPlayer.seek(Duration.zero);
+            currentPosition = Duration.zero;
+            if (_activeHistoryEvent != null) _activeHistoryPositionMs = 0;
+            _persistResumePosition(force: true);
+            notifyListeners();
+            _publishServiceState();
+          }
+        } finally {
+          _transportInFlight = false;
         }
       },
       command: 'previous',
