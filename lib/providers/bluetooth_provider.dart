@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,11 +40,15 @@ class BluetoothSettings {
   }
 }
 
+enum BluetoothAudioContext { unknown, headphones, car, speaker, other }
+
 class BluetoothProvider extends ChangeNotifier {
   late BluetoothSettings _settings;
 
   bool _bluetoothConnected = false;
   String _connectedDeviceName = '';
+  BluetoothAudioContext _audioContext = BluetoothAudioContext.unknown;
+  bool _contextExplorationAdjust = true;
 
   int _buttonPressCount = 0;
   DateTime _lastButtonPress = DateTime.now();
@@ -64,6 +69,28 @@ class BluetoothProvider extends ChangeNotifier {
   bool get bluetoothConnected => _bluetoothConnected;
 
   String get connectedDeviceName => _connectedDeviceName;
+
+  BluetoothAudioContext get audioContext => _audioContext;
+
+  bool get contextExplorationAdjust => _contextExplorationAdjust;
+
+  String get audioContextLabel => switch (_audioContext) {
+        BluetoothAudioContext.headphones => 'Headphones',
+        BluetoothAudioContext.car => 'Car / vehicle',
+        BluetoothAudioContext.speaker => 'Speaker',
+        BluetoothAudioContext.other => 'Other device',
+        BluetoothAudioContext.unknown => 'Unknown',
+      };
+
+  String get audioContextHint => switch (_audioContext) {
+        BluetoothAudioContext.car =>
+          'Car mode: slightly lower exploration and safer skips.',
+        BluetoothAudioContext.headphones =>
+          'Headphones: full local companion behavior.',
+        BluetoothAudioContext.speaker =>
+          'Speaker: prefers familiar, lower-risk picks.',
+        _ => 'Connect a device to classify listening context.',
+      };
 
   bool get isEnabled => _settings.enabled;
 
@@ -224,14 +251,37 @@ class BluetoothProvider extends ChangeNotifier {
   // BLUETOOTH CONNECTION STATE
   // ---------------------------------------------------------------------------
 
+  static BluetoothAudioContext classifyDeviceName(String name) {
+    final n = name.toLowerCase();
+    if (n.isEmpty) return BluetoothAudioContext.unknown;
+    if (any(n, const ['car', 'auto', 'vehicle', 'android auto', 'carplay', 'toyota', 'honda', 'ford', 'bmw', 'mercedes', 'hyundai', 'kia', 'subaru'])) {
+      return BluetoothAudioContext.car;
+    }
+    if (any(n, const ['headphone', 'headset', 'buds', 'airpods', 'earphone', 'wh-', 'sony wh', 'bose qc', 'galaxy buds', 'pixel buds', 'freebuds'])) {
+      return BluetoothAudioContext.headphones;
+    }
+    if (any(n, const ['speaker', 'soundbar', 'homepod', 'echo', 'nest audio', 'jbl charge', 'ue boom', 'marshall'])) {
+      return BluetoothAudioContext.speaker;
+    }
+    return BluetoothAudioContext.other;
+  }
+
+  static bool any(String text, List<String> keys) {
+    for (final k in keys) {
+      if (text.contains(k)) return true;
+    }
+    return false;
+  }
+
   void handleBluetoothConnected(
     String deviceName,
   ) {
     _bluetoothConnected = true;
     _connectedDeviceName = deviceName;
+    _audioContext = classifyDeviceName(deviceName);
 
     debugPrint(
-      'Bluetooth connected: $deviceName',
+      'Bluetooth connected: $deviceName (${_audioContext.name})',
     );
 
     notifyListeners();
@@ -240,6 +290,7 @@ class BluetoothProvider extends ChangeNotifier {
   void handleBluetoothDisconnected() {
     _bluetoothConnected = false;
     _connectedDeviceName = '';
+    _audioContext = BluetoothAudioContext.unknown;
 
     debugPrint(
       'Bluetooth disconnected',
@@ -247,6 +298,28 @@ class BluetoothProvider extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  Future<void> setContextExplorationAdjust(bool enabled) async {
+    _contextExplorationAdjust = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('bt_context_exploration', enabled);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Suggested exploration offset for Intelligence (-15..+10).
+  int get explorationBias {
+    if (!_contextExplorationAdjust || !_bluetoothConnected) return 0;
+    return switch (_audioContext) {
+      BluetoothAudioContext.car => -12,
+      BluetoothAudioContext.speaker => -8,
+      BluetoothAudioContext.headphones => 0,
+      BluetoothAudioContext.other => -4,
+      BluetoothAudioContext.unknown => 0,
+    };
+  }
+
 
   // ---------------------------------------------------------------------------
   // MEDIA BUTTON HANDLING
