@@ -293,11 +293,11 @@ class AutopilotController extends ChangeNotifier {
           'queueLength': music.queue.length,
           'queueIndex': music.queueIndex,
         });
-        if (added > 0) {
+        if (added) {
           unawaited(CompanionDecisionLog.record(
             source: 'autopilot',
             action: 'enqueue',
-            detail: 'Queued $added predicted track(s) under your consent.',
+            detail: 'Queued predicted track(s) under your consent.',
             songId: candidates.first.id,
           ));
         }
