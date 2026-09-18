@@ -77,32 +77,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(26),
-                child: SizedBox(
-                  height: 250,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        ),
-                        child: const AudioVisualizationWidget(),
-                      ),
-                      Center(
-                        child: DecoratedBox(
+              GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  final v = details.primaryVelocity ?? 0;
+                  if (v < -400) {
+                    music.nextSong(source: 'player_swipe');
+                  } else if (v > 400) {
+                    music.previousSong(source: 'player_swipe');
+                  }
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(26),
+                  child: SizedBox(
+                    height: 250,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        DecoratedBox(
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(28),
-                            child: Icon(Icons.album_rounded, size: 86),
+                          child: const AudioVisualizationWidget(),
+                        ),
+                        Center(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Theme.of(context).colorScheme.surface.withOpacity(.82),
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(28),
+                              child: Icon(Icons.album_rounded, size: 86),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        Positioned(
+                          bottom: 10,
+                          left: 0,
+                          right: 0,
+                          child: Text(
+                            'Swipe for previous / next',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.55),
+                                ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
