@@ -126,6 +126,30 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               ),
               const SizedBox(height: 16),
 
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Learned EQ leans'),
+                subtitle: const Text(
+                  'When on, remembers preset per song/artist and reapplies on play.',
+                ),
+                value: eq.learnedEqEnabled,
+                onChanged: eq.setLearnedEqEnabled,
+              ),
+              if (eq.learnedEqEnabled)
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    OutlinedButton(
+                      onPressed: () => eq.rememberLeanForCurrent(forArtist: false),
+                      child: const Text('Remember for this song'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () => eq.rememberLeanForCurrent(forArtist: true),
+                      child: const Text('Remember for artist'),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 12),
               // Preset categories
               Text('Presets', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
