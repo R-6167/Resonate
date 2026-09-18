@@ -160,8 +160,7 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
                         ),
                         title: Text(e.action, style: const TextStyle(fontWeight: FontWeight.w600)),
                         subtitle: Text(
-                          '${e.detail}
-${e.at.toLocal()}',
+                          '${e.detail}\n${e.at.toLocal()}',
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
