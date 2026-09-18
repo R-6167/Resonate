@@ -7,6 +7,7 @@ import '../models/song.dart';
 import '../services/intelligence_decision_engine.dart';
 import '../services/intelligence_settings_store.dart';
 import '../services/resonate_diagnostics.dart';
+import '../services/companion_decision_log.dart';
 import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
@@ -55,6 +56,13 @@ class AutopilotController extends ChangeNotifier {
       'action': value ? 'consent_granted' : 'consent_revoked',
       'mode': intelligence.autonomyLabel,
     });
+    unawaited(CompanionDecisionLog.record(
+      source: 'autopilot',
+      action: value ? 'consent_granted' : 'consent_revoked',
+      detail: value
+          ? 'You allowed Autopilot to change tracks.'
+          : 'Autopilot is advisory only until you consent again.',
+    ));
     if (value) await _evaluate();
   }
 
@@ -90,6 +98,12 @@ class AutopilotController extends ChangeNotifier {
     _consentGranted = true;
     _pendingTakeover = false;
     _pendingSongId = null;
+    await CompanionDecisionLog.record(
+      source: 'autopilot',
+      action: 'takeover_allowed',
+      detail: 'You allowed the pending Autopilot takeover.',
+      songId: pending,
+    );
     await ResonateDiagnostics.record('intelligence_notification_action', {
       'action': 'accepted', 'songId': pending, 'mode': intelligence.autonomyLabel,
     });
@@ -279,6 +293,14 @@ class AutopilotController extends ChangeNotifier {
           'queueLength': music.queue.length,
           'queueIndex': music.queueIndex,
         });
+        if (added > 0) {
+          unawaited(CompanionDecisionLog.record(
+            source: 'autopilot',
+            action: 'enqueue',
+            detail: 'Queued $added predicted track(s) under your consent.',
+            songId: candidates.first.id,
+          ));
+        }
       }
     } finally {
       _queueDecisionInFlight = false;
