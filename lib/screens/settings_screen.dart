@@ -25,6 +25,17 @@ class SettingsScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.all(14),
           children: [
+            Card(
+              elevation: 0,
+              child: ListTile(
+                leading: const Icon(Icons.info_outline_rounded),
+                title: const Text('Audio tools are always available'),
+                subtitle: const Text(
+                  'Equalizer, Crossfade, and Effects work from Settings even before you play a song.',
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transition duration and curve', Icons.compare_arrows_rounded, const CrossfadeScreen()),
