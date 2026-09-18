@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -203,6 +204,8 @@ class MusicProvider extends ChangeNotifier {
   static const _crossfadeFadeTypeKey = 'crossfade_fade_type';
   static const _resumePositionKey = 'playback_resume_position_ms';
   static const _resumeSongIdKey = 'playback_resume_song_id';
+  static const _resumeMapKey = 'playback_resume_map_v1';
+  final Map<String, int> _resumeBySongId = {};
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.example.resonate/media_store');
 
   MusicProvider({this.audioHandler}) {
@@ -244,6 +247,7 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeFadeType = prefs.getString(_crossfadeFadeTypeKey) ?? 'linear';
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? 0;
       _resumeSongId = prefs.getString(_resumeSongIdKey);
+      await _loadResumeMap(prefs);
       await _syncSystemVolume();
       await syncSavedAudioEffects();
       if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';
@@ -312,6 +316,7 @@ class MusicProvider extends ChangeNotifier {
       final ids = prefs.getStringList(_savedQueueIdsKey) ?? const <String>[];
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? _resumePositionMs;
       _resumeSongId = prefs.getString(_resumeSongIdKey) ?? _resumeSongId;
+      await _loadResumeMap(prefs);
       if (ids.isEmpty || currentSong != null || _queue.isNotEmpty) return;
       final savedIndex = prefs.getInt(_savedQueueIndexKey) ?? 0;
       final songs = await _database.getAllSongs();
@@ -486,10 +491,69 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _persistResumePosition({bool force = false}) {
-    final song = currentSong; if (song == null || _activeHistoryEvent == null) return;
-    final now = DateTime.now(); if (!force && _lastResumePersist != null && now.difference(_lastResumePersist!) < const Duration(seconds: 3)) return;
-    _lastResumePersist = now; final position = _activeHistoryPositionMs.clamp(0, currentDuration?.inMilliseconds ?? 0).toInt();
-    unawaited(SharedPreferences.getInstance().then((prefs) async { await prefs.setInt(_resumePositionKey, position); await prefs.setString(_resumeSongIdKey, song.id); }).catchError((error) { debugPrint('Playback resume save failed: $error'); }));
+    final song = currentSong;
+    if (song == null) return;
+    final now = DateTime.now();
+    if (!force && _lastResumePersist != null && now.difference(_lastResumePersist!) < const Duration(seconds: 3)) return;
+    _lastResumePersist = now;
+    final raw = currentPosition.inMilliseconds > 0
+        ? currentPosition.inMilliseconds
+        : _activeHistoryPositionMs;
+    final cap = currentDuration?.inMilliseconds ?? 0;
+    final position = (cap > 0 ? raw.clamp(0, cap) : raw).toInt();
+    if (!force && position < 1500) return;
+    // Near end → treat as finished for this song.
+    if (cap > 0 && position >= cap - 2000) {
+      _resumeBySongId.remove(song.id);
+      if (_resumeSongId == song.id) {
+        _resumeSongId = null;
+        _resumePositionMs = 0;
+      }
+      unawaited(_saveResumeMap());
+      return;
+    }
+    _resumePositionMs = position;
+    _resumeSongId = song.id;
+    _resumeBySongId[song.id] = position;
+    unawaited(SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setInt(_resumePositionKey, position);
+      await prefs.setString(_resumeSongIdKey, song.id);
+      await prefs.setString(_resumeMapKey, jsonEncode(_resumeBySongId));
+    }).catchError((error) {
+      debugPrint('Playback resume save failed: $error');
+    }));
+  }
+
+  Future<void> _loadResumeMap(SharedPreferences prefs) async {
+    try {
+      final raw = prefs.getString(_resumeMapKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      _resumeBySongId
+        ..clear()
+        ..addAll({
+          for (final e in decoded.entries)
+            if (e.key is String && e.value is num) e.key as String: (e.value as num).toInt(),
+        });
+    } catch (e) {
+      debugPrint('Resume map load failed: $e');
+    }
+  }
+
+  Future<void> _saveResumeMap() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_resumeMapKey, jsonEncode(_resumeBySongId));
+    } catch (_) {}
+  }
+
+  /// Position to resume a specific song, if known (per-song map or last resume).
+  int? resumePositionFor(String songId) {
+    final mapped = _resumeBySongId[songId];
+    if (mapped != null && mapped > 1500) return mapped;
+    if (_resumeSongId == songId && _resumePositionMs > 1500) return _resumePositionMs;
+    return null;
   }
 
   void _maybeStartAutomaticCrossfade(Duration position) {
@@ -924,6 +988,13 @@ class MusicProvider extends ChangeNotifier {
     if (resumeAtMs != null && resumeAtMs > 1500) {
       _resumeSongId = song.id;
       _resumePositionMs = resumeAtMs;
+      _resumeBySongId[song.id] = resumeAtMs;
+    } else if (resumeIfPossible) {
+      final mapped = resumePositionFor(song.id);
+      if (mapped != null) {
+        _resumeSongId = song.id;
+        _resumePositionMs = mapped;
+      }
     }
     final shouldResume = resumeIfPossible && _resumeSongId == song.id && _resumePositionMs > 1500;
     return _serializePlayback(
