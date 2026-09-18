@@ -103,9 +103,9 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               // Preamp
               Text('Preamp', style: Theme.of(context).textTheme.titleMedium),
               Slider(
-                value: eq.preamp.clamp(-12.0, 6.0),
-                min: -12,
-                max: 6,
+                value: eq.preamp.clamp(-6.0, 3.0),
+                min: -6,
+                max: 3,
                 divisions: 36,
                 label: '${eq.preamp >= 0 ? '+' : ''}${eq.preamp.toStringAsFixed(1)} dB',
                 onChanged: eq.isEnabled ? eq.setPreamp : null,
@@ -113,10 +113,15 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: const [
-                  Text('-12 dB'),
+                  Text('-6 dB'),
                   Text('0'),
-                  Text('+6 dB'),
+                  Text('+3 dB'),
                 ],
+              ),
+              Text(
+                'Preamp uses Android’s loudness engine with a safe range so '
+                'small moves match what you hear (no sudden mute or hard clip).',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
 
