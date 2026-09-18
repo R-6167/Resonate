@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/intelligence_recommendation.dart';
 import '../models/listening_event.dart';
 import '../models/song.dart';
+import '../services/intelligence_seek_memory.dart';
 import '../services/database_helper.dart';
 import '../services/intelligence_evidence_cache.dart';
 import '../services/intelligence_settings_store.dart';
@@ -251,6 +252,7 @@ class IntelligenceProvider extends ChangeNotifier {
       final plays = <String, int>{}; final completes = <String, int>{}; final skips = <String, int>{}; final artistAffinity = <String, double>{}; final songHourAffinity = <String, double>{}; final recentSongIds = <String>{}; final byId = {for (final s in allSongs) s.id: s}; final now = DateTime.now(); final currentHourBucket = now.hour ~/ 3;
       final sessionEnabled = await IntelligenceSettingsStore.sessionIntelligence();
       final exploration = (await IntelligenceSettingsStore.exploration()) / 100.0; final familiarity = 1.0 - exploration; final explanationsEnabled = await IntelligenceSettingsStore.explanations();
+      final seekEvidence = await IntelligenceSeekMemory().summarizeAll();
       final sessionEvents = sessionEnabled ? _extractCurrentSession(events) : const <ListeningEvent>[]; final sessionSongIds = sessionEvents.map((e) => e.songId).toSet(); final sessionArtistCounts = <String, int>{}; var recentRank = 0;
       for (final event in events) {
         plays[event.songId] = (plays[event.songId] ?? 0) + 1;
@@ -281,18 +283,19 @@ class IntelligenceProvider extends ChangeNotifier {
         final familiarityBonus = (play > 0 ? familiarity * 0.2 : 0.0) + (completion * 0.25);
         final sessionContinuity = sessionArtistCounts[artist] != null ? 0.12 : 0.0;
         final feedback = _feedback[song.id] ?? 0.0;
-        final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08);
+        final seek = seekEvidence[song.id];
+        final seekBoost = seek?.strength ?? 0.0;
+        final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08) + seekBoost;
         // Phase B: slow confidence — base stays low until repeated local evidence.
-        // Single transitions must not jump 0.35 → 0.65.
         final evidenceBits = (t > 0 ? 1 : 0) +
             (completion > 0.55 ? 1 : 0) +
             (play >= 3 ? 1 : 0) +
             (play >= 8 ? 1 : 0) +
             (artistScore > 0 ? 1 : 0) +
             (timeAffinity > 0 ? 1 : 0) +
-            (feedback.abs() > 0 ? 1 : 0);
-        final rawConfidence = 0.22 + evidenceBits * 0.07 + (completion > 0.7 ? 0.05 : 0);
-        // Dampen by observation count (logistic-ish toward full strength).
+            (feedback.abs() > 0 ? 1 : 0) +
+            ((seek?.hasReplay ?? false) ? 1 : 0);
+        final rawConfidence = 0.22 + evidenceBits * 0.07 + (completion > 0.7 ? 0.05 : 0) + (seekBoost > 0.15 ? 0.04 : 0);
         final playDamp = play <= 0 ? 0.35 : (1.0 - (1.0 / (1.0 + play / 4.0)));
         final confidence = (rawConfidence * (0.55 + 0.45 * playDamp)).clamp(0.15, 0.92);
         String reason = 'A local pick.';
@@ -300,6 +303,8 @@ class IntelligenceProvider extends ChangeNotifier {
         if (explanationsEnabled) {
           if (t > 2) reason = 'You often play this after the current track.';
           else if (t > 0) reason = 'You often move to this after ${current?.title ?? 'your current track'}.';
+          else if (seek?.hasReplay ?? false) reason = 'You have rewound into this track before — a strong local lean.';
+          else if (seekBoost > 0.1) reason = 'Your seek patterns highlight parts of this track.';
           else if (timeAffinity > 0) reason = 'You tend to enjoy this around this time.';
           else if (completion >= .65) reason = 'You tend to finish this one.';
           else if (artistScore > 0) reason = 'You have been enjoying more from ${song.artist}.';
