@@ -46,7 +46,7 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
             ]),
             _section(context, 'Intelligence', Icons.auto_awesome, [
-              _item(context, 'Advanced Intelligence', 'All decision, learning and Companion controls', Icons.auto_awesome, const IntelligenceSettingsScreen()),
+              _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
               _item(context, 'Suggestions', 'Recommendation confidence, explanations and ranking behavior', Icons.lightbulb_outline_rounded, const IntelligenceDetailScreen(section: 'Suggestions')),
               _item(context, 'Automatic queue', 'How Resonate prepares likely next tracks', Icons.playlist_add_rounded, const IntelligenceDetailScreen(section: 'Automatic queue')),
               _item(context, 'Exploration', 'Balance familiar listening with discovery', Icons.explore_outlined, const IntelligenceDetailScreen(section: 'Exploration')),
@@ -198,6 +198,29 @@ class BluetoothSettingsScreen extends StatelessWidget {
               SwitchListTile.adaptive(title: const Text('Playback notification'), subtitle: const Text('Show Resonate playback controls in the Android notification shade.'), value: bt.showNotification, onChanged: bt.toggleNotification),
               SwitchListTile.adaptive(title: const Text('Resume when device connects'), subtitle: const Text('Resume the previous session when a Bluetooth device connects.'), value: bt.resumeOnConnect, onChanged: bt.toggleResumeOnConnect),
               SwitchListTile.adaptive(title: const Text('Pause when device disconnects'), subtitle: const Text('Pause playback when the active Bluetooth device disconnects.'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.devices_other_rounded),
+                title: const Text('Current device context'),
+                subtitle: Text(
+                  bt.bluetoothConnected
+                      ? '${bt.connectedDeviceName}
+${bt.audioContextLabel} — ${bt.audioContextHint}'
+                      : 'No device connected.
+${bt.audioContextHint}',
+                ),
+                isThreeLine: true,
+              ),
+              SwitchListTile.adaptive(
+                title: const Text('Adjust exploration for context'),
+                subtitle: Text(
+                  bt.contextExplorationAdjust
+                      ? 'Car/speaker nudge exploration (bias ${bt.explorationBias}).'
+                      : 'Context classification only — no exploration change.',
+                ),
+                value: bt.contextExplorationAdjust,
+                onChanged: bt.setContextExplorationAdjust,
+              ),
             ],
           ),
         ),
