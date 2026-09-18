@@ -26,6 +26,7 @@ class IntelligenceProvider extends ChangeNotifier {
   bool _lastPlaying = false;
   List<IntelligenceRecommendation> _recommendations = const [];
   Map<String, double> _feedback = <String, double>{};
+  final Set<String> _avoidedArtists = <String>{};
 
   String _sessionMode = 'Fresh session';
   String _sessionSummary = 'Learning the shape of this listening session.';
@@ -81,6 +82,12 @@ class IntelligenceProvider extends ChangeNotifier {
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);
         if (decoded is Map) _feedback = decoded.map((key, value) => MapEntry(key.toString(), (value as num).toDouble()));
+        final avoided = prefs.getStringList('intelligence_avoided_artists');
+        if (avoided != null) {
+          _avoidedArtists
+            ..clear()
+            ..addAll(avoided.map((a) => a.toLowerCase()));
+        }
       }
       await refreshRecommendations(notify: false);
       notifyListeners();
@@ -151,6 +158,26 @@ class IntelligenceProvider extends ChangeNotifier {
   }
 
   double feedbackFor(String songId) => _feedback[songId] ?? 0.0;
+
+  Future<void> avoidArtist(String? artist) async {
+    final key = _artistKey(artist);
+    if (key.isEmpty) return;
+    _avoidedArtists.add(key);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('intelligence_avoided_artists', _avoidedArtists.toList());
+    } catch (e) {
+      debugPrint('Avoid artist save failed: $e');
+    }
+    await refreshRecommendations(notify: false);
+    notifyListeners();
+  }
+
+  bool isArtistAvoided(String? artist) {
+    final key = _artistKey(artist);
+    return key.isNotEmpty && _avoidedArtists.contains(key);
+  }
+
 
   Future<void> clearRecommendationFeedback() async {
     _feedback = <String, double>{};
@@ -271,6 +298,7 @@ class IntelligenceProvider extends ChangeNotifier {
       final ranked = <IntelligenceRecommendation>[];
       for (final song in songs) {
         if (song.id == current?.id || song.filePath.trim().isEmpty) continue;
+        if (isArtistAvoided(song.artist)) continue;
         final play = plays[song.id] ?? 0;
         final complete = completes[song.id] ?? 0;
         final skip = skips[song.id] ?? 0;
