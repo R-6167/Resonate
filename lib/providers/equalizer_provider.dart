@@ -331,13 +331,18 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _applyPreamp() async {
     if (_loudnessEnhancer == null) return;
     try {
-      // Android LoudnessEnhancer uses millibels (100 mB = 1 dB).
-      // Keep a conservative clamp: some OEMs treat large negative gains as mute
-      // and large positive gains as hard clipping.
-      final effectiveDb = isEnabled ? preamp.clamp(-6.0, 3.0) : 0.0;
-      final mb = effectiveDb * 100.0;
+      // Many OEMs implement LoudnessEnhancer poorly (mute / hard clip).
+      // Apply only a soft fraction of the labeled dB and keep a narrow window.
+      // Labeled preamp stays -6..+6 for a centered zero on the slider.
+      if (!isEnabled || preamp.abs() < 0.15) {
+        await _loudnessEnhancer!.setTargetGain(0);
+        await _loudnessEnhancer!.setEnabled(false);
+        return;
+      }
+      final softDb = (preamp * 0.35).clamp(-2.0, 2.0); // max ±2 dB real effect
+      final mb = softDb * 100.0;
       await _loudnessEnhancer!.setTargetGain(mb);
-      await _loudnessEnhancer!.setEnabled(isEnabled && effectiveDb.abs() > 0.05);
+      await _loudnessEnhancer!.setEnabled(true);
     } catch (e) {
       debugPrint('preamp apply failed: $e');
     }
@@ -404,7 +409,7 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setPreamp(double value) async {
-    preamp = value.clamp(-6.0, 3.0).toDouble();
+    preamp = value.clamp(-6.0, 6.0).toDouble();
     await _applyPreamp();
     await _save();
     notifyListeners();
