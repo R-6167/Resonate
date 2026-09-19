@@ -493,11 +493,10 @@ class BluetoothProvider extends ChangeNotifier {
 
     return 'Connected to $_connectedDeviceName';
   }
-}
-
 
   @override
   void dispose() {
     unawaited(_devicesSub?.cancel());
     super.dispose();
   }
+}
