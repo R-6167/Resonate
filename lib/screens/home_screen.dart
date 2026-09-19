@@ -5,7 +5,6 @@ import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/library_provider.dart';
-import '../providers/listening_history_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/playback_authority.dart';
 import '../widgets/evolving_mix_card.dart';
@@ -27,26 +26,6 @@ String _homeFormatHours(int ms) {
   final minutes = Duration(milliseconds: ms).inMinutes;
   if (minutes < 60) return '${minutes}m';
   return '${minutes ~/ 60}h ${minutes % 60}m';
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-  const _MiniStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 2),
-        Text(label, style: Theme.of(context).textTheme.labelSmall),
-      ],
-    );
-  }
 }
 
 class HomeScreen extends StatefulWidget {
@@ -184,41 +163,6 @@ class _HomeDashboard extends StatelessWidget {
       ]);
     }
 
-    // Local week snapshot from listening history (no network).
-    final history = context.watch<ListeningHistoryProvider>();
-    final stats = history.stats;
-    final played = (stats['playedMs'] as num?)?.toInt() ?? 0;
-    final completed = (stats['completed'] as num?)?.toInt() ?? 0;
-    final skipped = (stats['skipped'] as num?)?.toInt() ?? 0;
-    if (played > 0 || completed > 0) {
-      children.addAll([
-        const SizedBox(height: 16),
-        Card(
-          elevation: 0,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Your listening snapshot', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text('From local history on this device', style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _MiniStat(label: 'Time', value: _homeFormatHours(played)),
-                    _MiniStat(label: 'Finished', value: '$completed'),
-                    _MiniStat(label: 'Skipped', value: '$skipped'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ]);
-    }
-
     if (music.currentSong != null) {
       children.addAll([
         const SizedBox(height: 20),
@@ -242,7 +186,7 @@ class _HomeDashboard extends StatelessWidget {
     ]);
 
     return Scaffold(
-      appBar: AppBar(title: const ResonateLogo(size: 40)),
+      appBar: AppBar(title: const ResonateLogo(size: 48)),
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(padding: const EdgeInsets.fromLTRB(18, 0, 18, 34), children: children),
