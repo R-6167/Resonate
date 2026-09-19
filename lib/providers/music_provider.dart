@@ -264,7 +264,7 @@ class MusicProvider extends ChangeNotifier {
     _shuffleEnabled = enabled;
     if (enabled && _queue.length > 1 && _queueIndex < _queue.length - 1) {
       final current = _queue[_queueIndex];
-      final upcoming = _queue.sublist(_queueIndex + 1)..shuffle(Random());
+      final upcoming = _queue.sublist(_queueIndex + 1)..shuffle(math.Random());
       _queue = [..._queue.take(_queueIndex + 1), ...upcoming];
       _queueIndex = _queue.indexWhere((song) => song.id == current.id);
     }
@@ -1106,7 +1106,7 @@ class MusicProvider extends ChangeNotifier {
       final nextQueue = _shuffleEnabled && normalized.length > 1
           ? () {
               final selected = normalized[selectedIndex];
-              final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(Random());
+              final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(math.Random());
               return <Song>[selected, ...upcoming];
             }()
           : normalized;
@@ -1369,7 +1369,7 @@ class MusicProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
   Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {
