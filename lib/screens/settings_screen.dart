@@ -175,8 +175,21 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-class BluetoothSettingsScreen extends StatelessWidget {
+class BluetoothSettingsScreen extends StatefulWidget {
   const BluetoothSettingsScreen({super.key});
+
+  @override
+  State<BluetoothSettingsScreen> createState() => _BluetoothSettingsScreenState();
+}
+
+class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<BluetoothProvider>().refreshConnectedDevices();
+    });
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -218,6 +231,11 @@ class BluetoothSettingsScreen extends StatelessWidget {
                 ),
                 value: bt.contextExplorationAdjust,
                 onChanged: bt.setContextExplorationAdjust,
+              ),
+              TextButton.icon(
+                onPressed: () => bt.refreshConnectedDevices(),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Refresh device detection'),
               ),
             ],
           ),
