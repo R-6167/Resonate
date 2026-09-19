@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import '../services/intelligence_seek_memory.dart';
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
@@ -1456,11 +1456,44 @@ class MusicProvider extends ChangeNotifier {
         _preloadedNextSongId = null;
         throw StateError('crossfade incoming engine failed to start');
       }
-      final total = milliseconds.clamp(500, 12000).toInt(); final steps = (total / 50).round().clamp(10, 240).toInt();
+      // Ensure outgoing starts at the user's master volume (no sudden boost).
+      try {
+        await outgoing.setVolume(master);
+      } catch (_) {}
+      final total = milliseconds.clamp(500, 12000).toInt();
+      final steps = (total / 40).round().clamp(12, 300).toInt();
+      final stepMs = (total / steps).round().clamp(16, 80);
       for (var i = 1; i <= steps; i++) {
-        if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'fade', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
-        final linear = i / steps; final t = switch (fadeType) { 'ease_in' => linear * linear, 'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)), 'ease_in_out' => linear < 0.5 ? 2.0 * linear * linear : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0, _ => linear };
-        await outgoing.setVolume(master * (1.0 - t)); await incoming.setVolume(master * t); await Future<void>.delayed(Duration(milliseconds: (total / steps).round()));
+        if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
+          try { await incoming.stop(); } catch (_) {}
+          try { await outgoing.setVolume(master); } catch (_) {}
+          await ResonateDiagnostics.record('crossfade_cancelled', {
+            'stage': 'fade',
+            'outgoingSongId': outgoingSong?.id,
+            'incomingSongId': nextSong.id,
+            'intentToken': intentToken,
+          });
+          return false;
+        }
+        final linear = i / steps;
+        final t = switch (fadeType) {
+          'ease_in' => linear * linear,
+          'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
+          'ease_in_out' => linear < 0.5
+              ? 2.0 * linear * linear
+              : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0,
+          _ => linear,
+        };
+        // Equal-power crossfade: avoids the linear "volume bump" in the middle
+        // and keeps the outgoing track from dominating the incoming one.
+        final angle = t * (3.141592653589793 / 2.0);
+        final outGain = math.cos(angle);
+        final inGain = math.sin(angle);
+        try {
+          await outgoing.setVolume((master * outGain).clamp(0.0, 1.0));
+          await incoming.setVolume((master * inGain).clamp(0.0, 1.0));
+        } catch (_) {}
+        await Future<void>.delayed(Duration(milliseconds: stepMs));
       }
       if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
