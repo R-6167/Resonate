@@ -359,9 +359,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   );
                 }
 
-                return ListView.builder(
-                  itemCount: songs.length,
-                  itemBuilder: (_, index) {
+                final nowPlaying = music.currentSong;
+
+                return Column(
+                  children: [
+                    if (nowPlaying != null)
+                      Material(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.55),
+                        child: ListTile(
+                          leading: Icon(
+                            music.isPlaying
+                                ? Icons.graphic_eq_rounded
+                                : Icons.pause_circle_outline_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          title: Text(
+                            nowPlaying.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            'Now playing · ${nowPlaying.artist}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () async {
+                            if (music.isPlaying) {
+                              await music.togglePlayPause();
+                            } else if (music.queue.isNotEmpty &&
+                                music.queueIndex >= 0) {
+                              await music.playSong(
+                                nowPlaying,
+                                queue: music.queue,
+                                startIndex: music.queueIndex,
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: songs.length,
+                        itemBuilder: (_, index) {
                     final song = songs[index];
                     final current = music.currentSong?.id == song.id;
                     final liked = library.isFavoriteSync(song.id);
@@ -456,8 +499,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       onTap: () => _playSong(songs, index),
                       onLongPress: () => _queuePlayNext(song),
                     );
-                  },
-                );
+                        },
                       ),
                     ),
                   ],
