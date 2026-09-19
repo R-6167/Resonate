@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../providers/listening_history_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
@@ -48,7 +49,7 @@ class AutopilotHomeCard extends StatelessWidget {
         : intelligence.isAutopilot
             ? (autopilot.consentGranted
                 ? 'Autopilot can guide what plays next'
-                : 'Autopilot is ready — waiting for your say')
+                : 'Autopilot is ready - waiting for your say')
             : intelligence.autonomy == 1
                 ? 'Assisting with local suggestions'
                 : 'Quiet suggestions from your library';
@@ -213,7 +214,7 @@ class AutopilotHomeCard extends StatelessWidget {
                 subtitle: Text(
                   autopilot.consentGranted
                       ? 'Can enqueue, skip, and crossfade'
-                      : 'Advisory only — won’t change the current track',
+                      : 'Advisory only - will not change the current track',
                   style: const TextStyle(fontSize: 12),
                 ),
                 value: autopilot.consentGranted,
@@ -259,6 +260,41 @@ class AutopilotHomeCard extends StatelessWidget {
                       },
                     ),
             ),
+
+          // Compact listening snapshot footer
+          Consumer<ListeningHistoryProvider>(
+            builder: (context, history, _) {
+              final stats = history.stats;
+              final played = (stats['playedMs'] as num?)?.toInt() ?? 0;
+              final completed = (stats['completed'] as num?)?.toInt() ?? 0;
+              final skipped = (stats['skipped'] as num?)?.toInt() ?? 0;
+              if (played <= 0 && completed <= 0) return const SizedBox.shrink();
+              String hours() {
+                final h = played / 3600000.0;
+                if (h < 0.1) return '${(played / 60000).round()}m';
+                return '${h.toStringAsFixed(1)}h';
+              }
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Row(
+                  children: [
+                    Icon(Icons.insights_outlined, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Listening · ${hours()} · $completed finished · $skipped skipped',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
 
           Align(
             alignment: Alignment.centerRight,
