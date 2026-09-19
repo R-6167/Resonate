@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -49,6 +51,7 @@ class BluetoothProvider extends ChangeNotifier {
   String _connectedDeviceName = '';
   BluetoothAudioContext _audioContext = BluetoothAudioContext.unknown;
   bool _contextExplorationAdjust = true;
+  StreamSubscription<AudioDevicesChangedEvent>? _devicesSub;
 
   int _buttonPressCount = 0;
   DateTime _lastButtonPress = DateTime.now();
@@ -183,14 +186,96 @@ class BluetoothProvider extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _initializeBluetoothListeners() {
-    // Actual Bluetooth integration can be connected here.
-    //
-    // At present this provider manages Bluetooth-related settings
-    // and connection state, but does not directly control the
-    // device Bluetooth radio.
-    debugPrint(
-      'Bluetooth listeners initialized',
-    );
+    unawaited(_startDeviceMonitoring());
+  }
+
+  Future<void> _startDeviceMonitoring() async {
+    try {
+      final session = await AudioSession.instance;
+      await _refreshDevices(session);
+      await _devicesSub?.cancel();
+      _devicesSub = session.devicesChangedEventStream.listen((_) {
+        unawaited(_refreshDevices(session));
+      });
+    } catch (e) {
+      debugPrint('Bluetooth device monitoring failed: $e');
+    }
+  }
+
+  /// Re-scan output devices (headphones, A2DP, etc.) via audio_session.
+  Future<void> refreshConnectedDevices() async {
+    try {
+      final session = await AudioSession.instance;
+      await _refreshDevices(session);
+    } catch (e) {
+      debugPrint('Bluetooth refresh failed: $e');
+    }
+  }
+
+  Future<void> _refreshDevices(AudioSession session) async {
+    try {
+      final devices = await session.getDevices(includeInputs: false, includeOutputs: true);
+      // Prefer wireless / headset style outputs for "connected" context.
+      final preferred = devices.where((d) {
+        final t = d.type;
+        return t == AudioDeviceType.bluetoothA2dp ||
+            t == AudioDeviceType.bluetoothSco ||
+            t == AudioDeviceType.bluetoothLe ||
+            t == AudioDeviceType.wiredHeadset ||
+            t == AudioDeviceType.wiredHeadphones ||
+            t == AudioDeviceType.usbAudio ||
+            t == AudioDeviceType.carAudio ||
+            t == AudioDeviceType.hearingAid;
+      }).toList();
+
+      final pick = preferred.isNotEmpty
+          ? preferred.first
+          : (devices.isNotEmpty ? devices.first : null);
+
+      if (pick == null) {
+        if (_bluetoothConnected || _connectedDeviceName.isNotEmpty) {
+          _bluetoothConnected = false;
+          _connectedDeviceName = '';
+          _audioContext = BluetoothAudioContext.unknown;
+          notifyListeners();
+        }
+        return;
+      }
+
+      final name = pick.name.trim().isNotEmpty
+          ? pick.name.trim()
+          : pick.type.name;
+      final ctx = classifyDeviceName(name);
+      final changed = !_bluetoothConnected ||
+          _connectedDeviceName != name ||
+          _audioContext != ctx;
+      _bluetoothConnected = true;
+      _connectedDeviceName = name;
+      _audioContext = ctx == BluetoothAudioContext.unknown
+          ? _contextFromType(pick.type)
+          : ctx;
+      if (changed) notifyListeners();
+    } catch (e) {
+      debugPrint('Bluetooth _refreshDevices failed: $e');
+    }
+  }
+
+  BluetoothAudioContext _contextFromType(AudioDeviceType type) {
+    return switch (type) {
+      AudioDeviceType.carAudio => BluetoothAudioContext.car,
+      AudioDeviceType.bluetoothA2dp ||
+      AudioDeviceType.bluetoothSco ||
+      AudioDeviceType.bluetoothLe ||
+      AudioDeviceType.wiredHeadset ||
+      AudioDeviceType.wiredHeadphones ||
+      AudioDeviceType.hearingAid =>
+        BluetoothAudioContext.headphones,
+      AudioDeviceType.usbAudio ||
+      AudioDeviceType.hdmi ||
+      AudioDeviceType.lineAnalog =>
+        BluetoothAudioContext.speaker,
+      _ => BluetoothAudioContext.other,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -409,3 +494,10 @@ class BluetoothProvider extends ChangeNotifier {
     return 'Connected to $_connectedDeviceName';
   }
 }
+
+
+  @override
+  void dispose() {
+    unawaited(_devicesSub?.cancel());
+    super.dispose();
+  }
