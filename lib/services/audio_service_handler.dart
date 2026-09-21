@@ -42,16 +42,31 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     List<Song>? playbackQueue,
     int queueIndex = 0,
   }) {
-    final sourceQueue = (playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]))
+    // Only publish a small window around the current track. Publishing the
+    // entire library (100+ MediaItems) on low-RAM devices can kill the UI
+    // while ExoPlayer keeps playing ("app keeps stopping").
+    final full = (playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]))
         .where((item) => item.filePath.trim().isNotEmpty)
-        .map(songToMediaItem)
         .toList();
+    List<Song> window;
+    int windowIndex;
+    if (full.isEmpty) {
+      window = const <Song>[];
+      windowIndex = 0;
+    } else {
+      final center = queueIndex.clamp(0, full.length - 1);
+      final start = (center - 8).clamp(0, full.length - 1);
+      final end = (center + 9).clamp(0, full.length); // exclusive
+      window = full.sublist(start, end);
+      windowIndex = (center - start).clamp(0, window.length - 1);
+    }
+    final sourceQueue = window.map(songToMediaItem).toList();
     if (sourceQueue.isNotEmpty) {
       _items
         ..clear()
         ..addAll(sourceQueue);
       queue.add(List.unmodifiable(_items));
-      final safeIndex = queueIndex.clamp(0, _items.length - 1);
+      final safeIndex = windowIndex.clamp(0, _items.length - 1);
       mediaItem.add(_items[safeIndex]);
     } else {
       mediaItem.add(null);
