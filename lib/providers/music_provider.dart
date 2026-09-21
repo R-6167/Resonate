@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:convert';
 import '../services/intelligence_seek_memory.dart';
 import 'dart:math' as math;
@@ -77,6 +78,7 @@ class MusicProvider extends ChangeNotifier {
   bool _automaticCrossfadeInFlight = false;
   String? _preloadedNextSongId;
   bool _crossfadePreloadInFlight = false;
+  int? _androidSdkInt;
   int _gaplessWindowStart = 0;
   List<String> _gaplessWindowIds = const [];
   bool _gaplessSourceActive = false;
@@ -594,6 +596,14 @@ class MusicProvider extends ChangeNotifier {
     if (next == null) return;
     if (_preloadedNextSongId == next.id) return;
     _crossfadePreloadInFlight = true;
+    // Snapshot outgoing level — never raise A/B while preloading.
+    final outgoing = audioPlayer;
+    double? outgoingVol;
+    try {
+      outgoingVol = outgoing.volume;
+    } catch (_) {
+      outgoingVol = _volume;
+    }
     try {
       final incoming = inactivePlayer;
       final incomingEq = inactiveEqualizer;
@@ -602,27 +612,46 @@ class MusicProvider extends ChangeNotifier {
       try {
         await incoming.stop();
       } catch (_) {}
+      await incoming.setVolume(0.0);
       await incoming.setAudioSource(AudioSource.uri(_audioUri(next.filePath), tag: next));
       unawaited(_enableEffects(incoming, incomingEq, incomingLoud));
       await incoming.setVolume(0.0);
+      // Decode/warm without staying audible: brief play then pause at volume 0.
       try {
         incoming.play();
       } catch (_) {}
-      // Brief wait so the decoder attaches without blocking the position stream long.
-      for (var i = 0; i < 8 && !incoming.playing; i++) {
-        await Future<void>.delayed(Duration(milliseconds: 40 + i * 20));
-        if (i % 3 == 0) {
+      for (var i = 0; i < 6 && !incoming.playing; i++) {
+        await Future<void>.delayed(Duration(milliseconds: 30 + i * 15));
+        try {
+          await incoming.setVolume(0.0);
+        } catch (_) {}
+        if (i % 2 == 0) {
           try {
             incoming.play();
           } catch (_) {}
         }
       }
+      try {
+        await incoming.pause();
+      } catch (_) {}
+      try {
+        await incoming.seek(Duration.zero);
+      } catch (_) {}
+      await incoming.setVolume(0.0);
+      // Restore outgoing if anything touched the active engine (defensive).
+      try {
+        final targetOut = (outgoingVol ?? _volume).clamp(0.0, 1.0);
+        if ((outgoing.volume - targetOut).abs() > 0.02) {
+          await outgoing.setVolume(targetOut);
+        }
+      } catch (_) {}
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('crossfade_preloaded', {
         'songId': next.id,
         'queueIndex': _crossfadeTargetIndex,
         'playing': incoming.playing,
         'repeatMode': _repeatMode.name,
+        'outgoingVolume': outgoingVol,
       });
     } catch (e) {
       _preloadedNextSongId = null;
@@ -1456,13 +1485,26 @@ class MusicProvider extends ChangeNotifier {
         _preloadedNextSongId = null;
         throw StateError('crossfade incoming engine failed to start');
       }
-      // Ensure outgoing starts at the user's master volume (no sudden boost).
+      // Start from the *current* outgoing level — never boost to master mid-track
+      // (that was the pre-crossfade "bump" on some files).
+      double startOut = master;
       try {
-        await outgoing.setVolume(master);
+        startOut = outgoing.volume.clamp(0.0, 1.0);
       } catch (_) {}
+      if (startOut > master) startOut = master;
+      // Cap base to master so we never fade from above user volume.
+      final base = startOut <= 0.01 ? master : startOut;
+      try {
+        await outgoing.setVolume(base);
+      } catch (_) {}
+      await incoming.setVolume(0.0);
+
       final total = milliseconds.clamp(500, 12000).toInt();
-      final steps = (total / 40).round().clamp(12, 300).toInt();
-      final stepMs = (total / steps).round().clamp(16, 80);
+      // Gentler stepping on Android (esp. API ≤ 26 / low-end): fewer setVolume calls.
+      final gentle = Platform.isAndroid;
+      final stepDiv = gentle ? 70 : 40;
+      final steps = (total / stepDiv).round().clamp(gentle ? 10 : 12, gentle ? 120 : 300).toInt();
+      final stepMs = (total / steps).round().clamp(gentle ? 28 : 16, gentle ? 100 : 80);
       for (var i = 1; i <= steps; i++) {
         if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
@@ -1490,12 +1532,12 @@ class MusicProvider extends ChangeNotifier {
         final outGain = math.cos(angle);
         final inGain = math.sin(angle);
         try {
-          await outgoing.setVolume((master * outGain).clamp(0.0, 1.0));
+          await outgoing.setVolume((base * outGain).clamp(0.0, 1.0));
           await incoming.setVolume((master * inGain).clamp(0.0, 1.0));
         } catch (_) {}
         await Future<void>.delayed(Duration(milliseconds: stepMs));
       }
-      if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
+      if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
       // Mutating currentSong first caused history to be attributed to the next track.
       await _finishHistoryEvent();
