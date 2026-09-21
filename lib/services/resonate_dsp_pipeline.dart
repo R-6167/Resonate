@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 
 /// ---------------------------------------------------------------------------
@@ -130,4 +131,55 @@ class ResonateDspPipeline {
   }
 
   String get id => ResonateDspEngine.engineId;
+}
+
+/// Bridge to Android DynamicsProcessing (Resonate multi-band native stage).
+class ResonateNativeDspBridge {
+  static const MethodChannel _channel =
+      MethodChannel('com.example.resonate/audio_effects');
+
+  static int? lastBandCount;
+  static bool available = false;
+  static String engineLabel = 'ResonateDSP/v1-peak31';
+
+  static Future<bool> attachSession(int sessionId) async {
+    if (sessionId <= 0) return false;
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('attachResonateDsp', {
+        'sessionId': sessionId,
+      });
+      if (raw is Map) {
+        available = raw['ok'] == true;
+        lastBandCount = (raw['bandCount'] as num?)?.toInt() ?? 0;
+        engineLabel = raw['engine']?.toString() ?? engineLabel;
+        return available;
+      }
+    } catch (_) {}
+    available = false;
+    return false;
+  }
+
+  /// Push studio centers/gains; native side maps onto its band count.
+  static Future<bool> pushBands({
+    required List<double> centersHz,
+    required List<double> gainsDb,
+    required bool enabled,
+  }) async {
+    try {
+      final ok = await _channel.invokeMethod<bool>('setResonateEqBands', {
+        'centersHz': centersHz,
+        'gainsDb': gainsDb,
+        'enabled': enabled,
+      });
+      return ok == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> setEnabled(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setResonateDspEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
 }
