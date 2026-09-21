@@ -35,6 +35,9 @@ class IntelligenceProvider extends ChangeNotifier {
   int _sessionCompletionStreak = 0;
   final List<String> _sessionArtists = <String>[];
   final Map<String, int> _sessionArtistCounts = <String, int>{};
+  Timer? _refreshDebounce;
+  bool _refreshInFlight = false;
+  bool _refreshQueued = false;
 
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
@@ -198,7 +201,7 @@ class IntelligenceProvider extends ChangeNotifier {
 
   void _onVisibilityChanged() {
     IntelligenceEvidenceCache.instance.invalidate();
-    if (_enabled) unawaited(refreshRecommendations());
+    if (_enabled) _scheduleRefreshRecommendations();
   }
 
   void _observePlayback() {
@@ -209,7 +212,16 @@ class IntelligenceProvider extends ChangeNotifier {
     _observedSongId = id;
     _lastPlaying = playing;
     if (!_enabled) return;
-    if (changedSong || resumed) unawaited(refreshRecommendations());
+    if (changedSong || resumed) _scheduleRefreshRecommendations();
+  }
+
+  /// Coalesce rapid triggers so ranking does not stampede on low-end devices.
+  void _scheduleRefreshRecommendations({int limit = 8}) {
+    if (!_enabled) return;
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 450), () {
+      unawaited(refreshRecommendations(limit: limit));
+    });
   }
 
   List<ListeningEvent> _extractCurrentSession(List<ListeningEvent> events) {
@@ -262,6 +274,11 @@ class IntelligenceProvider extends ChangeNotifier {
 
   Future<void> refreshRecommendations({int limit = 8, bool notify = true}) async {
     if (!_enabled) { _recommendations = const []; if (notify) notifyListeners(); return; }
+    if (_refreshInFlight) {
+      _refreshQueued = true;
+      return;
+    }
+    _refreshInFlight = true;
     try {
       final allSongs = await _database.getAllSongs();
       final visibility = LibraryVisibilityStore.instance;
@@ -355,7 +372,16 @@ class IntelligenceProvider extends ChangeNotifier {
         'exploration': exploration,
       });
       await _evaluateAutopilotGraduation(); if (notify) notifyListeners();
-    } catch (e, stack) { debugPrint('Intelligence refresh failed: $e'); debugPrint('$stack'); }
+    } catch (e, stack) {
+      debugPrint('Intelligence refresh failed: $e');
+      debugPrint('$stack');
+    } finally {
+      _refreshInFlight = false;
+      if (_refreshQueued && _enabled) {
+        _refreshQueued = false;
+        _scheduleRefreshRecommendations(limit: limit);
+      }
+    }
   }
 
   Future<Map<String, dynamic>> analyzeCurrentSession() async {
@@ -367,5 +393,9 @@ class IntelligenceProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged); music.removeListener(_observePlayback); super.dispose(); }
+    _refreshDebounce?.cancel();
+    LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);
+    music.removeListener(_observePlayback);
+    super.dispose();
+  }
 }
