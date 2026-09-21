@@ -130,8 +130,9 @@ class MainActivity : AudioServiceActivity() {
         } catch (_: Exception) {
             reverb = null
         }
-        // Also bind Resonate multi-band DSP to this session when API allows.
-        attachResonateDsp(sessionId)
+        // Do NOT auto-attach DynamicsProcessing here — it conflicts with just_audio's
+        // AndroidEqualizer/LoudnessEnhancer on some OEMs and can kill the Activity
+        // while audio_service keeps playing in the background.
     }
 
     /**
@@ -145,37 +146,48 @@ class MainActivity : AudioServiceActivity() {
             resonateDspBandCount = 0
             return false
         }
-        try {
+        // Try modest band counts first — 31 crashes some OEM audio stacks.
+        for (requestedBands in intArrayOf(10, 5, 3)) {
             try {
-                resonateDsp?.release()
+                try {
+                    resonateDsp?.release()
+                } catch (_: Exception) {
+                }
+                resonateDsp = null
+                val config = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    /*channelCount=*/1,
+                    /*preEqInUse=*/true,
+                    requestedBands,
+                    /*mbcInUse=*/false,
+                    /*mbcBandCount=*/0,
+                    /*postEqInUse=*/false,
+                    /*postEqBandCount=*/0,
+                    /*limiterInUse=*/false,
+                ).build()
+                val dp = DynamicsProcessing(0, sessionId, config)
+                dp.enabled = resonateDspEnabled
+                val preEq = dp.getPreEqByChannelIndex(0)
+                if (preEq.bandCount <= 0) {
+                    try {
+                        dp.release()
+                    } catch (_: Exception) {
+                    }
+                    continue
+                }
+                resonateDsp = dp
+                resonateDspBandCount = preEq.bandCount
+                return true
             } catch (_: Exception) {
+                resonateDsp = null
+                resonateDspBandCount = 0
+            } catch (_: Throwable) {
+                // Catch Errors too — some OEM failures are not Exception subclasses.
+                resonateDsp = null
+                resonateDspBandCount = 0
             }
-            resonateDsp = null
-            // Prefer frequency resolution; request up to 31 pre-EQ bands.
-            val requestedBands = 31
-            val config = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                /*channelCount=*/1,
-                /*preEqInUse=*/true,
-                requestedBands,
-                /*mbcInUse=*/false,
-                /*mbcBandCount=*/0,
-                /*postEqInUse=*/false,
-                /*postEqBandCount=*/0,
-                /*limiterInUse=*/true,
-            ).build()
-            val dp = DynamicsProcessing(0, sessionId, config)
-            dp.enabled = resonateDspEnabled
-            resonateDsp = dp
-            // Discover actual band count from channel 0 pre-EQ.
-            val preEq = dp.getPreEqByChannelIndex(0)
-            resonateDspBandCount = preEq.bandCount
-            return resonateDspBandCount > 0
-        } catch (_: Exception) {
-            resonateDsp = null
-            resonateDspBandCount = 0
-            return false
         }
+        return false
     }
 
     private fun setResonateEqBands(
