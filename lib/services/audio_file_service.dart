@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 
 class AudioFileService {
-  static const MethodChannel _channel = MethodChannel('com.example.resonate/media_store');
+  static const MethodChannel _channel = MethodChannel('com.aetherion.resonate/media_store');
   static const _foldersKey = 'resonate_library_folders';
   static Future<bool> requestAudioPermission() async { if (!Platform.isAndroid) return true; return await _channel.invokeMethod<bool>('requestAudioPermission') ?? false; }
   static Future<List<Map<String, String>>> getSelectedFolders() async { final prefs = await SharedPreferences.getInstance(); final raw = prefs.getStringList(_foldersKey) ?? const []; return raw.map((value) { final parts = value.split('|'); return {'uri': parts.first, 'name': parts.length > 1 ? parts.sublist(1).join('|') : 'Selected folder'}; }).toList(); }
