@@ -137,6 +137,14 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
             ListTile(leading: const Icon(Icons.psychology_rounded), title: Text('This window: $state'), subtitle: Text(IntelligencePatternStore.explanationFor(state, bucket))),
             ListTile(leading: const Icon(Icons.history_rounded), title: Text('Across sessions: $global'), subtitle: Text(confidence == 0 ? 'Still learning your recurring listening pattern.' : '${(confidence * 100).round()}% of learned states point here${momentum >= .5 ? ' • pattern is holding' : ''}.')),
             ListTile(leading: const Icon(Icons.auto_awesome_rounded), title: Text(intelligence.anticipatedNext?.song.title ?? 'No prediction yet'), subtitle: Text(intelligence.anticipatedNext == null ? 'Keep listening and Resonate will build local evidence.' : '${(intelligence.anticipatedNext!.confidence * 100).round()}% confidence • ${intelligence.anticipatedNext!.reason}')),
+            SwitchListTile.adaptive(
+              title: const Text('Quiet while screen off'),
+              subtitle: const Text(
+                'Pause automatic ranking in the background to save battery on long plays.',
+              ),
+              value: context.watch<IntelligenceProvider>().quietWhenBackground,
+              onChanged: (v) => context.read<IntelligenceProvider>().setQuietWhenBackground(v),
+            ),
             ExpansionTile(
               leading: const Icon(Icons.history_rounded),
               title: const Text('Companion decision log'),
