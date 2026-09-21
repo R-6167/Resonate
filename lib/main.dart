@@ -92,7 +92,7 @@ ThemeData _theme(Brightness brightness) {
       centerTitle: false,
       titleTextStyle: text.titleLarge,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       color: scheme.surfaceContainerLow,
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -113,7 +113,7 @@ Future<void> main() async {
   ]);
 
   final audioHandler = await AudioService.init(
-    builder: () => ResonateAudioHandler(),
+    builder: () => AudioServiceHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.aetherion.resonate.audio',
       androidNotificationChannelName: 'Resonate Playback',
