@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.audiofx.BassBoost
+import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.Virtualizer
 import android.net.Uri
@@ -35,6 +36,10 @@ class MainActivity : AudioServiceActivity() {
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
     private var reverb: EnvironmentalReverb? = null
+    /** Resonate multi-band software-style EQ via DynamicsProcessing (API 28+). */
+    private var resonateDsp: DynamicsProcessing? = null
+    private var resonateDspBandCount: Int = 0
+    private var resonateDspEnabled: Boolean = true
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -54,11 +59,52 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
-                    "attachToSession" -> { attachEffects(call.argument<Int>("sessionId") ?: 0); result.success(true) }
-                    "setBassBoost" -> { bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
-                    "setVirtualizer" -> { virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort()); result.success(true) }
-                    "setReverb" -> { reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort(); result.success(true) }
-                    "release" -> { releaseEffects(); result.success(true) }
+                    "attachToSession" -> {
+                        attachEffects(call.argument<Int>("sessionId") ?: 0)
+                        result.success(true)
+                    }
+                    "setBassBoost" -> {
+                        bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                        result.success(true)
+                    }
+                    "setVirtualizer" -> {
+                        virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                        result.success(true)
+                    }
+                    "setReverb" -> {
+                        reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort()
+                        result.success(true)
+                    }
+                    "attachResonateDsp" -> {
+                        val sessionId = call.argument<Int>("sessionId") ?: 0
+                        val ok = attachResonateDsp(sessionId)
+                        result.success(
+                            mapOf(
+                                "ok" to ok,
+                                "bandCount" to resonateDspBandCount,
+                                "api" to Build.VERSION.SDK_INT,
+                                "engine" to "ResonateDSP/v1-native-dp",
+                            )
+                        )
+                    }
+                    "setResonateEqBands" -> {
+                        val centers = call.argument<List<Double>>("centersHz") ?: emptyList()
+                        val gains = call.argument<List<Double>>("gainsDb") ?: emptyList()
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        result.success(setResonateEqBands(centers, gains, enabled))
+                    }
+                    "setResonateDspEnabled" -> {
+                        resonateDspEnabled = call.argument<Boolean>("enabled") ?: true
+                        try {
+                            resonateDsp?.enabled = resonateDspEnabled
+                        } catch (_: Exception) {
+                        }
+                        result.success(true)
+                    }
+                    "release" -> {
+                        releaseEffects()
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
@@ -67,17 +113,121 @@ class MainActivity : AudioServiceActivity() {
 
     private fun attachEffects(sessionId: Int) {
         if (sessionId <= 0 || sessionId == effectSessionId) return
-        releaseEffects(); effectSessionId = sessionId
-        try { bassBoost = BassBoost(0, sessionId).apply { enabled = true } } catch (_: Exception) { bassBoost = null }
-        try { virtualizer = Virtualizer(0, sessionId).apply { enabled = true } } catch (_: Exception) { virtualizer = null }
-        try { reverb = EnvironmentalReverb(0, sessionId).apply { enabled = true } } catch (_: Exception) { reverb = null }
+        releaseEffects()
+        effectSessionId = sessionId
+        try {
+            bassBoost = BassBoost(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) {
+            bassBoost = null
+        }
+        try {
+            virtualizer = Virtualizer(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) {
+            virtualizer = null
+        }
+        try {
+            reverb = EnvironmentalReverb(0, sessionId).apply { enabled = true }
+        } catch (_: Exception) {
+            reverb = null
+        }
+        // Also bind Resonate multi-band DSP to this session when API allows.
+        attachResonateDsp(sessionId)
+    }
+
+    /**
+     * Resonate multi-band EQ using [DynamicsProcessing] pre-EQ (API 28+).
+     * Band count is negotiated with the platform (often 5–32); Dart maps 31 studio
+     * centers onto whatever the device accepts.
+     */
+    private fun attachResonateDsp(sessionId: Int): Boolean {
+        if (sessionId <= 0) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            resonateDspBandCount = 0
+            return false
+        }
+        try {
+            try {
+                resonateDsp?.release()
+            } catch (_: Exception) {
+            }
+            resonateDsp = null
+            // Prefer frequency resolution; request up to 31 pre-EQ bands.
+            val requestedBands = 31
+            val config = DynamicsProcessing.Config.Builder(
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                /*channelCount=*/1,
+                /*preEqInUse=*/true,
+                requestedBands,
+                /*mbcInUse=*/false,
+                /*mbcBandCount=*/0,
+                /*postEqInUse=*/false,
+                /*postEqBandCount=*/0,
+                /*limiterInUse=*/true,
+            ).build()
+            val dp = DynamicsProcessing(0, sessionId, config)
+            dp.enabled = resonateDspEnabled
+            resonateDsp = dp
+            // Discover actual band count from channel 0 pre-EQ.
+            val preEq = dp.getPreEqByChannelIndex(0)
+            resonateDspBandCount = preEq.bandCount
+            return resonateDspBandCount > 0
+        } catch (_: Exception) {
+            resonateDsp = null
+            resonateDspBandCount = 0
+            return false
+        }
+    }
+
+    private fun setResonateEqBands(
+        centersHz: List<Double>,
+        gainsDb: List<Double>,
+        enabled: Boolean,
+    ): Boolean {
+        val dp = resonateDsp ?: return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        try {
+            resonateDspEnabled = enabled
+            dp.enabled = enabled
+            if (!enabled || resonateDspBandCount <= 0) return true
+            val preEq = dp.getPreEqByChannelIndex(0)
+            val n = preEq.bandCount.coerceAtMost(resonateDspBandCount)
+            for (i in 0 until n) {
+                val hz = if (i < centersHz.size) centersHz[i].toFloat() else preEq.getBand(i).cutoffFrequency
+                val db = if (i < gainsDb.size) gainsDb[i].toFloat().coerceIn(-12f, 12f) else 0f
+                // DynamicsProcessing EqBand: cutoffFrequency + gain
+                val band = DynamicsProcessing.EqBand(true, hz, db)
+                preEq.setBand(i, band)
+            }
+            dp.setPreEqAllChannelsTo(preEq)
+            return true
+        } catch (_: Exception) {
+            return false
+        }
     }
 
     private fun releaseEffects() {
-        try { bassBoost?.release() } catch (_: Exception) { }
-        try { virtualizer?.release() } catch (_: Exception) { }
-        try { reverb?.release() } catch (_: Exception) { }
-        bassBoost = null; virtualizer = null; reverb = null; effectSessionId = 0
+        try {
+            bassBoost?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            virtualizer?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            reverb?.release()
+        } catch (_: Exception) {
+        }
+        try {
+            resonateDsp?.release()
+        } catch (_: Exception) {
+        }
+        bassBoost = null
+        virtualizer = null
+        reverb = null
+        resonateDsp = null
+        resonateDspBandCount = 0
+        effectSessionId = 0
     }
 
     private fun audioPermission(): String = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
