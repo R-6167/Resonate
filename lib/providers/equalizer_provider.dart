@@ -210,9 +210,11 @@ class EqualizerProvider extends ChangeNotifier {
     const EqualizerPreset(name: 'Warm', category: 'Utility', gains: [3, 2, 1, 1, 0, -1, -1, -1, 0, 1]),
     const EqualizerPreset(name: 'Bright', category: 'Utility', gains: [-1, -1, 0, 0, 1, 2, 3, 4, 4, 4]),
     const EqualizerPreset(name: 'Balanced', category: 'Utility', gains: [2, 1, 0, 1, 2, 1, 0, 1, 2, 2]),
-    const EqualizerPreset(name: 'Bass Boost', category: 'Bass', gains: [6, 5, 4, 2, 1, 0, 0, 0, 0, 0]),
-    const EqualizerPreset(name: 'Deep Bass', category: 'Bass', gains: [7, 6, 4, 1, 0, -1, 0, 0, 0, 0]),
-    const EqualizerPreset(name: 'Sub Focus', category: 'Bass', gains: [8, 6, 3, 0, -1, -1, 0, 0, 0, 0]),
+    const EqualizerPreset(name: 'Bass Boost', category: 'Bass', gains: [8, 7, 5, 3, 1, 0, 0, 0, 0, 0]),
+    const EqualizerPreset(name: 'Deep Bass', category: 'Bass', gains: [9, 8, 6, 3, 0, -1, -1, 0, 0, 0]),
+    const EqualizerPreset(name: 'Sub Focus', category: 'Bass', gains: [10, 9, 5, 1, -1, -2, -1, 0, 0, 0]),
+    const EqualizerPreset(name: 'Bass Extreme', category: 'Bass', gains: [11, 10, 7, 2, 0, -2, -1, 0, 1, 1]),
+    const EqualizerPreset(name: 'Hip-Hop Bass', category: 'Bass', gains: [9, 7, 4, 1, 0, 1, 2, 1, 1, 2]),
     const EqualizerPreset(name: 'Treble Boost', category: 'Treble', gains: [0, 0, 0, 0, 0, 1, 2, 4, 5, 6]),
     const EqualizerPreset(name: 'Air', category: 'Treble', gains: [0, 0, 0, 0, 0, 0, 1, 2, 4, 5]),
     const EqualizerPreset(name: 'Vocal', category: 'Voice', gains: [-2, -1, 0, 2, 4, 3, 2, 1, 0, -1]),
@@ -225,7 +227,7 @@ class EqualizerProvider extends ChangeNotifier {
     const EqualizerPreset(name: 'Classical', category: 'Genre', gains: [3, 2, 1, 0, -1, -1, 0, 2, 3, 4]),
     const EqualizerPreset(name: 'Electronic', category: 'Genre', gains: [4, 3, 1, 0, -2, 1, 3, 2, 3, 4]),
     const EqualizerPreset(name: 'Acoustic', category: 'Genre', gains: [2, 1, 0, 1, 2, 2, 1, 2, 3, 2]),
-    const EqualizerPreset(name: 'Hip-Hop', category: 'Genre', gains: [5, 4, 2, 0, -1, 0, 1, 1, 2, 2]),
+    const EqualizerPreset(name: 'Hip-Hop', category: 'Genre', gains: [8, 6, 3, 0, -1, 0, 1, 2, 2, 2]),
     const EqualizerPreset(name: 'R&B', category: 'Genre', gains: [4, 3, 1, 1, 2, 2, 1, 2, 3, 3]),
     const EqualizerPreset(name: 'Metal', category: 'Genre', gains: [4, 3, 0, -2, -1, 2, 4, 3, 2, 2]),
     const EqualizerPreset(name: 'Dance', category: 'Genre', gains: [5, 4, 2, 0, -1, 1, 2, 3, 4, 4]),
@@ -350,13 +352,20 @@ class EqualizerProvider extends ChangeNotifier {
           best = i;
         }
       }
+      double g;
       if (best > 0 && best < studioFrequencies.length - 1) {
         final left = src[best - 1];
         final mid = src[best];
         final right = src[best + 1];
-        return left * 0.15 + mid * 0.7 + right * 0.15;
+        g = left * 0.15 + mid * 0.7 + right * 0.15;
+      } else {
+        g = src[best.clamp(0, src.length - 1)];
       }
-      return src[best.clamp(0, src.length - 1)];
+      // Slight low-end emphasis so bass-forward presets land closer to apps like Musicolet.
+      if (band.centerFrequency <= 120 && g > 0) {
+        g = (g * 1.12).clamp(-12.0, 12.0);
+      }
+      return g;
     }).toList();
   }
 
@@ -378,22 +387,30 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> _applyPreamp() async {
+    // Negative / zero preamp: digital attenuation via MusicProvider player gain.
+    // LoudnessEnhancer is NOT used for cuts — OEMs often mute before -4 dB.
+    final effective = isEnabled ? preamp : 0.0;
+    final scale = math.pow(10.0, effective.clamp(-12.0, 0.0) / 20.0).toDouble().clamp(0.25, 1.0);
+    try {
+      if (_music != null) {
+        await _music!.setEqPreampScale(scale);
+      }
+    } catch (e) {
+      debugPrint('preamp digital scale failed: $e');
+    }
+    // Positive preamp only: soft LoudnessEnhancer boost (optional, capped).
     if (_loudnessEnhancer == null) return;
     try {
-      // Many OEMs implement LoudnessEnhancer poorly (mute / hard clip).
-      // Apply only a soft fraction of the labeled dB and keep a narrow window.
-      // Labeled preamp stays -6..+6 for a centered zero on the slider.
-      if (!isEnabled || preamp.abs() < 0.15) {
+      if (!isEnabled || effective <= 0.15) {
         await _loudnessEnhancer!.setTargetGain(0);
         await _loudnessEnhancer!.setEnabled(false);
         return;
       }
-      final softDb = (preamp * 0.35).clamp(-2.0, 2.0); // max ±2 dB real effect
-      final mb = softDb * 100.0;
-      await _loudnessEnhancer!.setTargetGain(mb);
+      final softDb = (effective * 0.4).clamp(0.0, 2.5);
+      await _loudnessEnhancer!.setTargetGain(softDb * 100.0);
       await _loudnessEnhancer!.setEnabled(true);
     } catch (e) {
-      debugPrint('preamp apply failed: $e');
+      debugPrint('preamp boost failed: $e');
     }
   }
 
