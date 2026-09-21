@@ -136,7 +136,7 @@ class ResonateDspPipeline {
 /// Bridge to Android DynamicsProcessing (Resonate multi-band native stage).
 class ResonateNativeDspBridge {
   static const MethodChannel _channel =
-      MethodChannel('com.example.resonate/audio_effects');
+      MethodChannel('com.aetherion.resonate/audio_effects');
 
   static int? lastBandCount;
   static bool available = false;

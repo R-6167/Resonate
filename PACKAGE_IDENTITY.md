@@ -1,20 +1,13 @@
-# Resonate package / brand identity
+# Resonate package identity
 
-## Canonical IDs
+Canonical Android applicationId / namespace: **com.Aetherion.Resonate**
 
-| Kind | Value | Notes |
-|------|--------|------|
-| App display name | **Resonate** | AndroidManifest `android:label` |
-| Flutter package name | `resonate` | pubspec `name:` (import path) |
-| MethodChannels | `com.aetherion.resonate/media_store` | volume, scan, folders, diagnostics |
-| | `com.aetherion.resonate/audio_effects` | bass/reverb + optional native DSP |
-| Notification channel | `com.aetherion.resonate.audio` | audio_service |
-| applicationId / namespace | `com.Aetherion.Resonate` | Gradle — do not change lightly |
+MethodChannel names (Dart ↔ native):
+- `com.aetherion.resonate/media_store`
+- `com.aetherion.resonate/audio_effects`
 
-## Fixed from legacy `com.example.resonate`
+Kotlin sources live under:
+`android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt`
 
-Dart + Kotlin channel strings use **`com.aetherion.resonate/...`** on both sides.
-
-## Kotlin folder path (optional cleanup)
-
-MainActivity may still live under `kotlin/com/example/resonate/` while declaring `package com.Aetherion.Resonate`. That works; matching folders is optional later.
+Do not use `com.example.resonate` anywhere. The old path
+`android/app/src/main/kotlin/com/example/resonate/` is a leftover stub only.
