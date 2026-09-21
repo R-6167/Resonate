@@ -141,6 +141,8 @@ class EqualizerProvider extends ChangeNotifier {
   BluetoothProvider? _bluetooth;
   bool _learnedEqEnabled = false;
   bool _btProfilesEnabled = false;
+  /// Off by default — DynamicsProcessing crashes some devices on first play.
+  bool _nativeDspEnabled = false;
   String? _lastLeanSongId;
   BluetoothAudioContext? _lastBtContext;
   final Map<String, String> _btProfilePresets = {};
@@ -160,7 +162,7 @@ class EqualizerProvider extends ChangeNotifier {
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
     _music?.onAndroidSession = (id) {
-      unawaited(attachNativeSession(id));
+      if (_nativeDspEnabled) unawaited(attachNativeSession(id));
     };
   }
 
@@ -220,6 +222,24 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   bool get btProfilesEnabled => _btProfilesEnabled;
+  bool get nativeDspUserEnabled => _nativeDspEnabled;
+
+  Future<void> setNativeDspEnabled(bool value) async {
+    _nativeDspEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('equalizer_native_dsp', value);
+    } catch (_) {}
+    if (!value) {
+      try {
+        await ResonateNativeDspBridge.setEnabled(false);
+      } catch (_) {}
+    } else {
+      // Will attach on next session event / play.
+    }
+    notifyListeners();
+  }
+
 
   Future<void> setBtProfilesEnabled(bool value) async {
     _btProfilesEnabled = value;
@@ -388,6 +408,7 @@ class EqualizerProvider extends ChangeNotifier {
       isEnabled = prefs.getBool('equalizer_enabled') ?? true;
       preset = prefs.getString('equalizer_preset') ?? 'Flat';
       await _loadBtProfiles();
+      _nativeDspEnabled = prefs.getBool('equalizer_native_dsp') ?? false;
       preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
       await _loadCustomPresets(prefs);
 
@@ -488,8 +509,11 @@ class EqualizerProvider extends ChangeNotifier {
       }
     }
 
-    // Stage B: Resonate DynamicsProcessing multi-band (API 28+) when attached.
+    // Stage B: Resonate DynamicsProcessing only when user-enabled and attached.
     try {
+      if (!_nativeDspEnabled) {
+        // hardware-only path
+      } else {
       _dspPipeline.updateStudioGains(studioGains);
       final n = ResonateNativeDspBridge.lastBandCount ?? 0;
       if (n > 0) {
@@ -506,6 +530,7 @@ class EqualizerProvider extends ChangeNotifier {
           enabled: isEnabled,
         );
       }
+      }
     } catch (e) {
       debugPrint('push EQ to Resonate native DSP failed: $e');
     }
@@ -513,10 +538,17 @@ class EqualizerProvider extends ChangeNotifier {
 
   /// Attach native Resonate DSP to a just_audio Android session id.
   Future<void> attachNativeSession(int sessionId) async {
-    final ok = await ResonateNativeDspBridge.attachSession(sessionId);
-    if (ok) {
-      await _pushToHardware();
-      notifyListeners();
+    if (!_nativeDspEnabled) return;
+    try {
+      final ok = await ResonateNativeDspBridge.attachSession(sessionId);
+      if (ok) {
+        await _pushToHardware();
+        notifyListeners();
+      }
+    } catch (e, st) {
+      debugPrint('attachNativeSession failed: $e');
+      debugPrint('$st');
+      // Stay on hardware EQ only — never rethrow (prevents Activity death).
     }
   }
 
