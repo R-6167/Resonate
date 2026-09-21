@@ -9,6 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/eq_lean_store.dart';
+import '../dsp/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
 import 'bluetooth_provider.dart';
 
@@ -143,6 +144,7 @@ class EqualizerProvider extends ChangeNotifier {
   String? _lastLeanSongId;
   BluetoothAudioContext? _lastBtContext;
   final Map<String, String> _btProfilePresets = {};
+  final ResonateDspPipeline _dspPipeline = ResonateDspPipeline();
 
   EqualizerProvider({
     AndroidEqualizer? equalizer,
@@ -443,39 +445,21 @@ class EqualizerProvider extends ChangeNotifier {
     return '${hz.round()}Hz';
   }
 
-  /// Map 10 studio gains onto N hardware bands by nearest frequency + blend.
+  /// Map studio gains through the Resonate DSP engine onto hardware centers.
+  /// Uses cascaded peaking response (original Resonate model), not a copy of
+  /// another app's curve.
   List<double> mapStudioToHardware(List<double> studioGains) {
     if (bandStates.isEmpty) return const [];
-    final src = List<double>.from(studioGains);
-    while (src.length < studioFrequencies.length) {
-      src.add(0);
-    }
-    return bandStates.map((band) {
-      var best = 0;
-      var bestDist = (studioFrequencies[0] - band.centerFrequency).abs();
-      for (var i = 1; i < studioFrequencies.length; i++) {
-        final d = (studioFrequencies[i] - band.centerFrequency).abs();
-        if (d < bestDist) {
-          bestDist = d;
-          best = i;
-        }
-      }
-      double g;
-      if (best > 0 && best < studioFrequencies.length - 1) {
-        final left = src[best - 1];
-        final mid = src[best];
-        final right = src[best + 1];
-        g = left * 0.15 + mid * 0.7 + right * 0.15;
-      } else {
-        g = src[best.clamp(0, src.length - 1)];
-      }
-      // Slight low-end emphasis so bass-forward presets land closer to apps like Musicolet.
-      if (band.centerFrequency <= 120 && g > 0) {
-        g = (g * 1.12).clamp(-12.0, 12.0);
-      }
-      return g;
-    }).toList();
+    _dspPipeline.updateStudioGains(studioGains);
+    final centers = bandStates.map((b) => b.centerFrequency).toList();
+    final targets = _dspPipeline.hardwareTargets(centers);
+    return [
+      for (var i = 0; i < targets.length; i++)
+        targets[i].clamp(bandStates[i].minGain, bandStates[i].maxGain).toDouble(),
+    ];
   }
+
+  String get dspEngineId => _dspPipeline.id;
 
   Future<void> _pushToHardware() async {
     if (_androidEqualizer == null || bandStates.isEmpty) return;
