@@ -232,9 +232,12 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '31-band Resonate DSP model (${eq.dspEngineId}). '
-                'Curve drives ${eq.hasHardwareEq ? eq.hardwareBandCount : 0} hardware bands; '
-                'native sample processing is the next engine step.',
+                eq.nativeDspActive
+                    ? 'Resonate native DSP active (${eq.dspEngineId}, ${eq.nativeDspBandCount} bands) + '
+                        '${eq.hasHardwareEq ? eq.hardwareBandCount : 0} hardware bands.'
+                    : 'Resonate DSP model (${eq.dspEngineId}). '
+                        'Hardware: ${eq.hasHardwareEq ? eq.hardwareBandCount : 0} bands. '
+                        'Native multi-band engages on API 28+ after playback starts.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
