@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/bluetooth_provider.dart';
 import '../providers/equalizer_provider.dart';
 
 class EqualizerScreen extends StatefulWidget {
@@ -149,6 +150,44 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                   ],
                 ),
+
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Bluetooth EQ profiles'),
+                subtitle: const Text(
+                  'Apply a preset when headphones, car, or speaker context is detected. '
+                  'Song/artist leans still win when learned EQ is on.',
+                ),
+                value: eq.btProfilesEnabled,
+                onChanged: eq.setBtProfilesEnabled,
+              ),
+              if (eq.btProfilesEnabled) ...[
+                for (final ctx in [
+                  BluetoothAudioContext.headphones,
+                  BluetoothAudioContext.car,
+                  BluetoothAudioContext.speaker,
+                ])
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(switch (ctx) {
+                      BluetoothAudioContext.headphones => 'Headphones',
+                      BluetoothAudioContext.car => 'Car',
+                      BluetoothAudioContext.speaker => 'Speaker',
+                      _ => ctx.name,
+                    }),
+                    subtitle: Text(eq.btPresetFor(ctx) ?? 'No preset'),
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (name) => eq.setBtPreset(ctx, name),
+                      itemBuilder: (_) => [
+                        for (final p in eq.allPresets)
+                          PopupMenuItem(value: p.name, child: Text(p.name)),
+                      ],
+                      child: const Icon(Icons.tune_rounded),
+                    ),
+                  ),
+              ],
+
               const SizedBox(height: 12),
               // Preset categories
               Text('Presets', style: Theme.of(context).textTheme.titleMedium),
@@ -186,29 +225,36 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 10 studio band sliders
-              Text('Studio bands', style: Theme.of(context).textTheme.titleMedium),
+              // 31-band studio model (mapped to hardware)
+              Text(
+                'Studio bands (${eq.studioBandCount})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 4),
               Text(
-                'Always 10 bands. On Android they are mapped onto this device’s DSP '
-                '(${eq.hasHardwareEq ? eq.hardwareBandCount : 0} hardware bands).',
+                '31-band curve on device. Android maps them onto '
+                '${eq.hasHardwareEq ? eq.hardwareBandCount : 0} hardware bands until software DSP ships.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
               SizedBox(
-                height: 260,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final band in eq.studioBands)
-                      Expanded(
-                        child: _StudioBandSlider(
-                          band: band,
-                          enabled: eq.isEnabled,
-                          onChanged: (v) => eq.setStudioBandGain(band.index, v),
+                height: 280,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final band in eq.studioBands)
+                        SizedBox(
+                          width: 36,
+                          child: _StudioBandSlider(
+                            band: band,
+                            enabled: eq.isEnabled,
+                            onChanged: (v) => eq.setStudioBandGain(band.index, v),
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               if (eq.preset == 'Custom')
