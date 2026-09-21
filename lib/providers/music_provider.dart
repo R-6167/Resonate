@@ -68,8 +68,8 @@ class MusicProvider extends ChangeNotifier {
   double _eqPreampScale = 1.0;
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
-  StreamSubscription<int>? _sessionASub;
-  StreamSubscription<int>? _sessionBSub;
+  StreamSubscription<int?>? _sessionASub;
+  StreamSubscription<int?>? _sessionBSub;
   List<Song> _queue = <Song>[];
   int _queueIndex = 0;
   bool _shuffleEnabled = false;
