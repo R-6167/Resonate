@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 class AudioEffectsBridge {
   static const MethodChannel _channel =
-      MethodChannel('com.example.resonate/audio_effects');
+      MethodChannel('com.aetherion.resonate/audio_effects');
 
   static Future<void> attachToSession(int sessionId) async {
     if (sessionId <= 0) return;
