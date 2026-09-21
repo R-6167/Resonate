@@ -66,6 +66,10 @@ class MusicProvider extends ChangeNotifier {
   double _volume = 1.0;
   /// Digital gain from EQ preamp (1.0 = 0 dB). Attenuation only via this path.
   double _eqPreampScale = 1.0;
+  /// Optional listener for Android audio session (Resonate native DSP).
+  void Function(int sessionId)? onAndroidSession;
+  StreamSubscription<int>? _sessionASub;
+  StreamSubscription<int>? _sessionBSub;
   List<Song> _queue = <Song>[];
   int _queueIndex = 0;
   bool _shuffleEnabled = false;
@@ -225,6 +229,12 @@ class MusicProvider extends ChangeNotifier {
     _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
+    _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
+      if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+    });
+    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
+      if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
+    });
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
@@ -1930,6 +1940,8 @@ class MusicProvider extends ChangeNotifier {
     _volumeSubscription?.cancel();
     _interruptionSubscription?.cancel();
     _noisySubscription?.cancel();
+    _sessionASub?.cancel();
+    _sessionBSub?.cancel();
     _playerA.dispose();
     _playerB.dispose();
     super.dispose();
