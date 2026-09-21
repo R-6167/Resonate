@@ -129,6 +129,16 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
 
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
+                title: const Text('Native multi-band DSP'),
+                subtitle: const Text(
+                  'Experimental. Uses Android DynamicsProcessing when available. '
+                  'Leave off if the app stops on play; hardware EQ still works.',
+                ),
+                value: eq.nativeDspUserEnabled,
+                onChanged: eq.setNativeDspEnabled,
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
                 title: const Text('Learned EQ leans'),
                 subtitle: const Text(
                   'When on, remembers preset per song/artist and reapplies on play.',
