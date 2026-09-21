@@ -159,6 +159,9 @@ class EqualizerProvider extends ChangeNotifier {
     _initialize();
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
+    _music?.onAndroidSession = (id) {
+      unawaited(attachNativeSession(id));
+    };
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -459,22 +462,61 @@ class EqualizerProvider extends ChangeNotifier {
     ];
   }
 
-  String get dspEngineId => _dspPipeline.id;
+  String get dspEngineId => ResonateNativeDspBridge.available
+      ? ResonateNativeDspBridge.engineLabel
+      : _dspPipeline.id;
+  bool get nativeDspActive => ResonateNativeDspBridge.available;
+  int get nativeDspBandCount => ResonateNativeDspBridge.lastBandCount ?? 0;
 
   Future<void> _pushToHardware() async {
-    if (_androidEqualizer == null || bandStates.isEmpty) return;
     final studioGains = studioBands.map((b) => b.gainDb).toList();
-    final mapped = mapStudioToHardware(studioGains);
+    final centers = studioBands.map((b) => b.frequencyHz).toList();
+
+    // Stage A: classic Android Equalizer (device band count).
+    if (_androidEqualizer != null && bandStates.isNotEmpty) {
+      final mapped = mapStudioToHardware(studioGains);
+      try {
+        final parameters = await _androidEqualizer!.parameters;
+        for (var i = 0; i < bandStates.length && i < mapped.length; i++) {
+          final g = mapped[i].clamp(bandStates[i].minGain, bandStates[i].maxGain).toDouble();
+          bandStates[i].gain = g;
+          final nativeBand = parameters.bands.firstWhere((b) => b.index == bandStates[i].index);
+          await nativeBand.setGain(isEnabled ? g : 0.0);
+        }
+      } catch (e) {
+        debugPrint('push EQ to hardware failed: $e');
+      }
+    }
+
+    // Stage B: Resonate DynamicsProcessing multi-band (API 28+) when attached.
     try {
-      final parameters = await _androidEqualizer!.parameters;
-      for (var i = 0; i < bandStates.length && i < mapped.length; i++) {
-        final g = mapped[i].clamp(bandStates[i].minGain, bandStates[i].maxGain).toDouble();
-        bandStates[i].gain = g;
-        final nativeBand = parameters.bands.firstWhere((b) => b.index == bandStates[i].index);
-        await nativeBand.setGain(isEnabled ? g : 0.0);
+      _dspPipeline.updateStudioGains(studioGains);
+      final n = ResonateNativeDspBridge.lastBandCount ?? 0;
+      if (n > 0) {
+        // Sample engine response at evenly spaced points across studio range for native bands.
+        final nativeCenters = <double>[
+          for (var i = 0; i < n; i++)
+            studioFrequencies.first +
+                (studioFrequencies.last - studioFrequencies.first) * (i / (n - 1).clamp(1, 100)),
+        ];
+        final nativeGains = _dspPipeline.hardwareTargets(nativeCenters);
+        await ResonateNativeDspBridge.pushBands(
+          centersHz: nativeCenters,
+          gainsDb: nativeGains,
+          enabled: isEnabled,
+        );
       }
     } catch (e) {
-      debugPrint('push EQ to hardware failed: $e');
+      debugPrint('push EQ to Resonate native DSP failed: $e');
+    }
+  }
+
+  /// Attach native Resonate DSP to a just_audio Android session id.
+  Future<void> attachNativeSession(int sessionId) async {
+    final ok = await ResonateNativeDspBridge.attachSession(sessionId);
+    if (ok) {
+      await _pushToHardware();
+      notifyListeners();
     }
   }
 
