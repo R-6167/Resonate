@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/intelligence_recommendation.dart';
@@ -15,7 +16,7 @@ import '../services/library_visibility_store.dart';
 import '../services/resonate_diagnostics.dart';
 import 'music_provider.dart';
 
-class IntelligenceProvider extends ChangeNotifier {
+class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   final MusicProvider music;
   final DatabaseHelper _database = DatabaseHelper();
 
@@ -38,6 +39,9 @@ class IntelligenceProvider extends ChangeNotifier {
   Timer? _refreshDebounce;
   bool _refreshInFlight = false;
   bool _refreshQueued = false;
+  /// When true, skip scheduled ranking while app is backgrounded / screen off.
+  bool _quietWhenBackground = true;
+  bool _appInBackground = false;
 
   static const int _minimumLearningEvents = 40;
   static const int _minimumDistinctSongs = 12;
@@ -48,10 +52,42 @@ class IntelligenceProvider extends ChangeNotifier {
   IntelligenceProvider({required this.music}) {
     LibraryVisibilityStore.instance.addListener(_onVisibilityChanged);
     music.addListener(_observePlayback);
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_loadSettings());
+    unawaited(_loadQuietMode());
     _observePlayback();
     unawaited(refreshRecommendations());
   }
+
+  bool get quietWhenBackground => _quietWhenBackground;
+
+  Future<void> setQuietWhenBackground(bool value) async {
+    _quietWhenBackground = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('intelligence_quiet_background', value);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  Future<void> _loadQuietMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _quietWhenBackground = prefs.getBool('intelligence_quiet_background') ?? true;
+    } catch (_) {}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final background = state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden;
+    _appInBackground = background;
+    if (!background && _enabled) {
+      _scheduleRefreshRecommendations();
+    }
+  }
+
 
   bool get isEnabled => _enabled;
   int get autonomy => _autonomy;
@@ -218,6 +254,7 @@ class IntelligenceProvider extends ChangeNotifier {
   /// Coalesce rapid triggers so ranking does not stampede on low-end devices.
   void _scheduleRefreshRecommendations({int limit = 8}) {
     if (!_enabled) return;
+    if (_quietWhenBackground && _appInBackground) return;
     _refreshDebounce?.cancel();
     _refreshDebounce = Timer(const Duration(milliseconds: 450), () {
       unawaited(refreshRecommendations(limit: limit));
@@ -394,6 +431,7 @@ class IntelligenceProvider extends ChangeNotifier {
   @override
   void dispose() {
     _refreshDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);
     music.removeListener(_observePlayback);
     super.dispose();
