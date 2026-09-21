@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/eq_lean_store.dart';
 import 'music_provider.dart';
+import 'bluetooth_provider.dart';
 
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
@@ -91,27 +92,71 @@ class EqualizerProvider extends ChangeNotifier {
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
 
+  /// 31-band studio model (ISO-ish centers). Mapped onto device hardware EQ;
+  /// true per-band software DSP is a later native step.
   static const List<double> studioFrequencies = [
-    31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+    20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
+    200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600,
+    2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
   ];
 
   static const double studioMinDb = -12.0;
   static const double studioMaxDb = 12.0;
 
+  /// Legacy 10-band centers used by older preset definitions.
+  static const List<double> _legacy10Hz = [
+    31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000,
+  ];
+
+  /// Interpolate a short gain list onto the current studio frequency grid.
+  static List<double> expandGainsToStudio(List<double> gains) {
+    if (gains.length >= studioFrequencies.length) {
+      return gains.take(studioFrequencies.length).map((g) => g.clamp(studioMinDb, studioMaxDb).toDouble()).toList();
+    }
+    if (gains.isEmpty) {
+      return List<double>.filled(studioFrequencies.length, 0.0);
+    }
+    final srcHz = gains.length == 10 ? _legacy10Hz : [
+      for (var i = 0; i < gains.length; i++)
+        studioFrequencies.first +
+            (studioFrequencies.last - studioFrequencies.first) *
+                (i / (gains.length - 1).clamp(1, 1000)),
+    ];
+    double at(double hz) {
+      if (hz <= srcHz.first) return gains.first;
+      if (hz >= srcHz.last) return gains.last;
+      for (var i = 0; i < srcHz.length - 1; i++) {
+        if (hz >= srcHz[i] && hz <= srcHz[i + 1]) {
+          final t = (hz - srcHz[i]) / (srcHz[i + 1] - srcHz[i]);
+          return gains[i] + (gains[i + 1] - gains[i]) * t;
+        }
+      }
+      return 0.0;
+    }
+    return [for (final hz in studioFrequencies) at(hz).clamp(studioMinDb, studioMaxDb).toDouble()];
+  }
+
   MusicProvider? _music;
+  BluetoothProvider? _bluetooth;
   bool _learnedEqEnabled = false;
+  bool _btProfilesEnabled = false;
   String? _lastLeanSongId;
+  BluetoothAudioContext? _lastBtContext;
+  final Map<String, String> _btProfilePresets = {};
 
   EqualizerProvider({
     AndroidEqualizer? equalizer,
     AndroidLoudnessEnhancer? loudnessEnhancer,
     MusicProvider? music,
+    BluetoothProvider? bluetooth,
   })  : _androidEqualizer = equalizer,
         _loudnessEnhancer = loudnessEnhancer,
-        _music = music {
+        _music = music,
+        _bluetooth = bluetooth {
     _initStudioBands();
     _initialize();
     _music?.addListener(_onMusicChanged);
+    _bluetooth?.addListener(_onBluetoothChanged);
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -145,12 +190,74 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> _applyLeanForCurrent() async {
-    if (!_learnedEqEnabled) return;
     final song = _music?.currentSong;
-    if (song == null) return;
-    final lean = await EqLeanStore.presetFor(songId: song.id, artist: song.artist);
+    String? lean;
+    if (_learnedEqEnabled && song != null) {
+      lean = await EqLeanStore.presetFor(songId: song.id, artist: song.artist);
+    }
+    lean ??= _btProfilePresetName();
     if (lean == null || lean == preset) return;
     await applyPreset(lean, persistSelection: false);
+  }
+
+  String? _btProfilePresetName() {
+    if (!_btProfilesEnabled || _bluetooth == null) return null;
+    if (!_bluetooth!.bluetoothConnected) return null;
+    final key = _bluetooth!.audioContext.name;
+    return _btProfilePresets[key];
+  }
+
+  void _onBluetoothChanged() {
+    final ctx = _bluetooth?.audioContext;
+    if (ctx == _lastBtContext) return;
+    _lastBtContext = ctx;
+    unawaited(_applyLeanForCurrent());
+  }
+
+  bool get btProfilesEnabled => _btProfilesEnabled;
+
+  Future<void> setBtProfilesEnabled(bool value) async {
+    _btProfilesEnabled = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('equalizer_bt_profiles', value);
+    } catch (_) {}
+    if (value) unawaited(_applyLeanForCurrent());
+    notifyListeners();
+  }
+
+  String? btPresetFor(BluetoothAudioContext ctx) => _btProfilePresets[ctx.name];
+
+  Future<void> setBtPreset(BluetoothAudioContext ctx, String presetName) async {
+    _btProfilePresets[ctx.name] = presetName;
+    await _saveBtProfiles();
+    if (_btProfilesEnabled && _bluetooth?.audioContext == ctx) {
+      await applyPreset(presetName, persistSelection: false);
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveBtProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('equalizer_bt_profiles_map', jsonEncode(_btProfilePresets));
+    } catch (_) {}
+  }
+
+  Future<void> _loadBtProfiles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _btProfilesEnabled = prefs.getBool('equalizer_bt_profiles') ?? false;
+      final raw = prefs.getString('equalizer_bt_profiles_map');
+      if (raw != null) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          _btProfilePresets
+            ..clear()
+            ..addAll(decoded.map((k, v) => MapEntry(k.toString(), v.toString())));
+        }
+      }
+    } catch (_) {}
   }
 
   bool get isAvailable => true; // software curve always available
@@ -275,6 +382,7 @@ class EqualizerProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       isEnabled = prefs.getBool('equalizer_enabled') ?? true;
       preset = prefs.getString('equalizer_preset') ?? 'Flat';
+      await _loadBtProfiles();
       preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
       await _loadCustomPresets(prefs);
 
@@ -339,7 +447,7 @@ class EqualizerProvider extends ChangeNotifier {
   List<double> mapStudioToHardware(List<double> studioGains) {
     if (bandStates.isEmpty) return const [];
     final src = List<double>.from(studioGains);
-    while (src.length < 10) {
+    while (src.length < studioFrequencies.length) {
       src.add(0);
     }
     return bandStates.map((band) {
@@ -415,8 +523,9 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   void _applyStudioGains(List<double> gains) {
+    final expanded = expandGainsToStudio(gains);
     for (var i = 0; i < studioBands.length; i++) {
-      final g = i < gains.length ? gains[i] : 0.0;
+      final g = i < expanded.length ? expanded[i] : 0.0;
       studioBands[i].gainDb = g.clamp(studioMinDb, studioMaxDb);
       bands[studioBands[i].label] = studioBands[i].gainDb;
     }
