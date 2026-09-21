@@ -230,11 +230,19 @@ class MusicProvider extends ChangeNotifier {
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
     _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
-      if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
-    });
+      try {
+        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession A failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionA stream error: $e'));
     _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
-      if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
-    });
+      try {
+        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession B failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionB stream error: $e'));
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
