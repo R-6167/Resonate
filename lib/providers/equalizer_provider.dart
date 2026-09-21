@@ -9,7 +9,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/eq_lean_store.dart';
-import 'package:resonate/dsp/resonate_dsp_pipeline.dart';
+import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
 import 'bluetooth_provider.dart';
 
