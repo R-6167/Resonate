@@ -120,8 +120,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                 ],
               ),
               Text(
-                'Zero is centered. On Android, preamp is applied softly so the '
-                'device does not mute or clip; large moves still stay safe.',
+                'Zero is centered. Cuts use digital gain (works to -6 dB without '
+                'OEM mute). Boosts use a soft loudness path and stay capped.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
