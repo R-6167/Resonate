@@ -64,6 +64,8 @@ class MusicProvider extends ChangeNotifier {
   Duration currentPosition = Duration.zero;
   Duration? currentDuration;
   double _volume = 1.0;
+  /// Digital gain from EQ preamp (1.0 = 0 dB). Attenuation only via this path.
+  double _eqPreampScale = 1.0;
   List<Song> _queue = <Song>[];
   int _queueIndex = 0;
   bool _shuffleEnabled = false;
@@ -1251,7 +1253,7 @@ class MusicProvider extends ChangeNotifier {
         await timed('seek_zero', target.seek(Duration.zero), ms: 3000);
       }
 
-      await timed('setVolume', target.setVolume(1.0), ms: 2000);
+      await timed('setVolume', target.setVolume(_eqPreampScale), ms: 2000);
 
       // Effects after source is up — never block play on effects failure/slowness.
       unawaited(_enableEffects(target, targetEq, targetLoud));
@@ -1442,7 +1444,7 @@ class MusicProvider extends ChangeNotifier {
     final nextIndex = _crossfadeTargetIndex;
     final nextSong = _crossfadeTargetSong;
     if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _volume;
+    _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale;
     try {
       await outgoing.setLoopMode(LoopMode.off);
       final alreadyPreloaded = _preloadedNextSongId == nextSong.id;
@@ -1895,11 +1897,27 @@ class MusicProvider extends ChangeNotifier {
     _volume = volume.clamp(0.0, 1.0).toDouble();
     try {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
-      await audioPlayer.setVolume(1.0);
-      await inactivePlayer.setVolume(1.0);
+      // Keep EQ preamp digital attenuation; system volume is separate.
+      if (!_crossfadeInProgress) {
+        await audioPlayer.setVolume(_eqPreampScale);
+      }
     } catch (_) {}
     notifyListeners();
   }
+
+  /// Called by EqualizerProvider for preamp (−6 dB → ~0.5 scale, 0 dB → 1.0).
+  Future<void> setEqPreampScale(double scale) async {
+    _eqPreampScale = scale.clamp(0.25, 1.0);
+    if (_crossfadeInProgress) {
+      notifyListeners();
+      return;
+    }
+    try {
+      await audioPlayer.setVolume(_eqPreampScale);
+    } catch (_) {}
+    notifyListeners();
+  }
+
   Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await playSong(songs[index], queue: songs, startIndex: index); }
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
   @override
