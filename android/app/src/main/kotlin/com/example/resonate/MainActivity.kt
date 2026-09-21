@@ -64,15 +64,18 @@ class MainActivity : AudioServiceActivity() {
                         result.success(true)
                     }
                     "setBassBoost" -> {
-                        bassBoost?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                        val s = (call.argument<Int>("strength") ?: 0).coerceIn(0, 1000)
+                        if (s > 0) ensureBassBoost()?.setStrength(s.toShort())
                         result.success(true)
                     }
                     "setVirtualizer" -> {
-                        virtualizer?.setStrength((call.argument<Int>("strength") ?: 0).coerceIn(0, 1000).toShort())
+                        val s = (call.argument<Int>("strength") ?: 0).coerceIn(0, 1000)
+                        if (s > 0) ensureVirtualizer()?.setStrength(s.toShort())
                         result.success(true)
                     }
                     "setReverb" -> {
-                        reverb?.reverbLevel = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000).toShort()
+                        val s = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000)
+                        if (s != 0) ensureReverb()?.reverbLevel = s.toShort()
                         result.success(true)
                     }
                     "attachResonateDsp" -> {
@@ -112,27 +115,53 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun attachEffects(sessionId: Int) {
-        if (sessionId <= 0 || sessionId == effectSessionId) return
-        releaseEffects()
+        // CRITICAL: do not create BassBoost/Virtualizer/Reverb/DynamicsProcessing here.
+        // Eager AudioEffect construction on first play kills the Activity on many OEMs
+        // while ExoPlayer continues ("Resonate keeps stopping" + audio still playing).
+        if (sessionId <= 0) return
         effectSessionId = sessionId
-        try {
-            bassBoost = BassBoost(0, sessionId).apply { enabled = true }
-        } catch (_: Exception) {
+    }
+
+    private fun ensureBassBoost(): BassBoost? {
+        if (effectSessionId <= 0) return null
+        if (bassBoost != null) return bassBoost
+        return try {
+            BassBoost(0, effectSessionId).also {
+                it.enabled = true
+                bassBoost = it
+            }
+        } catch (_: Throwable) {
             bassBoost = null
+            null
         }
-        try {
-            virtualizer = Virtualizer(0, sessionId).apply { enabled = true }
-        } catch (_: Exception) {
+    }
+
+    private fun ensureVirtualizer(): Virtualizer? {
+        if (effectSessionId <= 0) return null
+        if (virtualizer != null) return virtualizer
+        return try {
+            Virtualizer(0, effectSessionId).also {
+                it.enabled = true
+                virtualizer = it
+            }
+        } catch (_: Throwable) {
             virtualizer = null
+            null
         }
-        try {
-            reverb = EnvironmentalReverb(0, sessionId).apply { enabled = true }
-        } catch (_: Exception) {
+    }
+
+    private fun ensureReverb(): EnvironmentalReverb? {
+        if (effectSessionId <= 0) return null
+        if (reverb != null) return reverb
+        return try {
+            EnvironmentalReverb(0, effectSessionId).also {
+                it.enabled = true
+                reverb = it
+            }
+        } catch (_: Throwable) {
             reverb = null
+            null
         }
-        // Do NOT auto-attach DynamicsProcessing here — it conflicts with just_audio's
-        // AndroidEqualizer/LoudnessEnhancer on some OEMs and can kill the Activity
-        // while audio_service keeps playing in the background.
     }
 
     /**
@@ -141,6 +170,10 @@ class MainActivity : AudioServiceActivity() {
      * centers onto whatever the device accepts.
      */
     private fun attachResonateDsp(sessionId: Int): Boolean {
+        // Temporarily disabled: DynamicsProcessing on session shared with just_audio
+        // Equalizer caused Activity death on first play for some devices.
+        resonateDspBandCount = 0
+        return false
         if (sessionId <= 0) return false
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             resonateDspBandCount = 0
