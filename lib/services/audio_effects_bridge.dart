@@ -1,25 +1,50 @@
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class AudioEffectsBridge {
-  static const MethodChannel _channel = MethodChannel('com.example.resonate/audio_effects');
+  static const MethodChannel _channel =
+      MethodChannel('com.example.resonate/audio_effects');
 
   static Future<void> attachToSession(int sessionId) async {
-    await _channel.invokeMethod('attachToSession', {'sessionId': sessionId});
+    if (sessionId <= 0) return;
+    try {
+      await _channel.invokeMethod('attachToSession', {'sessionId': sessionId});
+    } catch (e) {
+      debugPrint('AudioEffectsBridge.attachToSession failed: $e');
+    }
   }
 
-  static Future<void> setBassBoost(double value) async {
-    await _channel.invokeMethod('setBassBoost', {'strength': (value.clamp(0.0, 1.0) * 1000).round()});
+  static Future<void> setBassBoost(double strength) async {
+    try {
+      final s = (strength.clamp(0.0, 1.0) * 1000).round();
+      await _channel.invokeMethod('setBassBoost', {'strength': s});
+    } catch (e) {
+      debugPrint('setBassBoost failed: $e');
+    }
   }
 
-  static Future<void> setVirtualizer(double value) async {
-    await _channel.invokeMethod('setVirtualizer', {'strength': (value.clamp(0.0, 1.0) * 1000).round()});
+  static Future<void> setVirtualizer(double strength) async {
+    try {
+      final s = (strength.clamp(0.0, 1.0) * 1000).round();
+      await _channel.invokeMethod('setVirtualizer', {'strength': s});
+    } catch (e) {
+      debugPrint('setVirtualizer failed: $e');
+    }
   }
 
-  static Future<void> setReverb(double value) async {
-    await _channel.invokeMethod('setReverb', {'strength': (value.clamp(0.0, 1.0) * 1000).round()});
+  static Future<void> setReverb(double strength) async {
+    try {
+      final s = (strength.clamp(0.0, 1.0) * 1900 - 900).round();
+      await _channel.invokeMethod('setReverb', {'strength': s});
+    } catch (e) {
+      debugPrint('setReverb failed: $e');
+    }
   }
 
   static Future<void> release() async {
-    await _channel.invokeMethod('release');
+    try {
+      await _channel.invokeMethod('release');
+    } catch (_) {}
   }
 }
