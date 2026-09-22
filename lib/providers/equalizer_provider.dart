@@ -161,9 +161,10 @@ class EqualizerProvider extends ChangeNotifier {
     _initialize();
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
-    _music?.onAndroidSession = (id) {
-      if (_nativeDspEnabled) unawaited(attachNativeSession(id));
-    };
+    // Native DynamicsProcessing is parked. Attaching it (or even registering
+    // a session callback that might attach it) crashed the Activity on first
+    // play for the DSP builds. Hardware AndroidEqualizer stays in the pipeline.
+    _music?.onAndroidSession = null;
   }
 
   bool get learnedEqEnabled => _learnedEqEnabled;
@@ -190,6 +191,12 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   void _onMusicChanged() {
+    final playing = _music?.isPlaying ?? false;
+    if (playing && !_hardwareBound) {
+      unawaited(Future<void>.delayed(const Duration(milliseconds: 1800), () {
+        if (_music?.isPlaying == true) unawaited(_bindHardwareAfterPlayback());
+      }));
+    }
     final id = _music?.currentSong?.id;
     if (id == null || id == _lastLeanSongId) return;
     _lastLeanSongId = id;
@@ -225,7 +232,9 @@ class EqualizerProvider extends ChangeNotifier {
   bool get nativeDspUserEnabled => _nativeDspEnabled;
 
   Future<void> setNativeDspEnabled(bool value) async {
-    _nativeDspEnabled = value;
+    // Native DSP remains off until a PCM processor exists. Ignore enable.
+    _nativeDspEnabled = false;
+    value = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('equalizer_native_dsp', value);
@@ -391,7 +400,7 @@ class EqualizerProvider extends ChangeNotifier {
   }) {
     _androidEqualizer = equalizer;
     _loudnessEnhancer = loudnessEnhancer;
-    unawaited(_reloadHardwareAndApply());
+    if (_hardwareBound) unawaited(_reloadHardwareAndApply());
   }
 
   Future<void> _reloadHardwareAndApply() async {
@@ -401,14 +410,17 @@ class EqualizerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _hardwareBound = false;
+
   Future<void> _initialize() async {
     try {
-      await _loadHardwareBands();
+      // Do NOT await AndroidEqualizer.parameters here. That completer finishes
+      // at first play and then setEnabled/setGain races session attach.
       final prefs = await SharedPreferences.getInstance();
       isEnabled = prefs.getBool('equalizer_enabled') ?? true;
       preset = prefs.getString('equalizer_preset') ?? 'Flat';
       await _loadBtProfiles();
-      _nativeDspEnabled = prefs.getBool('equalizer_native_dsp') ?? false;
+      _nativeDspEnabled = false; // parked — DynamicsProcessing killed first-play UI
       preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
       await _loadCustomPresets(prefs);
 
@@ -433,12 +445,27 @@ class EqualizerProvider extends ChangeNotifier {
         bands[b.label] = b.gainDb;
       }
 
+      // Digital preamp only at startup (player volume scale). Hardware EQ
+      // bind waits until playback has been running for a moment.
+      await _applyPreamp();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Equalizer initialization failed: $e');
+    }
+  }
+
+  Future<void> _bindHardwareAfterPlayback() async {
+    if (_hardwareBound) return;
+    _hardwareBound = true;
+    try {
+      await _loadHardwareBands();
       await _androidEqualizer?.setEnabled(isEnabled);
       await _pushToHardware();
       await _applyPreamp();
       notifyListeners();
     } catch (e) {
-      debugPrint('Equalizer initialization failed: $e');
+      debugPrint('deferred hardware EQ bind failed: $e');
+      _hardwareBound = false;
     }
   }
 
@@ -490,6 +517,7 @@ class EqualizerProvider extends ChangeNotifier {
   int get nativeDspBandCount => ResonateNativeDspBridge.lastBandCount ?? 0;
 
   Future<void> _pushToHardware() async {
+    if (!_hardwareBound) return;
     final studioGains = studioBands.map((b) => b.gainDb).toList();
     final centers = studioBands.map((b) => b.frequencyHz).toList();
 
@@ -565,6 +593,7 @@ class EqualizerProvider extends ChangeNotifier {
       debugPrint('preamp digital scale failed: $e');
     }
     // Positive preamp only: soft LoudnessEnhancer boost (optional, capped).
+    if (!_hardwareBound) return;
     if (_loudnessEnhancer == null) return;
     try {
       if (!isEnabled || effective <= 0.15) {

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,17 +11,9 @@ class AudioEffectsProvider extends ChangeNotifier {
   double virtualizer = 0.0;
   double loudness = 0.0;
   bool effectsEnabled = true;
-  StreamSubscription<int?>? _sessionSubscription;
 
   AudioEffectsProvider({this.player, this.loudnessEnhancer}) {
     _load();
-    if (player != null) {
-      _sessionSubscription = player!.androidAudioSessionIdStream.listen((sessionId) {
-        if (sessionId != null && sessionId > 0) {
-          AudioEffectsBridge.attachToSession(sessionId).then((_) => _applyNative());
-        }
-      });
-    }
   }
 
   Future<void> setEffectsEnabled(bool value) async {
@@ -61,9 +52,12 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   Future<void> _applyNative() async {
+    // Only when the user actually moved a control. Never on first play.
+    final sessionId = player?.androidAudioSessionId ?? 0;
+    if (sessionId <= 0) return;
     final enabled = effectsEnabled;
-
     try {
+      await AudioEffectsBridge.attachToSession(sessionId);
       await AudioEffectsBridge.setBassBoost(enabled ? bassBoost : 0.0);
       await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
       await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
@@ -89,7 +83,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
       virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
       loudness = prefs.getDouble('loudness') ?? 0.0;
-      await _applyNative();
+      // Do not apply native effects at load — no audio session yet.
       notifyListeners();
     } catch (e) {
       debugPrint('Audio effects load failed: $e');
@@ -122,7 +116,6 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _sessionSubscription?.cancel();
     AudioEffectsBridge.release();
     super.dispose();
   }

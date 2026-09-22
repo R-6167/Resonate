@@ -219,7 +219,7 @@ class MusicProvider extends ChangeNotifier {
   static const _resumeSongIdKey = 'playback_resume_song_id';
   static const _resumeMapKey = 'playback_resume_map_v1';
   final Map<String, int> _resumeBySongId = {};
-  static const MethodChannel _systemVolumeChannel = MethodChannel('com.example.resonate/media_store');
+  static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
   MusicProvider({this.audioHandler}) {
     _equalizerA = AndroidEqualizer();
@@ -229,20 +229,11 @@ class MusicProvider extends ChangeNotifier {
     _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
     _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
     _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
-    _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
-      try {
-        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession A failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionA stream error: $e'));
-    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
-      try {
-        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
-      } catch (e) {
-        debugPrint('onAndroidSession B failed: $e');
-      }
-    }, onError: (e) => debugPrint('sessionB stream error: $e'));
+    // Do not attach extra AudioEffects (BassBoost / Virtualizer / DynamicsProcessing)
+    // on session creation. That races just_audio's Equalizer attach and kills the
+    // Activity while ExoPlayer keeps playing ("Resonate keeps stopping").
+    _sessionASub = _playerA.androidAudioSessionIdStream.listen((_) {}, onError: (e) => debugPrint('sessionA stream error: $e'));
+    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((_) {}, onError: (e) => debugPrint('sessionB stream error: $e'));
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
@@ -276,7 +267,9 @@ class MusicProvider extends ChangeNotifier {
       _resumeSongId = prefs.getString(_resumeSongIdKey);
       await _loadResumeMap(prefs);
       await _syncSystemVolume();
-      await syncSavedAudioEffects();
+      // Skip syncSavedAudioEffects at startup — it awaits eq.parameters and
+      // then fires during the first play, crashing the Activity.
+
       if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(_crossfadeFadeType)) _crossfadeFadeType = 'linear';
       notifyListeners();
     } catch (e) { debugPrint('Playback settings load failed: $e'); }
@@ -1010,7 +1003,10 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-    try { await _audioEffectsController.activateFor(player); } catch (e) { debugPrint('Audio effects activation failed: $e'); }
+    // Intentionally empty. activateFor/syncAll awaited AndroidEqualizer.parameters
+    // on BOTH engines during setAudioSource/play, which crashes the Activity on
+    // several OEMs (audio continues in the foreground service).
+    // just_audio already has Equalizer + LoudnessEnhancer in the AudioPipeline.
   }
 
   Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken, Future<T> Function()? onSuperseded}) async {
