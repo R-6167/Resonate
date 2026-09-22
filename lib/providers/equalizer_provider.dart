@@ -191,12 +191,12 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   void _onMusicChanged() {
-    final playing = _music?.isPlaying ?? false;
-    if (playing && !_hardwareBound) {
-      unawaited(Future<void>.delayed(const Duration(milliseconds: 1800), () {
-        if (_music?.isPlaying == true) unawaited(_bindHardwareAfterPlayback());
-      }));
-    }
+    // Do not perform a deferred AndroidEqualizer.parameters/setEnabled bind
+    // after playback starts. On affected OEMs this native effect handshake can
+    // kill the Flutter Activity while ExoPlayer continues playing. The
+    // just_audio AudioPipeline owns the session-bound Equalizer/Loudness
+    // attachment; hardware band inspection is intentionally kept out of the
+    // playback-critical path until it has a proven safe lifecycle.
     final id = _music?.currentSong?.id;
     if (id == null || id == _lastLeanSongId) return;
     _lastLeanSongId = id;
