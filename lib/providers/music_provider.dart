@@ -227,8 +227,11 @@ class MusicProvider extends ChangeNotifier {
     _loudnessA = AndroidLoudnessEnhancer();
     _loudnessB = AndroidLoudnessEnhancer();
     _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
-    _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
-    _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
+    // A/B isolation test: keep the Android effect objects alive for the EQ layer,
+    // but do NOT attach them to just_audio's AudioPipeline. If playback becomes
+    // stable, the native effect attachment/session path is the regression source.
+    _playerA = AudioPlayer();
+    _playerB = AudioPlayer();
     // Do not attach extra AudioEffects (BassBoost / Virtualizer / DynamicsProcessing)
     // on session creation. That races just_audio's Equalizer attach and kills the
     // Activity while ExoPlayer keeps playing ("Resonate keeps stopping").
