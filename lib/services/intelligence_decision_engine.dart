@@ -48,9 +48,10 @@ class IntelligenceDecisionEngine {
     // DJ Mode Step 4: optional soft key bias (off by default; never a hard filter).
     final djEnabled = await DjModeSettingsStore.enabled();
     final harmonicOn = djEnabled && await DjModeSettingsStore.harmonicMix();
+    final djContinuityOn = djEnabled;
     DjAnalysis? currentDj;
     final Map<String, DjAnalysis> djById = <String, DjAnalysis>{};
-    if (harmonicOn) {
+    if (djContinuityOn) {
       if (currentSong != null) {
         try {
           currentDj = await database.getDjAnalysis(currentSong.id);
@@ -93,16 +94,30 @@ class IntelligenceDecisionEngine {
       final historicalArtistBoost = historicalArtistWeight > 0 ? (0.35 + (historicalArtistWeight.clamp(0, 8) / 8.0)) * (1.0 - exploration * .55) : 0.0;
       var value = r.score * (1.0 - exploration) + exploration * (1.0 - rank / pool.length) * 3.0 + r.confidence * 2.0;
       value += historicalSongBoost + historicalArtistBoost;
-      if (harmonicOn && currentDj != null && currentDj.hasUsableKey) {
+      if (djContinuityOn && currentDj != null) {
         final cand = djById[r.song.id];
-        if (cand != null && cand.hasUsableKey) {
-          final compat = harmonicCompatibility(
-            rootA: currentDj.keyRoot,
-            modeA: currentDj.keyMode,
-            rootB: cand.keyRoot,
-            modeB: cand.keyMode,
-          );
-          value += harmonicDecisionBoost(compat);
+        if (cand != null) {
+          if (currentDj.hasUsableKey && cand.hasUsableKey) {
+            final compat = harmonicCompatibility(
+              rootA: currentDj.keyRoot,
+              modeA: currentDj.keyMode,
+              rootB: cand.keyRoot,
+              modeB: cand.keyMode,
+            );
+            value += harmonicDecisionBoost(compat);
+          }
+          if (currentDj.hasUsableBpm && cand.hasUsableBpm) {
+            final a = currentDj.bpm!;
+            final b = cand.bpm!;
+            final rel = (a - b).abs() / a;
+            if (rel <= 0.08) {
+              value += 1.15;
+            } else if (rel <= 0.12) {
+              value += 0.55;
+            } else if (rel <= 0.20) {
+              value += 0.2;
+            }
+          }
         }
       }
 
