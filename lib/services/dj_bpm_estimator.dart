@@ -5,12 +5,13 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import 'dj_harmonic.dart';
+import 'dj_pcm_bpm.dart';
 
-/// Lightweight BPM hints for DJ Mode Step 2.
+/// BPM / key hints for DJ Mode.
 ///
 /// Sources (in order):
-/// 1. ID3v2 TBPM frame (common on commercial MP3s)
-/// 2. Optional future PCM path — not required for Step 2
+/// 1. ID3v2 TBPM + TKEY frames
+/// 2. Light PCM energy BPM for uncompressed WAV only
 ///
 /// Never throws into the playback path; failures return null.
 class DjBpmEstimate {
@@ -48,7 +49,6 @@ class DjKeyEstimate {
 }
 
 class DjBpmEstimator {
-  /// Read at most this many bytes from the start of a file for tag scans.
   static const int _scanBytes = 512 * 1024;
 
   Future<DjBpmEstimate?> estimateFile(String filePath) async {
@@ -88,16 +88,24 @@ class DjBpmEstimator {
       } finally {
         await raf.close();
       }
+
+      final pcm = await DjPcmBpmAnalyzer().analyzeWav(filePath);
+      if (pcm != null) {
+        return DjBpmEstimate(
+          bpm: pcm.bpm,
+          confidence: pcm.confidence,
+          beatOffsetMs: pcm.beatOffsetMs,
+          source: 'pcm_wav',
+        );
+      }
     } catch (e) {
       debugPrint('DjBpmEstimator: $e');
     }
     return null;
   }
 
-  /// ID3v2 TBPM — text frame with BPM as digits (may include decimals).
   DjBpmEstimate? _parseId3Tbpm(Uint8List bytes) {
     if (bytes.length < 10) return null;
-    // ID3v2 header "ID3"
     if (bytes[0] != 0x49 || bytes[1] != 0x44 || bytes[2] != 0x33) {
       return _scanTbpmFrame(bytes, 0);
     }
@@ -143,6 +151,51 @@ class DjBpmEstimator {
     return null;
   }
 
+  /// ID3v2 TKEY — musical key text (e.g. Am, C major, 8A).
+  DjKeyEstimate? _parseId3Tkey(Uint8List bytes) {
+    if (bytes.length < 10) return null;
+    int start = 0;
+    int? end;
+    int id3v2 = 3;
+    if (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) {
+      id3v2 = bytes[3];
+      final tagSize = _synchsafe(bytes, 6);
+      start = 10;
+      end = math.min(bytes.length, 10 + tagSize);
+    }
+    final limit = end ?? bytes.length;
+    for (var i = start; i + 10 < limit; i++) {
+      if (bytes[i] == 0x54 &&
+          bytes[i + 1] == 0x4B &&
+          bytes[i + 2] == 0x45 &&
+          bytes[i + 3] == 0x59) {
+        final size = id3v2 >= 4
+            ? _synchsafe(bytes, i + 4)
+            : ((bytes[i + 4] << 24) | (bytes[i + 5] << 16) | (bytes[i + 6] << 8) | bytes[i + 7]);
+        if (size <= 0 || size > 64) continue;
+        final dataStart = i + 10;
+        final dataEnd = math.min(limit, dataStart + size);
+        if (dataStart >= dataEnd) continue;
+        var textStart = dataStart;
+        if (dataEnd - dataStart >= 2 && bytes[dataStart] <= 3) {
+          textStart = dataStart + 1;
+        }
+        final text = String.fromCharCodes(bytes.sublist(textStart, dataEnd))
+            .replaceAll('\u0000', ' ')
+            .trim();
+        final parsed = parseKeyText(text);
+        if (parsed == null) continue;
+        return DjKeyEstimate(
+          keyRoot: parsed.root,
+          keyMode: parsed.mode,
+          confidence: 0.7,
+          source: 'id3_tkey',
+        );
+      }
+    }
+    return null;
+  }
+
   int _synchsafe(Uint8List b, int i) {
     if (i + 3 >= b.length) return 0;
     return ((b[i] & 0x7f) << 21) |
@@ -152,8 +205,6 @@ class DjBpmEstimator {
   }
 }
 
-/// Seek position on B so the next beat of A lines up with a beat of B.
-/// Returns null when BPMs differ too much for alignment without stretch.
 Duration? computeBeatAlignedSeekMs({
   required double bpmA,
   required int beatOffsetMsA,
@@ -187,7 +238,6 @@ double _mod(num x, double m) {
   return r < 0 ? r + m : r;
 }
 
-/// Planned playback rates for a tempo-matched crossfade (Step 3).
 class DjTempoStretchPlan {
   final double speedOutgoing;
   final double speedIncoming;
@@ -202,7 +252,6 @@ class DjTempoStretchPlan {
   });
 }
 
-/// Prefer matching incoming to outgoing; else meet in the middle within budget.
 DjTempoStretchPlan? computeTempoStretch({
   required double bpmA,
   required double bpmB,
