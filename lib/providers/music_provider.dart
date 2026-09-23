@@ -89,7 +89,11 @@ class MusicProvider extends ChangeNotifier {
   bool _crossfadePreloadInFlight = false;
   /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
   bool _djBeatAlignActive = false;
+  bool _djTempoMatchActive = false;
+  int _djMaxStretchPercent = 12;
   DjAnalysisService? _djAnalysis;
+  double? _djStretchSpeedOut;
+  double? _djStretchSpeedIn;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -319,9 +323,13 @@ class MusicProvider extends ChangeNotifier {
   /// ignores BPM and behaves exactly as before.
   void configureDjMode({
     required bool beatAlignActive,
+    bool tempoMatchActive = false,
+    int maxStretchPercent = 12,
     DjAnalysisService? analysis,
   }) {
     _djBeatAlignActive = beatAlignActive;
+    _djTempoMatchActive = tempoMatchActive;
+    _djMaxStretchPercent = maxStretchPercent.clamp(3, 20);
     _djAnalysis = analysis;
   }
 
@@ -1611,76 +1619,136 @@ class MusicProvider extends ChangeNotifier {
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) => _serializePlayback(() => _performTrueCrossfade(milliseconds: milliseconds, fadeType: fadeType, generation: _authority.beginAutomatic('crossfade')), command: 'crossfade', source: 'automatic_transition');
 
 
-  /// When DJ Mode beat-align is active, seek the incoming engine so the next
-  /// beat of A lines up with a beat of B. No-ops when off, analysis missing,
-  /// or BPMs differ by more than ~8% (stretch is Step 3).
-  Future<void> _maybeBeatAlignIncoming({
+  Future<void> _clearDjStretchSpeeds({
+    AudioPlayer? outgoing,
+    AudioPlayer? incoming,
+  }) async {
+    _djStretchSpeedOut = null;
+    _djStretchSpeedIn = null;
+    try {
+      if (outgoing != null) await outgoing.setSpeed(1.0);
+    } catch (_) {}
+    try {
+      if (incoming != null) await incoming.setSpeed(1.0);
+    } catch (_) {}
+  }
+
+  /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
+  Future<void> _prepareDjHandoff({
     required AudioPlayer outgoing,
     required AudioPlayer incoming,
     required Song? outgoingSong,
     required Song incomingSong,
   }) async {
-    if (!_djBeatAlignActive || _djAnalysis == null) return;
+    if ((!_djBeatAlignActive && !_djTempoMatchActive) || _djAnalysis == null) {
+      return;
+    }
     if (outgoingSong == null) return;
     try {
       final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
       final bFuture = _djAnalysis!.analyzeSong(incomingSong);
       final results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
-        const Duration(milliseconds: 350),
+        const Duration(milliseconds: 400),
         onTimeout: () => <DjAnalysis>[],
       );
       if (results.length < 2) return;
       final analysisA = results[0];
       final analysisB = results[1];
       if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
-        await ResonateDiagnostics.record('dj_beat_align_skipped', {
+        await ResonateDiagnostics.record('dj_handoff_skipped', {
           'reason': 'missing_bpm',
           'outgoingSongId': outgoingSong.id,
           'incomingSongId': incomingSong.id,
-          'bpmA': analysisA.bpm,
-          'bpmB': analysisB.bpm,
         });
         return;
       }
-      final posMs = outgoing.position.inMilliseconds;
-      final seek = computeBeatAlignedSeekMs(
-        bpmA: analysisA.bpm!,
-        beatOffsetMsA: analysisA.beatOffsetMs ?? 0,
-        bpmB: analysisB.bpm!,
-        beatOffsetMsB: analysisB.beatOffsetMs ?? 0,
-        outgoingPositionMs: posMs,
-      );
-      if (seek == null) {
-        await ResonateDiagnostics.record('dj_beat_align_skipped', {
-          'reason': 'bpm_delta',
-          'outgoingSongId': outgoingSong.id,
-          'incomingSongId': incomingSong.id,
-          'bpmA': analysisA.bpm,
-          'bpmB': analysisB.bpm,
-        });
-        return;
-      }
-      final dur = incoming.duration ?? incomingSong.duration;
-      var target = seek;
-      if (dur > Duration.zero && target >= dur) {
-        final periodMs = (60000.0 / analysisB.bpm!).round();
-        if (periodMs > 0) {
-          target = Duration(milliseconds: target.inMilliseconds % periodMs);
-        } else {
-          target = Duration.zero;
+
+      final bpmA = analysisA.bpm!;
+      final bpmB = analysisB.bpm!;
+      DjTempoStretchPlan? stretch;
+      if (_djTempoMatchActive) {
+        stretch = computeTempoStretch(
+          bpmA: bpmA,
+          bpmB: bpmB,
+          maxStretchPercent: _djMaxStretchPercent,
+        );
+        if (stretch == null) {
+          await ResonateDiagnostics.record('dj_tempo_match_skipped', {
+            'reason': 'stretch_budget',
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'maxPercent': _djMaxStretchPercent,
+          });
         }
       }
-      await incoming.seek(target);
-      await ResonateDiagnostics.record('dj_beat_align_applied', {
-        'outgoingSongId': outgoingSong.id,
-        'incomingSongId': incomingSong.id,
-        'bpmA': analysisA.bpm,
-        'bpmB': analysisB.bpm,
-        'seekMs': target.inMilliseconds,
-        'outgoingPosMs': posMs,
-      });
+
+      final effectiveBpmB = stretch?.effectiveBpm ?? bpmB;
+      final beatOffsetB = analysisB.beatOffsetMs ?? 0;
+      final beatOffsetA = analysisA.beatOffsetMs ?? 0;
+
+      if (_djBeatAlignActive) {
+        final posMs = outgoing.position.inMilliseconds;
+        final seek = computeBeatAlignedSeekMs(
+          bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
+          beatOffsetMsA: beatOffsetA,
+          bpmB: effectiveBpmB,
+          beatOffsetMsB: beatOffsetB,
+          outgoingPositionMs: posMs,
+          maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+        );
+        if (seek == null) {
+          await ResonateDiagnostics.record('dj_beat_align_skipped', {
+            'reason': 'bpm_delta',
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'stretched': stretch != null,
+          });
+        } else {
+          final dur = incoming.duration ?? incomingSong.duration;
+          var target = seek;
+          if (dur > Duration.zero && target >= dur) {
+            final periodMs = (60000.0 / effectiveBpmB).round();
+            if (periodMs > 0) {
+              target = Duration(milliseconds: target.inMilliseconds % periodMs);
+            } else {
+              target = Duration.zero;
+            }
+          }
+          await incoming.seek(target);
+          await ResonateDiagnostics.record('dj_beat_align_applied', {
+            'outgoingSongId': outgoingSong.id,
+            'incomingSongId': incomingSong.id,
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'seekMs': target.inMilliseconds,
+            'outgoingPosMs': posMs,
+            'stretched': stretch != null,
+          });
+        }
+      }
+
+      if (stretch != null) {
+        try {
+          await outgoing.setSpeed(stretch.speedOutgoing);
+        } catch (_) {}
+        try {
+          await incoming.setSpeed(stretch.speedIncoming);
+        } catch (_) {}
+        _djStretchSpeedOut = stretch.speedOutgoing;
+        _djStretchSpeedIn = stretch.speedIncoming;
+        await ResonateDiagnostics.record('dj_tempo_match_applied', {
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': bpmA,
+          'bpmB': bpmB,
+          'speedOut': stretch.speedOutgoing,
+          'speedIn': stretch.speedIncoming,
+          'mode': stretch.mode,
+          'effectiveBpm': stretch.effectiveBpm,
+        });
+      }
     } catch (e) {
-      debugPrint('beat align skipped: $e');
+      debugPrint('DJ handoff prepare skipped: $e');
     }
   }
 
@@ -1713,7 +1781,7 @@ class MusicProvider extends ChangeNotifier {
         final session = await AudioSession.instance;
         await session.setActive(true);
       } catch (_) {}
-      await _maybeBeatAlignIncoming(
+      await _prepareDjHandoff(
         outgoing: outgoing,
         incoming: incoming,
         outgoingSong: outgoingSong,
@@ -1774,6 +1842,7 @@ class MusicProvider extends ChangeNotifier {
             });
             try { await incoming.stop(); } catch (_) {}
             try { await outgoing.setVolume(base); } catch (_) {}
+            await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
             return false;
           }
           remainingMs = (rem - 150).clamp(1200, plannedMs);
@@ -1788,6 +1857,7 @@ class MusicProvider extends ChangeNotifier {
         if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
           try { await outgoing.setVolume(master); } catch (_) {}
+          await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
           await ResonateDiagnostics.record('crossfade_cancelled', {
             'stage': 'fade',
             'outgoingSongId': outgoingSong?.id,
@@ -1848,6 +1918,7 @@ class MusicProvider extends ChangeNotifier {
       try { await outgoing.pause(); } catch (_) {}
       try { await incoming.setLoopMode(LoopMode.off); } catch (_) {}
       try { await incoming.setVolume(master); } catch (_) {}
+      await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners();
@@ -1864,6 +1935,7 @@ class MusicProvider extends ChangeNotifier {
       });
       return true;
     } catch (e, stack) {
+      await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       debugPrint('True crossfade failed: $e'); debugPrint('$stack');
       try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {}
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
