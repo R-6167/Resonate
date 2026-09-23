@@ -1,0 +1,30 @@
+name: Apply DJ Mode Step 2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_step2.yml'
+      - 'tools/apply_dj_step2.py'
+      - 'tools/frag_beat_align_method.txt'
+permissions:
+  contents: write
+concurrency:
+  group: apply-dj-step2
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 5
+      - name: Apply beat-align to music_provider
+        run: |
+          set -euo pipefail
+          python3 tools/apply_dj_step2.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart
+          git commit -m "feat(dj): Step 2 beat-aware crossfade handoff" || true
+          git push origin HEAD:dj_Mode
