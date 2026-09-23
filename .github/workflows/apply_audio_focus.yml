@@ -1,0 +1,30 @@
+name: Apply audio focus harden
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_audio_focus.yml'
+      - 'tools/apply_audio_focus.py'
+      - 'tools/audio_focus.patch'
+permissions:
+  contents: write
+concurrency:
+  group: apply-audio-focus
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Resonate_Remake
+          fetch-depth: 10
+      - name: Restore + apply audio focus harden
+        run: |
+          set -euo pipefail
+          python3 tools/apply_audio_focus.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart
+          git commit -m "fix: harden audio focus — exclusive GAIN, dual-engine duck, resume after system pause, abandon on stop" || true
+          git push origin HEAD:Resonate_Remake
