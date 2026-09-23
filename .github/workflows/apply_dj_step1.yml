@@ -1,0 +1,29 @@
+name: Apply DJ Mode Step 1 wiring
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_step1.yml'
+      - 'tools/apply_dj_step1_wiring.py'
+permissions:
+  contents: write
+concurrency:
+  group: apply-dj-step1
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 5
+      - name: Wire DJ Mode into main, settings, database
+        run: |
+          set -euo pipefail
+          python3 tools/apply_dj_step1_wiring.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/main.dart lib/screens/settings_screen.dart lib/services/database_helper.dart
+          git commit -m "feat(dj): Step 1 wire provider, settings entry, analysis table" || true
+          git push origin HEAD:dj_Mode
