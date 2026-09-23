@@ -64,6 +64,8 @@ class DjModeProvider extends ChangeNotifier {
     try {
       music.configureDjMode(
         beatAlignActive: beatAlignActive,
+        tempoMatchActive: tempoMatchActive,
+        maxStretchPercent: _maxStretchPercent,
         analysis: _analysis,
       );
     } catch (e) {
@@ -91,6 +93,7 @@ class DjModeProvider extends ChangeNotifier {
 
   Future<void> setTempoMatch(bool value) async {
     _tempoMatch = value;
+    _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setTempoMatch(value);
   }
@@ -103,6 +106,7 @@ class DjModeProvider extends ChangeNotifier {
 
   Future<void> setMaxStretchPercent(int value) async {
     _maxStretchPercent = value.clamp(3, 20);
+    _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setMaxStretchPercent(_maxStretchPercent);
   }
