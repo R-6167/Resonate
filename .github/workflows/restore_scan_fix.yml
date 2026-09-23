@@ -1,0 +1,37 @@
+name: Restore MainActivity scan fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore_scan_fix.yml'
+permissions:
+  contents: write
+concurrency:
+  group: restore-scan-fix
+  cancel-in-progress: true
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Resonate_Remake
+          fetch-depth: 5
+      - name: Restore MainActivity.kt (scan keys + unrestricted path)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          b64 = """
+PLACEHOLDER_B64
+""".replace("\n", "").strip()
+          data = base64.b64decode(b64)
+          path = Path("android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt")
+          path.write_bytes(data)
+          text = path.read_text()
+          assert "filePath" in text
+          assert "folders.isNotEmpty()" in text
+          assert "PLACEHOLDER" not in text
+          print("MainActivity restored", len(text), "bytes")
+          PY
