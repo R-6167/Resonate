@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
+import 'dj_harmonic.dart';
+
 /// Lightweight BPM hints for DJ Mode Step 2.
 ///
 /// Sources (in order):
@@ -16,12 +18,32 @@ class DjBpmEstimate {
   final double confidence;
   final int beatOffsetMs;
   final String source;
+  final int? keyRoot;
+  final String? keyMode;
+  final double keyConfidence;
 
   const DjBpmEstimate({
     required this.bpm,
     required this.confidence,
     this.beatOffsetMs = 0,
     this.source = 'unknown',
+    this.keyRoot,
+    this.keyMode,
+    this.keyConfidence = 0.0,
+  });
+}
+
+class DjKeyEstimate {
+  final int keyRoot;
+  final String keyMode;
+  final double confidence;
+  final String source;
+
+  const DjKeyEstimate({
+    required this.keyRoot,
+    required this.keyMode,
+    required this.confidence,
+    this.source = 'id3_tkey',
   });
 }
 
@@ -40,7 +62,29 @@ class DjBpmEstimator {
         final n = math.min(_scanBytes, len);
         final bytes = await raf.read(n);
         final fromId3 = _parseId3Tbpm(bytes);
-        if (fromId3 != null) return fromId3;
+        final key = _parseId3Tkey(bytes);
+        if (fromId3 != null) {
+          if (key == null) return fromId3;
+          return DjBpmEstimate(
+            bpm: fromId3.bpm,
+            confidence: fromId3.confidence,
+            beatOffsetMs: fromId3.beatOffsetMs,
+            source: fromId3.source,
+            keyRoot: key.keyRoot,
+            keyMode: key.keyMode,
+            keyConfidence: key.confidence,
+          );
+        }
+        if (key != null) {
+          return DjBpmEstimate(
+            bpm: 0,
+            confidence: 0.0,
+            source: 'id3_tkey_only',
+            keyRoot: key.keyRoot,
+            keyMode: key.keyMode,
+            keyConfidence: key.confidence,
+          );
+        }
       } finally {
         await raf.close();
       }
