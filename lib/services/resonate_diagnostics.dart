@@ -259,6 +259,28 @@ class ResonateDiagnostics {
     });
   }
 
+
+  /// DJ Mode flight recorder - same non-blocking contract as [recordIntelligence].
+  static Future<void> recordDj({
+    required String stage,
+    String? songId,
+    String? outcome,
+    String? reason,
+    double? bpmA,
+    double? bpmB,
+    Map<String, dynamic> extra = const {},
+  }) async {
+    await record('dj_event', {
+      'stage': stage,
+      if (songId != null) 'songId': songId,
+      if (outcome != null) 'outcome': outcome,
+      if (reason != null) 'reason': reason,
+      if (bpmA != null) 'bpmA': bpmA,
+      if (bpmB != null) 'bpmB': bpmB,
+      ...extra,
+    });
+  }
+
   static Future<void> recordCrash(Object error, StackTrace stack, {String source = 'unknown'}) async {
     final stackText = stack.toString();
     final entry = await _entry('crash', {
@@ -346,6 +368,11 @@ class ResonateDiagnostics {
     final errorCounts = <String, int>{};
     final transitionOutcomes = <String, int>{};
     final intelligenceStages = <String, int>{};
+    final djStages = <String, int>{};
+    final djOutcomes = <String, int>{};
+    var djFailures = 0;
+    var djSkips = 0;
+    var djApplied = 0;
     final playSteps = <String, int>{};
     final playTimeouts = <String, int>{};
     final handoffPlaying = <String, int>{'true': 0, 'false': 0};
@@ -415,6 +442,19 @@ class ResonateDiagnostics {
           final stage = data['stage']?.toString() ?? type;
           intelligenceStages[stage] = (intelligenceStages[stage] ?? 0) + 1;
         }
+        if (type == 'dj_event' || type.startsWith('dj_')) {
+          final stage = data['stage']?.toString() ?? type;
+          djStages[stage] = (djStages[stage] ?? 0) + 1;
+          final outcome = data['outcome']?.toString();
+          if (outcome != null) {
+            djOutcomes[outcome] = (djOutcomes[outcome] ?? 0) + 1;
+          }
+          if (type.contains('failed') || outcome == 'failed' || data['error'] != null) {
+            djFailures++;
+          }
+          if (type.contains('skipped') || outcome == 'skipped') djSkips++;
+          if (type.contains('applied') || outcome == 'applied') djApplied++;
+        }
       }
     }
     final rankedErrors = errorCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
@@ -439,6 +479,12 @@ class ResonateDiagnostics {
       'stopsWithUpcomingSongs': stopWhileUpcomingSignals,
       'transitionOutcomes': transitionOutcomes,
       'intelligenceStages': intelligenceStages,
+      'djStages': djStages,
+      'djOutcomes': djOutcomes,
+      'djFailures': djFailures,
+      'djSkips': djSkips,
+      'djApplied': djApplied,
+      'djHealthHint': _djHealthHint(djFailures: djFailures, djSkips: djSkips, djApplied: djApplied, djStages: djStages),
       'topErrors': Map<String, int>.fromEntries(rankedErrors.take(25)),
       'playbackHealthHint': _playbackHealthHint(
         playCommands: playCommands,
