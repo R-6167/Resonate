@@ -142,3 +142,52 @@ double _mod(num x, double m) {
   final r = x.toDouble() % m;
   return r < 0 ? r + m : r;
 }
+
+/// Planned playback rates for a tempo-matched crossfade (Step 3).
+class DjTempoStretchPlan {
+  final double speedOutgoing;
+  final double speedIncoming;
+  final double effectiveBpm;
+  final String mode;
+
+  const DjTempoStretchPlan({
+    required this.speedOutgoing,
+    required this.speedIncoming,
+    required this.effectiveBpm,
+    required this.mode,
+  });
+}
+
+/// Prefer matching incoming to outgoing; else meet in the middle within budget.
+DjTempoStretchPlan? computeTempoStretch({
+  required double bpmA,
+  required double bpmB,
+  required int maxStretchPercent,
+}) {
+  if (bpmA < 40 || bpmB < 40 || bpmA > 240 || bpmB > 240) return null;
+  final maxDelta = (maxStretchPercent.clamp(3, 20)) / 100.0;
+  bool within(double speed) => (speed - 1.0).abs() <= maxDelta + 1e-9;
+
+  final matchIn = bpmA / bpmB;
+  if (within(matchIn)) {
+    return DjTempoStretchPlan(
+      speedOutgoing: 1.0,
+      speedIncoming: matchIn,
+      effectiveBpm: bpmA,
+      mode: 'match_incoming',
+    );
+  }
+
+  final mid = (bpmA + bpmB) / 2.0;
+  final speedA = mid / bpmA;
+  final speedB = mid / bpmB;
+  if (within(speedA) && within(speedB)) {
+    return DjTempoStretchPlan(
+      speedOutgoing: speedA,
+      speedIncoming: speedB,
+      effectiveBpm: mid,
+      mode: 'meet_middle',
+    );
+  }
+  return null;
+}
