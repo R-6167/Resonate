@@ -672,29 +672,27 @@ class MusicProvider extends ChangeNotifier {
 
   void _maybeStartAutomaticCrossfade(Duration position) {
     if (!_crossfadeEnabled || !canCrossfadeNext || !audioPlayer.playing) return;
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
     final duration = audioPlayer.duration ?? currentDuration;
     if (duration == null || duration <= Duration.zero) return;
     final remaining = duration - position;
     if (remaining <= Duration.zero) return;
 
-    // Phase 1: preload next on the inactive engine well before the fade window
-    // so setAudioSource is not racing the end of the track.
-    final preloadMs = (_crossfadeDurationMs + 8000).clamp(8000, 22000);
+    final preloadMs = (_crossfadeDurationMs + 10000).clamp(10000, 28000);
+    final fadeArmMs = _crossfadeDurationMs + 2000;
     if (remaining <= Duration(milliseconds: preloadMs) &&
-        remaining > Duration(milliseconds: _crossfadeDurationMs + 1400)) {
+        remaining > Duration(milliseconds: fadeArmMs)) {
       unawaited(_preloadNextForCrossfade());
-      return;
     }
 
-    if (_automaticCrossfadeInFlight) return;
-    // Start early enough that Engine-B startup + full equal-power fade finish
-    // before the outgoing source hits EOS (sudden silence mid-fade).
-    final startMarginMs = 1800;
-    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(1500, 15000);
+    final startMarginMs = (1200 + (_crossfadeDurationMs ~/ 10)).clamp(1500, 3000);
+    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(2000, 16000);
     if (remaining > Duration(milliseconds: triggerMs)) return;
+    if (remaining < const Duration(milliseconds: 1200)) return;
     _automaticCrossfadeInFlight = true;
     unawaited(_runAutomaticCrossfade());
   }
+
 
   Future<void> _preloadNextForCrossfade() async {
     if (!_crossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
@@ -775,7 +773,7 @@ class MusicProvider extends ChangeNotifier {
     final fromIndex = _queueIndex;
     final fromSongId = currentSong?.id;
     try {
-      final timeout = Duration(milliseconds: (_crossfadeDurationMs + 10000).clamp(8000, 25000));
+      final timeout = Duration(milliseconds: (_crossfadeDurationMs + 12000).clamp(12000, 30000));
       final ok = await _performTrueCrossfade(
         milliseconds: _crossfadeDurationMs,
         fadeType: _crossfadeFadeType,
@@ -785,8 +783,6 @@ class MusicProvider extends ChangeNotifier {
         return false;
       });
       if (ok) return;
-      // Watchdog or user may already have advanced — do not double-load the next URI
-      // (causes MediaStore "Connection aborted" + static on this OEM).
       if (currentSong?.id != fromSongId || _queueIndex != fromIndex) {
         await ResonateDiagnostics.record('crossfade_fallback_skipped_already_advanced', {
           'fromSongId': fromSongId,
@@ -799,34 +795,77 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
         return;
       }
-      await ResonateDiagnostics.record('crossfade_fallback_to_play', {
+      await ResonateDiagnostics.record('crossfade_fallback_soft', {
         'fromSongId': fromSongId,
         'queueIndex': fromIndex,
       });
       try {
         await inactivePlayer.stop();
       } catch (_) {}
-      if (fromIndex < _queue.length - 1) {
-        final next = _queue[fromIndex + 1];
+      await _softFadeOutActive(milliseconds: 500);
+      if (currentSong?.id != fromSongId || _queueIndex != fromIndex) return;
+      final nextIdx = fromIndex < _queue.length - 1
+          ? fromIndex + 1
+          : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1);
+      if (nextIdx >= 0) {
+        final next = _queue[nextIdx];
         final token = _playbackIntentGate.issue();
-        await _playSongInternal(next, queue: _queue, startIndex: fromIndex + 1, playbackIntentToken: token);
+        await _playSongInternal(next, queue: _queue, startIndex: nextIdx, playbackIntentToken: token);
       }
     } catch (e) {
       debugPrint('automatic crossfade error: $e');
-      if (currentSong?.id == fromSongId && _queueIndex == fromIndex && fromIndex < _queue.length - 1) {
+      if (currentSong?.id == fromSongId && _queueIndex == fromIndex) {
         try {
           await inactivePlayer.stop();
         } catch (_) {}
         try {
-          final next = _queue[fromIndex + 1];
-          final token = _playbackIntentGate.issue();
-          await _playSongInternal(next, queue: _queue, startIndex: fromIndex + 1, playbackIntentToken: token);
+          await _softFadeOutActive(milliseconds: 400);
         } catch (_) {}
+        final nextIdx = fromIndex < _queue.length - 1
+            ? fromIndex + 1
+            : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1);
+        if (nextIdx >= 0) {
+          try {
+            final next = _queue[nextIdx];
+            final token = _playbackIntentGate.issue();
+            await _playSongInternal(next, queue: _queue, startIndex: nextIdx, playbackIntentToken: token);
+          } catch (_) {}
+        }
       }
     } finally {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
     }
+  }
+
+  /// Short equal-power out-only ramp so fallback never hard-cuts an audible track.
+  Future<void> _softFadeOutActive({int milliseconds = 500}) async {
+    final player = audioPlayer;
+    final steps = (milliseconds / 40).round().clamp(4, 40);
+    double start = _eqPreampScale;
+    try {
+      start = player.volume.clamp(0.0, 1.0);
+    } catch (_) {}
+    if (start <= 0.02) {
+      try {
+        await player.pause();
+      } catch (_) {}
+      return;
+    }
+    for (var i = 1; i <= steps; i++) {
+      final t = i / steps;
+      final gain = math.cos(t * (math.pi / 2.0));
+      try {
+        await player.setVolume((start * gain).clamp(0.0, 1.0));
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
+    try {
+      await player.setVolume(0.0);
+    } catch (_) {}
+    try {
+      await player.pause();
+    } catch (_) {}
   }
 
   /// Safety net: if the player sits at the end of a track without advancing,
@@ -1572,29 +1611,33 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
       }
       await incoming.setVolume(0.0);
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (_) {}
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
       } catch (_) {}
       var incomingStarted = incoming.playing;
-      for (var i = 0; i < 15 && !incomingStarted; i++) {
+      for (var i = 0; i < 25 && !incomingStarted; i++) {
         if (incoming.playing) {
           incomingStarted = true;
           break;
         }
-        if (i == 4 || i == 9) {
-          try {
-            await incoming.seek(Duration.zero);
-          } catch (_) {}
-          try {
-            incoming.play();
-          } catch (_) {}
+        if (i == 5 || i == 12 || i == 18) {
+          try { await incoming.seek(Duration.zero); } catch (_) {}
+          try { incoming.play(); } catch (_) {}
         }
-        await Future<void>.delayed(Duration(milliseconds: 50 + i * 20));
+        await Future<void>.delayed(Duration(milliseconds: 40 + i * 15));
         incomingStarted = incoming.playing;
       }
       if (!incomingStarted) {
         _preloadedNextSongId = null;
+        await ResonateDiagnostics.record('crossfade_incoming_start_failed', {
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+        });
         throw StateError('crossfade incoming engine failed to start');
       }
       await Future<void>.delayed(const Duration(milliseconds: 60));
@@ -1614,25 +1657,27 @@ class MusicProvider extends ChangeNotifier {
       await incoming.setVolume(0.0);
 
       final plannedMs = milliseconds.clamp(500, 12000).toInt();
-      // Clamp fade length to actual remaining on the outgoing source so the
-      // volume ramp finishes before ExoPlayer hits EOS and cuts audio dead.
       int remainingMs = plannedMs;
       try {
         final d = outgoing.duration;
         final p = outgoing.position;
         if (d != null && d > Duration.zero) {
           final rem = d.inMilliseconds - p.inMilliseconds;
-          if (rem > 250) {
-            // Leave a small buffer so the last step is not raced by completion.
-            remainingMs = (rem - 120).clamp(400, plannedMs);
+          if (rem < 1200) {
+            await ResonateDiagnostics.record('crossfade_aborted_too_late', {
+              'remainingMs': rem,
+              'plannedMs': plannedMs,
+            });
+            try { await incoming.stop(); } catch (_) {}
+            try { await outgoing.setVolume(base); } catch (_) {}
+            return false;
           }
+          remainingMs = (rem - 150).clamp(1200, plannedMs);
         }
       } catch (_) {}
       final total = remainingMs;
-      // Wall-clock equal-power ramp: keep steps on schedule even when setVolume
-      // is slow on OEM audio stacks (Unisoc / low-end Android).
       final gentle = Platform.isAndroid;
-      final stepMs = gentle ? 40 : 24;
+      final stepMs = gentle ? 36 : 24;
       final fadeStartedAt = DateTime.now();
       var lastOut = base;
       while (true) {
@@ -1681,15 +1726,14 @@ class MusicProvider extends ChangeNotifier {
       }
       // Guarantee silence on outgoing before pause/stop — never cut from a
       // still-audible level (the "sudden volume loss" symptom).
-      if (lastOut > 0.02) {
+      for (var s = 0; s < 3; s++) {
+        try { await outgoing.setVolume(0.0); } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 25));
         try {
-          await outgoing.setVolume(0.0);
-        } catch (_) {}
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      } else {
-        try {
-          await outgoing.setVolume(0.0);
-        } catch (_) {}
+          if (outgoing.volume <= 0.02) break;
+        } catch (_) {
+          break;
+        }
       }
       if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
