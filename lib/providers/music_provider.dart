@@ -386,7 +386,18 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Playback queue persistence failed: $e'); }
   }
 
-  void _publishServiceState() { final handler = audioHandler; if (handler is AudioServiceHandler) handler.publishPlayback(song: currentSong, playing: isPlaying, position: currentPosition, duration: currentDuration, speed: 1.0, bufferedPosition: audioPlayer.bufferedPosition, playbackQueue: _queue, queueIndex: _queueIndex); }
+  void _publishServiceState({bool positionOnly = false}) {
+    final handler = audioHandler;
+    if (handler is! AudioServiceHandler) return;
+    Duration pos = currentPosition;
+    Duration? buffered;
+    try { pos = audioPlayer.position; buffered = audioPlayer.bufferedPosition; } catch (_) { buffered = currentPosition; }
+    if (positionOnly) {
+      handler.publishPositionTick(playing: isPlaying, position: pos, bufferedPosition: buffered, speed: 1.0);
+      return;
+    }
+    handler.publishPlayback(song: currentSong, playing: isPlaying, position: pos, duration: currentDuration ?? currentSong?.duration, speed: 1.0, bufferedPosition: buffered, playbackQueue: _queue, queueIndex: _queueIndex);
+  }
 
   void _bindActivePlayerStreams() {
     _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _currentIndexSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
@@ -510,7 +521,7 @@ class MusicProvider extends ChangeNotifier {
           _persistResumePosition();
         }
         notifyListeners();
-        _publishServiceState();
+        _publishServiceState(positionOnly: true);
       }
       _maybeStartAutomaticCrossfade(position);
       _armEndOfTrackWatchdog();
@@ -611,8 +622,8 @@ class MusicProvider extends ChangeNotifier {
     if (_automaticCrossfadeInFlight) return;
     // Start early enough that Engine-B startup + full equal-power fade finish
     // before the outgoing source hits EOS (sudden silence mid-fade).
-    final startMarginMs = 1400;
-    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(1200, 14000);
+    final startMarginMs = 1800;
+    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(1500, 15000);
     if (remaining > Duration(milliseconds: triggerMs)) return;
     _automaticCrossfadeInFlight = true;
     unawaited(_runAutomaticCrossfade());
@@ -1519,6 +1530,8 @@ class MusicProvider extends ChangeNotifier {
         _preloadedNextSongId = null;
         throw StateError('crossfade incoming engine failed to start');
       }
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      try { if (!incoming.playing) incoming.play(); } catch (_) {}
       // Start from the *current* outgoing level — never boost to master mid-track
       // (that was the pre-crossfade "bump" on some files).
       double startOut = master;

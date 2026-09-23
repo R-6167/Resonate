@@ -7,6 +7,9 @@ import 'playback_authority.dart';
 /// this service forwards transport commands and mirrors playback state.
 class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
   final List<MediaItem> _items = [];
+  String? _lastMediaItemId;
+  bool? _lastPlaying;
+  DateTime _lastPositionPublish = DateTime.fromMillisecondsSinceEpoch(0);
   Future<void> Function()? _onPlay;
   Future<void> Function()? _onPause;
   Future<void> Function()? _onStop;
@@ -66,36 +69,58 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         ..clear()
         ..addAll(sourceQueue);
       queue.add(List.unmodifiable(_items));
-      final safeIndex = windowIndex.clamp(0, _items.length - 1);
-      mediaItem.add(_items[safeIndex]);
     } else {
+      _lastMediaItemId = null;
       mediaItem.add(null);
       _items.clear();
       queue.add(const <MediaItem>[]);
     }
+    if (sourceQueue.isNotEmpty && _items.isNotEmpty) {
+      final safeIndex = windowIndex.clamp(0, _items.length - 1);
+      final nextItem = _items[safeIndex];
+      if (_lastMediaItemId != nextItem.id) {
+        _lastMediaItemId = nextItem.id;
+        mediaItem.add(nextItem);
+      }
+    }
+    _lastPlaying = playing;
+    _lastPositionPublish = DateTime.now();
     playbackState.add(playbackState.value.copyWith(
       controls: [
         MediaControl.skipToPrevious,
-        MediaControl.rewind,
         playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
+        MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward,
+        MediaAction.skipToNext, MediaAction.skipToPrevious, MediaAction.play, MediaAction.pause, MediaAction.stop,
       },
-      androidCompactActionIndices: const [0, 2, 4],
-      processingState: song == null
-          ? AudioProcessingState.idle
-          : AudioProcessingState.ready,
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: song == null ? AudioProcessingState.idle : AudioProcessingState.ready,
       playing: playing,
       updatePosition: position,
       bufferedPosition: bufferedPosition ?? position,
-      speed: speed,
+      speed: speed <= 0 ? 1.0 : speed,
+      queueIndex: sourceQueue.isEmpty ? null : windowIndex,
     ));
   }
+
+  void publishPositionTick({required bool playing, required Duration position, Duration? bufferedPosition, double speed = 1.0, bool force = false}) {
+    final now = DateTime.now();
+    if (!force && _lastPlaying == playing && now.difference(_lastPositionPublish) < const Duration(milliseconds: 400)) return;
+    _lastPlaying = playing;
+    _lastPositionPublish = now;
+    playbackState.add(playbackState.value.copyWith(
+      controls: [MediaControl.skipToPrevious, playing ? MediaControl.pause : MediaControl.play, MediaControl.skipToNext],
+      systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward, MediaAction.skipToNext, MediaAction.skipToPrevious, MediaAction.play, MediaAction.pause, MediaAction.stop},
+      androidCompactActionIndices: const [0, 1, 2],
+      playing: playing,
+      updatePosition: position,
+      bufferedPosition: bufferedPosition ?? position,
+      speed: speed <= 0 ? 1.0 : speed,
+    ));
+  }
+
 
   MediaItem songToMediaItem(Song song) {
     final art = song.albumArt?.trim() ?? '';
@@ -143,6 +168,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     final callback = _onPlay;
     if (callback == null) return;
     PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'play');
+    publishPositionTick(playing: true, position: playbackState.value.position, force: true);
     await callback();
   }
 
@@ -151,6 +177,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     final callback = _onPause;
     if (callback == null) return;
     PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'pause');
+    publishPositionTick(playing: false, position: playbackState.value.position, force: true);
     await callback();
   }
 
@@ -167,6 +194,7 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     final callback = _onSeek;
     if (callback == null) return;
     PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'seek');
+    publishPositionTick(playing: playbackState.value.playing, position: position, force: true);
     await callback(position);
   }
 

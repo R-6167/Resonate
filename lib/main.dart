@@ -118,7 +118,10 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.aetherion.resonate.audio',
       androidNotificationChannelName: 'Resonate Playback',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      androidStopForegroundOnPause: false,
+      androidNotificationChannelDescription: 'Now playing and transport controls',
+      fastForwardInterval: Duration(seconds: 10),
+      rewindInterval: Duration(seconds: 10),
       // Must be a real bitmap (PNG) resource. audio_service defaults to
       // mipmap/ic_launcher which this project did not ship; Unisoc/HMD then
       // posts a FGS notification with icon=0 and crashes MainActivity on
