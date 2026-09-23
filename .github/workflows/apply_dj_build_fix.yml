@@ -1,0 +1,27 @@
+name: Apply DJ build fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_build_fix.yml'
+      - 'tools/apply_fix_dj_healthhint.py'
+      - 'tools/apply_fix_dj_wait.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Apply
+        run: |
+          set -euo pipefail
+          python3 tools/apply_fix_dj_healthhint.py
+          python3 tools/apply_fix_dj_wait.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/resonate_diagnostics.dart lib/providers/music_provider.dart
+          git commit -m "fix(dj): restore _djHealthHint + harden analysis wait" || true
+          git push origin HEAD:dj_Mode
