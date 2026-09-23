@@ -4,12 +4,13 @@ on:
   push:
     paths:
       - '.github/workflows/apply_crossfade_v2.yml'
-      - 'tools/apply_crossfade_v2.py'
-      - 'tools/xfade_c0.b64'
-      - 'tools/xfade_c1.b64'
-      - 'tools/xfade_c2.b64'
-      - 'tools/xfade_c3.b64'
-      - 'tools/xfade_c4.b64'
+      - 'tools/apply_xf.py'
+      - 'tools/mp_p0_ml.b64'
+      - 'tools/mp_p1_ml.b64'
+      - 'tools/mp_p2_ml.b64'
+      - 'tools/mp_p3_ml.b64'
+      - 'tools/mp_p4_ml.b64'
+      - 'tools/mp_p5_ml.b64'
 permissions:
   contents: write
 concurrency:
@@ -22,11 +23,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: Resonate_Remake
-          fetch-depth: 10
+          fetch-depth: 5
       - name: Apply dual-engine crossfade harden
         run: |
           set -euo pipefail
-          python3 tools/apply_crossfade_v2.py
+          python3 tools/apply_xf.py
           git config user.name "Aetherion LLC"
           git config user.email "mosesmiggs@gmail.com"
           git add lib/providers/music_provider.dart
