@@ -1660,6 +1660,12 @@ class MusicProvider extends ChangeNotifier {
           'outgoingSongId': outgoingSong.id,
           'incomingSongId': incomingSong.id,
         });
+        await ResonateDiagnostics.recordDj(
+          stage: 'handoff',
+          outcome: 'skipped',
+          reason: 'missing_bpm',
+          songId: incomingSong.id,
+        );
         return;
       }
 
@@ -1679,6 +1685,14 @@ class MusicProvider extends ChangeNotifier {
             'bpmB': bpmB,
             'maxPercent': _djMaxStretchPercent,
           });
+          await ResonateDiagnostics.recordDj(
+            stage: 'tempo_match',
+            outcome: 'skipped',
+            reason: 'stretch_budget',
+            bpmA: bpmA,
+            bpmB: bpmB,
+            songId: incomingSong.id,
+          );
         }
       }
 
@@ -1703,6 +1717,14 @@ class MusicProvider extends ChangeNotifier {
             'bpmB': bpmB,
             'stretched': stretch != null,
           });
+          await ResonateDiagnostics.recordDj(
+            stage: 'beat_align',
+            outcome: 'skipped',
+            reason: 'bpm_delta',
+            bpmA: bpmA,
+            bpmB: bpmB,
+            songId: incomingSong.id,
+          );
         } else {
           final dur = incoming.duration ?? incomingSong.duration;
           var target = seek;
@@ -1749,6 +1771,13 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
+      try {
+        await ResonateDiagnostics.recordDj(
+          stage: 'handoff_prepare',
+          outcome: 'failed',
+          reason: e.toString(),
+        );
+      } catch (_) {}
     }
   }
 
