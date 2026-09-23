@@ -207,8 +207,13 @@ class MusicProvider extends ChangeNotifier {
       'songId': currentSong?.id,
       'queueIndex': _queueIndex,
     }));
-    // Quiet B so it cannot steal focus after a crossfade.
     unawaited(() async {
+      try {
+        await _playerB.setSpeed(1.0);
+      } catch (_) {}
+      try {
+        await _playerA.setSpeed(1.0);
+      } catch (_) {}
       try {
         await _playerB.pause();
       } catch (_) {}
@@ -327,10 +332,52 @@ class MusicProvider extends ChangeNotifier {
     int maxStretchPercent = 12,
     DjAnalysisService? analysis,
   }) {
+    final wasActive = _djBeatAlignActive || _djTempoMatchActive;
     _djBeatAlignActive = beatAlignActive;
     _djTempoMatchActive = tempoMatchActive;
     _djMaxStretchPercent = maxStretchPercent.clamp(3, 20);
     _djAnalysis = analysis;
+    if (wasActive && !beatAlignActive && !tempoMatchActive) {
+      unawaited(_recoverDjEngineState(reason: 'dj_mode_disabled'));
+    }
+  }
+
+  /// Restore normal speed + audible volume after DJ handoff mistakes.
+  Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
+    try {
+      await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+    } catch (_) {}
+    try {
+      final active = audioPlayer;
+      final inactive = inactivePlayer;
+      final vol = _eqPreampScale.clamp(0.05, 1.0);
+      try {
+        await active.setSpeed(1.0);
+      } catch (_) {}
+      try {
+        await inactive.setSpeed(1.0);
+      } catch (_) {}
+      try {
+        if (active.playing && active.volume < 0.02) {
+          await active.setVolume(vol);
+        }
+      } catch (_) {}
+      try {
+        await inactive.setVolume(0.0);
+      } catch (_) {}
+      await ResonateDiagnostics.recordDj(
+        stage: 'engine_recover',
+        outcome: 'applied',
+        reason: reason,
+        extra: {
+          'activeVolume': active.volume,
+          'activePlaying': active.playing,
+          'activeEngine': _activeIsA ? 'A' : 'B',
+        },
+      );
+    } catch (e) {
+      debugPrint('DJ engine recover failed: $e');
+    }
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async { _crossfadeEnabled = enabled; if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000; await _persistCrossfadeSettings(); notifyListeners(); }
@@ -1597,9 +1644,12 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _loadSingle(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud, Song song, {bool start = true}) async {
     await player.setLoopMode(LoopMode.off);
+    try {
+      await player.setSpeed(1.0);
+    } catch (_) {}
     await player.setAudioSource(AudioSource.uri(_audioUri(song.filePath), tag: song));
     unawaited(_enableEffects(player, eq, loud));
-    await player.setVolume(start ? 1.0 : 0.0);
+    await player.setVolume(start ? _eqPreampScale.clamp(0.05, 1.0) : 0.0);
     if (start) {
       // Fire-and-poll — await play() hangs on some OEMs.
       try {
@@ -1761,23 +1811,31 @@ class MusicProvider extends ChangeNotifier {
 
       if (stretch != null) {
         try {
-          await outgoing.setSpeed(stretch.speedOutgoing);
-        } catch (_) {}
-        try {
+          if ((stretch.speedOutgoing - 1.0).abs() > 0.001) {
+            await outgoing.setSpeed(stretch.speedOutgoing);
+          }
           await incoming.setSpeed(stretch.speedIncoming);
-        } catch (_) {}
-        _djStretchSpeedOut = stretch.speedOutgoing;
-        _djStretchSpeedIn = stretch.speedIncoming;
-        await ResonateDiagnostics.record('dj_tempo_match_applied', {
-          'outgoingSongId': outgoingSong.id,
-          'incomingSongId': incomingSong.id,
-          'bpmA': bpmA,
-          'bpmB': bpmB,
-          'speedOut': stretch.speedOutgoing,
-          'speedIn': stretch.speedIncoming,
-          'mode': stretch.mode,
-          'effectiveBpm': stretch.effectiveBpm,
-        });
+          _djStretchSpeedOut = stretch.speedOutgoing;
+          _djStretchSpeedIn = stretch.speedIncoming;
+          await ResonateDiagnostics.record('dj_tempo_match_applied', {
+            'outgoingSongId': outgoingSong.id,
+            'incomingSongId': incomingSong.id,
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'speedOut': stretch.speedOutgoing,
+            'speedIn': stretch.speedIncoming,
+            'mode': stretch.mode,
+            'effectiveBpm': stretch.effectiveBpm,
+          });
+        } catch (e) {
+          await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+          await ResonateDiagnostics.recordDj(
+            stage: 'tempo_match',
+            outcome: 'failed',
+            reason: e.toString(),
+            songId: incomingSong.id,
+          );
+        }
       }
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
@@ -1798,8 +1856,9 @@ class MusicProvider extends ChangeNotifier {
     final nextIndex = _crossfadeTargetIndex;
     final nextSong = _crossfadeTargetSong;
     if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale;
+    _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale.clamp(0.05, 1.0);
     try {
+      await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       await outgoing.setLoopMode(LoopMode.off);
       final alreadyPreloaded = _preloadedNextSongId == nextSong.id;
       if (!alreadyPreloaded) {
@@ -1958,6 +2017,9 @@ class MusicProvider extends ChangeNotifier {
       try { await incoming.setLoopMode(LoopMode.off); } catch (_) {}
       try { await incoming.setVolume(master); } catch (_) {}
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+      try {
+        if (incoming.volume < 0.05) await incoming.setVolume(master);
+      } catch (_) {}
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners();

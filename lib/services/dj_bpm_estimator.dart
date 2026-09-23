@@ -271,16 +271,6 @@ DjTempoStretchPlan? computeTempoStretch({
     );
   }
 
-  final mid = (bpmA + bpmB) / 2.0;
-  final speedA = mid / bpmA;
-  final speedB = mid / bpmB;
-  if (within(speedA) && within(speedB)) {
-    return DjTempoStretchPlan(
-      speedOutgoing: speedA,
-      speedIncoming: speedB,
-      effectiveBpm: mid,
-      mode: 'meet_middle',
-    );
-  }
+  // meet_middle stretches the audible outgoing deck — skip for stability.
   return null;
 }
