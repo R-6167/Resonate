@@ -1,0 +1,28 @@
+name: Restore diagnostics file
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore_diagnostics.yml'
+      - 'tools/apply_restore_diagnostics.py'
+      - 'tools/diag_full.b64'
+      - 'tools/apply_dj_harden2.py'
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Restore and harden
+        run: |
+          set -euo pipefail
+          python3 tools/apply_restore_diagnostics.py
+          python3 tools/apply_dj_harden2.py || true
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/resonate_diagnostics.dart lib/providers/music_provider.dart || true
+          git commit -m "fix(diag): restore diagnostics export + harden play recovery" || true
+          git push origin HEAD:dj_Mode
