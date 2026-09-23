@@ -5,12 +5,12 @@ on:
     paths:
       - '.github/workflows/apply_crossfade_v2.yml'
       - 'tools/apply_xf.py'
-      - 'tools/mp_p0_ml.b64'
-      - 'tools/mp_p1_ml.b64'
-      - 'tools/mp_p2_ml.b64'
-      - 'tools/mp_p3_ml.b64'
-      - 'tools/mp_p4_ml.b64'
-      - 'tools/mp_p5_ml.b64'
+      - 'tools/xfade_maybe.txt'
+      - 'tools/xfade_run.txt'
+      - 'tools/xfade_remaining.txt'
+      - 'tools/xfade_poll.txt'
+      - 'tools/xfade_fire.txt'
+      - 'tools/xfade_silence.txt'
 permissions:
   contents: write
 concurrency:
