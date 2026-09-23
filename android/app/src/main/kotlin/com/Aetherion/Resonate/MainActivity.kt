@@ -20,6 +20,11 @@ import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
 
 class MainActivity : AudioServiceActivity() {
+    // Compile-time keep: audio_service looks up the FGS small icon by string.
+    // Referencing R.drawable here forces AAPT2 to emit a real resource id.
+    @Suppress("unused")
+    private val mediaNotificationIconId = R.drawable.ic_stat_resonate
+
     private val channelName = "com.aetherion.resonate/media_store"
     private val effectsChannelName = "com.aetherion.resonate/audio_effects"
     private val permissionRequestCode = 6167

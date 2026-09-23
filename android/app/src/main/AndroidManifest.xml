@@ -10,6 +10,10 @@
 
     <application android:label="Resonate" android:icon="@drawable/ic_launcher_resonate" android:allowBackup="true" android:supportsRtl="true">
         <meta-data android:name="flutterEmbedding" android:value="2" />
+        <!-- Compile-time keep for the media FGS small icon. audio_service looks this
+             up by string; without an XML resource reference Unisoc posts icon=0 and
+             kills MainActivity on first play. -->
+        <meta-data android:name="com.aetherion.resonate.notification_icon" android:resource="@drawable/ic_stat_resonate" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

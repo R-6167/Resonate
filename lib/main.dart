@@ -119,10 +119,12 @@ Future<void> main() async {
       androidNotificationChannelName: 'Resonate Playback',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
-      // Required: default mipmap/ic_launcher does not exist in this project.
-      // Unisoc/HMD then posts a notification with icon=0 and crashes the
-      // Activity on first play (IllegalArgumentException: no valid small icon)
-      // while ExoPlayer has already started — "Resonate keeps stopping".
+      // Must be a real bitmap (PNG) resource. audio_service defaults to
+      // mipmap/ic_launcher which this project did not ship; Unisoc/HMD then
+      // posts a FGS notification with icon=0 and crashes MainActivity on
+      // first play (IllegalArgumentException: no valid small icon) while
+      // ExoPlayer has already started — "Resonate keeps stopping".
+      // A vector drawable is also rejected as a small icon on this OEM.
       androidNotificationIcon: 'drawable/ic_stat_resonate',
     ),
   );
