@@ -3,17 +3,21 @@ import 'package:flutter/foundation.dart';
 import '../models/dj_analysis.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
+import 'dj_bpm_estimator.dart';
 
-/// Loads and (later) computes BPM / key for library tracks.
+/// Loads and computes BPM hints for library tracks (DJ Mode).
 ///
-/// Step 1 is intentionally a **no-op analyzer**: it only reads/writes the
-/// cache table. Playback and crossfade never call into heavy work here until
-/// DJ Mode is enabled *and* later steps implement real analysis.
+/// Analysis is cached in SQLite and never blocks the play() hot path for long:
+/// callers should treat missing analysis as "skip beat align".
 class DjAnalysisService {
-  DjAnalysisService({DatabaseHelper? database}) : _db = database ?? DatabaseHelper();
+  DjAnalysisService({DatabaseHelper? database, DjBpmEstimator? estimator})
+      : _db = database ?? DatabaseHelper(),
+        _estimator = estimator ?? DjBpmEstimator();
 
   final DatabaseHelper _db;
+  final DjBpmEstimator _estimator;
   final Map<String, DjAnalysis> _memory = {};
+  final Set<String> _inFlight = {};
 
   Future<DjAnalysis?> getAnalysis(String songId) async {
     final cached = _memory[songId];
@@ -39,15 +43,57 @@ class DjAnalysisService {
     }
   }
 
-  /// Step 1 stub — does not decode audio. Returns existing cache or a
-  /// zero-confidence placeholder so callers can branch safely.
+  /// Ensure we have a cached row. Safe to call from preload (async).
   Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
     if (!force) {
       final existing = await getAnalysis(song.id);
-      if (existing != null) return existing;
+      if (existing != null && (existing.hasUsableBpm || existing.bpmConfidence > 0)) {
+        return existing;
+      }
+      if (existing != null && existing.analyzedAt != null && existing.bpm == null) {
+        // Fall through to try metadata once.
+      } else if (existing != null && existing.bpm != null) {
+        return existing;
+      }
     }
-    // Real BPM/key detection arrives in Steps 2–4. Until then: no work, no block.
-    return DjAnalysis(songId: song.id, bpmConfidence: 0.0);
+
+    if (_inFlight.contains(song.id)) {
+      final existing = await getAnalysis(song.id);
+      return existing ?? DjAnalysis(songId: song.id, bpmConfidence: 0.0);
+    }
+    _inFlight.add(song.id);
+    try {
+      final estimate = await _estimator.estimateFile(song.filePath);
+      final analysis = estimate == null
+          ? DjAnalysis(
+              songId: song.id,
+              bpmConfidence: 0.0,
+              analyzedAt: DateTime.now(),
+            )
+          : DjAnalysis(
+              songId: song.id,
+              bpm: estimate.bpm,
+              bpmConfidence: estimate.confidence,
+              beatOffsetMs: estimate.beatOffsetMs,
+              analyzedAt: DateTime.now(),
+            );
+      await saveAnalysis(analysis);
+      return analysis;
+    } catch (e) {
+      debugPrint('DjAnalysisService.analyzeSong: $e');
+      return DjAnalysis(songId: song.id, bpmConfidence: 0.0, analyzedAt: DateTime.now());
+    } finally {
+      _inFlight.remove(song.id);
+    }
+  }
+
+  /// Fire-and-forget analysis for preload / idle.
+  void scheduleAnalyze(Song song) {
+    if (_inFlight.contains(song.id) || _memory[song.id]?.hasUsableBpm == true) {
+      return;
+    }
+    // ignore: unawaited_futures
+    analyzeSong(song);
   }
 
   void forget(String songId) => _memory.remove(songId);

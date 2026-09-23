@@ -56,11 +56,24 @@ class DjModeProvider extends ChangeNotifier {
       debugPrint('DjModeProvider load failed: $e');
     }
     _loaded = true;
+    _syncToMusic();
     notifyListeners();
+  }
+
+  void _syncToMusic() {
+    try {
+      music.configureDjMode(
+        beatAlignActive: beatAlignActive,
+        analysis: _analysis,
+      );
+    } catch (e) {
+      debugPrint('DjMode sync to music failed: $e');
+    }
   }
 
   Future<void> setEnabled(bool value) async {
     _enabled = value;
+    _syncToMusic();
     notifyListeners();
     try {
       await DjModeSettingsStore.setEnabled(value);
@@ -71,6 +84,7 @@ class DjModeProvider extends ChangeNotifier {
 
   Future<void> setBeatAlign(bool value) async {
     _beatAlign = value;
+    _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setBeatAlign(value);
   }
