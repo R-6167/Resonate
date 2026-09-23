@@ -4,6 +4,9 @@ import 'database_helper.dart';
 import 'intelligence_companion_profile.dart';
 import 'intelligence_pattern_store.dart';
 import 'intelligence_settings_store.dart';
+import 'dj_mode_settings_store.dart';
+import 'dj_harmonic.dart';
+import '../models/dj_analysis.dart';
 
 /// Chooses the next track from Intelligence's ranked evidence.
 class IntelligenceDecisionEngine {
@@ -41,6 +44,25 @@ class IntelligenceDecisionEngine {
     final explorationAffinity = companionSignals['exploration'] ?? 0.0;
     final skipSensitivity = companionSignals['skipSensitivity'] ?? 0.0;
     final artistDiversity = companionSignals['artistDiversity'] ?? 0.0;
+
+    // DJ Mode Step 4: optional soft key bias (off by default; never a hard filter).
+    final djEnabled = await DjModeSettingsStore.enabled();
+    final harmonicOn = djEnabled && await DjModeSettingsStore.harmonicMix();
+    DjAnalysis? currentDj;
+    final Map<String, DjAnalysis> djById = <String, DjAnalysis>{};
+    if (harmonicOn) {
+      if (currentSong != null) {
+        try {
+          currentDj = await database.getDjAnalysis(currentSong.id);
+        } catch (_) {}
+      }
+      for (final r in recommendations) {
+        try {
+          final row = await database.getDjAnalysis(r.song.id);
+          if (row != null) djById[r.song.id] = row;
+        } catch (_) {}
+      }
+    }
     final patternSongs = _counts(pattern['songs']);
     final patternArtists = _counts(pattern['artists']);
     final patternEvents = (pattern['events'] as num?)?.toInt() ?? 0;
@@ -71,6 +93,19 @@ class IntelligenceDecisionEngine {
       final historicalArtistBoost = historicalArtistWeight > 0 ? (0.35 + (historicalArtistWeight.clamp(0, 8) / 8.0)) * (1.0 - exploration * .55) : 0.0;
       var value = r.score * (1.0 - exploration) + exploration * (1.0 - rank / pool.length) * 3.0 + r.confidence * 2.0;
       value += historicalSongBoost + historicalArtistBoost;
+      if (harmonicOn && currentDj != null && currentDj.hasUsableKey) {
+        final cand = djById[r.song.id];
+        if (cand != null && cand.hasUsableKey) {
+          final compat = harmonicCompatibility(
+            rootA: currentDj.keyRoot,
+            modeA: currentDj.keyMode,
+            rootB: cand.keyRoot,
+            modeB: cand.keyMode,
+          );
+          value += harmonicDecisionBoost(compat);
+        }
+      }
+
 
       // Persistent behavioral identity is a bounded prior. It never replaces
       // the recommendation score or current-session evidence.
