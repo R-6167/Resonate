@@ -1645,12 +1645,22 @@ class MusicProvider extends ChangeNotifier {
     }
     if (outgoingSong == null) return;
     try {
-      final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
-      final bFuture = _djAnalysis!.analyzeSong(incomingSong);
-      final results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
-        const Duration(milliseconds: 400),
-        onTimeout: () => <DjAnalysis>[],
-      );
+      List<DjAnalysis> results;
+      try {
+        final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
+        final bFuture = _djAnalysis!.analyzeSong(incomingSong);
+        results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
+          const Duration(milliseconds: 400),
+          onTimeout: () => const <DjAnalysis>[],
+        );
+      } catch (e) {
+        await ResonateDiagnostics.recordDj(
+          stage: 'handoff_prepare',
+          outcome: 'failed',
+          reason: 'analysis_wait: $e',
+        );
+        return;
+      }
       if (results.length < 2) return;
       final analysisA = results[0];
       final analysisB = results[1];
