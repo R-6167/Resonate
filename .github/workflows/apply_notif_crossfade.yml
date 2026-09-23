@@ -5,9 +5,7 @@ on:
     paths:
       - '.github/workflows/apply_notif_crossfade.yml'
       - 'tools/apply_notif_crossfade.py'
-      - 'tools/_payload_handler.b64'
-      - 'tools/_payload_main.b64'
-      - 'tools/_payload_music.b64'
+      - 'tools/apply_notif_full.b64'
 permissions:
   contents: write
 concurrency:
@@ -30,6 +28,6 @@ jobs:
           git add lib/services/audio_service_handler.dart lib/main.dart lib/providers/music_provider.dart
           git commit -m "feat: real-time media notification + further crossfade harden" || true
           git push origin HEAD:Resonate_Remake
-          git rm -f .github/workflows/apply_notif_crossfade.yml tools/apply_notif_crossfade.py tools/_payload_handler.b64 tools/_payload_main.b64 tools/_payload_music.b64 || true
+          git rm -f .github/workflows/apply_notif_crossfade.yml tools/apply_notif_crossfade.py tools/apply_notif_full.b64 tools/apply_notif_part1.txt tools/apply_notif_part2.txt tools/_payload_handler.b64 tools/_payload_main.b64 tools/_payload_music.b64 2>/dev/null || true
           git commit -m "chore: remove notif/crossfade apply workflow" || true
           git push origin HEAD:Resonate_Remake || true
