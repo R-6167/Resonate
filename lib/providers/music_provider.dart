@@ -1285,6 +1285,11 @@ class MusicProvider extends ChangeNotifier {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (song.filePath.trim().isEmpty) return false;
 
+    // Clear any leftover DJ stretch / muted-engine state before a normal play.
+    try {
+      await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+    } catch (_) {}
+
     // Phase 2: non-crossfade play always on Engine A (rebind if we were on B).
     _ensureEngineA(reason: 'play_song_internal');
     final target = _playerA;
@@ -2038,8 +2043,24 @@ class MusicProvider extends ChangeNotifier {
     } catch (e, stack) {
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       debugPrint('True crossfade failed: $e'); debugPrint('$stack');
-      try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {}
+      try { await incoming.stop(); } catch (_) {}
+      try { await outgoing.setSpeed(1.0); } catch (_) {}
+      try { await incoming.setSpeed(1.0); } catch (_) {}
+      try { await outgoing.setVolume(master); } catch (_) {}
+      try {
+        if (outgoing.playing && outgoing.volume < 0.02) {
+          await outgoing.setVolume(master);
+        }
+      } catch (_) {}
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
+      try {
+        await ResonateDiagnostics.recordDj(
+          stage: 'crossfade',
+          outcome: 'failed',
+          reason: e.toString(),
+          songId: nextSong.id,
+        );
+      } catch (_) {}
       if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) return false;
       try { await outgoing.stop(); await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken); return true; } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); await ResonateDiagnostics.record('crossfade_fallback_failed', {'incomingSongId': nextSong.id, 'error': fallbackError.toString(), 'intentToken': intentToken}); return false; }
     } finally {
