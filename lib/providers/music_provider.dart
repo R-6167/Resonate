@@ -10,9 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../models/dj_analysis.dart';
 import '../models/listening_event.dart';
 import '../services/audio_service_handler.dart';
 import '../services/database_helper.dart';
+import '../services/dj_analysis_service.dart';
+import '../services/dj_bpm_estimator.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -84,6 +87,10 @@ class MusicProvider extends ChangeNotifier {
   bool _automaticCrossfadeInFlight = false;
   String? _preloadedNextSongId;
   bool _crossfadePreloadInFlight = false;
+  /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
+  bool _djBeatAlignActive = false;
+  DjAnalysisService? _djAnalysis;
+
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
   List<String> _gaplessWindowIds = const [];
@@ -305,6 +312,17 @@ class MusicProvider extends ChangeNotifier {
       await prefs.setBool(_shuffleEnabledKey, _shuffleEnabled);
       await prefs.setString(_repeatModeKey, switch (_repeatMode) { PlaybackRepeatMode.all => 'all', PlaybackRepeatMode.one => 'one', PlaybackRepeatMode.off => 'off' });
     } catch (e) { debugPrint('Playback mode save failed: $e'); }
+  }
+
+
+  /// Called by [DjModeProvider]. When [beatAlignActive] is false, crossfade
+  /// ignores BPM and behaves exactly as before.
+  void configureDjMode({
+    required bool beatAlignActive,
+    DjAnalysisService? analysis,
+  }) {
+    _djBeatAlignActive = beatAlignActive;
+    _djAnalysis = analysis;
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async { _crossfadeEnabled = enabled; if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000; await _persistCrossfadeSettings(); notifyListeners(); }
@@ -700,6 +718,12 @@ class MusicProvider extends ChangeNotifier {
     if (next == null) return;
     if (_preloadedNextSongId == next.id) return;
     _crossfadePreloadInFlight = true;
+    // DJ Mode: warm BPM cache for A/B without blocking the preload path.
+    if (_djBeatAlignActive && _djAnalysis != null) {
+      final cur = currentSong;
+      if (cur != null) _djAnalysis!.scheduleAnalyze(cur);
+      _djAnalysis!.scheduleAnalyze(next);
+    }
     // Snapshot outgoing level — never raise A/B while preloading.
     final outgoing = audioPlayer;
     double? outgoingVol;
@@ -1586,6 +1610,80 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) => _serializePlayback(() => _performTrueCrossfade(milliseconds: milliseconds, fadeType: fadeType, generation: _authority.beginAutomatic('crossfade')), command: 'crossfade', source: 'automatic_transition');
 
+
+  /// When DJ Mode beat-align is active, seek the incoming engine so the next
+  /// beat of A lines up with a beat of B. No-ops when off, analysis missing,
+  /// or BPMs differ by more than ~8% (stretch is Step 3).
+  Future<void> _maybeBeatAlignIncoming({
+    required AudioPlayer outgoing,
+    required AudioPlayer incoming,
+    required Song? outgoingSong,
+    required Song incomingSong,
+  }) async {
+    if (!_djBeatAlignActive || _djAnalysis == null) return;
+    if (outgoingSong == null) return;
+    try {
+      final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
+      final bFuture = _djAnalysis!.analyzeSong(incomingSong);
+      final results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
+        const Duration(milliseconds: 350),
+        onTimeout: () => <DjAnalysis>[],
+      );
+      if (results.length < 2) return;
+      final analysisA = results[0];
+      final analysisB = results[1];
+      if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
+        await ResonateDiagnostics.record('dj_beat_align_skipped', {
+          'reason': 'missing_bpm',
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': analysisA.bpm,
+          'bpmB': analysisB.bpm,
+        });
+        return;
+      }
+      final posMs = outgoing.position.inMilliseconds;
+      final seek = computeBeatAlignedSeekMs(
+        bpmA: analysisA.bpm!,
+        beatOffsetMsA: analysisA.beatOffsetMs ?? 0,
+        bpmB: analysisB.bpm!,
+        beatOffsetMsB: analysisB.beatOffsetMs ?? 0,
+        outgoingPositionMs: posMs,
+      );
+      if (seek == null) {
+        await ResonateDiagnostics.record('dj_beat_align_skipped', {
+          'reason': 'bpm_delta',
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': analysisA.bpm,
+          'bpmB': analysisB.bpm,
+        });
+        return;
+      }
+      final dur = incoming.duration ?? incomingSong.duration;
+      var target = seek;
+      if (dur > Duration.zero && target >= dur) {
+        final periodMs = (60000.0 / analysisB.bpm!).round();
+        if (periodMs > 0) {
+          target = Duration(milliseconds: target.inMilliseconds % periodMs);
+        } else {
+          target = Duration.zero;
+        }
+      }
+      await incoming.seek(target);
+      await ResonateDiagnostics.record('dj_beat_align_applied', {
+        'outgoingSongId': outgoingSong.id,
+        'incomingSongId': incomingSong.id,
+        'bpmA': analysisA.bpm,
+        'bpmB': analysisB.bpm,
+        'seekMs': target.inMilliseconds,
+        'outgoingPosMs': posMs,
+      });
+    } catch (e) {
+      debugPrint('beat align skipped: $e');
+    }
+  }
+
   Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType = 'linear', required int generation, int? playbackIntentToken}) async {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     if (!_playbackIntentGate.isCurrent(intentToken)) return false;
@@ -1615,6 +1713,12 @@ class MusicProvider extends ChangeNotifier {
         final session = await AudioSession.instance;
         await session.setActive(true);
       } catch (_) {}
+      await _maybeBeatAlignIncoming(
+        outgoing: outgoing,
+        incoming: incoming,
+        outgoingSong: outgoingSong,
+        incomingSong: nextSong,
+      );
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
