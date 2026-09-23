@@ -175,10 +175,8 @@ class MainActivity : AudioServiceActivity() {
      * centers onto whatever the device accepts.
      */
     private fun attachResonateDsp(sessionId: Int): Boolean {
-        // Temporarily disabled: DynamicsProcessing on session shared with just_audio
-        // Equalizer caused Activity death on first play for some devices.
-        resonateDspBandCount = 0
-        return false
+        // Reconnected: only called when the user enables Native DSP and a session
+        // already exists — never from the first-play critical path.
         if (sessionId <= 0) return false
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             resonateDspBandCount = 0
@@ -401,45 +399,45 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.RELATIVE_PATH,
         )
         val selection = StringBuilder("${MediaStore.Audio.Media.IS_MUSIC} != 0")
-        if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= $minimumDurationMs")
+        if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
+        val selectionArgs = if (minimumDurationMs > 0) arrayOf(minimumDurationMs.toString()) else null
         val songs = mutableListOf<Map<String, Any?>>()
         var totalSize = 0L
         contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             projection,
             selection.toString(),
-            null,
-            "${MediaStore.Audio.Media.DATE_ADDED} DESC",
+            selectionArgs,
+            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
         )?.use { cursor ->
-            val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val titleIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val artistIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val albumIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-            val durationIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            val dateIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-            val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
-            val dataIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-            val relativeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val relativeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
             while (cursor.moveToNext()) {
-                val relative = if (relativeIdx >= 0) cursor.getString(relativeIdx) else null
-                val dataPath = if (dataIdx >= 0) cursor.getString(dataIdx) else null
-                if (folders.isNotEmpty() && !isInSelectedFolder(relative, dataPath, prefixes)) continue
-                val id = cursor.getLong(idIdx)
-                val size = if (sizeIdx >= 0) cursor.getLong(sizeIdx) else 0L
-                if (includeSize) {
-                    totalSize += size
-                    continue
-                }
-                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                val relativePath = cursor.getString(relativeCol)
+                val dataPath = cursor.getString(dataCol)
+                if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue
+                val size = cursor.getLong(sizeCol)
+                if (includeSize) { totalSize += size; continue }
+                val id = cursor.getLong(idCol)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
                 songs.add(
                     mapOf(
-                        "filePath" to contentUri.toString(),
-                        "title" to (cursor.getString(titleIdx) ?: "Unknown Title"),
-                        "artist" to (cursor.getString(artistIdx) ?: "Unknown Artist"),
-                        "album" to (cursor.getString(albumIdx) ?: "Unknown Album"),
-                        "duration" to cursor.getLong(durationIdx),
-                        "dateAdded" to cursor.getLong(dateIdx),
+                        "id" to id.toString(),
+                        "title" to (cursor.getString(titleCol) ?: "Unknown"),
+                        "artist" to (cursor.getString(artistCol) ?: "Unknown"),
+                        "album" to (cursor.getString(albumCol) ?: "Unknown"),
+                        "durationMs" to cursor.getLong(durationCol),
+                        "dateAdded" to cursor.getLong(dateCol),
                         "size" to size,
+                        "uri" to contentUri,
+                        "path" to (dataPath ?: contentUri),
                     )
                 )
             }
@@ -451,6 +449,6 @@ class MainActivity : AudioServiceActivity() {
         @Suppress("UNCHECKED_CAST")
         (querySelectedAudio(folders, minimumDurationMs, includeSize = false) as List<Map<String, Any?>>)
 
-    private fun getAudioSize(folders: List<String>): Long = querySelectedAudio(folders, includeSize = true) as Long
-    override fun onDestroy() { releaseEffects(); super.onDestroy() }
+    private fun getAudioSize(folders: List<String>): Long =
+        querySelectedAudio(folders, includeSize = true) as Long
 }
