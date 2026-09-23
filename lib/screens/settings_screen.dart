@@ -7,6 +7,7 @@ import 'about_screen.dart';
 import 'audio_effects_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
+import 'dj_mode_settings_screen.dart';
 import 'diagnostics_screen.dart';
 import 'equalizer_screen.dart';
 import 'intelligence_settings_screen.dart';
@@ -39,6 +40,7 @@ class SettingsScreen extends StatelessWidget {
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transition duration and curve', Icons.compare_arrows_rounded, const CrossfadeScreen()),
+              _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
               _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen()),
             ]),
             _section(context, 'Audio', Icons.equalizer_rounded, [

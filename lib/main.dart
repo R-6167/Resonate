@@ -10,6 +10,7 @@ import 'providers/audio_visualization_provider.dart';
 import 'providers/autopilot_controller.dart';
 import 'providers/bluetooth_provider.dart';
 import 'providers/crossfade_provider.dart';
+import 'providers/dj_mode_provider.dart';
 import 'providers/equalizer_provider.dart';
 import 'providers/intelligence_provider.dart';
 import 'providers/intelligence_mix_controller.dart';
@@ -191,6 +192,10 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               CrossfadeProvider(music: context.read<MusicProvider>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              DjModeProvider(music: context.read<MusicProvider>()),
         ),
         ChangeNotifierProvider(
           create: (context) =>
