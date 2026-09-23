@@ -15,3 +15,5 @@ Do not use `com.example.resonate` anywhere. The old path
 Scan contract (Dart ↔ native): `filePath`, `title`, `artist`, `album`, `duration`, `dateAdded`.
 
 Crossfade: outgoing volume uses wall-clock equal-power ramp; never cut before silence.
+
+Notification: androidNotificationOngoing false with stopForegroundOnPause false (audio_service assert).
