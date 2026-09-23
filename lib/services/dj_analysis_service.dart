@@ -5,10 +5,10 @@ import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_bpm_estimator.dart';
 
-/// Loads and computes BPM hints for library tracks (DJ Mode).
+/// Loads and computes BPM / key hints for library tracks (DJ Mode).
 ///
 /// Analysis is cached in SQLite and never blocks the play() hot path for long:
-/// callers should treat missing analysis as "skip beat align".
+/// callers should treat missing analysis as "skip beat align / neutral harmonic".
 class DjAnalysisService {
   DjAnalysisService({DatabaseHelper? database, DjBpmEstimator? estimator})
       : _db = database ?? DatabaseHelper(),
@@ -47,12 +47,13 @@ class DjAnalysisService {
   Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
     if (!force) {
       final existing = await getAnalysis(song.id);
-      if (existing != null && (existing.hasUsableBpm || existing.bpmConfidence > 0)) {
+      if (existing != null &&
+          (existing.hasUsableBpm || existing.hasUsableKey || existing.bpmConfidence > 0)) {
         return existing;
       }
-      if (existing != null && existing.analyzedAt != null && existing.bpm == null) {
+      if (existing != null && existing.analyzedAt != null && existing.bpm == null && !existing.hasUsableKey) {
         // Fall through to try metadata once.
-      } else if (existing != null && existing.bpm != null) {
+      } else if (existing != null && (existing.bpm != null || existing.hasUsableKey)) {
         return existing;
       }
     }
@@ -72,9 +73,11 @@ class DjAnalysisService {
             )
           : DjAnalysis(
               songId: song.id,
-              bpm: estimate.bpm,
+              bpm: (estimate.bpm > 40 && estimate.bpm < 240) ? estimate.bpm : null,
               bpmConfidence: estimate.confidence,
               beatOffsetMs: estimate.beatOffsetMs,
+              keyRoot: estimate.keyRoot,
+              keyMode: estimate.keyMode,
               analyzedAt: DateTime.now(),
             );
       await saveAnalysis(analysis);
@@ -89,7 +92,10 @@ class DjAnalysisService {
 
   /// Fire-and-forget analysis for preload / idle.
   void scheduleAnalyze(Song song) {
-    if (_inFlight.contains(song.id) || _memory[song.id]?.hasUsableBpm == true) {
+    final cached = _memory[song.id];
+    if (_inFlight.contains(song.id) ||
+        cached?.hasUsableBpm == true ||
+        cached?.hasUsableKey == true) {
       return;
     }
     // ignore: unawaited_futures
