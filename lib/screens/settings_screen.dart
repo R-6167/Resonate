@@ -32,7 +32,7 @@ class SettingsScreen extends StatelessWidget {
                 leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Audio tools are always available'),
                 subtitle: const Text(
-                  'Equalizer, Crossfade, and Effects work from Settings even before you play a song.',
+                  'Equalizer, Crossfade, DJ Mode, and Effects work from Settings even before you play a song. Open Playback to find DJ Mode.',
                 ),
               ),
             ),
@@ -42,13 +42,14 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Crossfade', 'Transition duration and curve', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
               _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen()),
-            ]),
+            ], initiallyExpanded: true),
             _section(context, 'Audio', Icons.equalizer_rounded, [
               _item(context, 'Equalizer', 'Main sound profile', Icons.equalizer_rounded, const EqualizerScreen()),
               _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
             ]),
             _section(context, 'Intelligence', Icons.auto_awesome, [
               _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
+              _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
               _item(context, 'Suggestions', 'Recommendation confidence, explanations and ranking behavior', Icons.lightbulb_outline_rounded, const IntelligenceDetailScreen(section: 'Suggestions')),
               _item(context, 'Automatic queue', 'How Resonate prepares likely next tracks', Icons.playlist_add_rounded, const IntelligenceDetailScreen(section: 'Automatic queue')),
               _item(context, 'Exploration', 'Balance familiar listening with discovery', Icons.explore_outlined, const IntelligenceDetailScreen(section: 'Exploration')),
@@ -93,9 +94,10 @@ class SettingsScreen extends StatelessWidget {
         ),
       );
 
-  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children) => Card(
+  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children, {bool initiallyExpanded = false}) => Card(
         margin: const EdgeInsets.only(bottom: 10),
         child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
           leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
           title: Text(title),
           children: children,
