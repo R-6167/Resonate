@@ -1,0 +1,32 @@
+name: Apply notif + crossfade harden
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_notif_crossfade.yml'
+      - 'tools/apply_notif_crossfade.py'
+permissions:
+  contents: write
+concurrency:
+  group: apply-notif-crossfade
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Resonate_Remake
+          fetch-depth: 5
+      - name: Apply upgraded notification + crossfade harden
+        run: |
+          set -euo pipefail
+          python3 tools/apply_notif_crossfade.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/audio_service_handler.dart lib/main.dart lib/providers/music_provider.dart
+          git commit -m "feat: real-time media notification + further crossfade harden" || true
+          git push origin HEAD:Resonate_Remake
+          git rm -f .github/workflows/apply_notif_crossfade.yml tools/apply_notif_crossfade.py || true
+          git commit -m "chore: remove notif/crossfade apply workflow" || true
+          git push origin HEAD:Resonate_Remake || true
