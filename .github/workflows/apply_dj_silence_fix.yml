@@ -1,0 +1,25 @@
+name: Apply DJ silence fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_silence_fix.yml'
+      - 'tools/apply_dj_silence_fix.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Apply silence fix
+        run: |
+          set -euo pipefail
+          python3 tools/apply_dj_silence_fix.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart lib/services/dj_bpm_estimator.dart
+          git commit -m "fix(dj): recover muted engines after tempo stretch handoff" || true
+          git push origin HEAD:dj_Mode
