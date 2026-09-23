@@ -5,7 +5,11 @@ on:
     paths:
       - '.github/workflows/apply_crossfade_v2.yml'
       - 'tools/apply_crossfade_v2.py'
-      - 'tools/music_provider_xfade.b64'
+      - 'tools/xfade_c0.b64'
+      - 'tools/xfade_c1.b64'
+      - 'tools/xfade_c2.b64'
+      - 'tools/xfade_c3.b64'
+      - 'tools/xfade_c4.b64'
 permissions:
   contents: write
 concurrency:
