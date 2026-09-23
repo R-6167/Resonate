@@ -1,0 +1,35 @@
+name: Write music_provider Step 3
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/write_mp_step3.yml'
+      - 'tools/write_mp_step3.py'
+      - 'tools/s3_p0.txt'
+      - 'tools/s3_p1.txt'
+      - 'tools/s3_p2.txt'
+      - 'tools/s3_p3.txt'
+      - 'tools/s3_p4.txt'
+      - 'tools/s3_p5.txt'
+permissions:
+  contents: write
+concurrency:
+  group: write-mp-step3
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 5
+      - name: Write Step 3 music_provider
+        run: |
+          set -euo pipefail
+          python3 tools/write_mp_step3.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart
+          git commit -m "feat(dj): Step 3 tempo match during crossfade" || true
+          git push origin HEAD:dj_Mode
