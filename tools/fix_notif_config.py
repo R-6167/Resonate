@@ -17,4 +17,3 @@ else:
     p.write_text(t.replace(old, new, 1))
     print('fixed')
 assert 'androidNotificationOngoing: false' in p.read_text()
-"""
