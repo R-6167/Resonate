@@ -64,7 +64,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Beat-aware handoff',
-                subtitle: 'Start the next track on a bar of the current one (Step 2).',
+                subtitle: 'Start the next track on a beat of the current one when BPMs are close.',
                 value: dj.beatAlign,
                 onChanged: on ? dj.setBeatAlign : null,
               ),
@@ -125,9 +125,10 @@ class DjModeSettingsScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Step 1 (now): settings and analysis cache only. '
-                    'Crossfade and play paths are unchanged until later steps '
-                    'wire beat/tempo/key into transitions — and only when this switch is on.',
+                    'Step 2: when DJ Mode and beat-aware handoff are on, Resonate reads BPM '
+                    '(from tags when available) and lines up the next track\'s beat with the '
+                    'current one during crossfade. If BPM is unknown or tempos differ a lot, '
+                    'you get the normal equal-power fade — playback is never blocked.',
                     style: text.bodySmall,
                   ),
                 ),
