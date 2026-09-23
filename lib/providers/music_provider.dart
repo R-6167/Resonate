@@ -227,16 +227,24 @@ class MusicProvider extends ChangeNotifier {
     _loudnessA = AndroidLoudnessEnhancer();
     _loudnessB = AndroidLoudnessEnhancer();
     _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
-    // A/B isolation test: keep the Android effect objects alive for the EQ layer,
-    // but do NOT attach them to just_audio's AudioPipeline. If playback becomes
-    // stable, the native effect attachment/session path is the regression source.
-    _playerA = AudioPlayer();
-    _playerB = AudioPlayer();
-    // Do not attach extra AudioEffects (BassBoost / Virtualizer / DynamicsProcessing)
-    // on session creation. That races just_audio's Equalizer attach and kills the
-    // Activity while ExoPlayer keeps playing ("Resonate keeps stopping").
-    _sessionASub = _playerA.androidAudioSessionIdStream.listen((_) {}, onError: (e) => debugPrint('sessionA stream error: $e'));
-    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((_) {}, onError: (e) => debugPrint('sessionB stream error: $e'));
+    // Reconnected: Equalizer + LoudnessEnhancer in the pipeline (was the 34h-stable path).
+    // Extra native effects stay lazy — attach only after a session exists.
+    _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
+    _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
+    _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
+      try {
+        if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession A failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionA stream error: $e'));
+    _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
+      try {
+        if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
+      } catch (e) {
+        debugPrint('onAndroidSession B failed: $e');
+      }
+    }, onError: (e) => debugPrint('sessionB stream error: $e'));
     if (audioHandler is AudioServiceHandler) {
       (audioHandler! as AudioServiceHandler).bindPlaybackController(
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
@@ -1006,10 +1014,13 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
 
   Future<void> _enableEffects(AudioPlayer player, AndroidEqualizer eq, AndroidLoudnessEnhancer loud) async {
-    // Intentionally empty. activateFor/syncAll awaited AndroidEqualizer.parameters
-    // on BOTH engines during setAudioSource/play, which crashes the Activity on
-    // several OEMs (audio continues in the foreground service).
-    // just_audio already has Equalizer + LoudnessEnhancer in the AudioPipeline.
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 500), () async {
+      try {
+        await _audioEffectsController.activateFor(player);
+      } catch (e) {
+        debugPrint('deferred enableEffects failed: $e');
+      }
+    }));
   }
 
   Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken, Future<T> Function()? onSuperseded}) async {
