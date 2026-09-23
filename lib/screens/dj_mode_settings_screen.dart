@@ -56,7 +56,7 @@ class DjModeSettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'Coming steps',
+                'Features',
                 style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -72,7 +72,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Tempo match',
-                subtitle: 'Time-stretch during crossfade when BPMs differ (Step 3).',
+                subtitle: 'Time-stretch during crossfade so tempos lock when BPMs differ (within max stretch).',
                 value: dj.tempoMatch,
                 onChanged: on ? dj.setTempoMatch : null,
               ),
@@ -80,7 +80,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Harmonic mix',
-                subtitle: 'Prefer compatible keys in queue / Autopilot (Step 4).',
+                subtitle: 'Soft Camelot-key bias when Intelligence picks the next track (never a hard filter).',
                 value: dj.harmonicMix,
                 onChanged: on ? dj.setHarmonicMix : null,
               ),
@@ -125,10 +125,10 @@ class DjModeSettingsScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Step 2: when DJ Mode and beat-aware handoff are on, Resonate reads BPM '
-                    '(from tags when available) and lines up the next track\'s beat with the '
-                    'current one during crossfade. If BPM is unknown or tempos differ a lot, '
-                    'you get the normal equal-power fade — playback is never blocked.',
+                    'Step 4: with Harmonic mix on, Intelligence can gently prefer the next '
+                    'track when its key is Camelot-compatible with the current one. Soft bias only — '
+                    'taste and session still win. Missing keys are neutral. DJ Mode stays optional '
+                    'and independent of Intelligence. Beat/tempo handoffs still apply when enabled.',
                     style: text.bodySmall,
                   ),
                 ),
