@@ -1,0 +1,32 @@
+name: Apply DJ Mode Step 4
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_step4.yml'
+      - 'tools/apply_dj_step4_decision.py'
+      - 'tools/apply_dj_step4_estimator.py'
+      - 'tools/frag_dj_tkey_method.txt'
+permissions:
+  contents: write
+concurrency:
+  group: apply-dj-step4
+  cancel-in-progress: true
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 5
+      - name: Apply Step 4 patches
+        run: |
+          set -euo pipefail
+          python3 tools/apply_dj_step4_estimator.py || true
+          python3 tools/apply_dj_step4_decision.py || true
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/dj_bpm_estimator.dart lib/services/intelligence_decision_engine.dart || true
+          git commit -m "feat(dj): Step 4 harmonic key bias in Intelligence" || true
+          git push origin HEAD:dj_Mode
