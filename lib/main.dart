@@ -117,7 +117,9 @@ Future<void> main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.aetherion.resonate.audio',
       androidNotificationChannelName: 'Resonate Playback',
-      androidNotificationOngoing: true,
+      // audio_service asserts: ongoing must be false when stopForegroundOnPause is false.
+      androidNotificationOngoing: false,
+      // Keep the media session / notification while paused so play-pause stays real-time.
       androidStopForegroundOnPause: false,
       androidNotificationChannelDescription: 'Now playing and transport controls',
       fastForwardInterval: Duration(seconds: 10),
