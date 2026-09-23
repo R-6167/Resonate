@@ -119,6 +119,11 @@ Future<void> main() async {
       androidNotificationChannelName: 'Resonate Playback',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
+      // Required: default mipmap/ic_launcher does not exist in this project.
+      // Unisoc/HMD then posts a notification with icon=0 and crashes the
+      // Activity on first play (IllegalArgumentException: no valid small icon)
+      // while ExoPlayer has already started — "Resonate keeps stopping".
+      androidNotificationIcon: 'drawable/ic_stat_resonate',
     ),
   );
 
