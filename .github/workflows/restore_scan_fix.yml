@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/restore_scan_fix.yml'
+      - 'tools/apply_scan_fix.py'
 permissions:
   contents: write
 concurrency:
@@ -17,80 +18,15 @@ jobs:
         with:
           ref: Resonate_Remake
           fetch-depth: 50
-      - name: Restore scan logic from known-good commit + key fix
+      - name: Apply scan fix
         run: |
           set -euo pipefail
-          git show 2f89fc12e92d92ca31814684526b3800d341825f:android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt > android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
-          python3 << 'PY'
-          from pathlib import Path
-          path = Path('android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt')
-          text = path.read_text()
-          text = text.replace(
-              'if (!isInSelectedFolder(relativePath, dataPath, prefixes)) continue',
-              'if (folders.isNotEmpty() && !isInSelectedFolder(relativePath, dataPath, prefixes)) continue',
-          )
-          old_map = '''                    mapOf(
-                        "id" to id.toString(),
-                        "title" to (cursor.getString(titleCol) ?: "Unknown"),
-                        "artist" to (cursor.getString(artistCol) ?: "Unknown"),
-                        "album" to (cursor.getString(albumCol) ?: "Unknown"),
-                        "durationMs" to cursor.getLong(durationCol),
-                        "dateAdded" to cursor.getLong(dateCol),
-                        "size" to size,
-                        "uri" to contentUri,
-                        "path" to (dataPath ?: contentUri),
-                    )'''
-          new_map = '''                    mapOf(
-                        "filePath" to contentUri,
-                        "title" to (cursor.getString(titleCol) ?: "Unknown Title"),
-                        "artist" to (cursor.getString(artistCol) ?: "Unknown Artist"),
-                        "album" to (cursor.getString(albumCol) ?: "Unknown Album"),
-                        "duration" to cursor.getLong(durationCol),
-                        "dateAdded" to cursor.getLong(dateCol),
-                        "size" to size,
-                    )'''
-          if old_map not in text:
-              idx = text.find('songs.add')
-              print(repr(text[idx:idx+800]))
-              raise SystemExit('old_map not found')
-          text = text.replace(old_map, new_map, 1)
-          if 'override fun onDestroy()' not in text:
-              if text.rstrip().endswith('}'):
-                  text = text.rstrip()[:-1] + '''
-    override fun onDestroy() {
-        releaseEffects()
-        super.onDestroy()
-    }
-}
-'''
-          path.write_text(text)
-          assert 'filePath' in text
-          assert 'folders.isNotEmpty()' in text
-          assert 'PLACEHOLDER' not in text
-          print('MainActivity fixed OK', len(text))
-          PY
-          python3 << 'PY'
-          from pathlib import Path
-          p = Path('lib/services/audio_file_service.dart')
-          t = p.read_text()
-          if "map['uri']" not in t:
-              t = t.replace(
-                  "(map['filePath'] ?? '').toString()",
-                  "(map['filePath'] ?? map['uri'] ?? map['path'] ?? '').toString()",
-              )
-              if "map['durationMs']" not in t:
-                  t = t.replace(
-                      "_toInt(map['duration'])",
-                      "_toInt(map['duration'] ?? map['durationMs'])",
-                  )
-              p.write_text(t)
-          print('audio_file_service OK')
-          PY
+          python3 tools/apply_scan_fix.py
           git config user.name "Aetherion LLC"
           git config user.email "mosesmiggs@gmail.com"
           git add android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt lib/services/audio_file_service.dart
           git commit -m "fix: restore library scan keys + unrestricted full-library path" || true
           git push origin HEAD:Resonate_Remake
-          git rm -f .github/workflows/restore_scan_fix.yml || true
+          git rm -f .github/workflows/restore_scan_fix.yml tools/apply_scan_fix.py || true
           git commit -m "chore: remove scan restore workflow" || true
           git push origin HEAD:Resonate_Remake || true
