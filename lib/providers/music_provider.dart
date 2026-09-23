@@ -603,13 +603,17 @@ class MusicProvider extends ChangeNotifier {
     // so setAudioSource is not racing the end of the track.
     final preloadMs = (_crossfadeDurationMs + 8000).clamp(8000, 22000);
     if (remaining <= Duration(milliseconds: preloadMs) &&
-        remaining > Duration(milliseconds: _crossfadeDurationMs + 400)) {
+        remaining > Duration(milliseconds: _crossfadeDurationMs + 1400)) {
       unawaited(_preloadNextForCrossfade());
       return;
     }
 
     if (_automaticCrossfadeInFlight) return;
-    if (remaining > Duration(milliseconds: _crossfadeDurationMs)) return;
+    // Start early enough that Engine-B startup + full equal-power fade finish
+    // before the outgoing source hits EOS (sudden silence mid-fade).
+    final startMarginMs = 1400;
+    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(1200, 14000);
+    if (remaining > Duration(milliseconds: triggerMs)) return;
     _automaticCrossfadeInFlight = true;
     unawaited(_runAutomaticCrossfade());
   }
@@ -1529,13 +1533,29 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       await incoming.setVolume(0.0);
 
-      final total = milliseconds.clamp(500, 12000).toInt();
-      // Gentler stepping on Android (esp. API ≤ 26 / low-end): fewer setVolume calls.
+      final plannedMs = milliseconds.clamp(500, 12000).toInt();
+      // Clamp fade length to actual remaining on the outgoing source so the
+      // volume ramp finishes before ExoPlayer hits EOS and cuts audio dead.
+      int remainingMs = plannedMs;
+      try {
+        final d = outgoing.duration;
+        final p = outgoing.position;
+        if (d != null && d > Duration.zero) {
+          final rem = d.inMilliseconds - p.inMilliseconds;
+          if (rem > 250) {
+            // Leave a small buffer so the last step is not raced by completion.
+            remainingMs = (rem - 120).clamp(400, plannedMs);
+          }
+        }
+      } catch (_) {}
+      final total = remainingMs;
+      // Wall-clock equal-power ramp: keep steps on schedule even when setVolume
+      // is slow on OEM audio stacks (Unisoc / low-end Android).
       final gentle = Platform.isAndroid;
-      final stepDiv = gentle ? 70 : 40;
-      final steps = (total / stepDiv).round().clamp(gentle ? 10 : 12, gentle ? 120 : 300).toInt();
-      final stepMs = (total / steps).round().clamp(gentle ? 28 : 16, gentle ? 100 : 80);
-      for (var i = 1; i <= steps; i++) {
+      final stepMs = gentle ? 40 : 24;
+      final fadeStartedAt = DateTime.now();
+      var lastOut = base;
+      while (true) {
         if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
           try { await outgoing.setVolume(master); } catch (_) {}
@@ -1547,7 +1567,8 @@ class MusicProvider extends ChangeNotifier {
           });
           return false;
         }
-        final linear = i / steps;
+        final elapsed = DateTime.now().difference(fadeStartedAt).inMilliseconds;
+        final linear = (elapsed / total).clamp(0.0, 1.0);
         final t = switch (fadeType) {
           'ease_in' => linear * linear,
           'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
@@ -1556,26 +1577,55 @@ class MusicProvider extends ChangeNotifier {
               : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0,
           _ => linear,
         };
-        // Equal-power crossfade: avoids the linear "volume bump" in the middle
-        // and keeps the outgoing track from dominating the incoming one.
-        final angle = t * (3.141592653589793 / 2.0);
+        // Equal-power: cos out / sin in — smooth energy, no mid-fade dip.
+        final angle = t * (math.pi / 2.0);
         final outGain = math.cos(angle);
         final inGain = math.sin(angle);
+        final outVol = (base * outGain).clamp(0.0, 1.0);
+        final inVol = (master * inGain).clamp(0.0, 1.0);
+        lastOut = outVol;
+        final stepStarted = DateTime.now();
         try {
-          await outgoing.setVolume((base * outGain).clamp(0.0, 1.0));
-          await incoming.setVolume((master * inGain).clamp(0.0, 1.0));
+          // Parallel volume writes so outgoing does not stall waiting on incoming.
+          await Future.wait([
+            outgoing.setVolume(outVol),
+            incoming.setVolume(inVol),
+          ]);
         } catch (_) {}
-        await Future<void>.delayed(Duration(milliseconds: stepMs));
+        if (linear >= 1.0) break;
+        final spent = DateTime.now().difference(stepStarted).inMilliseconds;
+        final sleep = (stepMs - spent).clamp(0, stepMs);
+        if (sleep > 0) {
+          await Future<void>.delayed(Duration(milliseconds: sleep));
+        }
+      }
+      // Guarantee silence on outgoing before pause/stop — never cut from a
+      // still-audible level (the "sudden volume loss" symptom).
+      if (lastOut > 0.02) {
+        try {
+          await outgoing.setVolume(0.0);
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      } else {
+        try {
+          await outgoing.setVolume(0.0);
+        } catch (_) {}
       }
       if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
       // Mutating currentSong first caused history to be attributed to the next track.
       await _finishHistoryEvent();
       if (!_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
-      await outgoing.pause(); await outgoing.setVolume(master); await incoming.setLoopMode(LoopMode.off); await incoming.setVolume(master);
+      // Pause only after volume is already 0 so pause cannot audibly chop the tail.
+      try { await outgoing.pause(); } catch (_) {}
+      try { await incoming.setLoopMode(LoopMode.off); } catch (_) {}
+      try { await incoming.setVolume(master); } catch (_) {}
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
-      await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners(); await outgoing.stop();
+      await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners();
+      try { await outgoing.stop(); } catch (_) {}
+      // Restore volume on the now-idle engine so the next time it is used it is not stuck at 0.
+      try { await outgoing.setVolume(master); } catch (_) {}
       _preloadedNextSongId = null;
       await ResonateDiagnostics.record('crossfade_committed', {
         'outgoingSongId': outgoingSong?.id,
