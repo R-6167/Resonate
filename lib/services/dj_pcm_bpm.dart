@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
-/// PCM energy BPM for uncompressed WAV only. Compressed formats stay on tags.
+/// Energy-envelope BPM estimate from raw PCM (any decoded source).
 class DjPcmBpmEstimate {
   final double bpm;
   final double confidence;
@@ -18,6 +18,7 @@ class DjPcmBpmEstimate {
 }
 
 class DjPcmBpmAnalyzer {
+  /// Uncompressed WAV path helper (legacy).
   Future<DjPcmBpmEstimate?> analyzeWav(
     String path, {
     double maxSeconds = 25,
@@ -59,7 +60,7 @@ class DjPcmBpmAnalyzer {
           if (size.isOdd) await raf.read(1);
         }
         if (pcm == null || bits != 16 || sampleRate < 8000) return null;
-        return _estimateFromPcm16(pcm, sampleRate, channels);
+        return estimateFromPcm16(pcm, sampleRate, channels, sourceConfidence: 0.42);
       } finally {
         await raf.close();
       }
@@ -69,7 +70,14 @@ class DjPcmBpmAnalyzer {
     }
   }
 
-  DjPcmBpmEstimate? _estimateFromPcm16(Uint8List pcm, int sampleRate, int channels) {
+  /// Shared energy BPM for any 16-bit little-endian PCM (mono or multi-channel).
+  DjPcmBpmEstimate? estimateFromPcm16(
+    Uint8List pcm,
+    int sampleRate,
+    int channels, {
+    double sourceConfidence = 0.45,
+  }) {
+    if (sampleRate < 8000 || channels < 1) return null;
     final samples = pcm.length ~/ 2;
     if (samples < sampleRate) return null;
     final hop = math.max(1, sampleRate ~/ 100);
@@ -103,6 +111,7 @@ class DjPcmBpmAnalyzer {
     if (best <= 0) return null;
     final bpm = (60.0 * 100.0) / bestLag;
     if (bpm < 60 || bpm > 180) return null;
-    return DjPcmBpmEstimate(bpm: bpm, confidence: 0.42, beatOffsetMs: 0);
+    final conf = sourceConfidence.clamp(0.35, 0.72);
+    return DjPcmBpmEstimate(bpm: bpm, confidence: conf, beatOffsetMs: 0);
   }
 }
