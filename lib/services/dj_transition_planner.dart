@@ -10,6 +10,35 @@ double energyCompatibility(double? a, double? b) {
   return (1.0 - d);
 }
 
+/// Soft crossfade length bias in ms. Positive = longer fade (gentler energy bridge).
+/// Never hard-rejects; caller clamps to the user's crossfade range.
+int crossfadeBiasMsFor({
+  required double energyScore,
+  required String strategy,
+  required bool energyKnown,
+}) {
+  var bias = 0;
+  if (energyKnown) {
+    if (energyScore < 0.35) {
+      bias = 1400; // big energy jump → longer bridge
+    } else if (energyScore < 0.50) {
+      bias = 700;
+    } else if (energyScore > 0.85) {
+      bias = -500; // very similar energy → slightly snappier
+    } else if (energyScore > 0.70) {
+      bias = -300;
+    }
+  }
+  if (strategy == 'outro_intro') {
+    bias += 400;
+  } else if (strategy == 'phrase_align') {
+    bias += 200;
+  }
+  if (bias > 2500) return 2500;
+  if (bias < -1500) return -1500;
+  return bias;
+}
+
 /// True when the outgoing track is in a soft "outro" window (near end).
 /// Uses duration + position only — no section detector required.
 bool inOutroWindow({
@@ -49,6 +78,8 @@ class DjTransitionPlan {
   /// When true, beat seek snaps to a multi-beat phrase grid (usually 4).
   final bool usePhraseGrid;
   final int phraseBeats;
+  /// Soft ms added to user crossfade length (energy bridge / outro).
+  final int crossfadeBiasMs;
 
   const DjTransitionPlan({
     required this.strategy,
@@ -65,6 +96,7 @@ class DjTransitionPlan {
     this.strategyBias = 0,
     this.usePhraseGrid = false,
     this.phraseBeats = 4,
+    this.crossfadeBiasMs = 0,
   });
 
   Map<String, dynamic> toDiagExtra() => {
@@ -82,6 +114,7 @@ class DjTransitionPlan {
         'strategyBias': strategyBias,
         'usePhraseGrid': usePhraseGrid,
         'phraseBeats': phraseBeats,
+        'crossfadeBiasMs': crossfadeBiasMs,
         if (stretch != null) 'stretchMode': stretch!.mode,
         if (stretch != null) 'speedIn': stretch!.speedIncoming,
       };
@@ -95,6 +128,7 @@ class DjTransitionPlan {
     double? strategyBias,
     bool? usePhraseGrid,
     int? phraseBeats,
+    int? crossfadeBiasMs,
     bool clearStretch = false,
   }) {
     return DjTransitionPlan(
@@ -112,6 +146,7 @@ class DjTransitionPlan {
       strategyBias: strategyBias ?? this.strategyBias,
       usePhraseGrid: usePhraseGrid ?? this.usePhraseGrid,
       phraseBeats: phraseBeats ?? this.phraseBeats,
+      crossfadeBiasMs: crossfadeBiasMs ?? this.crossfadeBiasMs,
     );
   }
 }
@@ -135,6 +170,14 @@ DjTransitionPlan planDjTransition({
     modeB: analysisB.keyMode,
   );
   final energyScore = energyCompatibility(analysisA.energy, analysisB.energy);
+  final energyKnown =
+      analysisA.hasUsableEnergy && analysisB.hasUsableEnergy;
+
+  int biasFor(String strategy) => crossfadeBiasMsFor(
+        energyScore: energyScore,
+        strategy: strategy,
+        energyKnown: energyKnown,
+      );
 
   final hasA = analysisA.hasUsableBpm;
   final hasB = analysisB.hasUsableBpm;
@@ -155,6 +198,7 @@ DjTransitionPlan planDjTransition({
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      crossfadeBiasMs: biasFor('safe_fallback'),
     );
   }
 
@@ -196,6 +240,7 @@ DjTransitionPlan planDjTransition({
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      crossfadeBiasMs: biasFor('outro_intro'),
       usePhraseGrid: phraseOk,
       phraseBeats: 4,
     );
@@ -215,6 +260,7 @@ DjTransitionPlan planDjTransition({
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      crossfadeBiasMs: biasFor('phrase_align'),
       usePhraseGrid: true,
       phraseBeats: 4,
     );
@@ -234,6 +280,7 @@ DjTransitionPlan planDjTransition({
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      crossfadeBiasMs: biasFor('beat_tempo'),
     );
   }
   if (stretch != null) {
@@ -250,11 +297,13 @@ DjTransitionPlan planDjTransition({
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      crossfadeBiasMs: biasFor('tempo_match'),
     );
   }
   if (tryBeat) {
+    final strat = phraseOk ? 'phrase_align' : 'beat_align';
     return DjTransitionPlan(
-      strategy: phraseOk ? 'phrase_align' : 'beat_align',
+      strategy: strat,
       harmonicScore: harmonic,
       energyScore: energyScore,
       stretch: null,
@@ -270,6 +319,7 @@ DjTransitionPlan planDjTransition({
       strategyBias: strategyBias,
       usePhraseGrid: phraseOk,
       phraseBeats: 4,
+      crossfadeBiasMs: biasFor(strat),
     );
   }
 
@@ -286,6 +336,7 @@ DjTransitionPlan planDjTransition({
     confidenceB: analysisB.bpmConfidence,
     pairBias: pairBias,
     strategyBias: strategyBias,
+    crossfadeBiasMs: biasFor('safe_fallback'),
   );
 }
 
@@ -323,7 +374,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   final stratBias = await DjTransitionMemory.strategyBias(plan.strategy);
   plan = plan.copyWith(strategyBias: stratBias);
 
-  // Soft: extreme energy jump + aggressive mix → prefer tempo-only.
+  // Soft: extreme energy jump + aggressive mix → prefer tempo-only + longer bridge.
   if ((plan.strategy == 'beat_tempo' ||
           plan.strategy == 'phrase_align' ||
           plan.strategy == 'outro_intro') &&
@@ -333,6 +384,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
       attemptBeatAlign: false,
       reason: 'energy_mismatch_soft',
       usePhraseGrid: false,
+      crossfadeBiasMs: (plan.crossfadeBiasMs + 800).clamp(-1500, 2500),
     );
   }
 
