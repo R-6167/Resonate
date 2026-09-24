@@ -100,6 +100,8 @@ class MusicProvider extends ChangeNotifier {
   String? _lastDjFromId;
   String? _lastDjToId;
   String? _lastDjStrategy;
+  /// Soft energy-bridge bias applied to the next crossfade length (ms).
+  int _lastDjCrossfadeBiasMs = 0;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -1730,6 +1732,7 @@ class MusicProvider extends ChangeNotifier {
     required Song? outgoingSong,
     required Song incomingSong,
   }) async {
+    _lastDjCrossfadeBiasMs = 0;
     if ((!_djBeatAlignActive && !_djTempoMatchActive) || _djAnalysis == null) {
       return;
     }
@@ -1769,6 +1772,7 @@ class MusicProvider extends ChangeNotifier {
         outgoingPositionMs: outPos,
         outgoingDurationMs: outDur,
       );
+      _lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;
 
       if (plan.strategy == 'safe_fallback') {
         await ResonateDiagnostics.record('dj_handoff_safe_fallback', {
@@ -1995,7 +1999,16 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       await incoming.setVolume(0.0);
 
-      final plannedMs = milliseconds.clamp(500, 12000).toInt();
+      final plannedMs = (milliseconds + _lastDjCrossfadeBiasMs).clamp(500, 12000).toInt();
+      if (_lastDjCrossfadeBiasMs != 0) {
+        unawaited(ResonateDiagnostics.record('crossfade_energy_bridge', {
+          'biasMs': _lastDjCrossfadeBiasMs,
+          'baseMs': milliseconds,
+          'plannedMs': plannedMs,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+        }));
+      }
       int remainingMs = plannedMs;
       try {
         final d = outgoing.duration;
