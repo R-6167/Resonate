@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'dj_harmonic.dart';
 import 'dj_pcm_bpm.dart';
@@ -10,8 +11,9 @@ import 'dj_pcm_bpm.dart';
 /// BPM / key hints for DJ Mode.
 ///
 /// Sources (in order):
-/// 1. ID3v2 TBPM + TKEY frames
-/// 2. Light PCM energy BPM for uncompressed WAV only
+/// 1. ID3v2 TBPM + TKEY frames (file path or content:// head via native)
+/// 2. Native MediaExtractor/MediaCodec PCM window (MP3 / M4A / content://)
+/// 3. Light PCM energy BPM for uncompressed WAV
 ///
 /// Never throws into the playback path; failures return null.
 class DjBpmEstimate {
@@ -50,19 +52,49 @@ class DjKeyEstimate {
 
 class DjBpmEstimator {
   static const int _scanBytes = 512 * 1024;
+  static const MethodChannel _channel =
+      MethodChannel('com.aetherion.resonate/media_store');
 
   Future<DjBpmEstimate?> estimateFile(String filePath) async {
     try {
-      final file = File(filePath);
-      if (!await file.exists()) return null;
-      final len = await file.length();
-      if (len <= 0) return null;
-      final raf = await file.open();
-      try {
-        final n = math.min(_scanBytes, len);
-        final bytes = await raf.read(n);
-        final fromId3 = _parseId3Tbpm(bytes);
-        final key = _parseId3Tkey(bytes);
+      if (filePath.isEmpty) return null;
+
+      // 1) Prefer local File read when the path is a real filesystem path.
+      final isContent = filePath.startsWith('content://');
+      final isFileUri = filePath.startsWith('file://');
+      Uint8List? head;
+
+      if (!isContent) {
+        try {
+          final path = isFileUri ? Uri.parse(filePath).toFilePath() : filePath;
+          final file = File(path);
+          if (await file.exists()) {
+            final len = await file.length();
+            if (len > 0) {
+              final raf = await file.open();
+              try {
+                final n = math.min(_scanBytes, len);
+                head = await raf.read(n);
+              } finally {
+                await raf.close();
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('DjBpmEstimator file head: $e');
+        }
+      }
+
+      // 2) content:// or unreadable path → native readMediaHead
+      if (head == null || head.isEmpty) {
+        head = await _readMediaHeadNative(filePath);
+      }
+
+      DjBpmEstimate? fromId3;
+      DjKeyEstimate? key;
+      if (head != null && head.isNotEmpty) {
+        fromId3 = _parseId3Tbpm(head);
+        key = _parseId3Tkey(head);
         if (fromId3 != null) {
           if (key == null) return fromId3;
           return DjBpmEstimate(
@@ -75,33 +107,110 @@ class DjBpmEstimator {
             keyConfidence: key.confidence,
           );
         }
+      }
+
+      // 3) Native PCM decode for compressed / MediaStore tracks
+      final nativePcm = await _estimateFromNativePcm(filePath);
+      if (nativePcm != null) {
         if (key != null) {
           return DjBpmEstimate(
-            bpm: 0,
-            confidence: 0.0,
-            source: 'id3_tkey_only',
+            bpm: nativePcm.bpm,
+            confidence: nativePcm.confidence,
+            beatOffsetMs: nativePcm.beatOffsetMs,
+            source: nativePcm.source,
             keyRoot: key.keyRoot,
             keyMode: key.keyMode,
             keyConfidence: key.confidence,
           );
         }
-      } finally {
-        await raf.close();
+        return nativePcm;
       }
 
-      final pcm = await DjPcmBpmAnalyzer().analyzeWav(filePath);
-      if (pcm != null) {
+      // 4) WAV local PCM fallback
+      final pathForWav = isFileUri
+          ? Uri.parse(filePath).toFilePath()
+          : (isContent ? null : filePath);
+      if (pathForWav != null) {
+        final pcm = await DjPcmBpmAnalyzer().analyzeWav(pathForWav);
+        if (pcm != null) {
+          return DjBpmEstimate(
+            bpm: pcm.bpm,
+            confidence: pcm.confidence,
+            beatOffsetMs: pcm.beatOffsetMs,
+            source: 'pcm_wav',
+            keyRoot: key?.keyRoot,
+            keyMode: key?.keyMode,
+            keyConfidence: key?.confidence ?? 0.0,
+          );
+        }
+      }
+
+      // Key-only result (no BPM)
+      if (key != null) {
         return DjBpmEstimate(
-          bpm: pcm.bpm,
-          confidence: pcm.confidence,
-          beatOffsetMs: pcm.beatOffsetMs,
-          source: 'pcm_wav',
+          bpm: 0,
+          confidence: 0.0,
+          source: 'id3_tkey_only',
+          keyRoot: key.keyRoot,
+          keyMode: key.keyMode,
+          keyConfidence: key.confidence,
         );
       }
     } catch (e) {
       debugPrint('DjBpmEstimator: $e');
     }
     return null;
+  }
+
+  Future<Uint8List?> _readMediaHeadNative(String uri) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('readMediaHead', {
+        'uri': uri,
+        'maxBytes': _scanBytes,
+      });
+      if (raw is Uint8List) return raw;
+      if (raw is List<int>) return Uint8List.fromList(raw);
+    } catch (e) {
+      debugPrint('DjBpmEstimator readMediaHead: $e');
+    }
+    return null;
+  }
+
+  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
+        'uri': uri,
+        'maxSeconds': 12.0,
+      });
+      if (raw is! Map) return null;
+      final sampleRate = (raw['sampleRate'] as num?)?.toInt();
+      final channels = (raw['channels'] as num?)?.toInt() ?? 2;
+      final pcmRaw = raw['pcm'];
+      if (sampleRate == null || sampleRate < 8000) return null;
+      Uint8List? pcm;
+      if (pcmRaw is Uint8List) {
+        pcm = pcmRaw;
+      } else if (pcmRaw is List<int>) {
+        pcm = Uint8List.fromList(pcmRaw);
+      }
+      if (pcm == null || pcm.length < sampleRate) return null;
+      final est = DjPcmBpmAnalyzer().estimateFromPcm16(
+        pcm,
+        sampleRate,
+        channels,
+        sourceConfidence: 0.48,
+      );
+      if (est == null) return null;
+      return DjBpmEstimate(
+        bpm: est.bpm,
+        confidence: est.confidence,
+        beatOffsetMs: est.beatOffsetMs,
+        source: 'pcm_native',
+      );
+    } catch (e) {
+      debugPrint('DjBpmEstimator native pcm: $e');
+      return null;
+    }
   }
 
   DjBpmEstimate? _parseId3Tbpm(Uint8List bytes) {
@@ -115,7 +224,8 @@ class DjBpmEstimator {
     return _scanTbpmFrame(bytes, 10, end: bodyEnd, id3v2: version);
   }
 
-  DjBpmEstimate? _scanTbpmFrame(Uint8List bytes, int start, {int? end, int id3v2 = 3}) {
+  DjBpmEstimate? _scanTbpmFrame(Uint8List bytes, int start,
+      {int? end, int id3v2 = 3}) {
     final limit = end ?? bytes.length;
     for (var i = start; i + 10 < limit; i++) {
       if (bytes[i] == 0x54 &&
@@ -124,7 +234,10 @@ class DjBpmEstimator {
           bytes[i + 3] == 0x4D) {
         final size = id3v2 >= 4
             ? _synchsafe(bytes, i + 4)
-            : ((bytes[i + 4] << 24) | (bytes[i + 5] << 16) | (bytes[i + 6] << 8) | bytes[i + 7]);
+            : ((bytes[i + 4] << 24) |
+                (bytes[i + 5] << 16) |
+                (bytes[i + 6] << 8) |
+                bytes[i + 7]);
         if (size <= 0 || size > 64) continue;
         final dataStart = i + 10;
         final dataEnd = math.min(limit, dataStart + size);
@@ -171,7 +284,10 @@ class DjBpmEstimator {
           bytes[i + 3] == 0x59) {
         final size = id3v2 >= 4
             ? _synchsafe(bytes, i + 4)
-            : ((bytes[i + 4] << 24) | (bytes[i + 5] << 16) | (bytes[i + 6] << 8) | bytes[i + 7]);
+            : ((bytes[i + 4] << 24) |
+                (bytes[i + 5] << 16) |
+                (bytes[i + 6] << 8) |
+                bytes[i + 7]);
         if (size <= 0 || size > 64) continue;
         final dataStart = i + 10;
         final dataEnd = math.min(limit, dataStart + size);
