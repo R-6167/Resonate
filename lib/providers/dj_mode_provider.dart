@@ -74,10 +74,9 @@ class DjModeProvider extends ChangeNotifier {
         beatAlignActive: beatAlignActive,
         tempoMatchActive: tempoMatchActive,
         maxStretchPercent: _maxStretchPercent,
+        sfxActive: _enabled && _transitionSfx,
         analysis: _analysis,
-      
-      sfxActive: _enabled && _transitionSfx,
-    );
+      );
     } catch (e) {
       debugPrint('DjMode sync to music failed: $e');
     }
@@ -126,13 +125,13 @@ class DjModeProvider extends ChangeNotifier {
     await DjModeSettingsStore.setMaxStretchPercent(_maxStretchPercent);
   }
 
-
   Future<void> setTransitionSfx(bool value) async {
     _transitionSfx = value;
     notifyListeners();
     await DjModeSettingsStore.setTransitionSfx(value);
-    _pushToMusic();
+    _syncToMusic();
   }
+
   Future<void> setAnalyzeIdle(bool value) async {
     _analyzeIdle = value;
     notifyListeners();
