@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Wire existing dj_pcm_features into estimator/model/DB/planner/SFX."""
 from pathlib import Path
-import re
 
-# ---------- estimator ----------
 EST = Path("lib/services/dj_bpm_estimator.dart")
 est = EST.read_text()
 if "dj_pcm_features.dart" not in est:
@@ -14,31 +12,20 @@ if "dj_pcm_features.dart" not in est:
     )
     print("import features")
 
-# Extend DjBpmEstimate fields
 if "introHintMs" not in est:
     est = est.replace(
-        "  /// Approximate loudness 0–1 from PCM window.\n  final double? loudness;
-
-  const DjBpmEstimate({",
-        "  /// Approximate loudness 0–1 from PCM window.\n  final double? loudness;\n  final int? introHintMs;\n  final int? outroHintMs;\n  final String? sectionHint;\n\n  const DjBpmEstimate({",
+        "  final double? loudness;\n\n  const DjBpmEstimate({",
+        "  final double? loudness;\n  final int? introHintMs;\n  final int? outroHintMs;\n  final String? sectionHint;\n\n  const DjBpmEstimate({",
         1,
     )
     est = est.replace(
-        "    this.energy,\n    this.loudness,\n  });\n}\n\nclass DjKeyEstimate",",
-        "    this.energy,\n    this.loudness,\n    this.introHintMs,\n    this.outroHintMs,\n    this.sectionHint,\n  });\n}\n\nclass DjKeyEstimate",",
+        "    this.loudness,\n  });",
+        "    this.loudness,\n    this.introHintMs,\n    this.outroHintMs,\n    this.sectionHint,\n  });",
         1,
     )
-    # constructor might use different spacing - try alternate
-    if "this.introHintMs" not in est:
-        est = est.replace(
-            "    this.loudness,\n  });",
-            "    this.loudness,\n    this.introHintMs,\n    this.outroHintMs,\n    this.sectionHint,\n  });",
-            1,
-        )
     print("estimate fields")
 
-# Rewrite _estimateFromNativePcm to include features
-old_native = '''  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
+old_native = """  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
         'uri': uri,
@@ -75,9 +62,9 @@ old_native = '''  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) asyn
       debugPrint('DjBpmEstimator native pcm: $e');
       return null;
     }
-  }'''
+  }"""
 
-new_native = '''  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
+new_native = """  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
         'uri': uri,
@@ -126,7 +113,7 @@ new_native = '''  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) asyn
       debugPrint('DjBpmEstimator native pcm: $e');
       return null;
     }
-  }'''
+  }"""
 
 if "DjPcmFeatureAnalyzer" not in est:
     if old_native not in est:
@@ -136,11 +123,8 @@ if "DjPcmFeatureAnalyzer" not in est:
 else:
     print("native features already")
 
-# When merging ID3 key with PCM, prefer ID3 key; keep PCM section/key if no ID3
-# Update id3_tbpm+pcm merge to pass through intro/section and fill key from PCM if missing
 if "introHintMs: nativePcm.introHintMs" not in est:
-    # replace the id3+pcm return block
-    old_merge = '''        if (fromId3 != null) {
+    old_merge = """        if (fromId3 != null) {
           return DjBpmEstimate(
             bpm: fromId3.bpm,
             confidence: math.max(fromId3.confidence, 0.75),
@@ -166,8 +150,8 @@ if "introHintMs: nativePcm.introHintMs" not in est:
             loudness: nativePcm.loudness,
           );
         }
-        return nativePcm;'''
-    new_merge = '''        if (fromId3 != null) {
+        return nativePcm;"""
+    new_merge = """        if (fromId3 != null) {
           return DjBpmEstimate(
             bpm: fromId3.bpm,
             confidence: math.max(fromId3.confidence, 0.75),
@@ -201,7 +185,7 @@ if "introHintMs: nativePcm.introHintMs" not in est:
             sectionHint: nativePcm.sectionHint,
           );
         }
-        return nativePcm;'''
+        return nativePcm;"""
     if old_merge not in est:
         print("WARN merge block miss")
     else:
@@ -211,60 +195,45 @@ if "introHintMs: nativePcm.introHintMs" not in est:
 EST.write_text(est)
 print("estimator done")
 
-# ---------- model ----------
 MODEL = Path("lib/models/dj_analysis.dart")
 md = MODEL.read_text()
 if "introHintMs" not in md:
     md = md.replace(
-        "  /// Approximate loudness 0–1 from PCM window.\n  final double? loudness;\n\n  const DjAnalysis({",
-        "  /// Approximate loudness 0–1 from PCM window.\n  final double? loudness;\n  /// Soft intro length hint from head energy (ms).\n  final int? introHintMs;\n  /// Soft outro length hint when available (ms).\n  final int? outroHintMs;\n  /// quiet_intro | energetic | quiet_outro | unknown\n  final String? sectionHint;\n\n  const DjAnalysis({",
+        "  final double? loudness;\n\n  const DjAnalysis({",
+        "  final double? loudness;\n  final int? introHintMs;\n  final int? outroHintMs;\n  final String? sectionHint;\n\n  const DjAnalysis({",
         1,
     )
     md = md.replace(
-        "    this.energy,\n    this.loudness,\n  });",
-        "    this.energy,\n    this.loudness,\n    this.introHintMs,\n    this.outroHintMs,\n    this.sectionHint,\n  });",
+        "    this.loudness,\n  });",
+        "    this.loudness,\n    this.introHintMs,\n    this.outroHintMs,\n    this.sectionHint,\n  });",
         1,
     )
-    # fromMap
     md = md.replace(
         "      loudness: (map['loudness'] as num?)?.toDouble(),\n    );",
         "      loudness: (map['loudness'] as num?)?.toDouble(),\n      introHintMs: (map['intro_hint_ms'] as num?)?.toInt(),\n      outroHintMs: (map['outro_hint_ms'] as num?)?.toInt(),\n      sectionHint: map['section_hint'] as String?,\n    );",
         1,
     )
-    # toMap
     md = md.replace(
         "      'loudness': loudness,\n    };",
         "      'loudness': loudness,\n      'intro_hint_ms': introHintMs,\n      'outro_hint_ms': outroHintMs,\n      'section_hint': sectionHint,\n    };",
         1,
     )
-    # copyWith
-    if "int? introHintMs," not in md:
-        md = md.replace(
-            "    double? energy,\n    double? loudness,\n  }) {",
-            "    double? energy,\n    double? loudness,\n    int? introHintMs,\n    int? outroHintMs,\n    String? sectionHint,\n  }) {",
-            1,
-        )
-        md = md.replace(
-            "      energy: energy ?? this.energy,\n      loudness: loudness ?? this.loudness,\n    );",
-            "      energy: energy ?? this.energy,\n      loudness: loudness ?? this.loudness,\n      introHintMs: introHintMs ?? this.introHintMs,\n      outroHintMs: outroHintMs ?? this.outroHintMs,\n      sectionHint: sectionHint ?? this.sectionHint,\n    );",
-            1,
-        )
     md = md.replace(
-        "static const int currentVersion = 3;",
-        "static const int currentVersion = 4;",
+        "    double? loudness,\n  }) {",
+        "    double? loudness,\n    int? introHintMs,\n    int? outroHintMs,\n    String? sectionHint,\n  }) {",
         1,
     )
     md = md.replace(
-        "(v1: native PCM BPM; v2: energy/loudness; v3: beatOffset + ID3+PCM merge).",
-        "(v1 PCM BPM; v2 energy; v3 beatOffset; v4 key-from-signal + section hints).",
+        "      loudness: loudness ?? this.loudness,\n    );",
+        "      loudness: loudness ?? this.loudness,\n      introHintMs: introHintMs ?? this.introHintMs,\n      outroHintMs: outroHintMs ?? this.outroHintMs,\n      sectionHint: sectionHint ?? this.sectionHint,\n    );",
         1,
     )
+    md = md.replace("static const int currentVersion = 3;", "static const int currentVersion = 4;", 1)
     MODEL.write_text(md)
     print("model v4")
 else:
     print("model already")
 
-# ---------- analysis service ----------
 AS = Path("lib/services/dj_analysis_service.dart")
 as_ = AS.read_text()
 if "introHintMs: estimate.introHintMs" not in as_:
@@ -275,30 +244,21 @@ if "introHintMs: estimate.introHintMs" not in as_:
     )
     AS.write_text(as_)
     print("analysis service")
-else:
-    print("analysis service already")
 
-# ---------- database v7 ----------
 DB = Path("lib/services/database_helper.dart")
 db = DB.read_text()
 if "columnDjIntroHintMs" not in db:
-    db = db.replace(
-        "static const _databaseVersion = 6;",
-        "static const _databaseVersion = 7;",
-        1,
-    )
+    db = db.replace("static const _databaseVersion = 6;", "static const _databaseVersion = 7;", 1)
     db = db.replace(
         "  static const String columnDjLoudness = 'loudness';",
         "  static const String columnDjLoudness = 'loudness';\n  static const String columnDjIntroHintMs = 'intro_hint_ms';\n  static const String columnDjOutroHintMs = 'outro_hint_ms';\n  static const String columnDjSectionHint = 'section_hint';",
         1,
     )
-    # onCreate table
     db = db.replace(
         "$columnDjEnergy REAL, $columnDjLoudness REAL, FOREIGN KEY",
         "$columnDjEnergy REAL, $columnDjLoudness REAL, $columnDjIntroHintMs INTEGER, $columnDjOutroHintMs INTEGER, $columnDjSectionHint TEXT, FOREIGN KEY",
         1,
     )
-    # upgrade
     if "oldVersion < 7" not in db:
         db = db.replace(
             "    if (oldVersion < 6) {\n      try { await db.execute('ALTER TABLE $tableSongDjAnalysis ADD COLUMN $columnDjEnergy REAL'); } catch (_) {}\n      try { await db.execute('ALTER TABLE $tableSongDjAnalysis ADD COLUMN $columnDjLoudness REAL'); } catch (_) {}\n    }\n  }",
@@ -307,15 +267,11 @@ if "columnDjIntroHintMs" not in db:
         )
     DB.write_text(db)
     print("db v7")
-else:
-    print("db already")
 
-# ---------- planner: use section outro hint ----------
 PL = Path("lib/services/dj_transition_planner.dart")
 pl = PL.read_text()
-if "outroHintMs" not in pl:
-    # enrich inOutroWindow
-    old_fn = '''bool inOutroWindow({
+if "outroHintMs" not in pl or "outroHintMs: analysisA" not in pl:
+    old_fn = """bool inOutroWindow({
   required int? durationMs,
   required int positionMs,
 }) {
@@ -327,8 +283,8 @@ if "outroHintMs" not in pl:
       ? 14000
       : (durationMs * 0.14).round().clamp(16000, 28000).toInt();
   return remaining <= thresh;
-}'''
-    new_fn = '''bool inOutroWindow({
+}"""
+    new_fn = """bool inOutroWindow({
   required int? durationMs,
   required int positionMs,
   int? outroHintMs,
@@ -340,34 +296,27 @@ if "outroHintMs" not in pl:
   var thresh = durationMs < 120000
       ? 14000
       : (durationMs * 0.14).round().clamp(16000, 28000).toInt();
-  // Soft: analyzed quiet-outro length widens the window slightly.
   if (outroHintMs != null && outroHintMs > 0) {
     thresh = math.max(thresh, (outroHintMs + 2000).clamp(8000, 32000).toInt());
   }
   return remaining <= thresh;
-}'''
+}"""
     if "import 'dart:math" not in pl:
         pl = "import 'dart:math' as math;\n" + pl
-    if old_fn not in pl:
-        print("WARN inOutro miss")
-    else:
+    if old_fn in pl:
         pl = pl.replace(old_fn, new_fn, 1)
         print("inOutro section")
-    # call site
     pl = pl.replace(
         "      inOutroWindow(\n        durationMs: outgoingDurationMs ?? analysisA.durationMs,\n        positionMs: outgoingPositionMs,\n      );",
         "      inOutroWindow(\n        durationMs: outgoingDurationMs ?? analysisA.durationMs,\n        positionMs: outgoingPositionMs,\n        outroHintMs: analysisA.outroHintMs,\n      );",
         1,
     )
-    # Prefer intro seek soft when incoming has quiet_intro - via phrase still
     PL.write_text(pl)
-else:
-    print("planner already")
 
-# ---------- heavier transition FX ----------
 MP = Path("lib/providers/music_provider.dart")
 mp = MP.read_text()
-old_engage = '''  Future<void> _engageDjTransitionSfx() async {
+if "mismatch * 0.28" not in mp:
+    old_engage = """  Future<void> _engageDjTransitionSfx() async {
     if (!_djSfxActive) return;
     try {
       await AudioEffectsBridge.setReverb(0.22);
@@ -378,11 +327,10 @@ old_engage = '''  Future<void> _engageDjTransitionSfx() async {
     } catch (e) {
       debugPrint('DJ transition SFX engage: $e');
     }
-  }'''
-new_engage = '''  Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
+  }"""
+    new_engage = """  Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
     if (!_djSfxActive) return;
     try {
-      // Energy mismatch → heavier glue (still soft, always restored).
       final mismatch = (1.0 - energyScore).clamp(0.0, 1.0);
       final reverb = (0.18 + mismatch * 0.28).clamp(0.18, 0.48).toDouble();
       final width = (0.12 + mismatch * 0.22).clamp(0.10, 0.36).toDouble();
@@ -397,15 +345,11 @@ new_engage = '''  Future<void> _engageDjTransitionSfx({double energyScore = 0.5}
     } catch (e) {
       debugPrint('DJ transition SFX engage: $e');
     }
-  }'''
-if "mismatch * 0.28" not in mp:
-    if old_engage not in mp:
-        print("WARN engage block miss")
-    else:
+  }"""
+    if old_engage in mp:
         mp = mp.replace(old_engage, new_engage, 1)
         print("heavy engage")
-    # restore virtualizer too
-    old_restore = '''  Future<void> _restoreDjTransitionSfx() async {
+    old_restore = """  Future<void> _restoreDjTransitionSfx() async {
     if (!_djSfxActive) return;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -419,8 +363,8 @@ if "mismatch * 0.28" not in mp:
     } catch (e) {
       debugPrint('DJ transition SFX restore: $e');
     }
-  }'''
-    new_restore = '''  Future<void> _restoreDjTransitionSfx() async {
+  }"""
+    new_restore = """  Future<void> _restoreDjTransitionSfx() async {
     if (!_djSfxActive) return;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -437,24 +381,21 @@ if "mismatch * 0.28" not in mp:
     } catch (e) {
       debugPrint('DJ transition SFX restore: $e');
     }
-  }'''
+  }"""
     if old_restore in mp:
         mp = mp.replace(old_restore, new_restore, 1)
         print("heavy restore")
-    # Pass energy score at engage call if we stored last energy
     if "_lastDjEnergyScore" not in mp:
         mp = mp.replace(
             "  int _lastDjCrossfadeBiasMs = 0;",
             "  int _lastDjCrossfadeBiasMs = 0;\n  double _lastDjEnergyScore = 0.5;",
             1,
         )
-        # set in prepare when plan is made
-        if "_lastDjCrossfadeBiasMs = plan.crossfadeBiasMs" in mp:
-            mp = mp.replace(
-                "_lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;",
-                "_lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;\n      _lastDjEnergyScore = plan.energyScore;",
-                1,
-            )
+        mp = mp.replace(
+            "_lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;",
+            "_lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;\n      _lastDjEnergyScore = plan.energyScore;",
+            1,
+        )
         mp = mp.replace(
             "await _engageDjTransitionSfx();",
             "await _engageDjTransitionSfx(energyScore: _lastDjEnergyScore);",
@@ -462,7 +403,5 @@ if "mismatch * 0.28" not in mp:
         )
         print("energy score sfx")
     MP.write_text(mp)
-else:
-    print("sfx already heavy")
 
 print("ALL DONE")
