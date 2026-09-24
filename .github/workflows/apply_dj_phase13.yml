@@ -1,0 +1,24 @@
+name: Apply DJ Phase 1+3 music_provider patches
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_phase13.yml'
+      - 'tools/apply_dj_phase13_mp.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: |
+          set -euo pipefail
+          python3 tools/apply_dj_phase13_mp.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart
+          git commit -m "feat(dj): safe_fallback handoff + longer analysis wait" || true
+          git push origin HEAD:dj_Mode
