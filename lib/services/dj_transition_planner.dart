@@ -10,12 +10,28 @@ double energyCompatibility(double? a, double? b) {
   return (1.0 - d);
 }
 
+/// True when the outgoing track is in a soft "outro" window (near end).
+/// Uses duration + position only — no section detector required.
+bool inOutroWindow({
+  required int? durationMs,
+  required int positionMs,
+}) {
+  if (durationMs == null || durationMs < 45000) return false;
+  if (positionMs < 0) return false;
+  final remaining = durationMs - positionMs;
+  if (remaining < 2800) return false;
+  final thresh = durationMs < 120000
+      ? 14000
+      : (durationMs * 0.14).round().clamp(16000, 28000);
+  return remaining <= thresh;
+}
+
 /// Autonomous transition choice for DJ Mode.
 ///
 /// Strategies are soft: the dual-engine crossfade always runs. This only decides
-/// optional beat seek / tempo stretch. Missing analysis → safe_fallback.
+/// optional beat seek / tempo stretch / phrase grid. Missing analysis → safe_fallback.
 class DjTransitionPlan {
-  /// safe_fallback | tempo_match | beat_align | beat_tempo
+  /// safe_fallback | tempo_match | beat_align | beat_tempo | phrase_align | outro_intro
   final String strategy;
   final double harmonicScore;
   final DjTempoStretchPlan? stretch;
@@ -30,6 +46,9 @@ class DjTransitionPlan {
   /// Soft learning scores in [-1, 1] (positive = past completes beat early skips).
   final double pairBias;
   final double strategyBias;
+  /// When true, beat seek snaps to a multi-beat phrase grid (usually 4).
+  final bool usePhraseGrid;
+  final int phraseBeats;
 
   const DjTransitionPlan({
     required this.strategy,
@@ -44,6 +63,8 @@ class DjTransitionPlan {
     this.energyScore = 0.5,
     this.pairBias = 0,
     this.strategyBias = 0,
+    this.usePhraseGrid = false,
+    this.phraseBeats = 4,
   });
 
   Map<String, dynamic> toDiagExtra() => {
@@ -59,6 +80,8 @@ class DjTransitionPlan {
         'attemptBeatAlign': attemptBeatAlign,
         'pairBias': pairBias,
         'strategyBias': strategyBias,
+        'usePhraseGrid': usePhraseGrid,
+        'phraseBeats': phraseBeats,
         if (stretch != null) 'stretchMode': stretch!.mode,
         if (stretch != null) 'speedIn': stretch!.speedIncoming,
       };
@@ -70,6 +93,8 @@ class DjTransitionPlan {
     String? reason,
     double? pairBias,
     double? strategyBias,
+    bool? usePhraseGrid,
+    int? phraseBeats,
     bool clearStretch = false,
   }) {
     return DjTransitionPlan(
@@ -85,6 +110,8 @@ class DjTransitionPlan {
       energyScore: energyScore,
       pairBias: pairBias ?? this.pairBias,
       strategyBias: strategyBias ?? this.strategyBias,
+      usePhraseGrid: usePhraseGrid ?? this.usePhraseGrid,
+      phraseBeats: phraseBeats ?? this.phraseBeats,
     );
   }
 }
@@ -98,6 +125,8 @@ DjTransitionPlan planDjTransition({
   required int maxStretchPercent,
   double pairBias = 0,
   double strategyBias = 0,
+  int? outgoingPositionMs,
+  int? outgoingDurationMs,
 }) {
   final harmonic = harmonicCompatibility(
     rootA: analysisA.keyRoot,
@@ -142,6 +171,55 @@ DjTransitionPlan planDjTransition({
   }
 
   final tryBeat = beatAlignActive;
+  final outro = outgoingPositionMs != null &&
+      inOutroWindow(
+        durationMs: outgoingDurationMs ?? analysisA.durationMs,
+        positionMs: outgoingPositionMs,
+      );
+
+  // Soft phrase grid when beat align is on and BPMs are close enough for a
+  // 4-beat phrase (relative delta under ~8% without stretch, or stretch present).
+  final rel = (bpmA - bpmB).abs() / bpmA;
+  final phraseOk = tryBeat && (stretch != null || rel <= 0.08);
+
+  if (outro && (stretch != null || tryBeat)) {
+    return DjTransitionPlan(
+      strategy: 'outro_intro',
+      harmonicScore: harmonic,
+      energyScore: energyScore,
+      stretch: stretch,
+      attemptBeatAlign: tryBeat,
+      reason: 'outro_window',
+      bpmA: bpmA,
+      bpmB: bpmB,
+      confidenceA: analysisA.bpmConfidence,
+      confidenceB: analysisB.bpmConfidence,
+      pairBias: pairBias,
+      strategyBias: strategyBias,
+      usePhraseGrid: phraseOk,
+      phraseBeats: 4,
+    );
+  }
+
+  if (phraseOk && stretch != null) {
+    return DjTransitionPlan(
+      strategy: 'phrase_align',
+      harmonicScore: harmonic,
+      energyScore: energyScore,
+      stretch: stretch,
+      attemptBeatAlign: true,
+      reason: 'phrase_grid_4',
+      bpmA: bpmA,
+      bpmB: bpmB,
+      confidenceA: analysisA.bpmConfidence,
+      confidenceB: analysisB.bpmConfidence,
+      pairBias: pairBias,
+      strategyBias: strategyBias,
+      usePhraseGrid: true,
+      phraseBeats: 4,
+    );
+  }
+
   if (stretch != null && tryBeat) {
     return DjTransitionPlan(
       strategy: 'beat_tempo',
@@ -176,18 +254,22 @@ DjTransitionPlan planDjTransition({
   }
   if (tryBeat) {
     return DjTransitionPlan(
-      strategy: 'beat_align',
+      strategy: phraseOk ? 'phrase_align' : 'beat_align',
       harmonicScore: harmonic,
       energyScore: energyScore,
       stretch: null,
       attemptBeatAlign: true,
-      reason: tempoMatchActive ? 'stretch_budget' : 'beat_only',
+      reason: phraseOk
+          ? 'phrase_grid_4'
+          : (tempoMatchActive ? 'stretch_budget' : 'beat_only'),
       bpmA: bpmA,
       bpmB: bpmB,
       confidenceA: analysisA.bpmConfidence,
       confidenceB: analysisB.bpmConfidence,
       pairBias: pairBias,
       strategyBias: strategyBias,
+      usePhraseGrid: phraseOk,
+      phraseBeats: 4,
     );
   }
 
@@ -217,6 +299,8 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   required int maxStretchPercent,
   String? fromSongId,
   String? toSongId,
+  int? outgoingPositionMs,
+  int? outgoingDurationMs,
 }) async {
   final pair = (fromSongId != null &&
           toSongId != null &&
@@ -232,17 +316,23 @@ Future<DjTransitionPlan> planDjTransitionLearned({
     beatAlignActive: beatAlignActive,
     maxStretchPercent: maxStretchPercent,
     pairBias: pair,
+    outgoingPositionMs: outgoingPositionMs,
+    outgoingDurationMs: outgoingDurationMs,
   );
 
   final stratBias = await DjTransitionMemory.strategyBias(plan.strategy);
   plan = plan.copyWith(strategyBias: stratBias);
 
   // Soft: extreme energy jump + aggressive mix → prefer tempo-only.
-  if (plan.strategy == 'beat_tempo' && plan.energyScore < 0.35) {
+  if ((plan.strategy == 'beat_tempo' ||
+          plan.strategy == 'phrase_align' ||
+          plan.strategy == 'outro_intro') &&
+      plan.energyScore < 0.35) {
     plan = plan.copyWith(
       strategy: 'tempo_match',
       attemptBeatAlign: false,
       reason: 'energy_mismatch_soft',
+      usePhraseGrid: false,
     );
   }
 
@@ -250,13 +340,18 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   final hostilePair = pair < -0.35;
   final hostileStrat = stratBias < -0.45;
 
-  if (plan.strategy == 'beat_tempo' && (hostilePair || hostileStrat)) {
+  final aggressive = plan.strategy == 'beat_tempo' ||
+      plan.strategy == 'phrase_align' ||
+      plan.strategy == 'outro_intro';
+
+  if (aggressive && (hostilePair || hostileStrat)) {
     if (plan.stretch != null && !hostilePair) {
       return plan.copyWith(
         strategy: 'tempo_match',
         attemptBeatAlign: false,
         reason: 'learn_demote_beat',
         strategyBias: stratBias,
+        usePhraseGrid: false,
       );
     }
     return plan.copyWith(
@@ -265,6 +360,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
       reason: 'learn_demote_aggressive',
       clearStretch: true,
       strategyBias: stratBias,
+      usePhraseGrid: false,
     );
   }
 
@@ -284,6 +380,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
       attemptBeatAlign: false,
       reason: 'learn_demote_beat',
       strategyBias: stratBias,
+      usePhraseGrid: false,
     );
   }
 
