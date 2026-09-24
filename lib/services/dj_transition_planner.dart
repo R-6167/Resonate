@@ -384,7 +384,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
       attemptBeatAlign: false,
       reason: 'energy_mismatch_soft',
       usePhraseGrid: false,
-      crossfadeBiasMs: (plan.crossfadeBiasMs + 800).clamp(-1500, 2500),
+      crossfadeBiasMs: (plan.crossfadeBiasMs + 800).clamp(-1500, 2500).toInt(),
     );
   }
 

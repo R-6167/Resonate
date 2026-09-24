@@ -174,7 +174,7 @@ class DjPcmBpmAnalyzer {
       }
     }
     // Each env step ≈ 10 ms.
-    final beatOffsetMs = (peakIdx * 10).clamp(0, (60000.0 / bpm).round() - 1);
+    final beatOffsetMs = (peakIdx * 10).clamp(0, (60000.0 / bpm).round() - 1).toInt();
 
     final meanEnv = env.reduce((a, b) => a + b) / env.length;
     final energy =
