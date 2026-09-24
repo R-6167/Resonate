@@ -9,11 +9,17 @@ class DjPcmBpmEstimate {
   final double bpm;
   final double confidence;
   final int beatOffsetMs;
+  /// Relative loudness energy in [0, 1] from the PCM window (null if unknown).
+  final double? energy;
+  /// Approximate RMS-based loudness in [0, 1] (null if unknown).
+  final double? loudness;
 
   const DjPcmBpmEstimate({
     required this.bpm,
     required this.confidence,
     this.beatOffsetMs = 0,
+    this.energy,
+    this.loudness,
   });
 }
 
@@ -33,7 +39,10 @@ class DjPcmBpmAnalyzer {
       try {
         final header = await raf.read(12);
         if (header.length < 12) return null;
-        if (header[0] != 0x52 || header[1] != 0x49 || header[2] != 0x46 || header[3] != 0x46) {
+        if (header[0] != 0x52 ||
+            header[1] != 0x49 ||
+            header[2] != 0x46 ||
+            header[3] != 0x46) {
           return null;
         }
         int sampleRate = 44100;
@@ -50,17 +59,26 @@ class DjPcmBpmAnalyzer {
           if (body.length < size) break;
           if (id == 'fmt ' && body.length >= 16) {
             channels = body[2] | (body[3] << 8);
-            sampleRate = body[4] | (body[5] << 8) | (body[6] << 16) | (body[7] << 24);
+            sampleRate =
+                body[4] | (body[5] << 8) | (body[6] << 16) | (body[7] << 24);
             bits = body[14] | (body[15] << 8);
           } else if (id == 'data') {
-            final maxBytes = (sampleRate * channels * (bits ~/ 8) * maxSeconds).round();
-            pcm = body.length > maxBytes ? Uint8List.sublistView(body, 0, maxBytes) : body;
+            final maxBytes =
+                (sampleRate * channels * (bits ~/ 8) * maxSeconds).round();
+            pcm = body.length > maxBytes
+                ? Uint8List.sublistView(body, 0, maxBytes)
+                : body;
             break;
           }
           if (size.isOdd) await raf.read(1);
         }
         if (pcm == null || bits != 16 || sampleRate < 8000) return null;
-        return estimateFromPcm16(pcm, sampleRate, channels, sourceConfidence: 0.42);
+        return estimateFromPcm16(
+          pcm,
+          sampleRate,
+          channels,
+          sourceConfidence: 0.42,
+        );
       } finally {
         await raf.close();
       }
@@ -71,6 +89,9 @@ class DjPcmBpmAnalyzer {
   }
 
   /// Shared energy BPM for any 16-bit little-endian PCM (mono or multi-channel).
+  ///
+  /// Also returns relative [energy] / [loudness] in 0–1 from the same window
+  /// so Phase-4-lite analysis can soft-score transitions without extra decode.
   DjPcmBpmEstimate? estimateFromPcm16(
     Uint8List pcm,
     int sampleRate,
@@ -83,11 +104,16 @@ class DjPcmBpmAnalyzer {
     final hop = math.max(1, sampleRate ~/ 100);
     final env = <double>[];
     final bd = ByteData.sublistView(pcm);
+    var sumSq = 0.0;
+    var nSamples = 0;
     for (var i = 0; i + hop * channels <= samples; i += hop) {
       var acc = 0.0;
       final n = hop * channels;
       for (var j = 0; j < n && (i + j) * 2 + 1 < pcm.length; j++) {
-        acc += bd.getInt16((i + j) * 2, Endian.little).abs().toDouble();
+        final s = bd.getInt16((i + j) * 2, Endian.little).toDouble();
+        acc += s.abs();
+        sumSq += s * s;
+        nSamples++;
       }
       env.add(acc / n);
     }
@@ -112,6 +138,21 @@ class DjPcmBpmAnalyzer {
     final bpm = (60.0 * 100.0) / bestLag;
     if (bpm < 60 || bpm > 180) return null;
     final conf = sourceConfidence.clamp(0.35, 0.72);
-    return DjPcmBpmEstimate(bpm: bpm, confidence: conf, beatOffsetMs: 0);
+
+    // Relative energy / loudness from the same window (0–1).
+    final meanEnv = env.reduce((a, b) => a + b) / env.length;
+    final energy =
+        (math.log(1.0 + meanEnv) / math.log(1.0 + 12000.0)).clamp(0.0, 1.0);
+    final rms = nSamples > 0 ? math.sqrt(sumSq / nSamples) : 0.0;
+    final loudness =
+        (math.log(1.0 + rms) / math.log(1.0 + 16000.0)).clamp(0.0, 1.0);
+
+    return DjPcmBpmEstimate(
+      bpm: bpm,
+      confidence: conf,
+      beatOffsetMs: 0,
+      energy: energy,
+      loudness: loudness,
+    );
   }
 }
