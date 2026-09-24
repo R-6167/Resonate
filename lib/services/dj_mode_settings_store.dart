@@ -77,8 +77,6 @@ class DjModeSettingsStore {
     final p = await SharedPreferences.getInstance();
     await p.setBool(_analyzeIdleKey, value);
   }
-}
-
 
   /// Soft reverb glue during DJ crossfade (restored after).
   static Future<bool> transitionSfx() async {
@@ -90,3 +88,4 @@ class DjModeSettingsStore {
     final p = await SharedPreferences.getInstance();
     await p.setBool(_transitionSfxKey, value);
   }
+}
