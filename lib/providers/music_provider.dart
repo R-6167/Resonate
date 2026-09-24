@@ -1705,7 +1705,7 @@ class MusicProvider extends ChangeNotifier {
         final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
         final bFuture = _djAnalysis!.analyzeSong(incomingSong);
         results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
-          const Duration(milliseconds: 400),
+          const Duration(milliseconds: 2800),
           onTimeout: () => const <DjAnalysis>[],
         );
       } catch (e) {
@@ -1720,16 +1720,24 @@ class MusicProvider extends ChangeNotifier {
       final analysisA = results[0];
       final analysisB = results[1];
       if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
-        await ResonateDiagnostics.record('dj_handoff_skipped', {
+        await ResonateDiagnostics.record('dj_handoff_safe_fallback', {
           'reason': 'missing_bpm',
+          'strategy': 'safe_fallback',
           'outgoingSongId': outgoingSong.id,
           'incomingSongId': incomingSong.id,
+          'hasBpmA': analysisA.hasUsableBpm,
+          'hasBpmB': analysisB.hasUsableBpm,
         });
         await ResonateDiagnostics.recordDj(
           stage: 'handoff',
-          outcome: 'skipped',
-          reason: 'missing_bpm',
+          outcome: 'applied',
+          reason: 'safe_fallback',
           songId: incomingSong.id,
+          extra: {
+            'strategy': 'safe_fallback',
+            'hasBpmA': analysisA.hasUsableBpm,
+            'hasBpmB': analysisB.hasUsableBpm,
+          },
         );
         return;
       }
