@@ -111,6 +111,15 @@ class DjModeSettingsScreen extends StatelessWidget {
               _prefTile(
                 context,
                 enabled: on,
+                title: 'Transition SFX',
+                subtitle:
+                    'Soft reverb glue during DJ crossfades (restored after). Never changes normal play.',
+                value: dj.transitionSfx,
+                onChanged: on ? dj.setTransitionSfx : null,
+              ),
+              _prefTile(
+                context,
+                enabled: on,
                 title: 'Analyze library when idle',
                 subtitle:
                     'Background BPM/key scan — never blocks play or scan (later steps).',

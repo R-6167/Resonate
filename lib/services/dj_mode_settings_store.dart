@@ -11,6 +11,7 @@ class DjModeSettingsStore {
   static const _harmonicMixKey = 'dj_mode_harmonic_mix';
   static const _maxStretchKey = 'dj_mode_max_stretch_percent';
   static const _analyzeIdleKey = 'dj_mode_analyze_idle';
+  static const _transitionSfxKey = 'dj_mode_transition_sfx';
 
   static Future<bool> enabled() async {
     final p = await SharedPreferences.getInstance();
@@ -77,3 +78,15 @@ class DjModeSettingsStore {
     await p.setBool(_analyzeIdleKey, value);
   }
 }
+
+
+  /// Soft reverb glue during DJ crossfade (restored after).
+  static Future<bool> transitionSfx() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getBool(_transitionSfxKey) ?? true;
+  }
+
+  static Future<void> setTransitionSfx(bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_transitionSfxKey, value);
+  }

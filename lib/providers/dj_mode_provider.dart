@@ -29,6 +29,7 @@ class DjModeProvider extends ChangeNotifier {
   bool _harmonicMix = false;
   int _maxStretchPercent = 12;
   bool _analyzeIdle = false;
+  bool _transitionSfx = true;
   bool _loaded = false;
 
   bool get isLoaded => _loaded;
@@ -38,6 +39,7 @@ class DjModeProvider extends ChangeNotifier {
   bool get beatAlignActive => _enabled && _beatAlign;
   bool get tempoMatchActive => _enabled && _tempoMatch;
   bool get harmonicMixActive => _enabled && _harmonicMix;
+  bool get transitionSfx => _transitionSfx;
   bool get analyzeIdleActive => _enabled && _analyzeIdle;
 
   bool get beatAlign => _beatAlign;
@@ -56,6 +58,7 @@ class DjModeProvider extends ChangeNotifier {
       _harmonicMix = await DjModeSettingsStore.harmonicMix();
       _maxStretchPercent = await DjModeSettingsStore.maxStretchPercent();
       _analyzeIdle = await DjModeSettingsStore.analyzeIdle();
+      _transitionSfx = await DjModeSettingsStore.transitionSfx();
     } catch (e) {
       debugPrint('DjModeProvider load failed: $e');
     }
@@ -72,7 +75,9 @@ class DjModeProvider extends ChangeNotifier {
         tempoMatchActive: tempoMatchActive,
         maxStretchPercent: _maxStretchPercent,
         analysis: _analysis,
-      );
+      
+      sfxActive: _enabled && _transitionSfx,
+    );
     } catch (e) {
       debugPrint('DjMode sync to music failed: $e');
     }
@@ -121,6 +126,13 @@ class DjModeProvider extends ChangeNotifier {
     await DjModeSettingsStore.setMaxStretchPercent(_maxStretchPercent);
   }
 
+
+  Future<void> setTransitionSfx(bool value) async {
+    _transitionSfx = value;
+    notifyListeners();
+    await DjModeSettingsStore.setTransitionSfx(value);
+    _pushToMusic();
+  }
   Future<void> setAnalyzeIdle(bool value) async {
     _analyzeIdle = value;
     notifyListeners();

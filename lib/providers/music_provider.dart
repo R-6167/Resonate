@@ -93,6 +93,7 @@ class MusicProvider extends ChangeNotifier {
   bool _djBeatAlignActive = false;
   bool _djTempoMatchActive = false;
   int _djMaxStretchPercent = 12;
+  bool _djSfxActive = false;
   DjAnalysisService? _djAnalysis;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
@@ -338,12 +339,14 @@ class MusicProvider extends ChangeNotifier {
     required bool beatAlignActive,
     bool tempoMatchActive = false,
     int maxStretchPercent = 12,
+    bool sfxActive = false,
     DjAnalysisService? analysis,
   }) {
     final wasActive = _djBeatAlignActive || _djTempoMatchActive;
     _djBeatAlignActive = beatAlignActive;
     _djTempoMatchActive = tempoMatchActive;
     _djMaxStretchPercent = maxStretchPercent.clamp(3, 20);
+    _djSfxActive = sfxActive;
     _djAnalysis = analysis;
     if (wasActive && !beatAlignActive && !tempoMatchActive) {
       unawaited(_recoverDjEngineState(reason: 'dj_mode_disabled'));
@@ -1723,6 +1726,37 @@ class MusicProvider extends ChangeNotifier {
     try {
       if (incoming != null) await incoming.setSpeed(1.0);
     } catch (_) {}
+  }
+
+
+  /// Soft transition SFX: mild reverb glue, always restored after crossfade.
+  Future<void> _engageDjTransitionSfx() async {
+    if (!_djSfxActive) return;
+    try {
+      await AudioEffectsBridge.setReverb(0.22);
+      await ResonateDiagnostics.record('dj_transition_sfx', {
+        'action': 'engage',
+        'reverb': 0.22,
+      });
+    } catch (e) {
+      debugPrint('DJ transition SFX engage: $e');
+    }
+  }
+
+  Future<void> _restoreDjTransitionSfx() async {
+    if (!_djSfxActive) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
+      final reverb = prefs.getDouble('reverb') ?? 0.0;
+      await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
+      await ResonateDiagnostics.record('dj_transition_sfx', {
+        'action': 'restore',
+        'reverb': effectsEnabled ? reverb : 0.0,
+      });
+    } catch (e) {
+      debugPrint('DJ transition SFX restore: $e');
+    }
   }
 
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.

@@ -101,23 +101,26 @@ class DjBpmEstimator {
       if (head != null && head.isNotEmpty) {
         fromId3 = _parseId3Tbpm(head);
         key = _parseId3Tkey(head);
-        if (fromId3 != null) {
-          if (key == null) return fromId3;
-          return DjBpmEstimate(
-            bpm: fromId3.bpm,
-            confidence: fromId3.confidence,
-            beatOffsetMs: fromId3.beatOffsetMs,
-            source: fromId3.source,
-            keyRoot: key.keyRoot,
-            keyMode: key.keyMode,
-            keyConfidence: key.confidence,
-          );
-        }
       }
 
-      // 3) Native PCM decode for compressed / MediaStore tracks
+      // 3) Native PCM decode for compressed / MediaStore tracks.
+      // Always try PCM so energy / loudness / beatOffset exist even when ID3 has BPM.
       final nativePcm = await _estimateFromNativePcm(filePath);
       if (nativePcm != null) {
+        // Prefer tagged BPM when present (higher trust), keep PCM energy/offset.
+        if (fromId3 != null) {
+          return DjBpmEstimate(
+            bpm: fromId3.bpm,
+            confidence: math.max(fromId3.confidence, 0.75),
+            beatOffsetMs: nativePcm.beatOffsetMs,
+            source: 'id3_tbpm+pcm',
+            keyRoot: key?.keyRoot,
+            keyMode: key?.keyMode,
+            keyConfidence: key?.confidence ?? 0.0,
+            energy: nativePcm.energy,
+            loudness: nativePcm.loudness,
+          );
+        }
         if (key != null) {
           return DjBpmEstimate(
             bpm: nativePcm.bpm,
@@ -132,6 +135,19 @@ class DjBpmEstimator {
           );
         }
         return nativePcm;
+      }
+
+      // ID3 BPM only (no PCM) — still better than nothing.
+      if (fromId3 != null) {
+        return DjBpmEstimate(
+          bpm: fromId3.bpm,
+          confidence: fromId3.confidence,
+          beatOffsetMs: fromId3.beatOffsetMs,
+          source: fromId3.source,
+          keyRoot: key?.keyRoot,
+          keyMode: key?.keyMode,
+          keyConfidence: key?.confidence ?? 0.0,
+        );
       }
 
       // 4) WAV local PCM fallback
@@ -190,7 +206,7 @@ class DjBpmEstimator {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
         'uri': uri,
-        'maxSeconds': 12.0,
+        'maxSeconds': 15.0,
       });
       if (raw is! Map) return null;
       final sampleRate = (raw['sampleRate'] as num?)?.toInt();

@@ -8,8 +8,8 @@
 /// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
   /// Bump when the analyzer pipeline changes in a meaningful way
-  /// (v1: native PCM BPM; v2: energy / loudness from same PCM window).
-  static const int currentVersion = 2;
+  /// (v1: native PCM BPM; v2: energy/loudness; v3: beatOffset + ID3+PCM merge).
+  static const int currentVersion = 3;
 
   final String songId;
   final double? bpm;
