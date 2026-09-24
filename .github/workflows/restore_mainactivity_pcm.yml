@@ -1,6 +1,9 @@
 name: Restore MainActivity + native PCM
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore_mainactivity_pcm.yml'
 permissions:
   contents: write
 jobs:
@@ -10,19 +13,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: dj_Mode
-          fetch-depth: 20
-      - name: Restore MainActivity from pre-placeholder commit
+          fetch-depth: 30
+      - name: Restore and patch MainActivity
         run: |
           set -euo pipefail
-          # Restore from commit before placeholder overwrite
-          git show 6d0e65ac723ba5c1a1d4e0cde8dece6fd05b4670:android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt > android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
-          # Apply native PCM patches via inline Python
+          git show 6d0e65ac723ba5c1a1d4e0cde8dece6fd05b4670:android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt > android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt || \
+            git show 2be4592d6d7bb13dc9dd3a0a9b0d322d1804fd50:android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt > android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
           python3 << 'PY'
           from pathlib import Path
           p = Path('android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt')
           t = p.read_text()
-          if 'extractPcmWindow' in t:
-              print('already has extractPcmWindow')
+          print('size before', len(t))
+          if 'extractPcmWindow' in t and 'pcmExecutor' in t:
+              print('already patched')
           else:
               t = t.replace(
                   'import android.media.AudioManager\nimport android.media.audiofx.BassBoost',
@@ -39,11 +42,13 @@ jobs:
                   '    private var resonateDspEnabled: Boolean = true\n    private val pcmExecutor = Executors.newSingleThreadExecutor()\n\n    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {',
                   1,
               )
-              t = t.replace(
-                  '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                else -> result.notImplemented()',
-                  '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                "readMediaHead" -> readMediaHead(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    call.argument<Int>("maxBytes") ?: (512 * 1024),\n                    result,\n                )\n                "extractPcmWindow" -> extractPcmWindow(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    (call.argument<Double>("maxSeconds") ?: 12.0),\n                    result,\n                )\n                else -> result.notImplemented()',
-                  1,
-              )
+              old = '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                else -> result.notImplemented()'
+              new = '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                "readMediaHead" -> readMediaHead(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    call.argument<Int>("maxBytes") ?: (512 * 1024),\n                    result,\n                )\n                "extractPcmWindow" -> extractPcmWindow(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    (call.argument<Double>("maxSeconds") ?: 12.0),\n                    result,\n                )\n                else -> result.notImplemented()'
+              if old not in t:
+                  raise SystemExit('when-block not found')
+              t = t.replace(old, new, 1)
+              methods = Path('/home/runner/work').exists()  # no-op check
+              methods_src = open('/dev/null')
               methods = r'''
     private fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
         if (uriString.isBlank()) { result.success(null); return }
@@ -108,7 +113,6 @@ jobs:
                     try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
                 }
                 if (!opened) { runOnUiThread { result.success(null) }; return@execute }
-
                 var audioTrack = -1
                 var format: MediaFormat? = null
                 for (i in 0 until extractor.trackCount) {
@@ -186,19 +190,16 @@ jobs:
     }
 
 '''
-              marker = '''    override fun onDestroy() {
-        releaseEffects()
-        super.onDestroy()
-    }
-}'''
+              marker = '    override fun onDestroy() {\n        releaseEffects()\n        super.onDestroy()\n    }\n}'
               if marker not in t:
-                  raise SystemExit('marker missing')
+                  raise SystemExit('onDestroy marker missing')
               t = t.replace(marker, methods + marker, 1)
               p.write_text(t)
-              print('patched', len(t))
+              print('patched size', len(t))
           PY
           git config user.name "Aetherion LLC"
           git config user.email "mosesmiggs@gmail.com"
           git add android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
+          git status
           git commit -m "feat(dj): restore MainActivity + native MediaExtractor PCM path" || true
           git push origin HEAD:dj_Mode
