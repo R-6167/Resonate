@@ -27,6 +27,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "no changes"
           else
-            git commit -m "feat(dj): Phase 4 lite — persist energy/loudness + wire estimator"
+            git commit -m "feat(dj): Phase 4 lite — estimator energy/loudness fields"
             git push origin HEAD:dj_Mode
           fi
