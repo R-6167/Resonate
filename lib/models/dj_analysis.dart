@@ -2,8 +2,14 @@
 ///
 /// Null / low-confidence fields mean "unknown" — playback must never depend on
 /// these being present. DJ Mode only *uses* analysis when enabled and confidence
-/// is high enough (later steps).
+/// is high enough.
+///
+/// [analysisVersion] lets the engine re-analyze in the background when the
+/// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
+  /// Bump when the analyzer pipeline changes in a meaningful way (native PCM, etc.).
+  static const int currentVersion = 1;
+
   final String songId;
   final double? bpm;
   final double bpmConfidence;
@@ -13,6 +19,13 @@ class DjAnalysis {
   /// `major`, `minor`, or null.
   final String? keyMode;
   final DateTime? analyzedAt;
+  /// Schema / pipeline version that produced this row.
+  final int analysisVersion;
+  /// Where BPM came from: id3_tbpm, pcm_native, pcm_wav, unknown, none.
+  final String? bpmSource;
+  /// Stable identity helpers — detect file replace without full fingerprint.
+  final int? fileSizeBytes;
+  final int? durationMs;
 
   const DjAnalysis({
     required this.songId,
@@ -22,6 +35,10 @@ class DjAnalysis {
     this.keyRoot,
     this.keyMode,
     this.analyzedAt,
+    this.analysisVersion = currentVersion,
+    this.bpmSource,
+    this.fileSizeBytes,
+    this.durationMs,
   });
 
   bool get hasUsableBpm =>
@@ -29,6 +46,9 @@ class DjAnalysis {
 
   bool get hasUsableKey =>
       keyRoot != null && keyRoot! >= 0 && keyRoot! <= 11 && keyMode != null;
+
+  /// True when this row should be refreshed (old pipeline or missing identity).
+  bool get isStale => analysisVersion < currentVersion;
 
   factory DjAnalysis.fromMap(Map<String, dynamic> map) {
     return DjAnalysis(
@@ -41,6 +61,10 @@ class DjAnalysis {
       analyzedAt: map['analyzed_at'] != null
           ? DateTime.tryParse(map['analyzed_at'].toString())
           : null,
+      analysisVersion: (map['analysis_version'] as num?)?.toInt() ?? 0,
+      bpmSource: map['bpm_source'] as String?,
+      fileSizeBytes: (map['file_size_bytes'] as num?)?.toInt(),
+      durationMs: (map['duration_ms'] as num?)?.toInt(),
     );
   }
 
@@ -53,6 +77,10 @@ class DjAnalysis {
       'key_root': keyRoot,
       'key_mode': keyMode,
       'analyzed_at': analyzedAt?.toIso8601String(),
+      'analysis_version': analysisVersion,
+      'bpm_source': bpmSource,
+      'file_size_bytes': fileSizeBytes,
+      'duration_ms': durationMs,
     };
   }
 
@@ -63,6 +91,10 @@ class DjAnalysis {
     int? keyRoot,
     String? keyMode,
     DateTime? analyzedAt,
+    int? analysisVersion,
+    String? bpmSource,
+    int? fileSizeBytes,
+    int? durationMs,
   }) {
     return DjAnalysis(
       songId: songId,
@@ -72,6 +104,10 @@ class DjAnalysis {
       keyRoot: keyRoot ?? this.keyRoot,
       keyMode: keyMode ?? this.keyMode,
       analyzedAt: analyzedAt ?? this.analyzedAt,
+      analysisVersion: analysisVersion ?? this.analysisVersion,
+      bpmSource: bpmSource ?? this.bpmSource,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      durationMs: durationMs ?? this.durationMs,
     );
   }
 }
