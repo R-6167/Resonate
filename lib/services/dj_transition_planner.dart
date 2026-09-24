@@ -51,7 +51,7 @@ bool inOutroWindow({
   if (remaining < 2800) return false;
   final thresh = durationMs < 120000
       ? 14000
-      : (durationMs * 0.14).round().clamp(16000, 28000);
+      : (durationMs * 0.14).round().clamp(16000, 28000).toInt();
   return remaining <= thresh;
 }
 

@@ -2058,9 +2058,10 @@ class MusicProvider extends ChangeNotifier {
             try { await incoming.stop(); } catch (_) {}
             try { await outgoing.setVolume(base); } catch (_) {}
             await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+            await _restoreDjTransitionSfx();
             return false;
           }
-          remainingMs = (rem - 150).clamp(1200, plannedMs);
+          remainingMs = (rem - 150).clamp(1200, plannedMs).toInt();
         }
       } catch (_) {}
       final total = remainingMs;

@@ -158,14 +158,14 @@ class DjPcmBpmAnalyzer {
     if (bestLag.isEven) consider(bestLag ~/ 2);
 
     if (bpm < 60 || bpm > 180) return null;
-    var conf = sourceConfidence.clamp(0.35, 0.72);
+    var conf = sourceConfidence.clamp(0.35, 0.72).toDouble();
     // Slight confidence bump when octave choice was stable.
-    if (bpm >= 90 && bpm <= 140) conf = (conf + 0.04).clamp(0.35, 0.78);
+    if (bpm >= 90 && bpm <= 140) conf = (conf + 0.04).clamp(0.35, 0.78).toDouble();
 
     // Beat offset: position of strongest onset in the first period (ms).
     var peakIdx = 0;
     var peakVal = -1.0;
-    final period = bestLag.clamp(1, env.length - 1);
+    final period = bestLag.clamp(1, env.length - 1).toInt();
     final scan = math.min(period, env.length);
     for (var i = 0; i < scan; i++) {
       if (env[i] > peakVal) {
