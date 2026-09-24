@@ -3,6 +3,13 @@ import 'dj_bpm_estimator.dart';
 import 'dj_harmonic.dart';
 import 'dj_transition_memory.dart';
 
+/// Soft energy compatibility in [0, 1]. Neutral 0.5 when either side unknown.
+double energyCompatibility(double? a, double? b) {
+  if (a == null || b == null) return 0.5;
+  final d = (a - b).abs().clamp(0.0, 1.0);
+  return (1.0 - d);
+}
+
 /// Autonomous transition choice for DJ Mode.
 ///
 /// Strategies are soft: the dual-engine crossfade always runs. This only decides
@@ -18,6 +25,8 @@ class DjTransitionPlan {
   final double? bpmB;
   final double confidenceA;
   final double confidenceB;
+  /// Soft energy compatibility 0–1 (1 = similar energy; 0.5 = unknown).
+  final double energyScore;
   /// Soft learning scores in [-1, 1] (positive = past completes beat early skips).
   final double pairBias;
   final double strategyBias;
@@ -32,6 +41,7 @@ class DjTransitionPlan {
     this.bpmB,
     this.confidenceA = 0,
     this.confidenceB = 0,
+    this.energyScore = 0.5,
     this.pairBias = 0,
     this.strategyBias = 0,
   });
@@ -44,6 +54,7 @@ class DjTransitionPlan {
         'bpmB': bpmB,
         'confidenceA': confidenceA,
         'confidenceB': confidenceB,
+        'energyScore': energyScore,
         'hasStretch': stretch != null,
         'attemptBeatAlign': attemptBeatAlign,
         'pairBias': pairBias,
@@ -71,6 +82,7 @@ class DjTransitionPlan {
       bpmB: bpmB,
       confidenceA: confidenceA,
       confidenceB: confidenceB,
+      energyScore: energyScore,
       pairBias: pairBias ?? this.pairBias,
       strategyBias: strategyBias ?? this.strategyBias,
     );
@@ -93,6 +105,7 @@ DjTransitionPlan planDjTransition({
     rootB: analysisB.keyRoot,
     modeB: analysisB.keyMode,
   );
+  final energyScore = energyCompatibility(analysisA.energy, analysisB.energy);
 
   final hasA = analysisA.hasUsableBpm;
   final hasB = analysisB.hasUsableBpm;
@@ -101,6 +114,7 @@ DjTransitionPlan planDjTransition({
     return DjTransitionPlan(
       strategy: 'safe_fallback',
       harmonicScore: harmonic,
+      energyScore: energyScore,
       stretch: null,
       attemptBeatAlign: false,
       reason: !hasA && !hasB
@@ -132,6 +146,7 @@ DjTransitionPlan planDjTransition({
     return DjTransitionPlan(
       strategy: 'beat_tempo',
       harmonicScore: harmonic,
+      energyScore: energyScore,
       stretch: stretch,
       attemptBeatAlign: true,
       reason: 'bpm_compatible',
@@ -147,6 +162,7 @@ DjTransitionPlan planDjTransition({
     return DjTransitionPlan(
       strategy: 'tempo_match',
       harmonicScore: harmonic,
+      energyScore: energyScore,
       stretch: stretch,
       attemptBeatAlign: false,
       reason: 'tempo_only',
@@ -162,6 +178,7 @@ DjTransitionPlan planDjTransition({
     return DjTransitionPlan(
       strategy: 'beat_align',
       harmonicScore: harmonic,
+      energyScore: energyScore,
       stretch: null,
       attemptBeatAlign: true,
       reason: tempoMatchActive ? 'stretch_budget' : 'beat_only',
@@ -177,6 +194,7 @@ DjTransitionPlan planDjTransition({
   return DjTransitionPlan(
     strategy: 'safe_fallback',
     harmonicScore: harmonic,
+    energyScore: energyScore,
     stretch: null,
     attemptBeatAlign: false,
     reason: 'features_off',
@@ -218,6 +236,15 @@ Future<DjTransitionPlan> planDjTransitionLearned({
 
   final stratBias = await DjTransitionMemory.strategyBias(plan.strategy);
   plan = plan.copyWith(strategyBias: stratBias);
+
+  // Soft: extreme energy jump + aggressive mix → prefer tempo-only.
+  if (plan.strategy == 'beat_tempo' && plan.energyScore < 0.35) {
+    plan = plan.copyWith(
+      strategy: 'tempo_match',
+      attemptBeatAlign: false,
+      reason: 'energy_mismatch_soft',
+    );
+  }
 
   // Soft demote only when history is clearly negative.
   final hostilePair = pair < -0.35;
