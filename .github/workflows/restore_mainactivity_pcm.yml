@@ -1,0 +1,204 @@
+name: Restore MainActivity + native PCM
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 20
+      - name: Restore MainActivity from pre-placeholder commit
+        run: |
+          set -euo pipefail
+          # Restore from commit before placeholder overwrite
+          git show 6d0e65ac723ba5c1a1d4e0cde8dece6fd05b4670:android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt > android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
+          # Apply native PCM patches via inline Python
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt')
+          t = p.read_text()
+          if 'extractPcmWindow' in t:
+              print('already has extractPcmWindow')
+          else:
+              t = t.replace(
+                  'import android.media.AudioManager\nimport android.media.audiofx.BassBoost',
+                  'import android.media.AudioManager\nimport android.media.MediaCodec\nimport android.media.MediaExtractor\nimport android.media.MediaFormat\nimport android.media.audiofx.BassBoost',
+                  1,
+              )
+              t = t.replace(
+                  'import io.flutter.plugin.common.MethodChannel\nimport kotlin.math.roundToInt',
+                  'import io.flutter.plugin.common.MethodChannel\nimport java.util.concurrent.Executors\nimport kotlin.math.roundToInt',
+                  1,
+              )
+              t = t.replace(
+                  '    private var resonateDspEnabled: Boolean = true\n\n    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {',
+                  '    private var resonateDspEnabled: Boolean = true\n    private val pcmExecutor = Executors.newSingleThreadExecutor()\n\n    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {',
+                  1,
+              )
+              t = t.replace(
+                  '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                else -> result.notImplemented()',
+                  '"getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))\n                "readMediaHead" -> readMediaHead(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    call.argument<Int>("maxBytes") ?: (512 * 1024),\n                    result,\n                )\n                "extractPcmWindow" -> extractPcmWindow(\n                    call.argument<String>("uri") ?: call.argument<String>("path") ?: "",\n                    (call.argument<Double>("maxSeconds") ?: 12.0),\n                    result,\n                )\n                else -> result.notImplemented()',
+                  1,
+              )
+              methods = r'''
+    private fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
+        if (uriString.isBlank()) { result.success(null); return }
+        pcmExecutor.execute {
+            try {
+                val uri = Uri.parse(uriString)
+                val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val buf = ByteArray(limit)
+                    var off = 0
+                    while (off < limit) {
+                        val n = input.read(buf, off, limit - off)
+                        if (n <= 0) break
+                        off += n
+                    }
+                    if (off <= 0) null else buf.copyOf(off)
+                }
+                runOnUiThread { result.success(bytes) }
+            } catch (e: Exception) {
+                try {
+                    val file = java.io.File(uriString)
+                    if (file.exists() && file.canRead()) {
+                        val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
+                        val len = minOf(limit.toLong(), file.length()).toInt()
+                        val bytes = file.inputStream().use { stream ->
+                            val b = stream.readBytes()
+                            if (b.size > len) b.copyOf(len) else b
+                        }
+                        runOnUiThread { result.success(bytes) }
+                        return@execute
+                    }
+                } catch (_: Exception) {}
+                runOnUiThread { result.success(null) }
+            }
+        }
+    }
+
+    private fun extractPcmWindow(uriString: String, maxSeconds: Double, result: MethodChannel.Result) {
+        if (uriString.isBlank()) { result.success(null); return }
+        pcmExecutor.execute {
+            var extractor: MediaExtractor? = null
+            var codec: MediaCodec? = null
+            try {
+                extractor = MediaExtractor()
+                val uri = Uri.parse(uriString)
+                var opened = false
+                try {
+                    if (uriString.startsWith("content://") || uriString.startsWith("file://")) {
+                        extractor.setDataSource(this@MainActivity, uri, null)
+                        opened = true
+                    }
+                } catch (_: Exception) {}
+                if (!opened) {
+                    try {
+                        contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                            extractor.setDataSource(pfd.fileDescriptor)
+                            opened = true
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (!opened) {
+                    try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
+                }
+                if (!opened) { runOnUiThread { result.success(null) }; return@execute }
+
+                var audioTrack = -1
+                var format: MediaFormat? = null
+                for (i in 0 until extractor.trackCount) {
+                    val f = extractor.getTrackFormat(i)
+                    val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("audio/")) { audioTrack = i; format = f; break }
+                }
+                if (audioTrack < 0 || format == null) { runOnUiThread { result.success(null) }; return@execute }
+                extractor.selectTrack(audioTrack)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
+                    runOnUiThread { result.success(null) }; return@execute
+                }
+                val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
+                val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+                codec = MediaCodec.createDecoderByType(mime)
+                codec.configure(format, null, null, 0)
+                codec.start()
+                val maxUs = (maxSeconds.coerceIn(4.0, 25.0) * 1_000_000L).toLong()
+                val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 3 * 1024 * 1024)
+                val outBytes = java.io.ByteArrayOutputStream(maxPcmBytes.coerceAtMost(512 * 1024))
+                val info = MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+                var safety = 0
+                while (!outputDone && safety < 800 && outBytes.size() < maxPcmBytes) {
+                    safety++
+                    if (!inputDone) {
+                        val inIndex = codec.dequeueInputBuffer(8000)
+                        if (inIndex >= 0) {
+                            val inBuf = codec.getInputBuffer(inIndex)
+                            if (inBuf != null) {
+                                inBuf.clear()
+                                val sampleSize = extractor.readSampleData(inBuf, 0)
+                                if (sampleSize < 0 || extractor.sampleTime > maxUs) {
+                                    codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputDone = true
+                                } else {
+                                    codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime.coerceAtLeast(0), 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                    }
+                    val outIndex = codec.dequeueOutputBuffer(info, 8000)
+                    if (outIndex >= 0) {
+                        if (info.size > 0 && info.presentationTimeUs <= maxUs) {
+                            val outBuf = codec.getOutputBuffer(outIndex)
+                            if (outBuf != null) {
+                                outBuf.position(info.offset)
+                                outBuf.limit(info.offset + info.size)
+                                val chunk = ByteArray(info.size)
+                                outBuf.get(chunk)
+                                val room = maxPcmBytes - outBytes.size()
+                                if (room > 0) outBytes.write(chunk, 0, minOf(chunk.size, room))
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIndex, false)
+                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
+                        if (outBytes.size() >= maxPcmBytes) outputDone = true
+                    }
+                }
+                val pcm = outBytes.toByteArray()
+                if (pcm.size < sampleRate) { runOnUiThread { result.success(null) }; return@execute }
+                runOnUiThread {
+                    result.success(hashMapOf("sampleRate" to sampleRate, "channels" to channelCount, "pcm" to pcm))
+                }
+            } catch (e: Exception) {
+                runOnUiThread { result.success(null) }
+            } finally {
+                try { codec?.stop() } catch (_: Exception) {}
+                try { codec?.release() } catch (_: Exception) {}
+                try { extractor?.release() } catch (_: Exception) {}
+            }
+        }
+    }
+
+'''
+              marker = '''    override fun onDestroy() {
+        releaseEffects()
+        super.onDestroy()
+    }
+}'''
+              if marker not in t:
+                  raise SystemExit('marker missing')
+              t = t.replace(marker, methods + marker, 1)
+              p.write_text(t)
+              print('patched', len(t))
+          PY
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
+          git commit -m "feat(dj): restore MainActivity + native MediaExtractor PCM path" || true
+          git push origin HEAD:dj_Mode
