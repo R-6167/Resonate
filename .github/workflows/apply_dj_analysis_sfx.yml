@@ -1,0 +1,37 @@
+name: Apply DJ analysis + SFX
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_analysis_sfx.yml'
+      - 'tools/apply_dj_analysis_sfx.py'
+      - 'lib/services/dj_pcm_bpm.dart'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: |
+          set -euo pipefail
+          python3 tools/apply_dj_analysis_sfx.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/dj_bpm_estimator.dart \
+                  lib/models/dj_analysis.dart \
+                  lib/services/dj_mode_settings_store.dart \
+                  lib/providers/dj_mode_provider.dart \
+                  lib/screens/dj_mode_settings_screen.dart \
+                  lib/providers/music_provider.dart
+          if git diff --cached --quiet; then
+            echo "no changes"
+            grep -n "id3_tbpm+pcm\|transitionSfx\|_engageDjTransitionSfx\|currentVersion = 3" \
+              lib/services/dj_bpm_estimator.dart lib/models/dj_analysis.dart \
+              lib/providers/music_provider.dart lib/providers/dj_mode_provider.dart || true
+          else
+            git commit -m "feat(dj): MP3 ID3+PCM merge, analysis v3, soft transition SFX"
+            git push origin HEAD:dj_Mode
+          fi
