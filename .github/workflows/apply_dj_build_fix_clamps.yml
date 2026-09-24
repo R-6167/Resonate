@@ -1,0 +1,28 @@
+name: Fix DJ clamp types
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_build_fix_clamps.yml'
+      - 'tools/apply_dj_build_fix_clamps.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: |
+          set -euo pipefail
+          python3 tools/apply_dj_build_fix_clamps.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/dj_transition_planner.dart lib/services/dj_pcm_bpm.dart
+          if git diff --cached --quiet; then
+            echo no changes
+          else
+            git commit -m "fix(dj): .toInt() on clamp results for typed int fields"
+            git push origin HEAD:dj_Mode
+          fi
