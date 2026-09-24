@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/dj_analysis.dart';
@@ -7,8 +9,8 @@ import 'dj_bpm_estimator.dart';
 
 /// Loads and computes BPM / key hints for library tracks (DJ Mode).
 ///
-/// Analysis is cached in SQLite and never blocks the play() hot path for long:
-/// callers should treat missing analysis as "skip beat align / neutral harmonic".
+/// Analysis is cached permanently in SQLite with [DjAnalysis.analysisVersion].
+/// Playback never blocks on analysis; missing or stale rows degrade gracefully.
 class DjAnalysisService {
   DjAnalysisService({DatabaseHelper? database, DjBpmEstimator? estimator})
       : _db = database ?? DatabaseHelper(),
@@ -43,48 +45,111 @@ class DjAnalysisService {
     }
   }
 
-  /// Ensure we have a cached row. Safe to call from preload (async).
+  /// Whether cached analysis is still valid for this song file.
+  bool _identityMatches(DjAnalysis existing, Song song, int? sizeBytes) {
+    if (existing.durationMs != null &&
+        song.duration.inMilliseconds > 0 &&
+        (existing.durationMs! - song.duration.inMilliseconds).abs() > 1500) {
+      return false;
+    }
+    if (sizeBytes != null &&
+        existing.fileSizeBytes != null &&
+        existing.fileSizeBytes != sizeBytes) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<int?> _fileSize(String path) async {
+    try {
+      if (path.startsWith('content://') || path.startsWith('file://')) {
+        return null; // size optional for content URIs
+      }
+      final f = File(path);
+      if (await f.exists()) return await f.length();
+    } catch (_) {}
+    return null;
+  }
+
+  /// Ensure we have a cached row. Safe to call from preload / idle (async).
+  ///
+  /// Re-analyzes when [force] is true, version is stale, or file identity changed.
   Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
     if (!force) {
       final existing = await getAnalysis(song.id);
-      if (existing != null &&
-          (existing.hasUsableBpm || existing.hasUsableKey || existing.bpmConfidence > 0)) {
-        return existing;
-      }
-      if (existing != null && existing.analyzedAt != null && existing.bpm == null && !existing.hasUsableKey) {
-        // Fall through to try metadata once.
-      } else if (existing != null && (existing.bpm != null || existing.hasUsableKey)) {
-        return existing;
+      if (existing != null) {
+        final size = await _fileSize(song.filePath);
+        final identityOk = _identityMatches(existing, song, size);
+        final usable = existing.hasUsableBpm ||
+            existing.hasUsableKey ||
+            existing.bpmConfidence > 0;
+        if (!existing.isStale && identityOk && usable) {
+          return existing;
+        }
+        // Stale version or identity mismatch → fall through to re-analyze.
+        // Empty prior attempt with current version: skip re-work unless forced.
+        if (!existing.isStale &&
+            identityOk &&
+            existing.analyzedAt != null &&
+            !usable) {
+          return existing;
+        }
       }
     }
 
     if (_inFlight.contains(song.id)) {
       final existing = await getAnalysis(song.id);
-      return existing ?? DjAnalysis(songId: song.id, bpmConfidence: 0.0);
+      return existing ??
+          DjAnalysis(
+            songId: song.id,
+            bpmConfidence: 0.0,
+            analysisVersion: DjAnalysis.currentVersion,
+          );
     }
     _inFlight.add(song.id);
     try {
+      final size = await _fileSize(song.filePath);
       final estimate = await _estimator.estimateFile(song.filePath);
       final analysis = estimate == null
           ? DjAnalysis(
               songId: song.id,
               bpmConfidence: 0.0,
               analyzedAt: DateTime.now(),
+              analysisVersion: DjAnalysis.currentVersion,
+              bpmSource: 'none',
+              fileSizeBytes: size,
+              durationMs: song.duration.inMilliseconds > 0
+                  ? song.duration.inMilliseconds
+                  : null,
             )
           : DjAnalysis(
               songId: song.id,
-              bpm: (estimate.bpm > 40 && estimate.bpm < 240) ? estimate.bpm : null,
+              bpm: (estimate.bpm > 40 && estimate.bpm < 240)
+                  ? estimate.bpm
+                  : null,
               bpmConfidence: estimate.confidence,
               beatOffsetMs: estimate.beatOffsetMs,
               keyRoot: estimate.keyRoot,
               keyMode: estimate.keyMode,
               analyzedAt: DateTime.now(),
+              analysisVersion: DjAnalysis.currentVersion,
+              bpmSource: estimate.source,
+              fileSizeBytes: size,
+              durationMs: song.duration.inMilliseconds > 0
+                  ? song.duration.inMilliseconds
+                  : null,
             );
       await saveAnalysis(analysis);
       return analysis;
     } catch (e) {
       debugPrint('DjAnalysisService.analyzeSong: $e');
-      return DjAnalysis(songId: song.id, bpmConfidence: 0.0, analyzedAt: DateTime.now());
+      return DjAnalysis(
+        songId: song.id,
+        bpmConfidence: 0.0,
+        analyzedAt: DateTime.now(),
+        analysisVersion: DjAnalysis.currentVersion,
+        bpmSource: 'error',
+      );
     } finally {
       _inFlight.remove(song.id);
     }
@@ -93,9 +158,10 @@ class DjAnalysisService {
   /// Fire-and-forget analysis for preload / idle.
   void scheduleAnalyze(Song song) {
     final cached = _memory[song.id];
-    if (_inFlight.contains(song.id) ||
-        cached?.hasUsableBpm == true ||
-        cached?.hasUsableKey == true) {
+    if (_inFlight.contains(song.id)) return;
+    if (cached != null &&
+        !cached.isStale &&
+        (cached.hasUsableBpm || cached.hasUsableKey)) {
       return;
     }
     // ignore: unawaited_futures
