@@ -380,6 +380,9 @@ class MusicProvider extends ChangeNotifier {
       await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
     } catch (_) {}
     try {
+      await _restoreDjTransitionSfx();
+    } catch (_) {}
+    try {
       final active = audioPlayer;
       final inactive = inactivePlayer;
       final vol = _eqPreampScale.clamp(0.05, 1.0);
@@ -390,12 +393,16 @@ class MusicProvider extends ChangeNotifier {
         await inactive.setSpeed(1.0);
       } catch (_) {}
       try {
-        if (active.playing && active.volume < 0.02) {
+        if ((_userWantsPlaying || active.playing) && active.volume < vol * 0.85) {
           await active.setVolume(vol);
         }
       } catch (_) {}
       try {
         await inactive.setVolume(0.0);
+      } catch (_) {}
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
       } catch (_) {}
       await ResonateDiagnostics.recordDj(
         stage: 'engine_recover',
@@ -688,6 +695,7 @@ class MusicProvider extends ChangeNotifier {
     _positionSubscription = player.positionStream.listen((position) {
       if (currentPosition != position) {
         currentPosition = position;
+      _maybeRecoverSilentPlayback();
         if (_activeHistoryEvent != null) {
           _activeHistoryPositionMs = position.inMilliseconds;
           _persistResumePosition();
