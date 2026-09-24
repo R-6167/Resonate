@@ -390,14 +390,18 @@ Duration? computeBeatAlignedSeekMs({
 
   final periodA = 60000.0 / bpmA;
   final periodB = 60000.0 / bpmB;
+  // Clamp noisy offsets into one period (PCM peak can be off).
+  final offA = _mod(beatOffsetMsA.toDouble(), periodA);
+  final offB = _mod(beatOffsetMsB.toDouble(), periodB);
 
-  final phaseA = _mod(outgoingPositionMs - beatOffsetMsA, periodA);
-  final msToNextBeatA = phaseA < 1e-6 ? 0.0 : (periodA - phaseA);
+  final phaseA = _mod(outgoingPositionMs - offA, periodA);
+  final msToNextBeatA = phaseA < 1.0 ? 0.0 : (periodA - phaseA);
 
-  var seek = beatOffsetMsB - msToNextBeatA;
+  // Land incoming on a beat when outgoing hits its next beat.
+  var seek = offB - msToNextBeatA;
   seek = _mod(seek, periodB);
-
-  while (seek > periodB * 8) {
+  // Prefer the nearer phase (don't start almost a full bar in).
+  if (seek > periodB * 0.5) {
     seek -= periodB;
   }
   if (seek < 0) seek = 0;
@@ -424,18 +428,25 @@ Duration? computePhraseAlignedSeekMs({
   final periodB = 60000.0 / bpmB;
   final phraseA = periodA * beatsPerPhrase;
   final phraseB = periodB * beatsPerPhrase;
+  final offA = _mod(beatOffsetMsA.toDouble(), periodA);
+  final offB = _mod(beatOffsetMsB.toDouble(), periodB);
 
-  final phaseA = _mod(outgoingPositionMs - beatOffsetMsA, phraseA);
-  final msToNextPhraseA = phaseA < 1e-6 ? 0.0 : (phraseA - phaseA);
+  final phaseA = _mod(outgoingPositionMs - offA, phraseA);
+  final msToNextPhraseA = phaseA < 1.0 ? 0.0 : (phraseA - phaseA);
 
-  var seek = beatOffsetMsB - msToNextPhraseA;
+  var seek = offB - msToNextPhraseA;
   seek = _mod(seek, phraseB);
-
-  // Keep seek near the top of the incoming track (first few phrases).
-  while (seek > phraseB * 2) {
+  // At most one phrase into the incoming track (was 2 — felt late on cross-genre).
+  if (seek > phraseB) {
     seek -= phraseB;
   }
+  // Snap to nearest beat inside the phrase for tighter grids.
+  final beatSnap = (seek / periodB).round() * periodB;
+  if ((beatSnap - seek).abs() < periodB * 0.35) {
+    seek = beatSnap;
+  }
   if (seek < 0) seek = 0;
+  if (seek >= phraseB) seek = 0;
   return Duration(milliseconds: seek.round());
 }
 
@@ -467,16 +478,26 @@ DjTempoStretchPlan? computeTempoStretch({
   final maxDelta = (maxStretchPercent.clamp(3, 20)) / 100.0;
   bool within(double speed) => (speed - 1.0).abs() <= maxDelta + 1e-9;
 
-  final matchIn = bpmA / bpmB;
-  if (within(matchIn)) {
-    return DjTempoStretchPlan(
+  // Prefer direct match, then half/double (common cross-genre / wrong-octave BPM).
+  DjTempoStretchPlan? best;
+  void consider(double candidateBpmB, String mode) {
+    if (candidateBpmB < 40 || candidateBpmB > 240) return;
+    final matchIn = bpmA / candidateBpmB;
+    if (!within(matchIn)) return;
+    final plan = DjTempoStretchPlan(
       speedOutgoing: 1.0,
       speedIncoming: matchIn,
       effectiveBpm: bpmA,
-      mode: 'match_incoming',
+      mode: mode,
     );
+    if (best == null ||
+        (matchIn - 1.0).abs() < (best!.speedIncoming - 1.0).abs()) {
+      best = plan;
+    }
   }
 
-  // meet_middle stretches the audible outgoing deck — skip for stability.
-  return null;
+  consider(bpmB, 'match_incoming');
+  consider(bpmB / 2.0, 'match_incoming_half');
+  consider(bpmB * 2.0, 'match_incoming_double');
+  return best;
 }

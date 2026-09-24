@@ -1902,7 +1902,7 @@ class MusicProvider extends ChangeNotifier {
                 beatOffsetMsB: beatOffsetB,
                 outgoingPositionMs: posMs,
                 beatsPerPhrase: plan.phraseBeats,
-                maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+                maxRelativeDelta: stretch != null ? 0.18 : 0.055,
               )
             : computeBeatAlignedSeekMs(
                 bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
@@ -1910,7 +1910,7 @@ class MusicProvider extends ChangeNotifier {
                 bpmB: effectiveBpmB,
                 beatOffsetMsB: beatOffsetB,
                 outgoingPositionMs: posMs,
-                maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+                maxRelativeDelta: stretch != null ? 0.18 : 0.055,
               );
         if (seek == null) {
           await ResonateDiagnostics.recordDj(

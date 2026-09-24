@@ -230,12 +230,17 @@ DjTransitionPlan planDjTransition({
         outroHintMs: analysisA.outroHintMs,
       );
 
-  // Soft phrase grid when beat align is on and BPMs are close enough for a
-  // 4-beat phrase (relative delta under ~8% without stretch, or stretch present).
-  final rel = (bpmA - bpmB).abs() / bpmA;
-  final phraseOk = tryBeat && (stretch != null || rel <= 0.08);
+  // Phrase grid only when tempos are already close *or* locked by stretch.
+  // Cross-genre pairs with only stretch → single-beat align (tighter than a bar).
+  final rel = (bpmA - bpmB).abs() / math.max(bpmA, 1.0);
+  final confOk =
+      analysisA.bpmConfidence >= 0.45 && analysisB.bpmConfidence >= 0.45;
+  final phraseOk = tryBeat &&
+      confOk &&
+      (rel <= 0.04 || (stretch != null && rel <= 0.12));
 
   if (outro && (stretch != null || tryBeat)) {
+    final phraseBeats = (phraseOk && confOk) ? 8 : 4;
     return DjTransitionPlan(
       strategy: 'outro_intro',
       harmonicScore: harmonic,
@@ -251,7 +256,7 @@ DjTransitionPlan planDjTransition({
       strategyBias: strategyBias,
       crossfadeBiasMs: biasFor('outro_intro'),
       usePhraseGrid: phraseOk,
-      phraseBeats: 4,
+      phraseBeats: phraseBeats,
     );
   }
 
@@ -383,17 +388,17 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   final stratBias = await DjTransitionMemory.strategyBias(plan.strategy);
   plan = plan.copyWith(strategyBias: stratBias);
 
-  // Soft: extreme energy jump + aggressive mix → prefer tempo-only + longer bridge.
+  // Soft: energy jump → drop beat seek (tempo lock only) + slightly longer bridge.
   if ((plan.strategy == 'beat_tempo' ||
           plan.strategy == 'phrase_align' ||
           plan.strategy == 'outro_intro') &&
-      plan.energyScore < 0.35) {
+      plan.energyScore < 0.45) {
     plan = plan.copyWith(
       strategy: 'tempo_match',
       attemptBeatAlign: false,
       reason: 'energy_mismatch_soft',
       usePhraseGrid: false,
-      crossfadeBiasMs: (plan.crossfadeBiasMs + 800).clamp(-1500, 2500).toInt(),
+      crossfadeBiasMs: (plan.crossfadeBiasMs + 600).clamp(-1500, 2500).toInt(),
     );
   }
 
