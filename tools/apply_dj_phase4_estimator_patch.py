@@ -1,32 +1,12 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 
 EST = Path("lib/services/dj_bpm_estimator.dart")
 t = EST.read_text()
 
-if "final double? energy;" in t:
-    print("estimator already has energy")
-else:
-    old_class = """class DjBpmEstimate {
-  final double bpm;
-  final double confidence;
-  final int beatOffsetMs;
-  final String source;
-  final int? keyRoot;
-  final String? keyMode;
-  final double keyConfidence;
-
-  const DjBpmEstimate({
-    required this.bpm,
-    required this.confidence,
-    this.beatOffsetMs = 0,
-    this.source = 'unknown',
-    this.keyRoot,
-    this.keyMode,
-    this.keyConfidence = 0.0,
-  });
-}"""
-    new_class = """class DjBpmEstimate {
+# Always ensure class has energy/loudness fields
+new_class = '''class DjBpmEstimate {
   final double bpm;
   final double confidence;
   final int beatOffsetMs;
@@ -50,13 +30,30 @@ else:
     this.energy,
     this.loudness,
   });
-}"""
-    if old_class not in t:
-        raise SystemExit("class miss")
-    t = t.replace(old_class, new_class, 1)
+}'''
 
-# native merge with key
-old1 = """          return DjBpmEstimate(
+m = re.search(r'class DjBpmEstimate \{.*?\n\}\n', t, re.S)
+if not m:
+    raise SystemExit('class regex miss')
+t = t[:m.start()] + new_class + '\n' + t[m.end():]
+print('rewrote DjBpmEstimate class')
+
+def ensure_energy(block_old, block_new, label):
+    global t
+    if 'energy:' in block_old and block_old in t:
+        # shouldn't happen
+        pass
+    if block_old in t:
+        t = t.replace(block_old, block_new, 1)
+        print(label, 'patched')
+        return
+    if label in t or (label == 'native' and "energy: est.energy" in t):
+        print(label, 'already')
+        return
+    print('WARN', label)
+
+ensure_energy(
+'''          return DjBpmEstimate(
             bpm: nativePcm.bpm,
             confidence: nativePcm.confidence,
             beatOffsetMs: nativePcm.beatOffsetMs,
@@ -64,8 +61,8 @@ old1 = """          return DjBpmEstimate(
             keyRoot: key.keyRoot,
             keyMode: key.keyMode,
             keyConfidence: key.confidence,
-          );"""
-new1 = """          return DjBpmEstimate(
+          );''',
+'''          return DjBpmEstimate(
             bpm: nativePcm.bpm,
             confidence: nativePcm.confidence,
             beatOffsetMs: nativePcm.beatOffsetMs,
@@ -75,16 +72,11 @@ new1 = """          return DjBpmEstimate(
             keyConfidence: key.confidence,
             energy: nativePcm.energy,
             loudness: nativePcm.loudness,
-          );"""
-if old1 in t:
-    t = t.replace(old1, new1, 1)
-    print("native+key energy")
-elif "energy: nativePcm.energy" in t:
-    print("native+key already")
-else:
-    print("WARN native+key")
+          );''',
+'native+key')
 
-old2 = """          return DjBpmEstimate(
+ensure_energy(
+'''          return DjBpmEstimate(
             bpm: pcm.bpm,
             confidence: pcm.confidence,
             beatOffsetMs: pcm.beatOffsetMs,
@@ -92,8 +84,8 @@ old2 = """          return DjBpmEstimate(
             keyRoot: key?.keyRoot,
             keyMode: key?.keyMode,
             keyConfidence: key?.confidence ?? 0.0,
-          );"""
-new2 = """          return DjBpmEstimate(
+          );''',
+'''          return DjBpmEstimate(
             bpm: pcm.bpm,
             confidence: pcm.confidence,
             beatOffsetMs: pcm.beatOffsetMs,
@@ -103,36 +95,27 @@ new2 = """          return DjBpmEstimate(
             keyConfidence: key?.confidence ?? 0.0,
             energy: pcm.energy,
             loudness: pcm.loudness,
-          );"""
-if old2 in t:
-    t = t.replace(old2, new2, 1)
-    print("wav energy")
-elif "source: 'pcm_wav'" in t and "energy: pcm.energy" in t:
-    print("wav already")
-else:
-    print("WARN wav")
+          );''',
+'wav')
 
-old3 = """      return DjBpmEstimate(
+ensure_energy(
+'''      return DjBpmEstimate(
         bpm: est.bpm,
         confidence: est.confidence,
         beatOffsetMs: est.beatOffsetMs,
         source: 'pcm_native',
-      );"""
-new3 = """      return DjBpmEstimate(
+      );''',
+'''      return DjBpmEstimate(
         bpm: est.bpm,
         confidence: est.confidence,
         beatOffsetMs: est.beatOffsetMs,
         source: 'pcm_native',
         energy: est.energy,
         loudness: est.loudness,
-      );"""
-if old3 in t:
-    t = t.replace(old3, new3, 1)
-    print("native energy")
-elif "source: 'pcm_native'" in t and "energy: est.energy" in t:
-    print("native already")
-else:
-    print("WARN native")
+      );''',
+'native')
 
 EST.write_text(t)
-print("estimator written")
+if 'final double? energy;' not in EST.read_text():
+    raise SystemExit('VERIFY FAIL no energy field')
+print('ok')
