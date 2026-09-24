@@ -17,6 +17,7 @@ import '../services/database_helper.dart';
 import '../services/dj_analysis_service.dart';
 import '../services/dj_bpm_estimator.dart';
 import '../services/dj_transition_planner.dart';
+import '../services/dj_transition_memory.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -95,6 +96,10 @@ class MusicProvider extends ChangeNotifier {
   DjAnalysisService? _djAnalysis;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
+  DateTime? _lastDjHandoffAt;
+  String? _lastDjFromId;
+  String? _lastDjToId;
+  String? _lastDjStrategy;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -1617,6 +1622,35 @@ class MusicProvider extends ChangeNotifier {
       final event = _activeHistoryEvent; if (event == null) return;
       final total = event.songDurationMs > 0 ? event.songDurationMs : (currentDuration?.inMilliseconds ?? 0); final position = _activeHistoryPositionMs.clamp(0, total > 0 ? total : 1).toInt(); final ratio = total <= 0 ? 0.0 : (position / total).clamp(0.0, 1.0).toDouble(); final wasCompleted = completed || ratio >= .90;
       final updated = ListeningEvent(id: event.id, songId: event.songId, previousSongId: event.previousSongId, startedAt: event.startedAt, endedAt: DateTime.now(), durationPlayedMs: position, songDurationMs: total, completionRatio: ratio, completed: wasCompleted, skipped: !wasCompleted && position > 0, skipPositionMs: !wasCompleted && position > 0 ? position : null);
+      // Phase 7: full listen after DJ handoff → soft positive signal.
+      try {
+        final handoffAt = _lastDjHandoffAt;
+        final fromId = _lastDjFromId;
+        final toId = _lastDjToId;
+        final strategy = _lastDjStrategy;
+        if (wasCompleted &&
+            handoffAt != null &&
+            fromId != null &&
+            toId != null &&
+            strategy != null &&
+            event.songId == toId) {
+          unawaited(DjTransitionMemory.recordOutcome(
+            fromId: fromId,
+            toId: toId,
+            strategy: strategy,
+            successful: true,
+          ));
+          unawaited(ResonateDiagnostics.recordDj(
+            stage: 'learn',
+            outcome: 'completed',
+            reason: strategy,
+            songId: toId,
+            extra: {'fromId': fromId},
+          ));
+          _lastDjHandoffAt = null;
+        }
+      } catch (_) {}
+
       _activeHistoryEvent = null; _activeHistoryPositionMs = 0;
       if (wasCompleted) { _resumePositionMs = 0; _resumeSongId = null; unawaited(SharedPreferences.getInstance().then((prefs) async { await prefs.remove(_resumePositionKey); await prefs.remove(_resumeSongIdKey); }).catchError((error) { debugPrint('Playback resume clear failed: $error'); })); } else { _persistResumePosition(force: true); }
       try { final updatedRows = await _database.updateListeningEvent(updated); if (updatedRows < 0 || updatedRows == 0) { unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'eventId': event.id, 'updateResult': updatedRows})); } } catch (e, stack) { debugPrint('Listening history finish failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'error': e.toString(), 'stack': stack.toString()})); }
@@ -1850,6 +1884,10 @@ class MusicProvider extends ChangeNotifier {
           'tempoApplied': tempoApplied,
         },
       );
+      _lastDjHandoffAt = DateTime.now();
+      _lastDjFromId = outgoingSong.id;
+      _lastDjToId = incomingSong.id;
+      _lastDjStrategy = appliedStrategy;
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
       try {
@@ -2304,6 +2342,38 @@ class MusicProvider extends ChangeNotifier {
     return _serializePlayback(
       () async {
         if (_queue.isEmpty) return;
+        // Phase 7: early skip after a DJ handoff → soft negative signal.
+        try {
+          final handoffAt = _lastDjHandoffAt;
+          final fromId = _lastDjFromId;
+          final toId = _lastDjToId;
+          final strategy = _lastDjStrategy;
+          if (handoffAt != null &&
+              fromId != null &&
+              toId != null &&
+              strategy != null &&
+              currentSong?.id == toId &&
+              DateTime.now().difference(handoffAt) < const Duration(seconds: 90) &&
+              currentPosition.inMilliseconds < 25000) {
+            unawaited(DjTransitionMemory.recordOutcome(
+              fromId: fromId,
+              toId: toId,
+              strategy: strategy,
+              successful: false,
+            ));
+            unawaited(ResonateDiagnostics.recordDj(
+              stage: 'learn',
+              outcome: 'early_skip',
+              reason: strategy,
+              songId: toId,
+              extra: {
+                'fromId': fromId,
+                'positionMs': currentPosition.inMilliseconds,
+              },
+            ));
+            _lastDjHandoffAt = null;
+          }
+        } catch (_) {}
         _transportInFlight = true;
         try {
           if (_queueIndex >= _queue.length - 1) {
