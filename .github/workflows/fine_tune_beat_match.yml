@@ -1,0 +1,30 @@
+name: Fine-tune beat match
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fine_tune_beat_match.yml'
+      - 'tools/fine_tune_beat_match.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: |
+          set -euo pipefail
+          python3 tools/fine_tune_beat_match.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/services/dj_bpm_estimator.dart \
+                  lib/services/dj_transition_planner.dart \
+                  lib/providers/music_provider.dart
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "feat(dj): tighter beat/phrase seeks, half-double tempo, smarter phrase gate"
+            git push origin HEAD:dj_Mode
+          fi
