@@ -16,6 +16,7 @@ import '../services/audio_service_handler.dart';
 import '../services/database_helper.dart';
 import '../services/dj_analysis_service.dart';
 import '../services/dj_bpm_estimator.dart';
+import '../services/dj_transition_planner.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -1719,61 +1720,42 @@ class MusicProvider extends ChangeNotifier {
       if (results.length < 2) return;
       final analysisA = results[0];
       final analysisB = results[1];
-      if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
+      final plan = planDjTransition(
+        analysisA: analysisA,
+        analysisB: analysisB,
+        tempoMatchActive: _djTempoMatchActive,
+        beatAlignActive: _djBeatAlignActive,
+        maxStretchPercent: _djMaxStretchPercent,
+      );
+
+      if (plan.strategy == 'safe_fallback') {
         await ResonateDiagnostics.record('dj_handoff_safe_fallback', {
-          'reason': 'missing_bpm',
-          'strategy': 'safe_fallback',
+          'reason': plan.reason,
+          'strategy': plan.strategy,
           'outgoingSongId': outgoingSong.id,
           'incomingSongId': incomingSong.id,
-          'hasBpmA': analysisA.hasUsableBpm,
-          'hasBpmB': analysisB.hasUsableBpm,
+          ...plan.toDiagExtra(),
         });
         await ResonateDiagnostics.recordDj(
           stage: 'handoff',
           outcome: 'applied',
-          reason: 'safe_fallback',
+          reason: plan.reason,
           songId: incomingSong.id,
-          extra: {
-            'strategy': 'safe_fallback',
-            'hasBpmA': analysisA.hasUsableBpm,
-            'hasBpmB': analysisB.hasUsableBpm,
-          },
+          extra: plan.toDiagExtra(),
         );
         return;
       }
 
-      final bpmA = analysisA.bpm!;
-      final bpmB = analysisB.bpm!;
-      DjTempoStretchPlan? stretch;
-      if (_djTempoMatchActive) {
-        stretch = computeTempoStretch(
-          bpmA: bpmA,
-          bpmB: bpmB,
-          maxStretchPercent: _djMaxStretchPercent,
-        );
-        if (stretch == null) {
-          await ResonateDiagnostics.record('dj_tempo_match_skipped', {
-            'reason': 'stretch_budget',
-            'bpmA': bpmA,
-            'bpmB': bpmB,
-            'maxPercent': _djMaxStretchPercent,
-          });
-          await ResonateDiagnostics.recordDj(
-            stage: 'tempo_match',
-            outcome: 'skipped',
-            reason: 'stretch_budget',
-            bpmA: bpmA,
-            bpmB: bpmB,
-            songId: incomingSong.id,
-          );
-        }
-      }
-
+      final bpmA = plan.bpmA!;
+      final bpmB = plan.bpmB!;
+      final stretch = plan.stretch;
       final effectiveBpmB = stretch?.effectiveBpm ?? bpmB;
       final beatOffsetB = analysisB.beatOffsetMs ?? 0;
       final beatOffsetA = analysisA.beatOffsetMs ?? 0;
+      var beatApplied = false;
+      var tempoApplied = false;
 
-      if (_djBeatAlignActive) {
+      if (plan.attemptBeatAlign) {
         final posMs = outgoing.position.inMilliseconds;
         final seek = computeBeatAlignedSeekMs(
           bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
@@ -1784,12 +1766,6 @@ class MusicProvider extends ChangeNotifier {
           maxRelativeDelta: stretch != null ? 0.25 : 0.08,
         );
         if (seek == null) {
-          await ResonateDiagnostics.record('dj_beat_align_skipped', {
-            'reason': 'bpm_delta',
-            'bpmA': bpmA,
-            'bpmB': bpmB,
-            'stretched': stretch != null,
-          });
           await ResonateDiagnostics.recordDj(
             stage: 'beat_align',
             outcome: 'skipped',
@@ -1810,6 +1786,7 @@ class MusicProvider extends ChangeNotifier {
             }
           }
           await incoming.seek(target);
+          beatApplied = true;
           await ResonateDiagnostics.record('dj_beat_align_applied', {
             'outgoingSongId': outgoingSong.id,
             'incomingSongId': incomingSong.id,
@@ -1818,6 +1795,7 @@ class MusicProvider extends ChangeNotifier {
             'seekMs': target.inMilliseconds,
             'outgoingPosMs': posMs,
             'stretched': stretch != null,
+            'harmonicScore': plan.harmonicScore,
           });
         }
       }
@@ -1830,6 +1808,7 @@ class MusicProvider extends ChangeNotifier {
           await incoming.setSpeed(stretch.speedIncoming);
           _djStretchSpeedOut = stretch.speedOutgoing;
           _djStretchSpeedIn = stretch.speedIncoming;
+          tempoApplied = true;
           await ResonateDiagnostics.record('dj_tempo_match_applied', {
             'outgoingSongId': outgoingSong.id,
             'incomingSongId': incomingSong.id,
@@ -1839,6 +1818,7 @@ class MusicProvider extends ChangeNotifier {
             'speedIn': stretch.speedIncoming,
             'mode': stretch.mode,
             'effectiveBpm': stretch.effectiveBpm,
+            'harmonicScore': plan.harmonicScore,
           });
         } catch (e) {
           await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
@@ -1850,6 +1830,26 @@ class MusicProvider extends ChangeNotifier {
           );
         }
       }
+
+      final appliedStrategy = tempoApplied && beatApplied
+          ? 'beat_tempo'
+          : (tempoApplied
+              ? 'tempo_match'
+              : (beatApplied ? 'beat_align' : 'safe_fallback'));
+      await ResonateDiagnostics.recordDj(
+        stage: 'handoff',
+        outcome: 'applied',
+        reason: appliedStrategy,
+        songId: incomingSong.id,
+        bpmA: bpmA,
+        bpmB: bpmB,
+        extra: {
+          ...plan.toDiagExtra(),
+          'strategyApplied': appliedStrategy,
+          'beatApplied': beatApplied,
+          'tempoApplied': tempoApplied,
+        },
+      )
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
       try {
