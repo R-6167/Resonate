@@ -7,8 +7,9 @@
 /// [analysisVersion] lets the engine re-analyze in the background when the
 /// estimator improves, without discarding older rows or blocking playback.
 class DjAnalysis {
-  /// Bump when the analyzer pipeline changes in a meaningful way (native PCM, etc.).
-  static const int currentVersion = 1;
+  /// Bump when the analyzer pipeline changes in a meaningful way
+  /// (v1: native PCM BPM; v2: energy / loudness from same PCM window).
+  static const int currentVersion = 2;
 
   final String songId;
   final double? bpm;
@@ -26,6 +27,10 @@ class DjAnalysis {
   /// Stable identity helpers — detect file replace without full fingerprint.
   final int? fileSizeBytes;
   final int? durationMs;
+  /// Relative energy 0–1 from PCM window (null when ID3-only / unknown).
+  final double? energy;
+  /// Approximate loudness 0–1 from PCM window.
+  final double? loudness;
 
   const DjAnalysis({
     required this.songId,
@@ -39,6 +44,8 @@ class DjAnalysis {
     this.bpmSource,
     this.fileSizeBytes,
     this.durationMs,
+    this.energy,
+    this.loudness,
   });
 
   bool get hasUsableBpm =>
@@ -46,6 +53,8 @@ class DjAnalysis {
 
   bool get hasUsableKey =>
       keyRoot != null && keyRoot! >= 0 && keyRoot! <= 11 && keyMode != null;
+
+  bool get hasUsableEnergy => energy != null && energy! >= 0 && energy! <= 1;
 
   /// True when this row should be refreshed (old pipeline or missing identity).
   bool get isStale => analysisVersion < currentVersion;
@@ -65,6 +74,8 @@ class DjAnalysis {
       bpmSource: map['bpm_source'] as String?,
       fileSizeBytes: (map['file_size_bytes'] as num?)?.toInt(),
       durationMs: (map['duration_ms'] as num?)?.toInt(),
+      energy: (map['energy'] as num?)?.toDouble(),
+      loudness: (map['loudness'] as num?)?.toDouble(),
     );
   }
 
@@ -81,6 +92,8 @@ class DjAnalysis {
       'bpm_source': bpmSource,
       'file_size_bytes': fileSizeBytes,
       'duration_ms': durationMs,
+      'energy': energy,
+      'loudness': loudness,
     };
   }
 
@@ -95,6 +108,8 @@ class DjAnalysis {
     String? bpmSource,
     int? fileSizeBytes,
     int? durationMs,
+    double? energy,
+    double? loudness,
   }) {
     return DjAnalysis(
       songId: songId,
@@ -108,6 +123,8 @@ class DjAnalysis {
       bpmSource: bpmSource ?? this.bpmSource,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       durationMs: durationMs ?? this.durationMs,
+      energy: energy ?? this.energy,
+      loudness: loudness ?? this.loudness,
     );
   }
 }
