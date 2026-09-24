@@ -1992,6 +1992,7 @@ class MusicProvider extends ChangeNotifier {
         outgoingSong: outgoingSong,
         incomingSong: nextSong,
       );
+      await _engageDjTransitionSfx();
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
@@ -2112,6 +2113,7 @@ class MusicProvider extends ChangeNotifier {
           await Future<void>.delayed(Duration(milliseconds: sleep));
         }
       }
+      await _restoreDjTransitionSfx();
       // Guarantee silence on outgoing before pause/stop — never cut from a
       // still-audible level (the "sudden volume loss" symptom).
       for (var s = 0; s < 3; s++) {
