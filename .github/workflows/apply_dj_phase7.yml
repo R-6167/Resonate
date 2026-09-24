@@ -1,0 +1,30 @@
+name: Apply DJ Phase 7 learning
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_dj_phase7.yml'
+      - 'tools/apply_dj_phase7_learn.py'
+      - 'lib/services/dj_transition_memory.dart'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Apply Phase 7 learning wire
+        run: |
+          set -euo pipefail
+          python3 tools/apply_dj_phase7_learn.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "feat(dj): Phase 7 — learn from early skip vs full listen after handoff"
+            git push origin HEAD:dj_Mode
+          fi
