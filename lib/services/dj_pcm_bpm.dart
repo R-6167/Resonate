@@ -90,8 +90,8 @@ class DjPcmBpmAnalyzer {
 
   /// Shared energy BPM for any 16-bit little-endian PCM (mono or multi-channel).
   ///
-  /// Also returns relative [energy] / [loudness] in 0–1 from the same window
-  /// so Phase-4-lite analysis can soft-score transitions without extra decode.
+  /// Returns relative [energy] / [loudness] and a real [beatOffsetMs] from the
+  /// envelope phase at the strongest lag (not always 0).
   DjPcmBpmEstimate? estimateFromPcm16(
     Uint8List pcm,
     int sampleRate,
@@ -101,6 +101,7 @@ class DjPcmBpmAnalyzer {
     if (sampleRate < 8000 || channels < 1) return null;
     final samples = pcm.length ~/ 2;
     if (samples < sampleRate) return null;
+    // ~10 ms hop → 100 frames/sec (matches lag units used below).
     final hop = math.max(1, sampleRate ~/ 100);
     final env = <double>[];
     final bd = ByteData.sublistView(pcm);
@@ -119,27 +120,62 @@ class DjPcmBpmAnalyzer {
     }
     if (env.length < 40) return null;
 
-    final minLag = (60 * 100 / 180).round();
-    final maxLag = (60 * 100 / 60).round();
+    final minLag = (60 * 100 / 180).round(); // ~33
+    final maxLag = (60 * 100 / 60).round(); // 100
     var bestLag = minLag;
     var best = -1.0;
+    final corrAt = <int, double>{};
     for (var lag = minLag; lag <= maxLag && lag < env.length ~/ 2; lag++) {
       var corr = 0.0;
       final limit = env.length - lag;
       for (var i = 0; i < limit; i++) {
         corr += env[i] * env[i + lag];
       }
+      corrAt[lag] = corr;
       if (corr > best) {
         best = corr;
         bestLag = lag;
       }
     }
     if (best <= 0) return null;
-    final bpm = (60.0 * 100.0) / bestLag;
-    if (bpm < 60 || bpm > 180) return null;
-    final conf = sourceConfidence.clamp(0.35, 0.72);
 
-    // Relative energy / loudness from the same window (0–1).
+    // Soft octave correction: if half/double lag has nearly as strong correlation,
+    // prefer the lag that lands BPM in a more typical dance range (90–140).
+    var bpm = (60.0 * 100.0) / bestLag;
+    void consider(int lag) {
+      if (lag < minLag || lag > maxLag) return;
+      final c = corrAt[lag];
+      if (c == null || c < best * 0.92) return;
+      final cand = (60.0 * 100.0) / lag;
+      final betterRange = _danceScore(cand) > _danceScore(bpm);
+      if (betterRange) {
+        bestLag = lag;
+        bpm = cand;
+      }
+    }
+
+    consider(bestLag * 2);
+    if (bestLag.isEven) consider(bestLag ~/ 2);
+
+    if (bpm < 60 || bpm > 180) return null;
+    var conf = sourceConfidence.clamp(0.35, 0.72);
+    // Slight confidence bump when octave choice was stable.
+    if (bpm >= 90 && bpm <= 140) conf = (conf + 0.04).clamp(0.35, 0.78);
+
+    // Beat offset: position of strongest onset in the first period (ms).
+    var peakIdx = 0;
+    var peakVal = -1.0;
+    final period = bestLag.clamp(1, env.length - 1);
+    final scan = math.min(period, env.length);
+    for (var i = 0; i < scan; i++) {
+      if (env[i] > peakVal) {
+        peakVal = env[i];
+        peakIdx = i;
+      }
+    }
+    // Each env step ≈ 10 ms.
+    final beatOffsetMs = (peakIdx * 10).clamp(0, (60000.0 / bpm).round() - 1);
+
     final meanEnv = env.reduce((a, b) => a + b) / env.length;
     final energy =
         (math.log(1.0 + meanEnv) / math.log(1.0 + 12000.0)).clamp(0.0, 1.0);
@@ -150,9 +186,17 @@ class DjPcmBpmAnalyzer {
     return DjPcmBpmEstimate(
       bpm: bpm,
       confidence: conf,
-      beatOffsetMs: 0,
+      beatOffsetMs: beatOffsetMs,
       energy: energy,
       loudness: loudness,
     );
+  }
+
+  static double _danceScore(double bpm) {
+    // Prefer 95–130, soft falloff outside.
+    if (bpm >= 95 && bpm <= 130) return 1.0;
+    if (bpm >= 85 && bpm <= 145) return 0.7;
+    if (bpm >= 70 && bpm <= 160) return 0.4;
+    return 0.1;
   }
 }
