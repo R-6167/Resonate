@@ -7,7 +7,10 @@ import 'dj_transition_memory.dart';
 /// Soft energy compatibility in [0, 1]. Neutral 0.5 when either side unknown.
 double energyCompatibility(double? a, double? b) {
   if (a == null || b == null) return 0.5;
-  final d = (a - b).abs().clamp(0.0, 1.0);
+  if (!a.isFinite || !b.isFinite) return 0.5;
+  final aa = a.clamp(0.0, 1.0).toDouble();
+  final bb = b.clamp(0.0, 1.0).toDouble();
+  final d = (aa - bb).abs().clamp(0.0, 1.0).toDouble();
   return (1.0 - d);
 }
 

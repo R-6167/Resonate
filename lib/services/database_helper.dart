@@ -219,6 +219,9 @@ class DatabaseHelper {
           columnDjDurationMs: analysis.durationMs,
           columnDjEnergy: analysis.energy,
           columnDjLoudness: analysis.loudness,
+          columnDjIntroHintMs: analysis.introHintMs,
+          columnDjOutroHintMs: analysis.outroHintMs,
+          columnDjSectionHint: analysis.sectionHint,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );

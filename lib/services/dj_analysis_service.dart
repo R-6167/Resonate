@@ -161,6 +161,19 @@ class DjAnalysisService {
   }
 
   /// Fire-and-forget analysis for preload / idle.
+
+  /// Prefer cache; only recompute when missing/stale. Safe for handoff path.
+  Future<DjAnalysis> analyzeSongCachedFirst(Song song) async {
+    final existing = await getAnalysis(song.id);
+    if (existing != null &&
+        !existing.isStale &&
+        (existing.hasUsableBpm ||
+            existing.hasUsableKey ||
+            existing.hasUsableEnergy)) {
+      return existing;
+    }
+    return analyzeSong(song);
+  }
   void scheduleAnalyze(Song song) {
     final cached = _memory[song.id];
     if (_inFlight.contains(song.id)) return;

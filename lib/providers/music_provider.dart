@@ -94,6 +94,7 @@ class MusicProvider extends ChangeNotifier {
   bool _djTempoMatchActive = false;
   int _djMaxStretchPercent = 12;
   bool _djSfxActive = false;
+  bool _djSfxEngaged = false;
   DjAnalysisService? _djAnalysis;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
@@ -1734,16 +1735,18 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
     if (!_djSfxActive) return;
     try {
-      final mismatch = (1.0 - energyScore).clamp(0.0, 1.0);
+      final score = energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
+      final mismatch = (1.0 - score).clamp(0.0, 1.0).toDouble();
       final reverb = (0.18 + mismatch * 0.28).clamp(0.18, 0.48).toDouble();
       final width = (0.12 + mismatch * 0.22).clamp(0.10, 0.36).toDouble();
       await AudioEffectsBridge.setReverb(reverb);
       await AudioEffectsBridge.setVirtualizer(width);
+      _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'engage',
         'reverb': reverb,
         'virtualizer': width,
-        'energyScore': energyScore,
+        'energyScore': score,
       });
     } catch (e) {
       debugPrint('DJ transition SFX engage: $e');
@@ -1751,7 +1754,8 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _restoreDjTransitionSfx() async {
-    if (!_djSfxActive) return;
+    // Restore if we engaged this fade — even if user toggled SFX off mid-crossfade.
+    if (!_djSfxEngaged && !_djSfxActive) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
@@ -1759,12 +1763,14 @@ class MusicProvider extends ChangeNotifier {
       final virt = prefs.getDouble('virtualizer') ?? 0.0;
       await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
       await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      _djSfxEngaged = false;
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'restore',
         'reverb': effectsEnabled ? reverb : 0.0,
         'virtualizer': effectsEnabled ? virt : 0.0,
       });
     } catch (e) {
+      _djSfxEngaged = false;
       debugPrint('DJ transition SFX restore: $e');
     }
   }
@@ -1784,10 +1790,10 @@ class MusicProvider extends ChangeNotifier {
     try {
       List<DjAnalysis> results;
       try {
-        final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
-        final bFuture = _djAnalysis!.analyzeSong(incomingSong);
+        final aFuture = _djAnalysis!.analyzeSongCachedFirst(outgoingSong);
+        final bFuture = _djAnalysis!.analyzeSongCachedFirst(incomingSong);
         results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
-          const Duration(milliseconds: 2800),
+          const Duration(milliseconds: 2200),
           onTimeout: () => const <DjAnalysis>[],
         );
       } catch (e) {
@@ -1817,7 +1823,9 @@ class MusicProvider extends ChangeNotifier {
         outgoingDurationMs: outDur,
       );
       _lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;
-      _lastDjEnergyScore = plan.energyScore;
+      _lastDjEnergyScore = plan.energyScore.isFinite
+          ? plan.energyScore.clamp(0.0, 1.0).toDouble()
+          : 0.5;
 
       if (plan.strategy == 'safe_fallback') {
         await ResonateDiagnostics.record('dj_handoff_safe_fallback', {
@@ -1837,8 +1845,18 @@ class MusicProvider extends ChangeNotifier {
         return;
       }
 
-      final bpmA = plan.bpmA!;
-      final bpmB = plan.bpmB!;
+      final bpmA = plan.bpmA;
+      final bpmB = plan.bpmB;
+      if (bpmA == null || bpmB == null || bpmA < 40 || bpmB < 40) {
+        await ResonateDiagnostics.recordDj(
+          stage: 'handoff',
+          outcome: 'applied',
+          reason: 'missing_bpm_after_plan',
+          songId: incomingSong.id,
+          extra: plan.toDiagExtra(),
+        );
+        return;
+      }
       final stretch = plan.stretch;
       final effectiveBpmB = stretch?.effectiveBpm ?? bpmB;
       final beatOffsetB = analysisB.beatOffsetMs ?? 0;

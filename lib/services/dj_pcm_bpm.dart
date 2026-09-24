@@ -157,7 +157,7 @@ class DjPcmBpmAnalyzer {
     consider(bestLag * 2);
     if (bestLag.isEven) consider(bestLag ~/ 2);
 
-    if (bpm < 60 || bpm > 180) return null;
+    if (!bpm.isFinite || bpm < 60 || bpm > 180) return null;
     var conf = sourceConfidence.clamp(0.35, 0.72).toDouble();
     // Slight confidence bump when octave choice was stable.
     if (bpm >= 90 && bpm <= 140) conf = (conf + 0.04).clamp(0.35, 0.78).toDouble();

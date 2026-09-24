@@ -37,27 +37,31 @@ class DjPcmFeatureAnalyzer {
     int channels, {
     String windowRole = 'start',
   }) {
-    if (sampleRate < 8000 || channels < 1 || pcm.length < sampleRate) {
+    try {
+      if (sampleRate < 8000 || channels < 1 || pcm.length < sampleRate) {
+        return const DjPcmFeatures();
+      }
+
+      final mono =
+          _toMonoDownsampled(pcm, sampleRate, channels, targetRate: 11025);
+      const rate = 11025;
+      final section = _sectionFromMono(mono, rate, windowRole: windowRole);
+      final key = _softKeyFromMono(mono, rate);
+
+      return DjPcmFeatures(
+        keyRoot: key.$1,
+        keyMode: key.$2,
+        keyConfidence: key.$3,
+        keySource: key.$3 >= 0.28 ? 'pcm_chroma' : 'none',
+        introHintMs: section.introHintMs,
+        outroHintMs: section.outroHintMs,
+        headEnergy: section.headEnergy,
+        bodyEnergy: section.bodyEnergy,
+        sectionHint: section.sectionHint,
+      );
+    } catch (_) {
       return const DjPcmFeatures();
     }
-
-    final mono =
-        _toMonoDownsampled(pcm, sampleRate, channels, targetRate: 11025);
-    const rate = 11025;
-    final section = _sectionFromMono(mono, rate, windowRole: windowRole);
-    final key = _softKeyFromMono(mono, rate);
-
-    return DjPcmFeatures(
-      keyRoot: key.$1,
-      keyMode: key.$2,
-      keyConfidence: key.$3,
-      keySource: key.$3 >= 0.28 ? 'pcm_chroma' : 'none',
-      introHintMs: section.introHintMs,
-      outroHintMs: section.outroHintMs,
-      headEnergy: section.headEnergy,
-      bodyEnergy: section.bodyEnergy,
-      sectionHint: section.sectionHint,
-    );
   }
 
   Float64List _toMonoDownsampled(
