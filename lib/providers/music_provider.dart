@@ -1754,6 +1754,10 @@ class MusicProvider extends ChangeNotifier {
       if (results.length < 2) return;
       final analysisA = results[0];
       final analysisB = results[1];
+      final outPos = outgoing.position.inMilliseconds;
+      final outDur = outgoingSong.duration.inMilliseconds > 0
+          ? outgoingSong.duration.inMilliseconds
+          : analysisA.durationMs;
       final plan = await planDjTransitionLearned(
         analysisA: analysisA,
         analysisB: analysisB,
@@ -1762,6 +1766,8 @@ class MusicProvider extends ChangeNotifier {
         maxStretchPercent: _djMaxStretchPercent,
         fromSongId: outgoingSong.id,
         toSongId: incomingSong.id,
+        outgoingPositionMs: outPos,
+        outgoingDurationMs: outDur,
       );
 
       if (plan.strategy == 'safe_fallback') {
