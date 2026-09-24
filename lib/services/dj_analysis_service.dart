@@ -140,6 +140,9 @@ class DjAnalysisService {
                   : null,
               energy: estimate.energy,
               loudness: estimate.loudness,
+              introHintMs: estimate.introHintMs,
+              outroHintMs: estimate.outroHintMs,
+              sectionHint: estimate.sectionHint,
             );
       await saveAnalysis(analysis);
       return analysis;

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import '../models/dj_analysis.dart';
 import 'dj_bpm_estimator.dart';
 import 'dj_harmonic.dart';
@@ -44,14 +45,18 @@ int crossfadeBiasMsFor({
 bool inOutroWindow({
   required int? durationMs,
   required int positionMs,
+  int? outroHintMs,
 }) {
   if (durationMs == null || durationMs < 45000) return false;
   if (positionMs < 0) return false;
   final remaining = durationMs - positionMs;
   if (remaining < 2800) return false;
-  final thresh = durationMs < 120000
+  var thresh = durationMs < 120000
       ? 14000
       : (durationMs * 0.14).round().clamp(16000, 28000).toInt();
+  if (outroHintMs != null && outroHintMs > 0) {
+    thresh = math.max(thresh, (outroHintMs + 2000).clamp(8000, 32000).toInt());
+  }
   return remaining <= thresh;
 }
 
@@ -219,6 +224,7 @@ DjTransitionPlan planDjTransition({
       inOutroWindow(
         durationMs: outgoingDurationMs ?? analysisA.durationMs,
         positionMs: outgoingPositionMs,
+        outroHintMs: analysisA.outroHintMs,
       );
 
   // Soft phrase grid when beat align is on and BPMs are close enough for a

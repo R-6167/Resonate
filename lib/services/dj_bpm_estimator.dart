@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'dj_harmonic.dart';
 import 'dj_pcm_bpm.dart';
+import 'dj_pcm_features.dart';
 
 /// BPM / key hints for DJ Mode.
 ///
@@ -28,6 +29,9 @@ class DjBpmEstimate {
   final double? energy;
   /// Approximate loudness 0–1 from PCM window.
   final double? loudness;
+  final int? introHintMs;
+  final int? outroHintMs;
+  final String? sectionHint;
 
   const DjBpmEstimate({
     required this.bpm,
@@ -39,6 +43,9 @@ class DjBpmEstimate {
     this.keyConfidence = 0.0,
     this.energy,
     this.loudness,
+    this.introHintMs,
+    this.outroHintMs,
+    this.sectionHint,
   });
 }
 
@@ -114,11 +121,16 @@ class DjBpmEstimator {
             confidence: math.max(fromId3.confidence, 0.75),
             beatOffsetMs: nativePcm.beatOffsetMs,
             source: 'id3_tbpm+pcm',
-            keyRoot: key?.keyRoot,
-            keyMode: key?.keyMode,
-            keyConfidence: key?.confidence ?? 0.0,
+            keyRoot: key?.keyRoot ?? nativePcm.keyRoot,
+            keyMode: key?.keyMode ?? nativePcm.keyMode,
+            keyConfidence: key != null
+                ? key.confidence
+                : nativePcm.keyConfidence,
             energy: nativePcm.energy,
             loudness: nativePcm.loudness,
+            introHintMs: nativePcm.introHintMs,
+            outroHintMs: nativePcm.outroHintMs,
+            sectionHint: nativePcm.sectionHint,
           );
         }
         if (key != null) {
@@ -132,6 +144,9 @@ class DjBpmEstimator {
             keyConfidence: key.confidence,
             energy: nativePcm.energy,
             loudness: nativePcm.loudness,
+            introHintMs: nativePcm.introHintMs,
+            outroHintMs: nativePcm.outroHintMs,
+            sectionHint: nativePcm.sectionHint,
           );
         }
         return nativePcm;
@@ -227,6 +242,12 @@ class DjBpmEstimator {
         sourceConfidence: 0.48,
       );
       if (est == null) return null;
+      final feats = DjPcmFeatureAnalyzer().analyze(
+        pcm,
+        sampleRate,
+        channels,
+        windowRole: 'start',
+      );
       return DjBpmEstimate(
         bpm: est.bpm,
         confidence: est.confidence,
@@ -234,6 +255,12 @@ class DjBpmEstimator {
         source: 'pcm_native',
         energy: est.energy,
         loudness: est.loudness,
+        keyRoot: feats.keyRoot,
+        keyMode: feats.keyMode,
+        keyConfidence: feats.keyConfidence,
+        introHintMs: feats.introHintMs,
+        outroHintMs: feats.outroHintMs,
+        sectionHint: feats.sectionHint,
       );
     } catch (e) {
       debugPrint('DjBpmEstimator native pcm: $e');

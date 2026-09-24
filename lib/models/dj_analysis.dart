@@ -9,7 +9,7 @@
 class DjAnalysis {
   /// Bump when the analyzer pipeline changes in a meaningful way
   /// (v1: native PCM BPM; v2: energy/loudness; v3: beatOffset + ID3+PCM merge).
-  static const int currentVersion = 3;
+  static const int currentVersion = 4;
 
   final String songId;
   final double? bpm;
@@ -31,6 +31,9 @@ class DjAnalysis {
   final double? energy;
   /// Approximate loudness 0–1 from PCM window.
   final double? loudness;
+  final int? introHintMs;
+  final int? outroHintMs;
+  final String? sectionHint;
 
   const DjAnalysis({
     required this.songId,
@@ -46,6 +49,9 @@ class DjAnalysis {
     this.durationMs,
     this.energy,
     this.loudness,
+    this.introHintMs,
+    this.outroHintMs,
+    this.sectionHint,
   });
 
   bool get hasUsableBpm =>
@@ -76,6 +82,9 @@ class DjAnalysis {
       durationMs: (map['duration_ms'] as num?)?.toInt(),
       energy: (map['energy'] as num?)?.toDouble(),
       loudness: (map['loudness'] as num?)?.toDouble(),
+      introHintMs: (map['intro_hint_ms'] as num?)?.toInt(),
+      outroHintMs: (map['outro_hint_ms'] as num?)?.toInt(),
+      sectionHint: map['section_hint'] as String?,
     );
   }
 
@@ -94,6 +103,9 @@ class DjAnalysis {
       'duration_ms': durationMs,
       'energy': energy,
       'loudness': loudness,
+      'intro_hint_ms': introHintMs,
+      'outro_hint_ms': outroHintMs,
+      'section_hint': sectionHint,
     };
   }
 
@@ -110,6 +122,9 @@ class DjAnalysis {
     int? durationMs,
     double? energy,
     double? loudness,
+    int? introHintMs,
+    int? outroHintMs,
+    String? sectionHint,
   }) {
     return DjAnalysis(
       songId: songId,
@@ -125,6 +140,9 @@ class DjAnalysis {
       durationMs: durationMs ?? this.durationMs,
       energy: energy ?? this.energy,
       loudness: loudness ?? this.loudness,
+      introHintMs: introHintMs ?? this.introHintMs,
+      outroHintMs: outroHintMs ?? this.outroHintMs,
+      sectionHint: sectionHint ?? this.sectionHint,
     );
   }
 }

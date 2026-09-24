@@ -103,6 +103,7 @@ class MusicProvider extends ChangeNotifier {
   String? _lastDjStrategy;
   /// Soft energy-bridge bias applied to the next crossfade length (ms).
   int _lastDjCrossfadeBiasMs = 0;
+  double _lastDjEnergyScore = 0.5;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -1730,13 +1731,19 @@ class MusicProvider extends ChangeNotifier {
 
 
   /// Soft transition SFX: mild reverb glue, always restored after crossfade.
-  Future<void> _engageDjTransitionSfx() async {
+  Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
     if (!_djSfxActive) return;
     try {
-      await AudioEffectsBridge.setReverb(0.22);
+      final mismatch = (1.0 - energyScore).clamp(0.0, 1.0);
+      final reverb = (0.18 + mismatch * 0.28).clamp(0.18, 0.48).toDouble();
+      final width = (0.12 + mismatch * 0.22).clamp(0.10, 0.36).toDouble();
+      await AudioEffectsBridge.setReverb(reverb);
+      await AudioEffectsBridge.setVirtualizer(width);
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'engage',
-        'reverb': 0.22,
+        'reverb': reverb,
+        'virtualizer': width,
+        'energyScore': energyScore,
       });
     } catch (e) {
       debugPrint('DJ transition SFX engage: $e');
@@ -1749,10 +1756,13 @@ class MusicProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
       final reverb = prefs.getDouble('reverb') ?? 0.0;
+      final virt = prefs.getDouble('virtualizer') ?? 0.0;
       await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
+      await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'restore',
         'reverb': effectsEnabled ? reverb : 0.0,
+        'virtualizer': effectsEnabled ? virt : 0.0,
       });
     } catch (e) {
       debugPrint('DJ transition SFX restore: $e');
@@ -1807,6 +1817,7 @@ class MusicProvider extends ChangeNotifier {
         outgoingDurationMs: outDur,
       );
       _lastDjCrossfadeBiasMs = plan.crossfadeBiasMs;
+      _lastDjEnergyScore = plan.energyScore;
 
       if (plan.strategy == 'safe_fallback') {
         await ResonateDiagnostics.record('dj_handoff_safe_fallback', {
@@ -1992,7 +2003,7 @@ class MusicProvider extends ChangeNotifier {
         outgoingSong: outgoingSong,
         incomingSong: nextSong,
       );
-      await _engageDjTransitionSfx();
+      await _engageDjTransitionSfx(energyScore: _lastDjEnergyScore);
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
