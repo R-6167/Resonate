@@ -24,6 +24,10 @@ class DjBpmEstimate {
   final int? keyRoot;
   final String? keyMode;
   final double keyConfidence;
+  /// Relative energy 0–1 from PCM window (null when ID3-only / unknown).
+  final double? energy;
+  /// Approximate loudness 0–1 from PCM window.
+  final double? loudness;
 
   const DjBpmEstimate({
     required this.bpm,
@@ -33,6 +37,8 @@ class DjBpmEstimate {
     this.keyRoot,
     this.keyMode,
     this.keyConfidence = 0.0,
+    this.energy,
+    this.loudness,
   });
 }
 
@@ -121,6 +127,8 @@ class DjBpmEstimator {
             keyRoot: key.keyRoot,
             keyMode: key.keyMode,
             keyConfidence: key.confidence,
+            energy: nativePcm.energy,
+            loudness: nativePcm.loudness,
           );
         }
         return nativePcm;
@@ -141,6 +149,8 @@ class DjBpmEstimator {
             keyRoot: key?.keyRoot,
             keyMode: key?.keyMode,
             keyConfidence: key?.confidence ?? 0.0,
+            energy: pcm.energy,
+            loudness: pcm.loudness,
           );
         }
       }
@@ -206,6 +216,8 @@ class DjBpmEstimator {
         confidence: est.confidence,
         beatOffsetMs: est.beatOffsetMs,
         source: 'pcm_native',
+        energy: est.energy,
+        loudness: est.loudness,
       );
     } catch (e) {
       debugPrint('DjBpmEstimator native pcm: $e');

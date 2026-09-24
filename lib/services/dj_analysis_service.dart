@@ -138,6 +138,8 @@ class DjAnalysisService {
               durationMs: song.duration.inMilliseconds > 0
                   ? song.duration.inMilliseconds
                   : null,
+              energy: estimate.energy,
+              loudness: estimate.loudness,
             );
       await saveAnalysis(analysis);
       return analysis;
