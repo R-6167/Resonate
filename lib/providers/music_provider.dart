@@ -1849,7 +1849,7 @@ class MusicProvider extends ChangeNotifier {
           'beatApplied': beatApplied,
           'tempoApplied': tempoApplied,
         },
-      )
+      );
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
       try {
