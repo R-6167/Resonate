@@ -1754,12 +1754,14 @@ class MusicProvider extends ChangeNotifier {
       if (results.length < 2) return;
       final analysisA = results[0];
       final analysisB = results[1];
-      final plan = planDjTransition(
+      final plan = await planDjTransitionLearned(
         analysisA: analysisA,
         analysisB: analysisB,
         tempoMatchActive: _djTempoMatchActive,
         beatAlignActive: _djBeatAlignActive,
         maxStretchPercent: _djMaxStretchPercent,
+        fromSongId: outgoingSong.id,
+        toSongId: incomingSong.id,
       );
 
       if (plan.strategy == 'safe_fallback') {
