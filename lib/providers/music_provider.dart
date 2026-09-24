@@ -114,6 +114,7 @@ class MusicProvider extends ChangeNotifier {
   bool _userWantsPlaying = false;
   bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
+  DateTime? _lastSilentRecoverAt;
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
@@ -355,6 +356,24 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+
+  /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
+  void _maybeRecoverSilentPlayback() {
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+    if (!_userWantsPlaying) return;
+    try {
+      final active = audioPlayer;
+      if (!active.playing) return;
+      if (active.volume >= 0.05) return;
+      final now = DateTime.now();
+      if (_lastSilentRecoverAt != null &&
+          now.difference(_lastSilentRecoverAt!) < const Duration(seconds: 3)) {
+        return;
+      }
+      _lastSilentRecoverAt = now;
+      unawaited(_recoverDjEngineState(reason: 'silent_watchdog'));
+    } catch (_) {}
+  }
   /// Restore normal speed + audible volume after DJ handoff mistakes.
   Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
     try {
@@ -1499,7 +1518,8 @@ class MusicProvider extends ChangeNotifier {
         await timed('seek_zero', target.seek(Duration.zero), ms: 3000);
       }
 
-      await timed('setVolume', target.setVolume(_eqPreampScale), ms: 2000);
+      await timed('setVolume', target.setVolume(_eqPreampScale.clamp(0.05, 1.0)), ms: 2000);
+      try { await target.setSpeed(1.0); } catch (_) {}
 
       // Effects after source is up — never block play on effects failure/slowness.
       unawaited(_enableEffects(target, targetEq, targetLoud));
@@ -2168,6 +2188,20 @@ class MusicProvider extends ChangeNotifier {
       try {
         if (incoming.volume < 0.05) await incoming.setVolume(master);
       } catch (_) {}
+      // Hard guarantee: incoming must be audible before we flip active engine.
+      try {
+        await incoming.setSpeed(1.0);
+        await incoming.setVolume(master);
+        if (!incoming.playing) {
+          try { incoming.play(); } catch (_) {}
+        }
+        await ResonateDiagnostics.record('crossfade_commit_volume', {
+          'volume': incoming.volume,
+          'playing': incoming.playing,
+          'master': master,
+          'songId': nextSong.id,
+        });
+      } catch (_) {}
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
       await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners();
@@ -2208,6 +2242,27 @@ class MusicProvider extends ChangeNotifier {
       try { await outgoing.stop(); await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken); return true; } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); await ResonateDiagnostics.record('crossfade_fallback_failed', {'incomingSongId': nextSong.id, 'error': fallbackError.toString(), 'intentToken': intentToken}); return false; }
     } finally {
       _crossfadeInProgress = false;
+      // Always clear stretch + SFX even when the try path returned early.
+      try {
+        await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+      } catch (_) {}
+      try {
+        await _restoreDjTransitionSfx();
+      } catch (_) {}
+      // If UI thinks we are playing but active engine is near-silent, unstick.
+      try {
+        final active = audioPlayer;
+        final vol = _eqPreampScale.clamp(0.05, 1.0).toDouble();
+        if ((_userWantsPlaying || active.playing) && active.volume < 0.05) {
+          await active.setSpeed(1.0);
+          await active.setVolume(vol);
+          await ResonateDiagnostics.record('playback_volume_unstick', {
+            'reason': 'crossfade_finally',
+            'volume': active.volume,
+            'engine': _activeIsA ? 'A' : 'B',
+          });
+        }
+      } catch (_) {}
       notifyListeners();
 
       // Critical fix: if the outgoing track reached completed while we were
