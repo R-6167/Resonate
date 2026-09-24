@@ -361,6 +361,41 @@ Duration? computeBeatAlignedSeekMs({
   return Duration(milliseconds: seek.round());
 }
 
+/// Align incoming start so the next *phrase* boundary on the outgoing track
+/// lands on a phrase boundary of the incoming track (soft; may no-op).
+Duration? computePhraseAlignedSeekMs({
+  required double bpmA,
+  required int beatOffsetMsA,
+  required double bpmB,
+  required int beatOffsetMsB,
+  required int outgoingPositionMs,
+  int beatsPerPhrase = 4,
+  double maxRelativeDelta = 0.08,
+}) {
+  if (beatsPerPhrase < 2) beatsPerPhrase = 4;
+  if (bpmA < 40 || bpmB < 40 || bpmA > 240 || bpmB > 240) return null;
+  final rel = (bpmA - bpmB).abs() / bpmA;
+  if (rel > maxRelativeDelta) return null;
+
+  final periodA = 60000.0 / bpmA;
+  final periodB = 60000.0 / bpmB;
+  final phraseA = periodA * beatsPerPhrase;
+  final phraseB = periodB * beatsPerPhrase;
+
+  final phaseA = _mod(outgoingPositionMs - beatOffsetMsA, phraseA);
+  final msToNextPhraseA = phaseA < 1e-6 ? 0.0 : (phraseA - phaseA);
+
+  var seek = beatOffsetMsB - msToNextPhraseA;
+  seek = _mod(seek, phraseB);
+
+  // Keep seek near the top of the incoming track (first few phrases).
+  while (seek > phraseB * 2) {
+    seek -= phraseB;
+  }
+  if (seek < 0) seek = 0;
+  return Duration(milliseconds: seek.round());
+}
+
 double _mod(num x, double m) {
   final r = x.toDouble() % m;
   return r < 0 ? r + m : r;

@@ -1793,14 +1793,24 @@ class MusicProvider extends ChangeNotifier {
 
       if (plan.attemptBeatAlign) {
         final posMs = outgoing.position.inMilliseconds;
-        final seek = computeBeatAlignedSeekMs(
-          bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
-          beatOffsetMsA: beatOffsetA,
-          bpmB: effectiveBpmB,
-          beatOffsetMsB: beatOffsetB,
-          outgoingPositionMs: posMs,
-          maxRelativeDelta: stretch != null ? 0.25 : 0.08,
-        );
+        final seek = plan.usePhraseGrid
+            ? computePhraseAlignedSeekMs(
+                bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
+                beatOffsetMsA: beatOffsetA,
+                bpmB: effectiveBpmB,
+                beatOffsetMsB: beatOffsetB,
+                outgoingPositionMs: posMs,
+                beatsPerPhrase: plan.phraseBeats,
+                maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+              )
+            : computeBeatAlignedSeekMs(
+                bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
+                beatOffsetMsA: beatOffsetA,
+                bpmB: effectiveBpmB,
+                beatOffsetMsB: beatOffsetB,
+                outgoingPositionMs: posMs,
+                maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+              );
         if (seek == null) {
           await ResonateDiagnostics.recordDj(
             stage: 'beat_align',
