@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../widgets/resonate_logo.dart';
 
 /// Keep in sync with pubspec.yaml version when bumping releases.
-const String kResonateVersion = '0.1.3';
-const String kResonateBuild = '4';
+const String kResonateVersion = '0.1.5';
+const String kResonateBuild = '6';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -33,20 +33,33 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const ResonateLogo(size: 44),
-                const SizedBox(height: 12),
+                const ResonateLogo(size: 72, full: true, showWord: false),
+                const SizedBox(height: 14),
+                Text(
+                  'Resonate',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontStyle: FontStyle.italic,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Text(
                   'Version $versionLabel',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Local-first companion music player',
-                  style: theme.textTheme.bodyMedium,
+                  'Your music. Your rules. Fully offline.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Offline library playback with a local companion for recommendations, mixes, Autopilot, and Ask Resonate. Your audio and listening evidence stay on this device.',
+                  'A local-first companion player: library, intelligent mixes, optional DJ Mode, '
+                  'and on-device learning. Audio and listening evidence stay on this device.',
                   style: theme.textTheme.bodyLarge,
                 ),
               ],
@@ -60,21 +73,23 @@ class AboutScreen extends StatelessWidget {
             title: 'How to use',
             child: const Text(
               'Library\n'
-              '• Settings → Library: grant access, choose folders, scan, set minimum length.\n'
+              '• Settings → Library: grant access, pick folders, scan, set a minimum length.\n'
               '• Tap a song to play; long-press to queue as next.\n\n'
               'Player\n'
-              '• Seek, volume, sleep timer, EQ and crossfade from More.\n'
-              '• Swipe the artwork: left = next, right = previous.\n'
-              '• Equalizer and Crossfade are in Settings anytime (no need to play first).\n\n'
-              'For You\n'
-              '• Enable Intelligence for recommendations and automatic mixes.\n'
-              '• Ask Resonate (floating button): more like this, calmer mix, exploration, avoid artist, and more.\n\n'
+              '• Seek, volume, sleep timer, EQ, effects, and crossfade from More or Settings.\n'
+              '• Swipe artwork: left = next, right = previous.\n\n'
+              'Intelligence\n'
+              '• Turn on for local recommendations and automatic mixes.\n'
+              '• Ask Resonate (floating action): more like this, calmer energy, explore, avoid artist, and more.\n\n'
+              'DJ Mode\n'
+              '• Optional. When on, Resonate plans beat-aware handoffs, harmonic leans, and light transition FX.\n'
+              '• Normal playback always works if analysis is missing — DJ never blocks audio.\n\n'
               'Autopilot\n'
-              '• Choose mode in Intelligence settings.\n'
-              '• Consent is required before Autopilot can change or enqueue tracks.\n\n'
+              '• Choose the mode under Intelligence settings.\n'
+              '• Explicit consent is required before Autopilot can change or enqueue tracks.\n\n'
               'Bluetooth\n'
-              '• Media buttons and optional resume/pause on connect or disconnect.\n'
-              '• Device context (headphones / car / speaker) can nudge exploration.',
+              '• Media buttons plus optional pause/resume on connect or disconnect.\n'
+              '• Route changes are recovered automatically when you switch outputs.',
             ),
           ),
 
@@ -83,14 +98,27 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.auto_awesome_outlined,
             title: 'What is included',
             child: const Text(
-              'Playback: crossfade (A/B engines), gapless when crossfade is off, '
-              'queue, shuffle/repeat, per-song resume, sleep timer with fade-out.\n\n'
-              'Audio: multi-band equalizer, soft preamp, optional learned EQ leans, '
-              'crossfade curves, effects, visualization.\n\n'
-              'Companion: local ranking (transitions, completions, seek/replay), '
-              'journey memory on mixes, decision log, rule-based Ask Resonate.\n\n'
-              'Privacy: history, preferences, and decisions stay on-device. '
-              'Transfer exports settings only, never audio files.',
+              'Playback\n'
+              '• Dual-engine A/B crossfade with smooth volume ramps; gapless when crossfade is off.\n'
+              '• Queue, shuffle/repeat, per-song resume, sleep timer with fade-out.\n'
+              '• Bluetooth route recovery and volume unstick after device switches.\n\n'
+              'Sound\n'
+              '• Multi-band equalizer, soft preamp, device-aware EQ profiles.\n'
+              '• Effects (bass boost, virtualizer, reverb, loudness) with light guidance.\n'
+              '• Optional visualization.\n\n'
+              'DJ Mode (optional)\n'
+              '• Offline PCM analysis for tempo, energy, structure hints, and key lean.\n'
+              '• Transition strategies: beat align, phrase align, outro→intro, energy bridge.\n'
+              '• Camelot-style harmonic bias with Intelligence ranking when DJ is on.\n'
+              '• Random transition SFX rack beyond reverb; EQ filter sweeps on handoff.\n'
+              '• Weighted skip feedback so early skips teach the planner what not to repeat.\n\n'
+              'Intelligence\n'
+              '• Local ranking from completions, skips, seeks, and mix journeys.\n'
+              '• Decision log and rule-based Ask Resonate.\n'
+              '• Autopilot with graduated consent.\n\n'
+              'Privacy\n'
+              '• History, preferences, analysis, and decisions stay on-device.\n'
+              '• Transfer exports settings only — never your audio files.',
             ),
           ),
 
