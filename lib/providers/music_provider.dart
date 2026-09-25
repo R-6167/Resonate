@@ -130,7 +130,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<double>? _volumeSubscription;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
   StreamSubscription<void>? _noisySubscription;
-  StreamSubscription<void>? _devicesChangedSubscription;
+  StreamSubscription<AudioDevicesChangedEvent>? _devicesChangedSubscription;
   DateTime? _lastRouteRecoverAt;
 
   ListeningEvent? _activeHistoryEvent;
@@ -519,6 +519,59 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Audio session setup failed: $e');
     }
+  }
+
+
+  /// BT/headset route change: re-claim session and force audible volume.
+  /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
+  Future<void> _onAudioRouteChanged() async {
+    final now = DateTime.now();
+    if (_lastRouteRecoverAt != null &&
+        now.difference(_lastRouteRecoverAt!) < const Duration(milliseconds: 800)) {
+      return;
+    }
+    _lastRouteRecoverAt = now;
+    try {
+      await ResonateDiagnostics.record('audio_route_changed', {
+        'userWantsPlaying': _userWantsPlaying,
+        'isPlaying': isPlaying,
+        'crossfade': _crossfadeInProgress,
+        'songId': currentSong?.id,
+      });
+    } catch (_) {}
+    if (!_userWantsPlaying) return;
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+    try {
+      final session = await AudioSession.instance;
+      try {
+        await session.setActive(true);
+      } catch (_) {}
+    } catch (_) {}
+    for (final delayMs in <int>[200, 700, 1600, 3200]) {
+      await Future<void>.delayed(Duration(milliseconds: delayMs));
+      if (!_userWantsPlaying) return;
+      if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+      try {
+        await _recoverDjEngineState(reason: 'audio_route_changed');
+      } catch (_) {}
+      try {
+        final active = audioPlayer;
+        final vol = (_volume * _eqPreampScale).clamp(0.05, 1.0);
+        await active.setVolume(vol);
+        if (_userWantsPlaying && !active.playing) {
+          try {
+            await active.play();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    try {
+      await ResonateDiagnostics.record('audio_route_recover_done', {
+        'playing': audioPlayer.playing,
+        'volume': audioPlayer.volume,
+        'songId': currentSong?.id,
+      });
+    } catch (_) {}
   }
 
   /// Soft-duck both engines so crossfade overlap does not leave one at full level.
