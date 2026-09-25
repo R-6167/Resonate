@@ -188,7 +188,9 @@ class DjSfxRack {
     if (eq == null) return;
     try {
       final p = await eq.parameters;
-      _savedEqGains = [for (final b in p.bands) b.gain];
+      _savedEqGains = [
+        for (final b in p.bands) b.gain,
+      ];
     } catch (_) {
       _savedEqGains = null;
     }

@@ -117,7 +117,7 @@ class DjBpmEstimator {
       DjBpmEstimate? endPcm;
       final dur = durationMs ?? 0;
       if (dur > 45000) {
-        final startMs = (dur - 18000).clamp(20000, dur - 8000);
+        final startMs = (dur - 18000).clamp(20000, dur - 8000).toInt();
         endPcm = await _estimateFromNativePcm(
           filePath,
           maxSeconds: 14.0,
@@ -215,6 +215,44 @@ class DjBpmEstimator {
       debugPrint('DjBpmEstimator: $e');
     }
     return null;
+  }
+
+
+  /// Merge start-window estimate with end-window structure/outro hints.
+  DjBpmEstimate? _mergeStructure(DjBpmEstimate? start, DjBpmEstimate? end) {
+    if (start == null) return end;
+    if (end == null) return start;
+    final s = start.sectionHint;
+    final e = end.sectionHint;
+    String? section;
+    if (e == 'quiet_outro' || e == 'outro') {
+      if (s == 'build' || s == 'drop' || s == 'chorus' || s == 'intro' ||
+          s == 'quiet_intro' || s == 'energetic') {
+        section = s;
+      } else {
+        section = e;
+      }
+    } else {
+      section = s ?? e;
+    }
+    return DjBpmEstimate(
+      bpm: start.bpm > 0 ? start.bpm : end.bpm,
+      confidence: start.confidence >= end.confidence
+          ? start.confidence
+          : end.confidence,
+      beatOffsetMs: start.beatOffsetMs,
+      source: start.source,
+      keyRoot: start.keyRoot ?? end.keyRoot,
+      keyMode: start.keyMode ?? end.keyMode,
+      keyConfidence: start.keyConfidence >= end.keyConfidence
+          ? start.keyConfidence
+          : end.keyConfidence,
+      energy: start.energy ?? end.energy,
+      loudness: start.loudness ?? end.loudness,
+      introHintMs: start.introHintMs,
+      outroHintMs: end.outroHintMs ?? start.outroHintMs,
+      sectionHint: section,
+    );
   }
 
   Future<Uint8List?> _readMediaHeadNative(String uri) async {
