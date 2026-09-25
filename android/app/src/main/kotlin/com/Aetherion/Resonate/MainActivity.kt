@@ -71,6 +71,7 @@ class MainActivity : AudioServiceActivity() {
                 "extractPcmWindow" -> extractPcmWindow(
                     call.argument<String>("uri") ?: "",
                     (call.argument<Number>("maxSeconds") ?: 12.0).toDouble(),
+                    (call.argument<Number>("startMs") ?: 0).toLong(),
                     result,
                 )
                 else -> result.notImplemented()
@@ -504,7 +505,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /** Decode a short PCM window via MediaExtractor/MediaCodec (MP3/M4A/content://). */
-    private fun extractPcmWindow(uriString: String, maxSeconds: Double, result: MethodChannel.Result) {
+    private fun extractPcmWindow(uriString: String, maxSeconds: Double, startMs: Long, result: MethodChannel.Result) {
         if (uriString.isBlank()) { result.success(null); return }
         pcmExecutor.execute {
             var extractor: MediaExtractor? = null
@@ -541,6 +542,11 @@ class MainActivity : AudioServiceActivity() {
                 }
                 if (audioTrack < 0 || format == null) { runOnUiThread { result.success(null) }; return@execute }
                 extractor.selectTrack(audioTrack)
+                if (startMs > 0L) {
+                    try {
+                        extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    } catch (_: Exception) {}
+                }
                 val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
                     runOnUiThread { result.success(null) }; return@execute
                 }

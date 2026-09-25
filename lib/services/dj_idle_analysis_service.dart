@@ -53,7 +53,9 @@ class DjIdleAnalysisService {
           final existing = await _analysis.getAnalysis(song.id);
           if (existing != null &&
               !existing.isStale &&
-              (existing.hasUsableBpm || existing.hasUsableKey)) {
+              (existing.hasUsableBpm || existing.hasUsableKey) &&
+              (existing.sectionHint != null &&
+                  existing.sectionHint != 'unknown')) {
             continue;
           }
           _scanned++;

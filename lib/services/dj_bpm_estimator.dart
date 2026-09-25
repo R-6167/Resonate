@@ -68,7 +68,7 @@ class DjBpmEstimator {
   static const MethodChannel _channel =
       MethodChannel('com.aetherion.resonate/media_store');
 
-  Future<DjBpmEstimate?> estimateFile(String filePath) async {
+  Future<DjBpmEstimate?> estimateFile(String filePath, {int? durationMs}) async {
     try {
       if (filePath.isEmpty) return null;
 
@@ -113,7 +113,21 @@ class DjBpmEstimator {
       // 3) Native PCM decode for compressed / MediaStore tracks.
       // Always try PCM so energy / loudness / beatOffset exist even when ID3 has BPM.
       final nativePcm = await _estimateFromNativePcm(filePath);
-      if (nativePcm != null) {
+      // Whole-track structure: second window near the end when duration is known.
+      DjBpmEstimate? endPcm;
+      final dur = durationMs ?? 0;
+      if (dur > 45000) {
+        final startMs = (dur - 18000).clamp(20000, dur - 8000);
+        endPcm = await _estimateFromNativePcm(
+          filePath,
+          maxSeconds: 14.0,
+          startMs: startMs,
+          windowRole: 'end',
+        );
+      }
+      final mergedNative = _mergeStructure(nativePcm, endPcm);
+      if (mergedNative != null) {
+        final nativePcm = mergedNative;
         // Prefer tagged BPM when present (higher trust), keep PCM energy/offset.
         if (fromId3 != null) {
           return DjBpmEstimate(
@@ -217,11 +231,12 @@ class DjBpmEstimator {
     return null;
   }
 
-  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri) async {
+  Future<DjBpmEstimate?> _estimateFromNativePcm(String uri, {double maxSeconds = 15.0, int startMs = 0, String windowRole = 'start'}) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
         'uri': uri,
-        'maxSeconds': 15.0,
+        'maxSeconds': maxSeconds,
+        'startMs': startMs,
       });
       if (raw is! Map) return null;
       final sampleRate = (raw['sampleRate'] as num?)?.toInt();
@@ -246,7 +261,7 @@ class DjBpmEstimator {
         pcm,
         sampleRate,
         channels,
-        windowRole: 'start',
+        windowRole: windowRole,
       );
       return DjBpmEstimate(
         bpm: est.bpm,

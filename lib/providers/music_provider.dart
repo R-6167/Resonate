@@ -23,6 +23,7 @@ import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
+import '../services/dj_sfx_rack.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/playback_coordinator.dart';
 
@@ -95,6 +96,7 @@ class MusicProvider extends ChangeNotifier {
   int _djMaxStretchPercent = 12;
   bool _djSfxActive = false;
   bool _djSfxEngaged = false;
+  final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
@@ -1763,62 +1765,44 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
     if (!_djSfxActive) return;
     try {
-      final score = energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-      final mismatch = (1.0 - score).clamp(0.0, 1.0).toDouble();
-      // Club-style open: start slightly dark (bass up, width modest), glue with reverb.
-      final reverb = (0.20 + mismatch * 0.30).clamp(0.18, 0.52).toDouble();
-      final width = (0.10 + mismatch * 0.18).clamp(0.08, 0.32).toDouble();
-      final bass = (0.22 + mismatch * 0.20).clamp(0.12, 0.42).toDouble();
-      await AudioEffectsBridge.setBassBoost(bass);
-      await AudioEffectsBridge.setReverb(reverb);
-      await AudioEffectsBridge.setVirtualizer(width);
+      await _djSfxRack.engage(
+        energyScore: energyScore,
+        equalizerA: _equalizerA,
+        equalizerB: _equalizerB,
+      );
       _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'engage',
-        'reverb': reverb,
-        'virtualizer': width,
-        'bassBoost': bass,
-        'energyScore': score,
-        'style': 'club_open',
+        'preset': _djSfxRack.presetName,
+        'energyScore': energyScore,
       });
     } catch (e) {
       debugPrint('DJ transition SFX engage: $e');
     }
   }
 
-  /// Progress-based club filter-sweep feel (bass/virt/reverb) during the fade.
-  /// [t] is 0..1 through the crossfade. Safe no-op if SFX not engaged.
   Future<void> _tickDjClubFxSweep(double t) async {
     if (!_djSfxEngaged) return;
-    try {
-      final x = t.clamp(0.0, 1.0).toDouble();
-      // Dark → open: bass falls, width rises, reverb peaks mid-fade.
-      final bass = (0.38 * (1.0 - x) + 0.06).clamp(0.05, 0.42).toDouble();
-      final width = (0.08 + 0.40 * x).clamp(0.08, 0.48).toDouble();
-      final reverb = (0.16 + 0.34 * math.sin(x * math.pi)).clamp(0.12, 0.52).toDouble();
-      await AudioEffectsBridge.setBassBoost(bass);
-      await AudioEffectsBridge.setVirtualizer(width);
-      await AudioEffectsBridge.setReverb(reverb);
-    } catch (_) {}
+    await _djSfxRack.tick(
+      t,
+      equalizerA: _equalizerA,
+      equalizerB: _equalizerB,
+      energyScore: _lastDjEnergyScore,
+    );
   }
 
   Future<void> _restoreDjTransitionSfx() async {
-    // Restore if we engaged this fade — even if user toggled SFX off mid-crossfade.
-    if (!_djSfxEngaged && !_djSfxActive) return;
+    if (!_djSfxEngaged && !_djSfxActive && !_djSfxRack.engaged) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
-      final reverb = prefs.getDouble('reverb') ?? 0.0;
-      final virt = prefs.getDouble('virtualizer') ?? 0.0;
-      final bass = prefs.getDouble('bassBoost') ?? 0.0;
-      await AudioEffectsBridge.setBassBoost(effectsEnabled ? bass : 0.0);
-      await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
-      await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
+      final preset = _djSfxRack.presetName;
+      await _djSfxRack.restore(
+        equalizerA: _equalizerA,
+        equalizerB: _equalizerB,
+      );
       _djSfxEngaged = false;
       await ResonateDiagnostics.record('dj_transition_sfx', {
         'action': 'restore',
-        'reverb': effectsEnabled ? reverb : 0.0,
-        'virtualizer': effectsEnabled ? virt : 0.0,
+        'preset': preset,
       });
     } catch (e) {
       _djSfxEngaged = false;
