@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import '../widgets/dj_mode_status_chip.dart';
 import 'player_screen.dart';
 
 class QueueScreen extends StatelessWidget {
@@ -48,6 +49,13 @@ class QueueScreen extends StatelessWidget {
 
           return Column(
             children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: DjModeStatusBanner(
+                  contextLabel:
+                      'Next handoff may beat-align and adjust crossfade length.',
+                ),
+              ),
               if (music.currentSong != null)
                 Material(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),

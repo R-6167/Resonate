@@ -11,6 +11,7 @@ import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
 import '../widgets/resonate_logo.dart';
+import '../widgets/dj_mode_status_chip.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -170,7 +171,15 @@ class _HomeDashboard extends StatelessWidget {
         Card(child: ListTile(
           leading: CircleAvatar(child: Icon(music.isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
           title: Text(music.currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(music.currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(music.currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              const DjModeStatusChip(dense: true),
+            ],
+          ),
+          isThreeLine: true,
           trailing: FilledButton.tonalIcon(onPressed: () => PlaybackAuthority.instance.userToggle(music), icon: Icon(music.isPlaying ? Icons.pause : Icons.play_arrow), label: Text(music.isPlaying ? 'Pause' : 'Play')),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())),
         )),

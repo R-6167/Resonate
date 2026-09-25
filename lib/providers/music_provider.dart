@@ -815,11 +815,19 @@ class MusicProvider extends ChangeNotifier {
     if (next == null) return;
     if (_preloadedNextSongId == next.id) return;
     _crossfadePreloadInFlight = true;
-    // DJ Mode: warm BPM cache for A/B without blocking the preload path.
-    if (_djBeatAlignActive && _djAnalysis != null) {
+    // DJ Mode: priority-warm analysis for current + next queue head (not only idle scan).
+    if (_djAnalysis != null &&
+        (_djBeatAlignActive || _djTempoMatchActive)) {
       final cur = currentSong;
       if (cur != null) _djAnalysis!.scheduleAnalyze(cur);
       _djAnalysis!.scheduleAnalyze(next);
+      // Warm a few upcoming rows so Autopilot/Intelligence handoffs stay ready.
+      final start = _queueIndex + 1;
+      final end = (start + 4).clamp(0, _queue.length);
+      for (var i = start; i < end; i++) {
+        if (i == _crossfadeTargetIndex) continue;
+        _djAnalysis!.scheduleAnalyze(_queue[i]);
+      }
     }
     // Snapshot outgoing level — never raise A/B while preloading.
     final outgoing = audioPlayer;

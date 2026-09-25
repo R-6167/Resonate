@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../widgets/dj_mode_status_chip.dart';
 
 import '../providers/crossfade_provider.dart';
 
@@ -44,7 +45,12 @@ class CrossfadeScreen extends StatelessWidget {
                 'Blend the end of one track into the beginning of the next using dual engines (A → B).',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+              const DjModeStatusBanner(
+                contextLabel:
+                    'When DJ Mode is on, handoffs may seek to a beat and bias duration.',
+              ),
+              const SizedBox(height: 12),
 
               Card(
                 margin: EdgeInsets.zero,

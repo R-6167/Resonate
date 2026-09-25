@@ -16,6 +16,7 @@ import '../providers/playback_features_provider.dart';
 import '../services/audio_file_service.dart';
 import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
+import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'audio_effects_screen.dart';
 import 'equalizer_screen.dart';
@@ -53,6 +54,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       appBar: AppBar(
         title: const Text('Now Playing'),
         actions: [
+          const DjModeStatusChip(dense: true),
           Consumer<MusicProvider>(
             builder: (_, music, __) {
               return Padding(

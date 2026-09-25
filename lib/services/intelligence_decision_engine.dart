@@ -109,13 +109,31 @@ class IntelligenceDecisionEngine {
           if (currentDj.hasUsableBpm && cand.hasUsableBpm) {
             final a = currentDj.bpm!;
             final b = cand.bpm!;
-            final rel = (a - b).abs() / a;
-            if (rel <= 0.08) {
-              value += 1.15;
-            } else if (rel <= 0.12) {
+            // Prefer near tempo; also respect half/double for cross-genre.
+            var rel = (a - b).abs() / a;
+            final relHalf = (a - b * 2).abs() / a;
+            final relDouble = (a * 2 - b).abs() / (a * 2);
+            if (relHalf < rel) rel = relHalf;
+            if (relDouble < rel) rel = relDouble;
+            if (rel <= 0.055) {
+              value += 1.35;
+            } else if (rel <= 0.10) {
+              value += 0.75;
+            } else if (rel <= 0.18) {
+              value += 0.3;
+            }
+          }
+          // Soft energy continuity (never a hard filter).
+          final ea = currentDj.energy;
+          final eb = cand.energy;
+          if (ea != null && eb != null && ea > 0 && eb > 0) {
+            final ed = (ea - eb).abs();
+            if (ed <= 0.12) {
               value += 0.55;
-            } else if (rel <= 0.20) {
-              value += 0.2;
+            } else if (ed <= 0.25) {
+              value += 0.25;
+            } else if (ed >= 0.55) {
+              value -= 0.2;
             }
           }
         }
