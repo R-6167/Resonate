@@ -1,0 +1,29 @@
+name: Apply club FX sweep
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/apply_club_fx_sweep.yml'
+      - 'tools/apply_club_fx_sweep.py'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: |
+          set -euo pipefail
+          python3 tools/apply_club_fx_sweep.py
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add lib/providers/music_provider.dart lib/models/dj_analysis.dart
+          if git diff --cached --quiet; then
+            echo "no changes"
+            grep -n "club_open\|_tickDjClubFxSweep\|currentVersion" lib/providers/music_provider.dart lib/models/dj_analysis.dart | head
+          else
+            git commit -m "feat(dj): club-style FX sweep on crossfade + analysis v5"
+            git push origin HEAD:dj_Mode
+          fi
