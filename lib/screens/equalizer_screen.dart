@@ -54,8 +54,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   title: const Text('Equalizer', style: TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(
                     eq.hasHardwareEq
-                        ? '10-band studio curve → ${eq.hardwareBandCount} hardware bands'
-                        : '10-band studio curve (hardware EQ not attached yet)',
+                        ? 'Shape the tone of your library · ${eq.hardwareBandCount} hardware bands active'
+                        : 'Shape the tone of your library · hardware EQ attaches after play starts',
                   ),
                   value: eq.isEnabled,
                   onChanged: eq.setEnabled,
@@ -121,8 +121,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                 ],
               ),
               Text(
-                'Zero is centered. Cuts use digital gain (works to -6 dB without '
-                'OEM mute). Boosts use a soft loudness path and stay capped.',
+                'Zero is neutral. Cuts are safe down to −6 dB. Soft boosts stay '
+                'capped so the phone does not hard-clip. Pair with Effects only if you want colour on top.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
@@ -131,8 +131,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Native multi-band DSP'),
                 subtitle: const Text(
-                  'Experimental. Uses Android DynamicsProcessing when available. '
-                  'Leave off if the app stops on play; hardware EQ still works.',
+                  'Optional deeper multi-band path when the device supports it. '
+                  'Leave off if play is unstable — the standard hardware EQ still works.',
                 ),
                 value: eq.nativeDspUserEnabled,
                 onChanged: eq.setNativeDspEnabled,
@@ -141,7 +141,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Learned EQ leans'),
                 subtitle: const Text(
-                  'When on, remembers preset per song/artist and reapplies on play.',
+                  'Remembers a preset for a song or artist and brings it back next time they play.',
                 ),
                 value: eq.learnedEqEnabled,
                 onChanged: eq.setLearnedEqEnabled,

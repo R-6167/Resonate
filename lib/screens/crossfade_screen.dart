@@ -42,7 +42,8 @@ class CrossfadeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Blend the end of one track into the beginning of the next using dual engines (A → B).',
+                'Blend one track into the next with two players (A → B). '
+                'DJ Mode can refine the handoff when it is on; otherwise this is pure crossfade.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
@@ -177,9 +178,8 @@ class CrossfadeScreen extends StatelessWidget {
                     leading: Icon(Icons.sync_alt_rounded, color: scheme.primary),
                     title: const Text('How Resonate does it'),
                     subtitle: const Text(
-                      'Engine B loads the next track at volume 0, then both engines '
-                      'fade over the duration. After the hand-off, B becomes active '
-                      'and A is stopped. User next/pause can cancel a transition.',
+                      'The next track loads silently, then both sides fade over your duration. '
+                      'After the handoff, only the new track stays active. Skip or pause cancels a transition in progress.',
                     ),
                   ),
                 ),

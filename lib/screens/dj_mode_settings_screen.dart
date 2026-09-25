@@ -26,8 +26,8 @@ class DjModeSettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'Optional beat, tempo, and harmonic blending on top of dual-engine '
-                'crossfade. When off, Resonate behaves exactly like a normal player.',
+                'Optional beat-aware handoffs, harmonic leans, and transition colour '
+                'on top of crossfade. When off, Resonate is a normal offline player — nothing blocked.',
                 style: text.bodyMedium,
               ),
               const SizedBox(height: 20),
@@ -113,7 +113,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 enabled: on,
                 title: 'Transition SFX',
                 subtitle:
-                    'Soft reverb glue during DJ crossfades (restored after). Never changes normal play.',
+                    'Light transition colour (reverb and related presets, picked at random). Restored after; never touches normal play.',
                 value: dj.transitionSfx,
                 onChanged: on ? dj.setTransitionSfx : null,
               ),
@@ -122,7 +122,7 @@ class DjModeSettingsScreen extends StatelessWidget {
                 enabled: on,
                 title: 'Analyze library when idle',
                 subtitle:
-                    'Background BPM/key scan — never blocks play or scan (later steps).',
+                    'Quiet background BPM / energy / structure scan while idle. Never blocks play.',
                 value: dj.analyzeIdle,
                 onChanged: on ? dj.setAnalyzeIdle : null,
               ),
@@ -134,10 +134,10 @@ class DjModeSettingsScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'Step 4: with Harmonic mix on, Intelligence can gently prefer the next '
-                    'track when its key is Camelot-compatible with the current one. Soft bias only — '
-                    'taste and session still win. Missing keys are neutral. DJ Mode stays optional '
-                    'and independent of Intelligence. Beat/tempo handoffs still apply when enabled.',
+                    'With Harmonic mix on, Intelligence may gently prefer Camelot-compatible '
+                    'keys. Soft bias only — your taste still wins, missing keys stay neutral. '
+                    'DJ Mode is optional and independent of Intelligence. Early skips teach the '
+                    'planner which transitions to avoid next time.',
                     style: text.bodySmall,
                   ),
                 ),
