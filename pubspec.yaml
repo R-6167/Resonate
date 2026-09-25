@@ -30,3 +30,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/resonate_in_app_logo.png
+    - assets/branding/resonate_app_icon.png
