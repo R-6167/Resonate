@@ -164,7 +164,6 @@ ThemeData _theme(Brightness brightness) {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       ),
     ),
-    filledButtonThemeData: null,
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       backgroundColor: scheme.secondary,
       foregroundColor: scheme.onSecondary,
