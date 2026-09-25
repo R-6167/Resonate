@@ -2,8 +2,8 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/resonate_launch_background" />
     <item
-        android:width="180dp"
-        android:height="180dp"
+        android:width="168dp"
+        android:height="168dp"
         android:gravity="center"
-        android:drawable="@drawable/ic_launcher_resonate" />
+        android:drawable="@drawable/splash_logo" />
 </layer-list>
