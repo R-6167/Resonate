@@ -49,17 +49,19 @@ class DjTransitionMemory {
     required String toId,
     required String strategy,
     required bool successful,
+    int weight = 1,
   }) async {
     if (fromId.isEmpty || toId.isEmpty) return;
+    final w = weight.clamp(1, 5);
     try {
       final map = await _load();
       final key = _pairKey(fromId, toId);
       final row = Map<String, dynamic>.from(map[key] ?? <String, dynamic>{});
       row['strategy'] = strategy;
       if (successful) {
-        row['ok'] = ((row['ok'] as num?)?.toInt() ?? 0) + 1;
+        row['ok'] = ((row['ok'] as num?)?.toInt() ?? 0) + w;
       } else {
-        row['bad'] = ((row['bad'] as num?)?.toInt() ?? 0) + 1;
+        row['bad'] = ((row['bad'] as num?)?.toInt() ?? 0) + w;
       }
       row['updatedAt'] = DateTime.now().toIso8601String();
       map[key] = row;

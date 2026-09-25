@@ -130,6 +130,8 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<double>? _volumeSubscription;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
   StreamSubscription<void>? _noisySubscription;
+  StreamSubscription<void>? _devicesChangedSubscription;
+  DateTime? _lastRouteRecoverAt;
 
   ListeningEvent? _activeHistoryEvent;
   int _activeHistoryPositionMs = 0;
@@ -365,15 +367,42 @@ class MusicProvider extends ChangeNotifier {
     if (!_userWantsPlaying) return;
     try {
       final active = audioPlayer;
-      if (!active.playing) return;
-      if (active.volume >= 0.05) return;
+      // Playing but muted, or wants play but engine not playing (BT route lag).
+      final mutedWhilePlaying =
+          active.playing && active.volume < 0.05;
+      final wantsButStopped = !active.playing;
+      if (!mutedWhilePlaying && !wantsButStopped) return;
       final now = DateTime.now();
+      final cooldown = wantsButStopped
+          ? const Duration(seconds: 2)
+          : const Duration(seconds: 3);
       if (_lastSilentRecoverAt != null &&
-          now.difference(_lastSilentRecoverAt!) < const Duration(seconds: 3)) {
+          now.difference(_lastSilentRecoverAt!) < cooldown) {
         return;
       }
       _lastSilentRecoverAt = now;
-      unawaited(_recoverDjEngineState(reason: 'silent_watchdog'));
+      unawaited(() async {
+        try {
+          final session = await AudioSession.instance;
+          await session.setActive(true);
+        } catch (_) {}
+        await _recoverDjEngineState(reason: mutedWhilePlaying
+            ? 'silent_watchdog'
+            : 'silent_watchdog_not_playing');
+        if (_userWantsPlaying && !audioPlayer.playing) {
+          try {
+            await audioPlayer.play();
+          } catch (_) {}
+        }
+        try {
+          await ResonateDiagnostics.record('playback_volume_unstick', {
+            'reason': mutedWhilePlaying ? 'muted' : 'not_playing',
+            'volume': audioPlayer.volume,
+            'playing': audioPlayer.playing,
+            'songId': currentSong?.id,
+          });
+        } catch (_) {}
+      }());
     } catch (_) {}
   }
   /// Restore normal speed + audible volume after DJ handoff mistakes.
@@ -478,6 +507,14 @@ class MusicProvider extends ChangeNotifier {
         if (isPlaying || _userWantsPlaying) {
           unawaited(pause(source: 'becoming_noisy'));
         }
+      });
+      // Bluetooth / headset route changes often leave volume or focus stuck silent.
+      try {
+        await _devicesChangedSubscription?.cancel();
+      } catch (_) {}
+      _devicesChangedSubscription =
+          session.devicesChangedEventStream.listen((_) {
+        unawaited(_onAudioRouteChanged());
       });
     } catch (e) {
       debugPrint('Audio session setup failed: $e');
@@ -2531,26 +2568,43 @@ class MusicProvider extends ChangeNotifier {
               fromId != null &&
               toId != null &&
               strategy != null &&
-              currentSong?.id == toId &&
-              DateTime.now().difference(handoffAt) < const Duration(seconds: 90) &&
-              currentPosition.inMilliseconds < 25000) {
-            unawaited(DjTransitionMemory.recordOutcome(
-              fromId: fromId,
-              toId: toId,
-              strategy: strategy,
-              successful: false,
-            ));
-            unawaited(ResonateDiagnostics.recordDj(
-              stage: 'learn',
-              outcome: 'early_skip',
-              reason: strategy,
-              songId: toId,
-              extra: {
-                'fromId': fromId,
-                'positionMs': currentPosition.inMilliseconds,
-              },
-            ));
-            _lastDjHandoffAt = null;
+              currentSong?.id == toId) {
+            final age = DateTime.now().difference(handoffAt);
+            final posMs = currentPosition.inMilliseconds;
+            final durMs = (currentDuration ?? currentSong?.duration)?.inMilliseconds ?? 0;
+            final earlyByTime = age < const Duration(seconds: 120) && posMs < 45000;
+            final earlyByRatio =
+                durMs > 0 && posMs < (durMs * 0.35).round() && age < const Duration(minutes: 3);
+            if (earlyByTime || earlyByRatio) {
+              // Heavier penalty the earlier the skip (deeper transition memory).
+              final weight = posMs < 5000
+                  ? 4
+                  : posMs < 15000
+                      ? 3
+                      : posMs < 30000
+                          ? 2
+                          : 1;
+              unawaited(DjTransitionMemory.recordOutcome(
+                fromId: fromId,
+                toId: toId,
+                strategy: strategy,
+                successful: false,
+                weight: weight,
+              ));
+              unawaited(ResonateDiagnostics.recordDj(
+                stage: 'learn',
+                outcome: 'early_skip',
+                reason: strategy,
+                songId: toId,
+                extra: {
+                  'fromId': fromId,
+                  'positionMs': posMs,
+                  'weight': weight,
+                  'ageMs': age.inMilliseconds,
+                },
+              ));
+              _lastDjHandoffAt = null;
+            }
           }
         } catch (_) {}
         _transportInFlight = true;
