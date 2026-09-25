@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/resonate_logo.dart';
+
 /// Keep in sync with pubspec.yaml version when bumping releases.
 const String kResonateVersion = '0.1.3';
 const String kResonateBuild = '4';
@@ -31,15 +33,8 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Resonate',
-                  style: theme.textTheme.displaySmall?.copyWith(
-                    fontFamily: 'serif',
-                    fontStyle: FontStyle.italic,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
+                const ResonateLogo(size: 44),
+                const SizedBox(height: 12),
                 Text(
                   'Version $versionLabel',
                   style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
