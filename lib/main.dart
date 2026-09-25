@@ -25,16 +25,49 @@ import 'services/audio_service_handler.dart';
 import 'services/playback_diagnostics_observer.dart';
 import 'services/resonate_diagnostics.dart';
 
+/// Brand spectrum from the Resonate mark: cyan-blue → violet → pink → orange.
+class ResonateBrand {
+  static const blue = Color(0xFF3D9EFF);
+  static const violet = Color(0xFF9A5CFF);
+  static const pink = Color(0xFFFF4DB8);
+  static const orange = Color(0xFFFF8A3D);
+  static const night = Color(0xFF050510);
+  static const mist = Color(0xFFF5F2FF);
+}
+
 ThemeData _theme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF9A7BFF),
+  final seed = dark ? ResonateBrand.violet : ResonateBrand.blue;
+
+  var scheme = ColorScheme.fromSeed(
+    seedColor: seed,
     brightness: brightness,
-    surface: dark ? const Color(0xFF101016) : const Color(0xFFF8F7FC),
-    surfaceContainerLowest: dark ? const Color(0xFF0A0A0F) : Colors.white,
-    surfaceContainerLow: dark ? const Color(0xFF15151D) : const Color(0xFFF1EFF7),
-    surfaceContainer: dark ? const Color(0xFF1B1A23) : const Color(0xFFECEAF3),
   );
+
+  // Pin the spectrum so UI stays true to the logo, not only seed-derived hues.
+  scheme = scheme.copyWith(
+    primary: dark ? const Color(0xFFB29BFF) : const Color(0xFF6B4EFF),
+    onPrimary: Colors.white,
+    primaryContainer: dark ? const Color(0xFF2A1F4D) : const Color(0xFFE8E0FF),
+    onPrimaryContainer: dark ? const Color(0xFFE6DEFF) : const Color(0xFF2A1468),
+    secondary: dark ? const Color(0xFFFF7AC8) : const Color(0xFFE91E8C),
+    onSecondary: Colors.white,
+    secondaryContainer: dark ? const Color(0xFF4A1838) : const Color(0xFFFFD6EC),
+    onSecondaryContainer: dark ? const Color(0xFFFFD6EC) : const Color(0xFF5C0A3A),
+    tertiary: ResonateBrand.orange,
+    onTertiary: Colors.white,
+    tertiaryContainer: dark ? const Color(0xFF4A2E14) : const Color(0xFFFFE4CC),
+    onTertiaryContainer: dark ? const Color(0xFFFFE4CC) : const Color(0xFF4A2200),
+    surface: dark ? const Color(0xFF0C0C14) : ResonateBrand.mist,
+    surfaceContainerLowest: dark ? ResonateBrand.night : Colors.white,
+    surfaceContainerLow: dark ? const Color(0xFF14141E) : const Color(0xFFEEEAFF),
+    surfaceContainer: dark ? const Color(0xFF1A1A26) : const Color(0xFFE6E0F7),
+    surfaceContainerHigh: dark ? const Color(0xFF222230) : const Color(0xFFDDD5F2),
+    surfaceContainerHighest: dark ? const Color(0xFF2A2A3A) : const Color(0xFFD4CAED),
+    outline: dark ? const Color(0xFF5A5670) : const Color(0xFF9B92B8),
+    outlineVariant: dark ? const Color(0xFF3A3650) : const Color(0xFFCDC4E4),
+  );
+
   final base = ThemeData(brightness: brightness, useMaterial3: true);
   final onSurface = scheme.onSurface;
   final muted = scheme.onSurfaceVariant;
@@ -82,26 +115,103 @@ ThemeData _theme(Brightness brightness) {
       color: onSurface,
     ),
   );
+
+  final radius = BorderRadius.circular(18);
+
   return base.copyWith(
     colorScheme: scheme,
     textTheme: text,
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: AppBarTheme(
-      backgroundColor: scheme.surface,
+      backgroundColor: scheme.surface.withValues(alpha: 0.92),
       foregroundColor: onSurface,
       elevation: 0,
+      scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: text.titleLarge,
+      systemOverlayStyle: dark
+          ? SystemUiOverlayStyle.light.copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: scheme.surface,
+            )
+          : SystemUiOverlayStyle.dark.copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: scheme.surface,
+            ),
     ),
     cardTheme: CardThemeData(
       color: scheme.surfaceContainerLow,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: radius),
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: scheme.surfaceContainerLow,
       indicatorColor: scheme.primaryContainer,
       labelTextStyle: WidgetStatePropertyAll(text.labelLarge),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return IconThemeData(color: scheme.primary, size: 24);
+        }
+        return IconThemeData(color: muted, size: 24);
+      }),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      ),
+    ),
+    filledButtonThemeData: null,
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      backgroundColor: scheme.secondary,
+      foregroundColor: scheme.onSecondary,
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: scheme.surfaceContainerHigh,
+      selectedColor: scheme.primaryContainer,
+      labelStyle: text.labelLarge?.copyWith(fontSize: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) {
+        if (s.contains(WidgetState.selected)) return scheme.onPrimary;
+        return scheme.outline;
+      }),
+      trackColor: WidgetStateProperty.resolveWith((s) {
+        if (s.contains(WidgetState.selected)) return scheme.primary;
+        return scheme.surfaceContainerHighest;
+      }),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: scheme.primary,
+      linearTrackColor: scheme.surfaceContainerHighest,
+    ),
+    sliderTheme: SliderThemeData(
+      activeTrackColor: scheme.primary,
+      inactiveTrackColor: scheme.surfaceContainerHighest,
+      thumbColor: scheme.secondary,
+      overlayColor: scheme.secondary.withValues(alpha: 0.16),
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: scheme.primary,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: scheme.surfaceContainerLow,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
     ),
   );
 }
