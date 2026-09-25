@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Brand mark: app-icon mark beside the Resonate wordmark (Home AppBar).
-/// Use [full] for the complete in-app logo square (About).
+/// In-app brand: [resonate_in_app_logo] mark beside the Resonate wordmark.
+/// Use [full] for the larger square mark (About hero).
 class ResonateLogo extends StatelessWidget {
   final double size;
   final bool full;
@@ -14,8 +14,8 @@ class ResonateLogo extends StatelessWidget {
     this.showWord = true,
   });
 
+  /// Full brand art for in-app surfaces (Home, About).
   static const _inApp = 'assets/branding/resonate_in_app_logo.png';
-  static const _mark = 'assets/branding/resonate_app_icon.png';
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +26,7 @@ class ResonateLogo extends StatelessWidget {
           _inApp,
           height: size,
           width: size,
-          fit: BoxFit.cover,
+          fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
           errorBuilder: (_, __, ___) => _textOnly(context, size),
         ),
@@ -49,10 +49,10 @@ class ResonateLogo extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(markSize * 0.22),
           child: Image.asset(
-            _mark,
+            _inApp,
             height: markSize,
             width: markSize,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
             errorBuilder: (_, __, ___) => Icon(
               Icons.graphic_eq_rounded,
