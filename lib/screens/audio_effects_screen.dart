@@ -42,7 +42,9 @@ class AudioEffectsScreen extends StatelessWidget {
                           Text('Resonate Sound Engine', style: Theme.of(context).textTheme.titleLarge),
                           const SizedBox(height: 4),
                           Text(
-                            effects.effectsEnabled ? 'Live processing is active' : 'Audio processing is bypassed',
+                            effects.effectsEnabled
+                                ? 'Live colour on the current output — independent of EQ'
+                                : 'Bypassed — pure playback until you switch effects on',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
@@ -56,28 +58,28 @@ class AudioEffectsScreen extends StatelessWidget {
             _EffectCard(
               icon: Icons.graphic_eq,
               title: 'Bass Boost',
-              description: 'Add weight and punch to low frequencies.',
+              description: 'Extra weight in the low end — great for small speakers and earbuds.',
               value: effects.bassBoost,
               onChanged: effects.setBassBoost,
             ),
             _EffectCard(
               icon: Icons.surround_sound,
               title: 'Virtualizer',
-              description: 'Widen the stereo image for headphones and speakers.',
+              description: 'Gentle stereo width so mixes feel less “in the middle of your head”.',
               value: effects.virtualizer,
               onChanged: effects.setVirtualizer,
             ),
             _EffectCard(
               icon: Icons.water_drop_outlined,
               title: 'Reverb',
-              description: 'Add controlled room ambience and depth.',
+              description: 'A touch of room air. Keep it low for club tracks; higher for ambient.',
               value: effects.reverb,
               onChanged: effects.setReverb,
             ),
             _EffectCard(
               icon: Icons.volume_up_outlined,
               title: 'Loudness',
-              description: 'Increase perceived loudness without changing the main volume control.',
+              description: 'Perceived loudness without moving the main volume slider.',
               value: effects.loudness,
               onChanged: effects.setLoudness,
             ),
@@ -86,7 +88,8 @@ class AudioEffectsScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  'Tip: Start with Bass Boost around 20–35% and Virtualizer around 10–25%. Heavy processing can distort some tracks, so use the master volume and Preamp carefully.',
+                  'Gentle wins. Try Bass 20–35% and Virtualizer 10–25% first. '
+                  'If a track sounds harsh, lower Loudness or open Equalizer Preamp and pull a dB or two.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
