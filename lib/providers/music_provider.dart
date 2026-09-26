@@ -1090,8 +1090,12 @@ class MusicProvider extends ChangeNotifier {
       unawaited(_preloadNextForCrossfade());
     }
 
-    final startMarginMs = (1200 + (_crossfadeDurationMs ~/ 10)).clamp(1500, 3000);
-    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(2000, 16000);
+    final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+    final effectiveXfMs =
+        (djActive ? _crossfadeDurationMs.clamp(500, 6500) : _crossfadeDurationMs)
+            .toInt();
+    final startMarginMs = (1200 + (effectiveXfMs ~/ 10)).clamp(1500, 3000);
+    final triggerMs = (effectiveXfMs + startMarginMs).clamp(2000, 16000);
     if (remaining > Duration(milliseconds: triggerMs)) return;
     if (remaining < const Duration(milliseconds: 1200)) return;
     _automaticCrossfadeInFlight = true;
@@ -1465,9 +1469,15 @@ class MusicProvider extends ChangeNotifier {
     final fromIndex = _queueIndex;
     final fromSongId = currentSong?.id;
     try {
-      final timeout = Duration(milliseconds: (_crossfadeDurationMs + 12000).clamp(12000, 30000));
+      final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+      final xfMs = (djActive
+              ? _crossfadeDurationMs.clamp(500, 6500)
+              : _crossfadeDurationMs)
+          .toInt();
+      final timeout =
+          Duration(milliseconds: (xfMs + 12000).clamp(12000, 30000));
       final ok = await _performTrueCrossfade(
-        milliseconds: _crossfadeDurationMs,
+        milliseconds: xfMs,
         fadeType: _crossfadeFadeType,
         generation: generation,
       ).timeout(timeout, onTimeout: () {
@@ -2670,6 +2680,42 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       await outgoing.setLoopMode(LoopMode.off);
+
+      // Gapless concatenating source fights dual-engine crossfade (index jumps,
+      // double-completion). Flatten outgoing to a single URI at current position.
+      if (_gaplessSourceActive && outgoingSong != null) {
+        final holdPos = outgoing.position;
+        final wasPlaying = outgoing.playing;
+        try {
+          await _loadSingle(
+            outgoing,
+            equalizer,
+            loudnessEnhancer,
+            outgoingSong,
+            start: false,
+          );
+          try {
+            await outgoing.seek(holdPos);
+          } catch (_) {}
+          try {
+            await outgoing.setVolume(master);
+          } catch (_) {}
+          if (wasPlaying) {
+            try {
+              outgoing.play();
+            } catch (_) {}
+          }
+          unawaited(ResonateDiagnostics.record('crossfade_gapless_flattened', {
+            'songId': outgoingSong.id,
+            'positionMs': holdPos.inMilliseconds,
+          }));
+        } catch (e) {
+          debugPrint('gapless flatten for crossfade: $e');
+        }
+        _gaplessSourceActive = false;
+        _gaplessWindowIds = const [];
+      }
+
       final alreadyPreloaded = _preloadedNextSongId == nextSong.id;
       if (!alreadyPreloaded) {
         try {
@@ -2741,12 +2787,17 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       await incoming.setVolume(0.0);
 
-      final plannedMs = (milliseconds + _lastDjCrossfadeBiasMs).clamp(500, 12000).toInt();
-      if (_lastDjCrossfadeBiasMs != 0) {
+      // DJ Mode: long fades (8–12s) + stretch/SFX feel mushy and raise static risk.
+      final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+      final maxMs = djActive ? 6500 : 12000;
+      final plannedMs =
+          (milliseconds + _lastDjCrossfadeBiasMs).clamp(500, maxMs).toInt();
+      if (_lastDjCrossfadeBiasMs != 0 || (djActive && milliseconds > maxMs)) {
         unawaited(ResonateDiagnostics.record('crossfade_energy_bridge', {
           'biasMs': _lastDjCrossfadeBiasMs,
           'baseMs': milliseconds,
           'plannedMs': plannedMs,
+          'djCapped': djActive && milliseconds > maxMs,
           'outgoingSongId': outgoingSong?.id,
           'incomingSongId': nextSong.id,
         }));

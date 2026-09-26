@@ -29,15 +29,17 @@ class DjSfxRack {
 
   static const presets = DjSfxPreset.values;
 
-  DjSfxPreset pickRandom() {
-    const weights = <DjSfxPreset, int>{
-      DjSfxPreset.clubOpen: 3,
-      DjSfxPreset.filterOpen: 2,
-      DjSfxPreset.filterClose: 2,
-      DjSfxPreset.bassDrop: 2,
-      DjSfxPreset.wideSpace: 2,
-      DjSfxPreset.tightGlue: 3,
-      DjSfxPreset.dryPunch: 2,
+  DjSfxPreset pickRandom({double energyScore = 0.5}) {
+    final high = energyScore >= 0.75;
+    // At high energy avoid clubOpen / bassDrop (they stack on already loud mixes).
+    final weights = <DjSfxPreset, int>{
+      DjSfxPreset.clubOpen: high ? 1 : 3,
+      DjSfxPreset.filterOpen: high ? 3 : 2,
+      DjSfxPreset.filterClose: high ? 3 : 2,
+      DjSfxPreset.bassDrop: high ? 1 : 2,
+      DjSfxPreset.wideSpace: high ? 2 : 2,
+      DjSfxPreset.tightGlue: high ? 4 : 3,
+      DjSfxPreset.dryPunch: high ? 3 : 2,
     };
     final total = weights.values.fold<int>(0, (a, b) => a + b);
     var r = _rng.nextInt(total);
@@ -45,7 +47,7 @@ class DjSfxRack {
       r -= e.value;
       if (r < 0) return e.key;
     }
-    return DjSfxPreset.clubOpen;
+    return DjSfxPreset.tightGlue;
   }
 
   Future<void> engage({
@@ -57,7 +59,7 @@ class DjSfxRack {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
     final mismatch = (1.0 - score).clamp(0.0, 1.0).toDouble();
-    activePreset = preset ?? pickRandom();
+    activePreset = preset ?? pickRandom(energyScore: score);
     engaged = true;
     _eqTouched = false;
 
@@ -145,9 +147,10 @@ class DjSfxRack {
     double bass = 0.0, width = 0.0, reverb = 0.0;
     switch (p) {
       case DjSfxPreset.clubOpen:
-        bass = (0.10 * (1.0 - x) + 0.03).clamp(0.02, 0.16);
-        width = (0.08 + 0.28 * x).clamp(0.06, 0.36);
-        reverb = (0.14 + 0.26 * math.sin(x * math.pi)).clamp(0.10, 0.40);
+        // Kept gentle — high-energy path scales further in energyScale.
+        bass = (0.06 * (1.0 - x) + 0.02).clamp(0.01, 0.10);
+        width = (0.06 + 0.18 * x).clamp(0.04, 0.26);
+        reverb = (0.10 + 0.16 * math.sin(x * math.pi)).clamp(0.06, 0.28);
         break;
       case DjSfxPreset.filterOpen:
         bass = (0.08 * (1.0 - x) + 0.02).clamp(0.02, 0.12);
@@ -161,9 +164,9 @@ class DjSfxRack {
         break;
       case DjSfxPreset.bassDrop:
         final punch = math.sin(x * math.pi);
-        bass = (0.06 + 0.16 * punch).clamp(0.03, 0.22);
-        width = (0.06 + 0.10 * x).clamp(0.04, 0.20);
-        reverb = (0.08 + 0.12 * punch).clamp(0.05, 0.24);
+        bass = (0.04 + 0.10 * punch).clamp(0.02, 0.14);
+        width = (0.04 + 0.08 * x).clamp(0.03, 0.14);
+        reverb = (0.06 + 0.08 * punch).clamp(0.04, 0.18);
         break;
       case DjSfxPreset.wideSpace:
         bass = (0.04 + 0.04 * mismatch).clamp(0.02, 0.10);
@@ -183,9 +186,13 @@ class DjSfxRack {
             .clamp(0.0, 0.22);
         break;
     }
-    bass *= env;
-    width *= env;
-    reverb *= env;
+    // High-energy tracks: pull SFX way down so we do not double-thump.
+    final energyScale = score >= 0.85
+        ? 0.45
+        : (score >= 0.7 ? 0.62 : (score >= 0.55 ? 0.82 : 1.0));
+    bass = (bass * env * energyScale).clamp(0.0, 0.14);
+    width = (width * env * energyScale).clamp(0.0, 0.36);
+    reverb = (reverb * env * energyScale).clamp(0.0, 0.32);
     await AudioEffectsBridge.setBassBoost(bass);
     await AudioEffectsBridge.setVirtualizer(width);
     await AudioEffectsBridge.setReverb(reverb);
