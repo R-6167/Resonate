@@ -393,10 +393,25 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
-    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _transportInFlight ||
+        _loadingSource) {
+      return;
+    }
     if (!_userWantsPlaying) return;
     try {
       final active = audioPlayer;
+      final dur = active.duration ?? currentDuration;
+      final pos = active.position;
+      // Near end or completed: let completion / soft-loop own the next action.
+      if (active.processingState == ProcessingState.completed) return;
+      if (dur != null &&
+          dur > Duration.zero &&
+          pos >= dur - const Duration(seconds: 3)) {
+        return;
+      }
       // Playing but muted, or wants play but engine not playing (BT route lag).
       final mutedWhilePlaying =
           active.playing && active.volume < 0.05;
@@ -404,8 +419,8 @@ class MusicProvider extends ChangeNotifier {
       if (!mutedWhilePlaying && !wantsButStopped) return;
       final now = DateTime.now();
       final cooldown = wantsButStopped
-          ? const Duration(seconds: 2)
-          : const Duration(seconds: 3);
+          ? const Duration(seconds: 4)
+          : const Duration(seconds: 5);
       if (_lastSilentRecoverAt != null &&
           now.difference(_lastSilentRecoverAt!) < cooldown) {
         return;
@@ -1732,6 +1747,14 @@ class MusicProvider extends ChangeNotifier {
         }
         _lastCompletionSongId = null;
         currentPosition = Duration.zero;
+        // Do not resume mid-track after a failed loop — clear saved offset.
+        if (_resumeSongId == currentSong?.id) {
+          _resumePositionMs = 0;
+          _resumeSongId = null;
+        }
+        if (currentSong != null) {
+          _resumeBySongId.remove(currentSong!.id);
+        }
         try {
           await audioPlayer.setVolume(_eqPreampScale.clamp(0.05, 1.0));
         } catch (_) {}
@@ -2962,9 +2985,9 @@ class MusicProvider extends ChangeNotifier {
             } catch (_) {}
           }
           final midTransition =
-              _crossfadeInProgress || _automaticCrossfadeInFlight;
+              _crossfadeInProgress || _repeatSelfHandoffInFlight;
           final target = _eqPreampScale.clamp(0.0, 1.0);
-          // Start quiet then fade in (skip mid-crossfade — ramp owns volume).
+          // Start quiet then fade in (skip only during a real ramp).
           if (!midTransition) {
             try {
               await audioPlayer.setVolume(0.0);
@@ -3018,64 +3041,16 @@ class MusicProvider extends ChangeNotifier {
     }, command: 'play', source: source, userInitiated: source != 'system', intentToken: intentToken);
   }
 
-  Future<void> togglePlayPause({String source = 'normal_player'}) {
-    final intentToken = _playbackIntentGate.issue();
-    _cancelAutomaticPlaybackWork();
-    return _serializePlayback(() async {
-      try {
-        // Decide from NATIVE state only. Optimistic isPlaying must not flip a
-        // failed play() into a pause — that is the library-tap / auto-next bug.
-        if (audioPlayer.playing) {
-          _userWantsPlaying = false;
-          await audioPlayer.pause();
-          isPlaying = false;
-          _persistResumePosition(force: true);
-          _publishServiceState();
-          notifyListeners();
-          return;
-        }
-        // Not natively playing → always play/resume.
-        _userWantsPlaying = true;
-        if (audioPlayer.audioSource != null) {
-          try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
-          } catch (_) {}
-          if (audioPlayer.processingState == ProcessingState.completed) {
-            try {
-              await audioPlayer.seek(Duration.zero);
-            } catch (_) {}
-          }
-          for (var attempt = 0; attempt < 12; attempt++) {
-            if (attempt == 0 || attempt == 3 || attempt == 6) {
-              try {
-                audioPlayer.play();
-              } catch (e) {
-                debugPrint('toggle play() fire $attempt failed: $e');
-              }
-            }
-            if (audioPlayer.playing) break;
-            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
-          }
-          isPlaying = audioPlayer.playing || _userWantsPlaying;
-          _publishServiceState();
-          notifyListeners();
-        } else if (currentSong != null) {
-          await _playSongInternal(
-            currentSong!,
-            queue: _queue.isEmpty ? null : _queue,
-            startIndex: _queueIndex,
-            resume: true,
-            playbackIntentToken: intentToken,
-          );
-        }
-      } catch (e) {
-        debugPrint('Playback toggle failed: $e');
-      }
-    }, command: 'toggle', source: source, userInitiated: true, intentToken: intentToken);
+    Future<void> togglePlayPause({String source = 'normal_player'}) {
+    // Route through pause/resume so transport fades always apply.
+    // Native playing state decides the branch (not optimistic isPlaying).
+    if (audioPlayer.playing) {
+      return pause(source: source);
+    }
+    return resumePlayback(source: source);
   }
 
-  Future<void> pause({String source = 'normal_player'}) {
+Future<void> pause({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
     // System audio-focus pause must preserve intent so we can resume when focus returns.
     final fromSystemFocus = source == 'system';
@@ -3088,9 +3063,9 @@ class MusicProvider extends ChangeNotifier {
         if (!fromSystemFocus) {
           _userWantsPlaying = false;
         }
+        // Only skip fade during a *real* volume ramp (not a stuck automatic flag).
         final midTransition =
-            _crossfadeInProgress || _automaticCrossfadeInFlight;
-        // Soft fade-out for user (and short system) pause — skip mid-crossfade.
+            _crossfadeInProgress || _repeatSelfHandoffInFlight;
         if (!midTransition && audioPlayer.playing) {
           final from = audioPlayer.volume;
           final fadeMs = fromSystemFocus ? 120 : _transportFadeMs;
