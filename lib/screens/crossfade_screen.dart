@@ -43,7 +43,8 @@ class CrossfadeScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 'Blend one track into the next with two players (A → B). '
-                'DJ Mode can refine the handoff when it is on; otherwise this is pure crossfade.',
+                'With Repeat one on, the same track loops by crossfading into itself. '
+                'DJ Mode can refine next-track handoffs when it is on.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
@@ -179,7 +180,8 @@ class CrossfadeScreen extends StatelessWidget {
                     title: const Text('How Resonate does it'),
                     subtitle: const Text(
                       'The next track loads silently, then both sides fade over your duration. '
-                      'After the handoff, only the new track stays active. Skip or pause cancels a transition in progress.',
+                      'Repeat one + crossfade loops the current track the same way. '
+                      'Skip or pause cancels a transition in progress.',
                     ),
                   ),
                 ),

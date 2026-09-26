@@ -497,6 +497,22 @@ class MusicProvider extends ChangeNotifier {
     try { await _audioEffectsController.syncAll(); } catch (e) { debugPrint('Saved audio effects sync failed: $e'); }
   }
 
+
+  /// Claim media focus before any intentional play. Safe to call often.
+  Future<void> _claimAudioFocus({String reason = 'play'}) async {
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(true);
+      unawaited(ResonateDiagnostics.record('audio_focus_claim', {
+        'reason': reason,
+        'songId': currentSong?.id,
+        'userWantsPlaying': _userWantsPlaying,
+      }));
+    } catch (e) {
+      debugPrint('claimAudioFocus ($reason): $e');
+    }
+  }
+
   Future<void> _configureAudioSession() async {
     try {
       final session = await AudioSession.instance;
@@ -1849,6 +1865,7 @@ $st');
 
     _loadingSource = true;
     _userWantsPlaying = true;
+    await _claimAudioFocus(reason: 'play_song_internal');
 
     Future<void> step(String name, [Map<String, Object?> extra = const {}]) async {
       await ResonateDiagnostics.record('playback_play_step', {

@@ -37,9 +37,23 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            Card(
+              elevation: 0,
+              child: ListTile(
+                leading: const Icon(Icons.volume_down_rounded),
+                title: const Text('Interruptions are automatic'),
+                subtitle: const Text(
+                  'Calls pause Resonate and resume when they end if you were listening. '
+                  'Notifications briefly lower the music, then restore it. '
+                  'Unplugging headphones always pauses. Long calls do not auto-resume.',
+                ),
+                isThreeLine: true,
+              ),
+            ),
+            const SizedBox(height: 10),
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
-              _item(context, 'Crossfade', 'Transition duration and curve', Icons.compare_arrows_rounded, const CrossfadeScreen()),
+              _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
               _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen()),
             ], initiallyExpanded: true),
