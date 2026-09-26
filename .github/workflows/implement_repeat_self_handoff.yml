@@ -1,0 +1,29 @@
+name: Implement repeat self handoff
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/implement_repeat_self_handoff.py'
+      - '.github/workflows/implement_repeat_self_handoff.yml'
+permissions:
+  contents: write
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/implement_repeat_self_handoff.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; else
+            git commit -m "feat(playback): repeat-one seamless loop via dual-engine self-handoff"
+            git pull --rebase origin dj_Mode
+            git push origin HEAD:dj_Mode
+          fi
