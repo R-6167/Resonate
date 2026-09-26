@@ -1276,8 +1276,8 @@ class MusicProvider extends ChangeNotifier {
       });
       return true;
     } catch (e, st) {
-      debugPrint('repeat self handoff failed: $e
-$st');
+      debugPrint('repeat self handoff failed: $e');
+      debugPrint('$st');
       try {
         await incoming.pause();
       } catch (_) {}
