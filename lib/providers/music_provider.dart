@@ -1198,16 +1198,35 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Post-crossfade continue failed: $e');
-      if (_queueIndex < _queue.length - 1) {
-        final next = _queue[_queueIndex + 1];
+      final song = currentSong;
+      if (song != null && _userWantsPlaying) {
         final token = _playbackIntentGate.issue();
-        await _playSongInternal(next, queue: _queue, startIndex: _queueIndex + 1, playbackIntentToken: token);
+        try {
+          await _playSongInternal(
+            song,
+            queue: _queue,
+            startIndex: _queueIndex,
+            playbackIntentToken: token,
+          );
+        } catch (_) {}
       }
     }
   }
 
   Future<void> _advanceAfterCompletion(String completedSongId) {
     if (_completionAdvanceInProgress) return Future<void>.value();
+    // Already moved past this track — do not double-advance.
+    if (currentSong != null &&
+        currentSong!.id != completedSongId &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight) {
+      unawaited(ResonateDiagnostics.record('completion_advance_result', {
+        'result': 'ignored_stale',
+        'fromSongId': completedSongId,
+        'currentSongId': currentSong?.id,
+      }));
+      return Future<void>.value();
+    }
     // Direct path — do not queue behind other source mutations or a stuck token.
     final intentToken = _playbackIntentGate.issue();
     return _advanceAfterCompletionInternal(completedSongId, intentToken);
@@ -1892,6 +1911,18 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _restoreDjTransitionSfx() async {
     if (!_djSfxEngaged && !_djSfxActive && !_djSfxRack.engaged) return;
     try {
+      // Soft release gap so SFX bridges the two songs instead of cutting at t=1.
+      for (final t in <double>[1.15, 1.30, 1.45, 1.60]) {
+        try {
+          await _djSfxRack.tick(
+            t,
+            equalizerA: _equalizerA,
+            equalizerB: _equalizerB,
+            energyScore: _lastDjEnergyScore,
+          );
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 70));
+      }
       final preset = _djSfxRack.presetName;
       await _djSfxRack.restore(
         equalizerA: _equalizerA,
@@ -2604,13 +2635,22 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  int _pendingNextSteps = 0;
+
   Future<void> nextSong({String source = 'normal_player'}) {
+    if (_transportInFlight || _loadingSource || _crossfadeInProgress) {
+      _pendingNextSteps = (_pendingNextSteps + 1).clamp(0, 12);
+      return Future<void>.value();
+    }
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
 
     return _serializePlayback(
       () async {
         if (_queue.isEmpty) return;
+        final extra = _pendingNextSteps;
+        _pendingNextSteps = 0;
+        final steps = 1 + extra;
         // Phase 7: early skip after a DJ handoff → soft negative signal.
         try {
           final handoffAt = _lastDjHandoffAt;
@@ -2662,26 +2702,48 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
         _transportInFlight = true;
         try {
-          if (_queueIndex >= _queue.length - 1) {
-            if (_repeatMode == PlaybackRepeatMode.all) {
-              await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
-            } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
-              await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
+          var stepsLeft = steps.clamp(1, 12);
+          while (stepsLeft > 0) {
+            stepsLeft--;
+            if (_queue.isEmpty) break;
+            if (_queueIndex >= _queue.length - 1) {
+              if (_repeatMode == PlaybackRepeatMode.all) {
+                await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
+              } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
+                await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
+              }
+              break;
             }
-            return;
+            final nextIndex = _queueIndex + 1;
+            if (await _tryGaplessSeekToQueueIndex(nextIndex)) {
+              if (_pendingNextSteps > 0 && stepsLeft == 0) {
+                stepsLeft = _pendingNextSteps.clamp(0, 12);
+                _pendingNextSteps = 0;
+              }
+              continue;
+            }
+            await _playSongInternal(
+              _queue[nextIndex],
+              queue: _queue,
+              startIndex: nextIndex,
+              playbackIntentToken: intentToken,
+            );
+            if (_pendingNextSteps > 0 && stepsLeft == 0) {
+              stepsLeft = _pendingNextSteps.clamp(0, 12);
+              _pendingNextSteps = 0;
+            }
           }
-
-          final nextIndex = _queueIndex + 1;
-          // Prefer in-window gapless seek so title and audio stay aligned.
-          if (await _tryGaplessSeekToQueueIndex(nextIndex)) return;
-          await _playSongInternal(
-            _queue[nextIndex],
-            queue: _queue,
-            startIndex: nextIndex,
-            playbackIntentToken: intentToken,
-          );
         } finally {
           _transportInFlight = false;
+          if (_pendingNextSteps > 0) {
+            final again = _pendingNextSteps;
+            _pendingNextSteps = 0;
+            unawaited(Future<void>.delayed(const Duration(milliseconds: 40), () {
+              for (var i = 0; i < again; i++) {
+                unawaited(nextSong(source: source));
+              }
+            }));
+          }
         }
       },
       command: 'next',

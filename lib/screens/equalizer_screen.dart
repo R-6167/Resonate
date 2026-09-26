@@ -13,6 +13,19 @@ class EqualizerScreen extends StatefulWidget {
 
 class _EqualizerScreenState extends State<EqualizerScreen> {
   String _category = 'Genre';
+  bool _categorySynced = false;
+
+  void _syncCategoryFromPreset(EqualizerProvider eq) {
+    if (_categorySynced) return;
+    for (final p in eq.allPresets) {
+      if (p.name == eq.preset) {
+        _category = p.category;
+        _categorySynced = true;
+        return;
+      }
+    }
+    _categorySynced = true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +49,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
       ),
       body: Consumer<EqualizerProvider>(
         builder: (context, eq, _) {
+          _syncCategoryFromPreset(eq);
           final categories = eq.categories;
           if (categories.isNotEmpty && !categories.contains(_category)) {
             _category = categories.first;
@@ -212,7 +226,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                         child: ChoiceChip(
                           label: Text(c),
                           selected: _category == c,
-                          onSelected: (_) => setState(() => _category = c),
+                          onSelected: (_) => setState(() {
+                            _category = c;
+                            _categorySynced = true;
+                          }),
                         ),
                       ),
                   ],

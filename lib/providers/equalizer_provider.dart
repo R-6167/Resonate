@@ -581,10 +581,13 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> _applyPreamp() async {
-    // Negative / zero preamp: digital attenuation via MusicProvider player gain.
-    // LoudnessEnhancer is NOT used for cuts — OEMs often mute before -4 dB.
-    final effective = isEnabled ? preamp : 0.0;
-    final scale = math.pow(10.0, effective.clamp(-12.0, 0.0) / 20.0).toDouble().clamp(0.25, 1.0);
+    // Cuts (−6…0 dB): digital attenuation via MusicProvider player volume scale.
+    // Boosts (0…+6 dB): AndroidLoudnessEnhancer in millibels.
+    // Never use LoudnessEnhancer for cuts — some OEMs mute below ~−4 dB.
+    final effective = isEnabled ? preamp.clamp(-6.0, 6.0) : 0.0;
+    final cutDb = effective < 0 ? effective : 0.0;
+    final scale =
+        math.pow(10.0, cutDb / 20.0).toDouble().clamp(0.25, 1.0);
     try {
       if (_music != null) {
         await _music!.setEqPreampScale(scale);
@@ -592,17 +595,16 @@ class EqualizerProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('preamp digital scale failed: $e');
     }
-    // Positive preamp only: soft LoudnessEnhancer boost (optional, capped).
     if (!_hardwareBound) return;
     if (_loudnessEnhancer == null) return;
     try {
-      if (!isEnabled || effective <= 0.15) {
+      if (!isEnabled || effective <= 0.05) {
         await _loudnessEnhancer!.setTargetGain(0);
         await _loudnessEnhancer!.setEnabled(false);
         return;
       }
-      final softDb = (effective * 0.4).clamp(0.0, 2.5);
-      await _loudnessEnhancer!.setTargetGain(softDb * 100.0);
+      final boostDb = effective.clamp(0.0, 6.0);
+      await _loudnessEnhancer!.setTargetGain(boostDb * 100.0);
       await _loudnessEnhancer!.setEnabled(true);
     } catch (e) {
       debugPrint('preamp boost failed: $e');
