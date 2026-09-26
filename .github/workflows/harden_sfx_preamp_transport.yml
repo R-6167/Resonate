@@ -15,100 +15,15 @@ jobs:
         with:
           ref: dj_Mode
           fetch-depth: 0
-      - name: Apply harden patches
+      - run: python3 tools/harden_sfx_preamp_transport.py
+      - name: Commit
         run: |
           set -euo pipefail
-          python3 tools/harden_sfx_preamp_transport.py || true
-          # Fix nextSong multi-step with exact gapless-aware body if primary missed it
-          python3 << 'PY'
-          from pathlib import Path
-          p = Path('lib/providers/music_provider.dart')
-          t = p.read_text()
-          old = '''        _transportInFlight = true;
-        try {
-          if (_queueIndex >= _queue.length - 1) {
-            if (_repeatMode == PlaybackRepeatMode.all) {
-              await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
-            } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
-              await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
-            }
-            return;
-          }
-
-          final nextIndex = _queueIndex + 1;
-          // Prefer in-window gapless seek so title and audio stay aligned.
-          if (await _tryGaplessSeekToQueueIndex(nextIndex)) return;
-          await _playSongInternal(
-            _queue[nextIndex],
-            queue: _queue,
-            startIndex: nextIndex,
-            playbackIntentToken: intentToken,
-          );
-        } finally {
-          _transportInFlight = false;
-        }'''
-          new = '''        _transportInFlight = true;
-        try {
-          var stepsLeft = (steps).clamp(1, 12);
-          while (stepsLeft > 0) {
-            stepsLeft--;
-            if (_queue.isEmpty) break;
-            if (_queueIndex >= _queue.length - 1) {
-              if (_repeatMode == PlaybackRepeatMode.all) {
-                await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
-              } else if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
-                await _playSongInternal(currentSong!, queue: _queue, startIndex: _queueIndex, playbackIntentToken: intentToken);
-              }
-              break;
-            }
-            final nextIndex = _queueIndex + 1;
-            // Prefer in-window gapless seek so title and audio stay aligned.
-            if (await _tryGaplessSeekToQueueIndex(nextIndex)) {
-              // Drain taps that arrived mid-advance.
-              if (_pendingNextSteps > 0 && stepsLeft == 0) {
-                stepsLeft = _pendingNextSteps.clamp(0, 12);
-                _pendingNextSteps = 0;
-              }
-              continue;
-            }
-            await _playSongInternal(
-              _queue[nextIndex],
-              queue: _queue,
-              startIndex: nextIndex,
-              playbackIntentToken: intentToken,
-            );
-            if (_pendingNextSteps > 0 && stepsLeft == 0) {
-              stepsLeft = _pendingNextSteps.clamp(0, 12);
-              _pendingNextSteps = 0;
-            }
-          }
-        } finally {
-          _transportInFlight = false;
-          if (_pendingNextSteps > 0) {
-            final again = _pendingNextSteps;
-            _pendingNextSteps = 0;
-            unawaited(Future<void>.delayed(const Duration(milliseconds: 40), () {
-              for (var i = 0; i < again; i++) {
-                unawaited(nextSong(source: source));
-              }
-            }));
-          }
-        }'''
-          if old in t:
-            t = t.replace(old, new, 1)
-            p.write_text(t)
-            print('fixed next multi-step gapless')
-          else:
-            print('next body already patched or different')
-          # Ensure steps variable exists if coalesce begin applied
-          if 'var stepsLeft = (steps)' in t and 'final steps = 1 + extra' not in t and 'final extra = _pendingNextSteps' not in t:
-            print('WARNING: steps var may be missing')
-          PY
           git config user.name "Aetherion LLC"
           git config user.email "mosesmiggs@gmail.com"
           git add -A
           if git diff --cached --quiet; then echo no changes; else
-            git commit -m "fix: SFX fade envelopes, preamp ±6 dB, EQ category, next/completion races"
+            git commit -m "fix: preamp, EQ category, SFX release gap, next/completion races"
             git pull --rebase origin dj_Mode
             git push origin HEAD:dj_Mode
           fi
