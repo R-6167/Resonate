@@ -1,0 +1,29 @@
+name: Harden sfx xfade gapless
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/harden_sfx_xfade_gapless.py'
+      - '.github/workflows/harden_sfx_xfade_gapless.yml'
+permissions:
+  contents: write
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/harden_sfx_xfade_gapless.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; else
+            git commit -m "fix(dj): softer high-energy SFX, cap DJ crossfade, flatten gapless before xfade"
+            git pull --rebase origin dj_Mode
+            git push origin HEAD:dj_Mode
+          fi
