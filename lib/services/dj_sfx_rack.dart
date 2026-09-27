@@ -1,30 +1,28 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
 
-/// Transition SFX focused on the *outgoing* engine — no bass-boost loudness.
+/// Transition SFX — engine FX + optional one-shot sample packs.
 enum DjSfxPreset {
-  /// Reverb tail / slap on the fade-out.
   echo,
-  /// Speed ramp down on outgoing (classic vinyl stop).
   vinylStop,
-  /// Faster pitch-down / rewind feel on outgoing.
   rewind,
-  /// High-shelf open on EQ.
   filterOpen,
-  /// High-shelf close on EQ.
   filterClose,
-  /// Subtle space, no bass.
   tightGlue,
-  /// Dry transient via short reverb blip only.
   dryEcho,
+  airHorn,
+  gunshot,
+  vinylScratch,
+  whoosh,
+  impact,
 }
 
-/// Picks and drives transition SFX without blocking playback.
 class DjSfxRack {
   DjSfxRack({math.Random? random}) : _rng = random ?? math.Random();
 
@@ -35,20 +33,39 @@ class DjSfxRack {
   bool _eqTouched = false;
   double _savedOutgoingSpeed = 1.0;
   AudioPlayer? _outgoing;
+  AudioPlayer? _oneshot;
+  int _oneshotGen = 0;
 
   static const presets = DjSfxPreset.values;
 
+  /// Asset paths for sample-based presets.
+  static const sampleAssets = <DjSfxPreset, String>{
+    DjSfxPreset.airHorn: 'assets/sfx/airhorn.wav',
+    DjSfxPreset.gunshot: 'assets/sfx/gunshot.wav',
+    DjSfxPreset.vinylScratch: 'assets/sfx/vinyl_scratch.wav',
+    DjSfxPreset.rewind: 'assets/sfx/rewind.wav',
+    DjSfxPreset.whoosh: 'assets/sfx/whoosh.wav',
+    DjSfxPreset.impact: 'assets/sfx/impact.wav',
+  };
+
+  bool _isSample(DjSfxPreset p) => sampleAssets.containsKey(p);
+
   DjSfxPreset pickRandom({double energyScore = 0.5}) {
     final high = energyScore >= 0.75;
-    // Prefer character FX over loudness FX.
+    // Mix character FX + samples; avoid stacking loudness.
     final weights = <DjSfxPreset, int>{
-      DjSfxPreset.echo: high ? 3 : 3,
-      DjSfxPreset.vinylStop: high ? 3 : 2,
-      DjSfxPreset.rewind: high ? 2 : 2,
-      DjSfxPreset.filterOpen: high ? 3 : 2,
-      DjSfxPreset.filterClose: high ? 2 : 2,
-      DjSfxPreset.tightGlue: high ? 2 : 3,
-      DjSfxPreset.dryEcho: high ? 2 : 2,
+      DjSfxPreset.echo: 2,
+      DjSfxPreset.vinylStop: high ? 2 : 2,
+      DjSfxPreset.rewind: 2,
+      DjSfxPreset.filterOpen: high ? 2 : 2,
+      DjSfxPreset.filterClose: 2,
+      DjSfxPreset.tightGlue: 2,
+      DjSfxPreset.dryEcho: 1,
+      DjSfxPreset.airHorn: high ? 3 : 2,
+      DjSfxPreset.gunshot: high ? 2 : 1,
+      DjSfxPreset.vinylScratch: 2,
+      DjSfxPreset.whoosh: 2,
+      DjSfxPreset.impact: high ? 2 : 1,
     };
     final total = weights.values.fold<int>(0, (a, b) => a + b);
     var r = _rng.nextInt(total);
@@ -81,7 +98,6 @@ class DjSfxRack {
 
     try {
       await _snapshotEq(equalizerA);
-      // Never push bass during transitions — loudness was the main complaint.
       await AudioEffectsBridge.setBassBoost(0.0);
       await _applyFxAt(0.0, score);
       if (_usesEq(activePreset!)) {
@@ -89,12 +105,15 @@ class DjSfxRack {
         await _applyEqAt(equalizerB, 0.0);
         _eqTouched = true;
       }
+      // Fire one-shot early so it sits over the outgoing fade.
+      if (_isSample(activePreset!)) {
+        unawaited(_playOneshot(activePreset!, score));
+      }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
     }
   }
 
-  /// [t] is 0→1 over the crossfade; >1 is post-gap release.
   Future<void> tick(
     double t, {
     AndroidEqualizer? equalizerA,
@@ -122,7 +141,6 @@ class DjSfxRack {
   }) async {
     if (!engaged && !_eqTouched) return;
     try {
-      // Restore outgoing speed first.
       final out = _outgoing;
       if (out != null) {
         try {
@@ -133,6 +151,7 @@ class DjSfxRack {
           } catch (_) {}
         }
       }
+      await _stopOneshot();
       final prefs = await SharedPreferences.getInstance();
       final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
       final reverb = prefs.getDouble('reverb') ?? 0.0;
@@ -157,11 +176,49 @@ class DjSfxRack {
     }
   }
 
+  Future<void> _playOneshot(DjSfxPreset preset, double score) async {
+    final asset = sampleAssets[preset];
+    if (asset == null) return;
+    final gen = ++_oneshotGen;
+    try {
+      await _stopOneshot();
+      final player = AudioPlayer();
+      _oneshot = player;
+      // Keep one-shots under the music — never dominate.
+      final vol = (score >= 0.85 ? 0.28 : (score >= 0.7 ? 0.34 : 0.40))
+          .clamp(0.2, 0.45);
+      await player.setVolume(vol);
+      await player.setAudioSource(AudioSource.asset(asset));
+      if (gen != _oneshotGen) return;
+      await player.play();
+      // Auto-stop after max sample length.
+      Future<void>.delayed(const Duration(milliseconds: 900), () async {
+        if (gen != _oneshotGen) return;
+        await _stopOneshot();
+      });
+    } catch (e) {
+      debugPrint('DjSfxRack oneshot $preset: $e');
+    }
+  }
+
+  Future<void> _stopOneshot() async {
+    final p = _oneshot;
+    _oneshot = null;
+    if (p == null) return;
+    try {
+      await p.stop();
+    } catch (_) {}
+    try {
+      await p.dispose();
+    } catch (_) {}
+  }
+
   bool _usesEq(DjSfxPreset p) =>
       p == DjSfxPreset.filterOpen || p == DjSfxPreset.filterClose;
 
   bool _usesSpeed(DjSfxPreset p) =>
-      p == DjSfxPreset.vinylStop || p == DjSfxPreset.rewind;
+      p == DjSfxPreset.vinylStop ||
+      (p == DjSfxPreset.rewind && !_isSample(p));
 
   double _envelope(double t) {
     if (t <= 0) return 0.0;
@@ -174,34 +231,44 @@ class DjSfxRack {
     final p = activePreset ?? DjSfxPreset.echo;
     final env = _envelope(t);
     final x = t.clamp(0.0, 1.0);
-    // No bass path at all during SFX.
     await AudioEffectsBridge.setBassBoost(0.0);
 
+    // Sample presets: light reverb bed only (the WAV is the character).
     double width = 0.0;
     double reverb = 0.0;
-    switch (p) {
-      case DjSfxPreset.echo:
-        width = (0.04 + 0.10 * x).clamp(0.0, 0.18);
-        reverb = (0.22 + 0.28 * math.sin(x * math.pi)).clamp(0.12, 0.48);
-        break;
-      case DjSfxPreset.vinylStop:
-      case DjSfxPreset.rewind:
-        width = (0.06 * (1.0 - x)).clamp(0.0, 0.10);
-        reverb = (0.08 + 0.12 * x).clamp(0.04, 0.22);
-        break;
-      case DjSfxPreset.filterOpen:
-      case DjSfxPreset.filterClose:
-        width = (0.05 + 0.08 * x).clamp(0.0, 0.16);
-        reverb = (0.08 + 0.10 * math.sin(x * math.pi)).clamp(0.04, 0.22);
-        break;
-      case DjSfxPreset.tightGlue:
-        width = (0.04 + 0.06 * x).clamp(0.0, 0.12);
-        reverb = (0.14 + 0.16 * math.sin(x * math.pi)).clamp(0.08, 0.32);
-        break;
-      case DjSfxPreset.dryEcho:
-        width = 0.03;
-        reverb = (0.16 * math.sin(x * math.pi)).clamp(0.0, 0.22);
-        break;
+    if (_isSample(p)) {
+      width = (0.04 * env).clamp(0.0, 0.08);
+      reverb = (0.10 * env).clamp(0.0, 0.16);
+    } else {
+      switch (p) {
+        case DjSfxPreset.echo:
+          width = (0.04 + 0.10 * x).clamp(0.0, 0.18);
+          reverb = (0.22 + 0.28 * math.sin(x * math.pi)).clamp(0.12, 0.48);
+          break;
+        case DjSfxPreset.vinylStop:
+          width = (0.06 * (1.0 - x)).clamp(0.0, 0.10);
+          reverb = (0.08 + 0.12 * x).clamp(0.04, 0.22);
+          break;
+        case DjSfxPreset.rewind:
+          width = (0.05 * (1.0 - x)).clamp(0.0, 0.10);
+          reverb = (0.08 + 0.10 * x).clamp(0.04, 0.20);
+          break;
+        case DjSfxPreset.filterOpen:
+        case DjSfxPreset.filterClose:
+          width = (0.05 + 0.08 * x).clamp(0.0, 0.16);
+          reverb = (0.08 + 0.10 * math.sin(x * math.pi)).clamp(0.04, 0.22);
+          break;
+        case DjSfxPreset.tightGlue:
+          width = (0.04 + 0.06 * x).clamp(0.0, 0.12);
+          reverb = (0.14 + 0.16 * math.sin(x * math.pi)).clamp(0.08, 0.32);
+          break;
+        case DjSfxPreset.dryEcho:
+          width = 0.03;
+          reverb = (0.16 * math.sin(x * math.pi)).clamp(0.0, 0.22);
+          break;
+        default:
+          break;
+      }
     }
     final energyScale = score >= 0.85 ? 0.7 : (score >= 0.7 ? 0.85 : 1.0);
     width = (width * env * energyScale).clamp(0.0, 0.28);
@@ -209,16 +276,10 @@ class DjSfxRack {
     await AudioEffectsBridge.setVirtualizer(width);
     await AudioEffectsBridge.setReverb(reverb);
 
-    // Outgoing engine speed for vinyl / rewind character.
     if (_usesSpeed(p) && _outgoing != null) {
-      double speed;
-      if (p == DjSfxPreset.vinylStop) {
-        // 1.0 → ~0.55 over the fade (tape/vinyl stop).
-        speed = (1.0 - 0.45 * x).clamp(0.55, 1.0);
-      } else {
-        // Rewind: slightly faster dive.
-        speed = (1.0 - 0.55 * x).clamp(0.45, 1.0);
-      }
+      final speed = p == DjSfxPreset.vinylStop
+          ? (1.0 - 0.45 * x).clamp(0.55, 1.0)
+          : (1.0 - 0.55 * x).clamp(0.45, 1.0);
       try {
         await _outgoing!.setSpeed(speed);
       } catch (_) {}
@@ -288,4 +349,9 @@ class DjSfxRack {
   }
 
   String get presetName => activePreset?.name ?? 'none';
+}
+
+// Local helper — avoid importing dart:async only for unawaited in some SDK configs.
+void unawaited(Future<void> f) {
+  f.catchError((_) {});
 }

@@ -33,3 +33,4 @@ flutter:
   assets:
     - assets/branding/resonate_in_app_logo.png
     - assets/branding/resonate_app_icon.png
+    - assets/sfx/
