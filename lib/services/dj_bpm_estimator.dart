@@ -429,20 +429,37 @@ class DjBpmEstimator {
   }
 }
 
+/// Prefer the BPM octave (1× / ½ / 2×) closest to [bpmA] for phase math.
+double _effectiveBpmForAlign(double bpmA, double bpmB) {
+  var best = bpmB;
+  var bestRel = (bpmA - bpmB).abs() / math.max(bpmA, 1.0);
+  for (final cand in [bpmB * 0.5, bpmB * 2.0]) {
+    if (cand < 40 || cand > 240) continue;
+    final r = (bpmA - cand).abs() / math.max(bpmA, 1.0);
+    if (r < bestRel) {
+      bestRel = r;
+      best = cand;
+    }
+  }
+  return best;
+}
+
 Duration? computeBeatAlignedSeekMs({
   required double bpmA,
   required int beatOffsetMsA,
   required double bpmB,
   required int beatOffsetMsB,
   required int outgoingPositionMs,
-  double maxRelativeDelta = 0.08,
+  double maxRelativeDelta = 0.09,
 }) {
   if (bpmA < 40 || bpmB < 40 || bpmA > 240 || bpmB > 240) return null;
-  final rel = (bpmA - bpmB).abs() / bpmA;
+  // Half/double often looks like a huge delta but is the same pulse grid.
+  final bpmBEff = _effectiveBpmForAlign(bpmA, bpmB);
+  final rel = (bpmA - bpmBEff).abs() / math.max(bpmA, 1.0);
   if (rel > maxRelativeDelta) return null;
 
   final periodA = 60000.0 / bpmA;
-  final periodB = 60000.0 / bpmB;
+  final periodB = 60000.0 / bpmBEff;
   // Clamp noisy offsets into one period (PCM peak can be off).
   final offA = _mod(beatOffsetMsA.toDouble(), periodA);
   final offB = _mod(beatOffsetMsB.toDouble(), periodB);
@@ -470,15 +487,16 @@ Duration? computePhraseAlignedSeekMs({
   required int beatOffsetMsB,
   required int outgoingPositionMs,
   int beatsPerPhrase = 4,
-  double maxRelativeDelta = 0.08,
+  double maxRelativeDelta = 0.09,
 }) {
   if (beatsPerPhrase < 2) beatsPerPhrase = 4;
   if (bpmA < 40 || bpmB < 40 || bpmA > 240 || bpmB > 240) return null;
-  final rel = (bpmA - bpmB).abs() / bpmA;
+  final bpmBEff = _effectiveBpmForAlign(bpmA, bpmB);
+  final rel = (bpmA - bpmBEff).abs() / math.max(bpmA, 1.0);
   if (rel > maxRelativeDelta) return null;
 
   final periodA = 60000.0 / bpmA;
-  final periodB = 60000.0 / bpmB;
+  final periodB = 60000.0 / bpmBEff;
   final phraseA = periodA * beatsPerPhrase;
   final phraseB = periodB * beatsPerPhrase;
   final offA = _mod(beatOffsetMsA.toDouble(), periodA);
@@ -528,7 +546,7 @@ DjTempoStretchPlan? computeTempoStretch({
   required int maxStretchPercent,
 }) {
   if (bpmA < 40 || bpmB < 40 || bpmA > 240 || bpmB > 240) return null;
-  final maxDelta = (maxStretchPercent.clamp(3, 20)) / 100.0;
+  final maxDelta = (maxStretchPercent.clamp(3, 22)) / 100.0;
   bool within(double speed) => (speed - 1.0).abs() <= maxDelta + 1e-9;
 
   // Prefer direct match, then half/double (common cross-genre / wrong-octave BPM).

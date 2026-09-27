@@ -119,9 +119,12 @@ double harmonicCompatibility({
   if (a.number == b.number && a.letter != b.letter) return 0.88;
   final dist = _ringDistance(a.number, b.number);
   if (dist == 1 && a.letter == b.letter) return 0.72;
-  if (dist == 1) return 0.45;
-  if (dist == 2 && a.letter == b.letter) return 0.35;
-  return 0.0;
+  if (dist == 1) return 0.48;
+  if (dist == 2 && a.letter == b.letter) return 0.38;
+  if (dist == 2) return 0.22;
+  if (dist == 3 && a.letter == b.letter) return 0.18;
+  // Soft floor — never a hard "incompatible" zero for energy-bridge bias.
+  return 0.12;
 }
 
 int _ringDistance(int a, int b) {

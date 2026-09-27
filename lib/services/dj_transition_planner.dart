@@ -234,10 +234,11 @@ DjTransitionPlan planDjTransition({
   // Cross-genre pairs with only stretch → single-beat align (tighter than a bar).
   final rel = (bpmA - bpmB).abs() / math.max(bpmA, 1.0);
   final confOk =
-      analysisA.bpmConfidence >= 0.45 && analysisB.bpmConfidence >= 0.45;
+      analysisA.bpmConfidence >= 0.40 && analysisB.bpmConfidence >= 0.40;
+  // Confident but not cocky: allow a bit more relative delta before phrase grid.
   final phraseOk = tryBeat &&
       confOk &&
-      (rel <= 0.04 || (stretch != null && rel <= 0.12));
+      (rel <= 0.06 || (stretch != null && rel <= 0.16));
 
   if (outro && (stretch != null || tryBeat)) {
     final phraseBeats = (phraseOk && confOk) ? 8 : 4;
@@ -392,7 +393,7 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   if ((plan.strategy == 'beat_tempo' ||
           plan.strategy == 'phrase_align' ||
           plan.strategy == 'outro_intro') &&
-      plan.energyScore < 0.45) {
+      plan.energyScore < 0.32) {
     plan = plan.copyWith(
       strategy: 'tempo_match',
       attemptBeatAlign: false,
@@ -403,8 +404,9 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   }
 
   // Soft demote only when history is clearly negative.
-  final hostilePair = pair < -0.35;
-  final hostileStrat = stratBias < -0.45;
+  // Need clearer negative history before demoting (fewer "skips" from learning).
+  final hostilePair = pair < -0.50;
+  final hostileStrat = stratBias < -0.55;
 
   final aggressive = plan.strategy == 'beat_tempo' ||
       plan.strategy == 'phrase_align' ||

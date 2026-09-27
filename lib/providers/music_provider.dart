@@ -97,7 +97,7 @@ class MusicProvider extends ChangeNotifier {
   /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
   bool _djBeatAlignActive = false;
   bool _djTempoMatchActive = false;
-  int _djMaxStretchPercent = 12;
+  int _djMaxStretchPercent = 14;
   bool _djSfxActive = false;
   bool _djSfxEngaged = false;
   final DjSfxRack _djSfxRack = DjSfxRack();
@@ -1074,7 +1074,7 @@ class MusicProvider extends ChangeNotifier {
       }
       if (currentSong == null) return;
       // Keep the blend short so we start near the true end (not mid-outro).
-      final loopMs = _crossfadeDurationMs.clamp(1200, 4000);
+      final loopMs = _crossfadeDurationMs.clamp(1600, 5500);
       final triggerMs = (loopMs + 500).clamp(1500, 4500);
       if (remaining > Duration(milliseconds: triggerMs)) return;
       // Do not start if already past the end window.
@@ -2704,7 +2704,7 @@ class MusicProvider extends ChangeNotifier {
                 beatOffsetMsB: beatOffsetB,
                 outgoingPositionMs: posMs,
                 beatsPerPhrase: plan.phraseBeats,
-                maxRelativeDelta: stretch != null ? 0.18 : 0.055,
+                maxRelativeDelta: stretch != null ? 0.22 : 0.09,
               )
             : computeBeatAlignedSeekMs(
                 bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
@@ -2712,7 +2712,7 @@ class MusicProvider extends ChangeNotifier {
                 bpmB: effectiveBpmB,
                 beatOffsetMsB: beatOffsetB,
                 outgoingPositionMs: posMs,
-                maxRelativeDelta: stretch != null ? 0.18 : 0.055,
+                maxRelativeDelta: stretch != null ? 0.22 : 0.09,
               );
         if (seek == null) {
           await ResonateDiagnostics.recordDj(
