@@ -1063,21 +1063,25 @@ class MusicProvider extends ChangeNotifier {
     final remaining = duration - position;
     if (remaining <= Duration.zero) return;
 
-    // Repeat-one: soft single-engine loop (same MediaStore URI on two
-    // engines hangs on many OEMs — dual path removed for reliability).
+    // Repeat-one + crossfade: dual-engine A→B self-handoff (same song).
+    // Soft single-engine loop is the fallback if the idle engine load times out.
     if (_repeatMode == PlaybackRepeatMode.one) {
-      if (!_crossfadeEnabled || _repeatSelfHandoffInFlight || _transportInFlight) {
+      if (!_crossfadeEnabled ||
+          _repeatSelfHandoffInFlight ||
+          _transportInFlight ||
+          _crossfadeInProgress) {
         return;
       }
       if (currentSong == null) return;
-      // Short loop fade: long dual fades were arming late and never committing.
-      final loopMs = _crossfadeDurationMs.clamp(800, 3500);
-      final triggerMs = (loopMs + 400).clamp(1200, 4000);
+      // Keep the blend short so we start near the true end (not mid-outro).
+      final loopMs = _crossfadeDurationMs.clamp(1200, 4000);
+      final triggerMs = (loopMs + 500).clamp(1500, 4500);
       if (remaining > Duration(milliseconds: triggerMs)) return;
-      if (remaining < const Duration(milliseconds: 250)) return;
+      // Do not start if already past the end window.
+      if (remaining < const Duration(milliseconds: 400)) return;
       _repeatSelfHandoffInFlight = true;
       _automaticCrossfadeInFlight = true;
-      unawaited(_runRepeatSelfSoftLoop(loopMs: loopMs));
+      unawaited(_runRepeatSelfDualOrSoft(loopMs: loopMs));
       return;
     }
 
@@ -1133,6 +1137,146 @@ class MusicProvider extends ChangeNotifier {
         'reason': 'preload_fail',
         'error': '$e',
       }));
+    }
+  }
+
+  /// Prefer dual-engine A→B self-crossfade; fall back to soft loop on timeout.
+  Future<void> _runRepeatSelfDualOrSoft({required int loopMs}) async {
+    final song = currentSong;
+    if (song == null) {
+      _automaticCrossfadeInFlight = false;
+      _repeatSelfHandoffInFlight = false;
+      return;
+    }
+    final ms = loopMs.clamp(1200, 4000);
+    final ok = await _performRepeatSelfDual(milliseconds: ms).timeout(
+      Duration(milliseconds: ms + 4500),
+      onTimeout: () {
+        debugPrint('repeat self dual timed out');
+        return false;
+      },
+    );
+    if (ok) {
+      _automaticCrossfadeInFlight = false;
+      _crossfadeInProgress = false;
+      _repeatSelfHandoffInFlight = false;
+      _repeatSelfHandoffArmed = false;
+      return;
+    }
+    unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
+      'reason': 'dual_timeout_or_fail',
+      'songId': song.id,
+    }));
+    await _runRepeatSelfSoftLoop(loopMs: math.min(ms, 2000));
+  }
+
+  Future<bool> _performRepeatSelfDual({required int milliseconds}) async {
+    final song = currentSong;
+    if (song == null || song.filePath.trim().isEmpty) return false;
+    if (!audioPlayer.playing && !_userWantsPlaying) return false;
+    _crossfadeInProgress = true;
+    final outgoing = audioPlayer;
+    final incoming = inactivePlayer;
+    final incomingEq = inactiveEqualizer;
+    final incomingLoud = inactiveLoudnessEnhancer;
+    final master = _eqPreampScale.clamp(0.05, 1.0);
+    final ms = milliseconds.clamp(1200, 4000);
+    try {
+      try {
+        await incoming.stop();
+      } catch (_) {}
+      // Load with a hard timeout — same MediaStore URI can hang on some OEMs.
+      await _loadSingle(
+        incoming,
+        incomingEq,
+        incomingLoud,
+        song,
+        start: false,
+      ).timeout(const Duration(milliseconds: 2800));
+      try {
+        await incoming.seek(Duration.zero);
+      } catch (_) {}
+      await incoming.setVolume(0.0);
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (_) {}
+      try {
+        incoming.play();
+      } catch (_) {}
+      for (var i = 0; i < 8 && !incoming.playing; i++) {
+        await Future<void>.delayed(Duration(milliseconds: 30 + i * 25));
+        try {
+          incoming.play();
+        } catch (_) {}
+      }
+      if (!incoming.playing) return false;
+
+      unawaited(ResonateDiagnostics.record('repeat_self_ramp', {
+        'mode': 'dual',
+        'songId': song.id,
+        'ms': ms,
+        'fromEngine': _activeIsA ? 'A' : 'B',
+        'toEngine': _activeIsA ? 'B' : 'A',
+      }));
+
+      final steps = (ms / 40).round().clamp(10, 60);
+      final stepMs = (ms / steps).round().clamp(20, 60);
+      final startOut = outgoing.volume.clamp(0.05, 1.0);
+      for (var i = 1; i <= steps; i++) {
+        if (!_userWantsPlaying || !_repeatSelfHandoffInFlight) return false;
+        final t = i / steps;
+        try {
+          await outgoing.setVolume((startOut * (1.0 - t)).clamp(0.0, 1.0));
+        } catch (_) {}
+        try {
+          await incoming.setVolume((master * t).clamp(0.0, 1.0));
+        } catch (_) {}
+        await Future<void>.delayed(Duration(milliseconds: stepMs));
+      }
+
+      _activeIsA = !_activeIsA;
+      _lastCompletionSongId = null;
+      currentPosition = incoming.position;
+      currentDuration = song.duration;
+      isPlaying = incoming.playing || _userWantsPlaying;
+      _bindActivePlayerStreams();
+      _publishServiceState();
+      notifyListeners();
+
+      try {
+        await outgoing.pause();
+      } catch (_) {}
+      try {
+        await outgoing.setVolume(master);
+      } catch (_) {}
+      try {
+        await outgoing.setSpeed(1.0);
+      } catch (_) {}
+      try {
+        await incoming.setVolume(master);
+      } catch (_) {}
+
+      unawaited(ResonateDiagnostics.record('repeat_self_committed', {
+        'mode': 'dual',
+        'songId': song.id,
+        'activeEngine': _activeIsA ? 'A' : 'B',
+        'playing': incoming.playing,
+      }));
+      return true;
+    } catch (e, st) {
+      debugPrint('repeat dual failed: $e');
+      debugPrint('$st');
+      try {
+        await incoming.pause();
+      } catch (_) {}
+      try {
+        await incoming.setVolume(0.0);
+      } catch (_) {}
+      try {
+        await outgoing.setVolume(master);
+      } catch (_) {}
+      return false;
     }
   }
 
@@ -2406,6 +2550,7 @@ class MusicProvider extends ChangeNotifier {
         energyScore: energyScore,
         equalizerA: _equalizerA,
         equalizerB: _equalizerB,
+        outgoing: audioPlayer,
       );
       _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -2425,6 +2570,7 @@ class MusicProvider extends ChangeNotifier {
       equalizerA: _equalizerA,
       equalizerB: _equalizerB,
       energyScore: _lastDjEnergyScore,
+      outgoing: audioPlayer,
     );
   }
 

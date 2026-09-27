@@ -6,15 +6,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
 
-/// DJ transition SFX presets (soft, always restorable).
+/// Transition SFX focused on the *outgoing* engine — no bass-boost loudness.
 enum DjSfxPreset {
-  clubOpen,
+  /// Reverb tail / slap on the fade-out.
+  echo,
+  /// Speed ramp down on outgoing (classic vinyl stop).
+  vinylStop,
+  /// Faster pitch-down / rewind feel on outgoing.
+  rewind,
+  /// High-shelf open on EQ.
   filterOpen,
+  /// High-shelf close on EQ.
   filterClose,
-  bassDrop,
-  wideSpace,
+  /// Subtle space, no bass.
   tightGlue,
-  dryPunch,
+  /// Dry transient via short reverb blip only.
+  dryEcho,
 }
 
 /// Picks and drives transition SFX without blocking playback.
@@ -26,20 +33,22 @@ class DjSfxRack {
   bool engaged = false;
   List<double>? _savedEqGains;
   bool _eqTouched = false;
+  double _savedOutgoingSpeed = 1.0;
+  AudioPlayer? _outgoing;
 
   static const presets = DjSfxPreset.values;
 
   DjSfxPreset pickRandom({double energyScore = 0.5}) {
     final high = energyScore >= 0.75;
-    // At high energy avoid clubOpen / bassDrop (they stack on already loud mixes).
+    // Prefer character FX over loudness FX.
     final weights = <DjSfxPreset, int>{
-      DjSfxPreset.clubOpen: high ? 1 : 3,
+      DjSfxPreset.echo: high ? 3 : 3,
+      DjSfxPreset.vinylStop: high ? 3 : 2,
+      DjSfxPreset.rewind: high ? 2 : 2,
       DjSfxPreset.filterOpen: high ? 3 : 2,
-      DjSfxPreset.filterClose: high ? 3 : 2,
-      DjSfxPreset.bassDrop: high ? 1 : 2,
-      DjSfxPreset.wideSpace: high ? 2 : 2,
-      DjSfxPreset.tightGlue: high ? 4 : 3,
-      DjSfxPreset.dryPunch: high ? 3 : 2,
+      DjSfxPreset.filterClose: high ? 2 : 2,
+      DjSfxPreset.tightGlue: high ? 2 : 3,
+      DjSfxPreset.dryEcho: high ? 2 : 2,
     };
     final total = weights.values.fold<int>(0, (a, b) => a + b);
     var r = _rng.nextInt(total);
@@ -47,7 +56,7 @@ class DjSfxRack {
       r -= e.value;
       if (r < 0) return e.key;
     }
-    return DjSfxPreset.tightGlue;
+    return DjSfxPreset.echo;
   }
 
   Future<void> engage({
@@ -55,18 +64,26 @@ class DjSfxRack {
     DjSfxPreset? preset,
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
+    AudioPlayer? outgoing,
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    final mismatch = (1.0 - score).clamp(0.0, 1.0).toDouble();
     activePreset = preset ?? pickRandom(energyScore: score);
     engaged = true;
     _eqTouched = false;
+    _outgoing = outgoing;
+    _savedOutgoingSpeed = 1.0;
+    try {
+      if (outgoing != null) {
+        _savedOutgoingSpeed = outgoing.speed;
+      }
+    } catch (_) {}
 
     try {
       await _snapshotEq(equalizerA);
-      // Start silent — first tick of the crossfade fades in.
-      await _applyNativeAt(0.0, score, mismatch);
+      // Never push bass during transitions — loudness was the main complaint.
+      await AudioEffectsBridge.setBassBoost(0.0);
+      await _applyFxAt(0.0, score);
       if (_usesEq(activePreset!)) {
         await _applyEqAt(equalizerA, 0.0);
         await _applyEqAt(equalizerB, 0.0);
@@ -77,20 +94,20 @@ class DjSfxRack {
     }
   }
 
-  /// [t] is 0→1 over the crossfade. Values above 1 are post-gap release
-  /// (caller should tick ~1.15…1.6 before [restore] so SFX bridges the songs).
+  /// [t] is 0→1 over the crossfade; >1 is post-gap release.
   Future<void> tick(
     double t, {
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
     double energyScore = 0.5,
+    AudioPlayer? outgoing,
   }) async {
     if (!engaged || activePreset == null) return;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    final mismatch = (1.0 - score).clamp(0.0, 1.0).toDouble();
+    if (outgoing != null) _outgoing = outgoing;
     try {
-      await _applyNativeAt(t, score, mismatch);
+      await _applyFxAt(t, score);
       if (_usesEq(activePreset!)) {
         await _applyEqAt(equalizerA, t);
         await _applyEqAt(equalizerB, t);
@@ -105,6 +122,17 @@ class DjSfxRack {
   }) async {
     if (!engaged && !_eqTouched) return;
     try {
+      // Restore outgoing speed first.
+      final out = _outgoing;
+      if (out != null) {
+        try {
+          await out.setSpeed(_savedOutgoingSpeed.clamp(0.5, 1.5));
+        } catch (_) {
+          try {
+            await out.setSpeed(1.0);
+          } catch (_) {}
+        }
+      }
       final prefs = await SharedPreferences.getInstance();
       final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
       final reverb = prefs.getDouble('reverb') ?? 0.0;
@@ -124,78 +152,77 @@ class DjSfxRack {
       _eqTouched = false;
       activePreset = null;
       _savedEqGains = null;
+      _outgoing = null;
+      _savedOutgoingSpeed = 1.0;
     }
   }
 
   bool _usesEq(DjSfxPreset p) =>
-      p == DjSfxPreset.filterOpen ||
-      p == DjSfxPreset.filterClose ||
-      p == DjSfxPreset.bassDrop;
+      p == DjSfxPreset.filterOpen || p == DjSfxPreset.filterClose;
 
-  /// Soft attack / sustain / release so SFX never hard-cuts.
+  bool _usesSpeed(DjSfxPreset p) =>
+      p == DjSfxPreset.vinylStop || p == DjSfxPreset.rewind;
+
   double _envelope(double t) {
     if (t <= 0) return 0.0;
-    if (t < 0.18) return (t / 0.18).clamp(0.0, 1.0);
+    if (t < 0.15) return (t / 0.15).clamp(0.0, 1.0);
     if (t <= 1.0) return 1.0;
-    return ((1.6 - t) / 0.6).clamp(0.0, 1.0);
+    return ((1.55 - t) / 0.55).clamp(0.0, 1.0);
   }
 
-  Future<void> _applyNativeAt(double t, double score, double mismatch) async {
-    final p = activePreset ?? DjSfxPreset.clubOpen;
+  Future<void> _applyFxAt(double t, double score) async {
+    final p = activePreset ?? DjSfxPreset.echo;
     final env = _envelope(t);
     final x = t.clamp(0.0, 1.0);
-    double bass = 0.0, width = 0.0, reverb = 0.0;
+    // No bass path at all during SFX.
+    await AudioEffectsBridge.setBassBoost(0.0);
+
+    double width = 0.0;
+    double reverb = 0.0;
     switch (p) {
-      case DjSfxPreset.clubOpen:
-        // Kept gentle — high-energy path scales further in energyScale.
-        bass = (0.06 * (1.0 - x) + 0.02).clamp(0.01, 0.10);
-        width = (0.06 + 0.18 * x).clamp(0.04, 0.26);
-        reverb = (0.10 + 0.16 * math.sin(x * math.pi)).clamp(0.06, 0.28);
+      case DjSfxPreset.echo:
+        width = (0.04 + 0.10 * x).clamp(0.0, 0.18);
+        reverb = (0.22 + 0.28 * math.sin(x * math.pi)).clamp(0.12, 0.48);
+        break;
+      case DjSfxPreset.vinylStop:
+      case DjSfxPreset.rewind:
+        width = (0.06 * (1.0 - x)).clamp(0.0, 0.10);
+        reverb = (0.08 + 0.12 * x).clamp(0.04, 0.22);
         break;
       case DjSfxPreset.filterOpen:
-        bass = (0.08 * (1.0 - x) + 0.02).clamp(0.02, 0.12);
-        width = (0.06 + 0.20 * x).clamp(0.04, 0.28);
-        reverb = (0.10 + 0.18 * math.sin(x * math.pi)).clamp(0.08, 0.32);
-        break;
       case DjSfxPreset.filterClose:
-        bass = (0.04 + 0.10 * x).clamp(0.02, 0.14);
-        width = (0.16 * (1.0 - x) + 0.06).clamp(0.04, 0.22);
-        reverb = (0.10 + 0.14 * (1.0 - x)).clamp(0.06, 0.26);
-        break;
-      case DjSfxPreset.bassDrop:
-        final punch = math.sin(x * math.pi);
-        bass = (0.04 + 0.10 * punch).clamp(0.02, 0.14);
-        width = (0.04 + 0.08 * x).clamp(0.03, 0.14);
-        reverb = (0.06 + 0.08 * punch).clamp(0.04, 0.18);
-        break;
-      case DjSfxPreset.wideSpace:
-        bass = (0.04 + 0.04 * mismatch).clamp(0.02, 0.10);
-        width = (0.18 + 0.30 * x + mismatch * 0.08).clamp(0.12, 0.48);
-        reverb = (0.12 + 0.22 * math.sin(x * math.pi)).clamp(0.08, 0.36);
+        width = (0.05 + 0.08 * x).clamp(0.0, 0.16);
+        reverb = (0.08 + 0.10 * math.sin(x * math.pi)).clamp(0.04, 0.22);
         break;
       case DjSfxPreset.tightGlue:
-        bass = (0.05 + mismatch * 0.05).clamp(0.02, 0.12);
-        width = (0.05 + 0.06 * x).clamp(0.03, 0.16);
-        reverb = (0.18 + mismatch * 0.18 + 0.10 * math.sin(x * math.pi))
-            .clamp(0.12, 0.42);
+        width = (0.04 + 0.06 * x).clamp(0.0, 0.12);
+        reverb = (0.14 + 0.16 * math.sin(x * math.pi)).clamp(0.08, 0.32);
         break;
-      case DjSfxPreset.dryPunch:
-        bass = (0.08 * math.sin(x * math.pi)).clamp(0.0, 0.14);
-        width = (0.04 + 0.05 * x).clamp(0.0, 0.12);
-        reverb = (0.06 + 0.14 * math.sin(x * math.pi * 2).abs())
-            .clamp(0.0, 0.22);
+      case DjSfxPreset.dryEcho:
+        width = 0.03;
+        reverb = (0.16 * math.sin(x * math.pi)).clamp(0.0, 0.22);
         break;
     }
-    // High-energy tracks: pull SFX way down so we do not double-thump.
-    final energyScale = score >= 0.85
-        ? 0.45
-        : (score >= 0.7 ? 0.62 : (score >= 0.55 ? 0.82 : 1.0));
-    bass = (bass * env * energyScale).clamp(0.0, 0.14);
-    width = (width * env * energyScale).clamp(0.0, 0.36);
-    reverb = (reverb * env * energyScale).clamp(0.0, 0.32);
-    await AudioEffectsBridge.setBassBoost(bass);
+    final energyScale = score >= 0.85 ? 0.7 : (score >= 0.7 ? 0.85 : 1.0);
+    width = (width * env * energyScale).clamp(0.0, 0.28);
+    reverb = (reverb * env * energyScale).clamp(0.0, 0.48);
     await AudioEffectsBridge.setVirtualizer(width);
     await AudioEffectsBridge.setReverb(reverb);
+
+    // Outgoing engine speed for vinyl / rewind character.
+    if (_usesSpeed(p) && _outgoing != null) {
+      double speed;
+      if (p == DjSfxPreset.vinylStop) {
+        // 1.0 → ~0.55 over the fade (tape/vinyl stop).
+        speed = (1.0 - 0.45 * x).clamp(0.55, 1.0);
+      } else {
+        // Rewind: slightly faster dive.
+        speed = (1.0 - 0.55 * x).clamp(0.45, 1.0);
+      }
+      try {
+        await _outgoing!.setSpeed(speed);
+      } catch (_) {}
+    }
   }
 
   Future<void> _snapshotEq(AndroidEqualizer? eq) async {
@@ -224,15 +251,10 @@ class DjSfxRack {
         double gain = 0.0;
         switch (activePreset!) {
           case DjSfxPreset.filterOpen:
-            gain = -7.0 * (1.0 - x) * frac;
+            gain = -6.0 * (1.0 - x) * frac;
             break;
           case DjSfxPreset.filterClose:
-            gain = -6.0 * (1.0 - x) * (1.0 - frac);
-            break;
-          case DjSfxPreset.bassDrop:
-            final low = frac < 0.35;
-            final punch = math.sin(x * math.pi);
-            gain = low ? (-1.5 + 4.0 * punch) : (-1.0 * (1.0 - x) * frac);
+            gain = -5.5 * (1.0 - x) * (1.0 - frac);
             break;
           default:
             gain = 0.0;
