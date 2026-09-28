@@ -1,0 +1,29 @@
+name: Restore MainActivity live DSP
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/restore_mainactivity_live_dsp.py'
+      - '.github/workflows/restore_mainactivity.yml'
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: Wire_dsp_engine
+          fetch-depth: 0
+      - run: python3 tools/restore_mainactivity_live_dsp.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git add android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt
+          if git diff --cached --quiet; then echo no changes; else
+            git commit -m "fix(dsp): restore MainActivity + live preamp/EQ MethodChannel"
+            git pull --rebase origin Wire_dsp_engine
+            git push origin HEAD:Wire_dsp_engine
+          fi
