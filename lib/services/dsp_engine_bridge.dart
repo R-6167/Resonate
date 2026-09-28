@@ -4,12 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dsp_engine/dsp_engine.dart';
 
-/// Soft wrapper around DSP ENGINE (64-bit Direct Volume Control).
+/// Soft wrapper around DSP ENGINE (64-bit DVC + multi-band EQ).
 ///
 /// If `libdsp_engine.so` is missing, methods no-op and [isAvailable] is false.
-/// Band EQ continues via AndroidEqualizer + Resonate studio model.
+/// AndroidEqualizer remains a live fallback until process() is in the audio path.
 ///
-/// Runs inside Resonate — app id remains `com.aetherion.resonate`.
+/// App id stays `com.aetherion.resonate`.
 class DspEngineBridge {
   DspEngineBridge._();
   static final DspEngineBridge instance = DspEngineBridge._();
@@ -24,9 +24,8 @@ class DspEngineBridge {
   String get version => _version;
   String? get lastError => _lastError;
 
-  static const String engineId = 'DSP-ENGINE/v0.1-dvc64';
+  static const String engineId = 'DSP-ENGINE/v0.2-eq31';
 
-  /// Load native library once. Safe to call from UI or providers.
   Future<bool> ensureInitialized() async {
     if (_tried) return _available;
     _tried = true;
@@ -74,7 +73,8 @@ class DspEngineBridge {
     if (eng == null) return;
     try {
       final clamped = db.clamp(-24.0, 12.0);
-      final lin = clamped <= -60 ? 0.0 : math.pow(10.0, clamped / 20.0).toDouble();
+      final lin =
+          clamped <= -60 ? 0.0 : math.pow(10.0, clamped / 20.0).toDouble();
       eng.setVolumeRamped(lin, rampMs: rampMs);
     } catch (e) {
       debugPrint('DVC ramp: $e');
@@ -88,6 +88,64 @@ class DspEngineBridge {
       return eng.volume;
     } catch (_) {
       return 1.0;
+    }
+  }
+
+  // ---- Multi-band EQ (native 31-band) ----
+
+  void setEqEnabled(bool enabled) {
+    final eng = _engine;
+    if (eng == null) return;
+    try {
+      eng.eqEnabled = enabled;
+    } catch (e) {
+      debugPrint('native EQ enable: $e');
+    }
+  }
+
+  bool get eqEnabled {
+    final eng = _engine;
+    if (eng == null) return false;
+    try {
+      return eng.eqEnabled;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  int get eqBandCount {
+    final eng = _engine;
+    if (eng == null) return 0;
+    try {
+      return eng.eqBandCount;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Push studio centers + gains into the native EQ bank.
+  void setEqBands({
+    List<double>? centersHz,
+    required List<double> gainsDb,
+    bool enabled = true,
+  }) {
+    final eng = _engine;
+    if (eng == null) return;
+    try {
+      eng.setEqBands(centersHz: centersHz, gainsDb: gainsDb);
+      eng.eqEnabled = enabled;
+    } catch (e) {
+      debugPrint('native EQ setBands: $e');
+    }
+  }
+
+  void resetEq() {
+    final eng = _engine;
+    if (eng == null) return;
+    try {
+      eng.resetEq();
+    } catch (e) {
+      debugPrint('native EQ reset: $e');
     }
   }
 

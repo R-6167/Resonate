@@ -6,6 +6,19 @@ void syncPreampToDvc(double preampDb, {bool enabled = true}) {
   DspEngineBridge.instance.setVolumeRampedDb(db.toDouble());
 }
 
+/// Push studio multi-band curve into native DSP ENGINE EQ.
+void syncStudioBandsToNativeEq({
+  required List<double> centersHz,
+  required List<double> gainsDb,
+  required bool enabled,
+}) {
+  DspEngineBridge.instance.setEqBands(
+    centersHz: centersHz,
+    gainsDb: gainsDb,
+    enabled: enabled,
+  );
+}
+
 Future<bool> ensureDspEngineForEq() {
   return DspEngineBridge.instance.ensureInitialized();
 }
