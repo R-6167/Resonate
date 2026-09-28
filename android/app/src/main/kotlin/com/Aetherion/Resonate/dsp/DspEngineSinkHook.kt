@@ -7,15 +7,13 @@ import android.util.Log
  * Reflection entry point for the just_audio pub-cache / fork patch.
  * just_audio calls createProcessors() so the DSP sits in DefaultAudioSink.
  *
- * LIVE native processing is OFF by default: libdsp_engine.so dsp_create currently
- * SIGSEGVs on device (tombstone: dsp_create+36). Processor still injects as
- * pass-through so the sink chain is wired; enable only after engine ABI is fixed.
+ * Live native path uses ABI-correct dsp_create(const DspConfig*) via JNI.
  */
 object DspEngineSinkHook {
     private const val TAG = "DspEngineSinkHook"
 
-    /** Flip to true only after libdsp_engine dsp_create is stable on device. */
-    private const val ENABLE_NATIVE_LIVE_DSP = false
+    /** Safe after JNI ABI fix (DspConfig*). Set false to force pass-through. */
+    private const val ENABLE_NATIVE_LIVE_DSP = true
 
     @JvmStatic
     fun createProcessors(): Array<AudioProcessor> {
@@ -25,7 +23,7 @@ object DspEngineSinkHook {
             if (ENABLE_NATIVE_LIVE_DSP) {
                 Log.i(TAG, "Injected 1 host AudioProcessor(s) with native DSP enabled")
             } else {
-                Log.i(TAG, "Injected 1 host AudioProcessor(s) pass-through (native DSP disabled — dsp_create unsafe)")
+                Log.i(TAG, "Injected 1 host AudioProcessor(s) pass-through (native DSP disabled)")
             }
             arrayOf(proc)
         } catch (t: Throwable) {
