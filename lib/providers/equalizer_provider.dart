@@ -15,18 +15,6 @@ import '../services/equalizer_dvc_sync.dart';
 import 'music_provider.dart';
 import 'bluetooth_provider.dart';
 
-/// Minimal stub for DynamicsProcessing path (API 28+) used by advanced toggle.
-/// Real attach lives in MethodChannel when session is available; here we only
-/// track intent so UI and prefs stay consistent without a separate bridge file.
-class ResonateNativeDspBridge {
-  static bool available = false;
-  static String engineLabel = 'DynamicsProcessing';
-  static int? lastBandCount;
-  static Future<void> setEnabled(bool v) async {}
-  static Future<void> pushBands({required List<double> gainsDb, required List<double> centersHz}) async {}
-  static Future<bool> attachSession(int sessionId) async => false;
-}
-
 /// One band in the app's fixed studio curve (source of truth).
 class StudioBand {
   final int index;
@@ -524,6 +512,38 @@ class EqualizerProvider extends ChangeNotifier {
       debugPrint('native EQ push failed: $e');
     }
 
+    // DynamicsProcessing live multi-band (user toggle, API 28+)
+    if (_nativeDspEnabled && ResonateNativeDspBridge.available) {
+      try {
+        final n = ResonateNativeDspBridge.lastBandCount ?? 0;
+        final centers = studioBands.map((b) => b.frequencyHz).toList();
+        List<double> gains = studioGains;
+        if (n > 0 && n != centers.length) {
+          _dspPipeline.updateStudioGains(studioGains);
+          final nativeCenters = [
+            for (var i = 0; i < n; i++)
+              studioFrequencies.first +
+                  (studioFrequencies.last - studioFrequencies.first) *
+                      (i / (n - 1).clamp(1, 100)),
+          ];
+          gains = _dspPipeline.hardwareTargets(nativeCenters);
+          await ResonateNativeDspBridge.pushBands(
+            centersHz: nativeCenters,
+            gainsDb: gains,
+            enabled: isEnabled,
+          );
+        } else {
+          await ResonateNativeDspBridge.pushBands(
+            centersHz: centers,
+            gainsDb: studioGains,
+            enabled: isEnabled,
+          );
+        }
+      } catch (e) {
+        debugPrint('DynamicsProcessing EQ push failed: $e');
+      }
+    }
+
     if (!_hardwareBound) return;
 
     if (_androidEqualizer != null && bandStates.isNotEmpty) {
@@ -615,7 +635,6 @@ class EqualizerProvider extends ChangeNotifier {
     try {
       final ok = await ResonateNativeDspBridge.attachSession(sessionId);
       if (ok) {
-        ResonateNativeDspBridge.available = true;
         await ResonateNativeDspBridge.setEnabled(_nativeDspEnabled && isEnabled);
         await _pushToHardware();
         notifyListeners();
