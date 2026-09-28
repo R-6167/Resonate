@@ -1,232 +1,103 @@
-/**
- * Thin JNI bridge for DSP ENGINE live path.
- *
- * - dlopen("libdsp_engine.so") so we do not rebuild the engine here
- * - Pre-allocated float scratch (64-byte aligned, max 4096 frames × 2 ch)
- * - GetDirectBufferAddress only when buffer identity changes (cached)
- * - PCM16 LE ↔ float conversion around dsp_process (float ABI)
- *
- * Locked constants: see docs/DSP_JNI_BUFFERS.md
- */
-
+#include <jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
-#include <jni.h>
-
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 
 #define LOG_TAG "DspEngineJni"
-#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-namespace {
+// Locked buffer policy
+static constexpr size_t kAlign = 64;
+static constexpr int kMaxFrames = 4096;
+static constexpr int kMaxCh = 2;
+static constexpr size_t kScratchFloats = (size_t)kMaxFrames * kMaxCh;
 
-constexpr int kAlignBytes = 64;
-constexpr int kMaxChannels = 2;
-constexpr int kMaxFrames = 4096;
-constexpr size_t kMaxFloatSamples = static_cast<size_t>(kMaxFrames) * kMaxChannels;
+typedef void* (*dsp_create_fn)(double sample_rate, int channels);
+typedef void  (*dsp_destroy_fn)(void* handle);
+typedef void  (*dsp_process_fn)(void* handle, const float* in, float* out, int frames, int channels);
+typedef void  (*dsp_set_enabled_fn)(void* handle, int enabled);
 
-struct DspConfig {
-  int32_t sample_rate;
-  int32_t channels;
-  int32_t buffer_frames;
-  bool exclusive_mode;
-  bool bit_perfect;
-  int32_t realtime_priority;
-};
+static void* g_lib = nullptr;
+static dsp_create_fn      g_create = nullptr;
+static dsp_destroy_fn     g_destroy = nullptr;
+static dsp_process_fn     g_process = nullptr;
+static dsp_set_enabled_fn g_set_enabled = nullptr;
 
-using DspCreateFn = void* (*)(const DspConfig*);
-using DspDestroyFn = void (*)(void*);
-using DspStartFn = int32_t (*)(void*);
-using DspStopFn = int32_t (*)(void*);
-using DspProcessFn = void (*)(void*, const float*, float*, int32_t);
+static float* g_scratch_in  = nullptr;
+static float* g_scratch_out = nullptr;
 
-struct EngineFns {
-  void* handle = nullptr;
-  DspCreateFn create = nullptr;
-  DspDestroyFn destroy = nullptr;
-  DspStartFn start = nullptr;
-  DspStopFn stop = nullptr;
-  DspProcessFn process = nullptr;
-  bool ready = false;
-};
-
-EngineFns g_fns;
-
-struct NativeEngine {
-  void* engine = nullptr;
-  int channels = 2;
-  int sample_rate = 48000;
-
-  // Preallocated scratch (never malloc on audio thread).
-  float* scratch_in = nullptr;
-  float* scratch_out = nullptr;
-
-  // Cached direct-buffer identity → address (PCM16 path may change each callback).
-  jobject last_in_global = nullptr;
-  void* last_in_addr = nullptr;
-  jobject last_out_global = nullptr;
-  void* last_out_addr = nullptr;
-};
-
-bool ensure_lib() {
-  if (g_fns.ready) return true;
-  void* h = dlopen("libdsp_engine.so", RTLD_NOW);
-  if (!h) {
-    ALOGE("dlopen libdsp_engine.so failed: %s", dlerror());
-    return false;
-  }
-  g_fns.handle = h;
-  g_fns.create = reinterpret_cast<DspCreateFn>(dlsym(h, "dsp_create"));
-  g_fns.destroy = reinterpret_cast<DspDestroyFn>(dlsym(h, "dsp_destroy"));
-  g_fns.start = reinterpret_cast<DspStartFn>(dlsym(h, "dsp_start"));
-  g_fns.stop = reinterpret_cast<DspStopFn>(dlsym(h, "dsp_stop"));
-  g_fns.process = reinterpret_cast<DspProcessFn>(dlsym(h, "dsp_process"));
-  if (!g_fns.create || !g_fns.destroy || !g_fns.process) {
-    ALOGE("dlsym missing dsp_* symbols");
-    return false;
-  }
-  g_fns.ready = true;
-  ALOGI("libdsp_engine.so resolved");
-  return true;
+static bool ensure_lib() {
+    if (g_lib) return g_create && g_process;
+    g_lib = dlopen("libdsp_engine.so", RTLD_NOW);
+    if (!g_lib) {
+        LOGE("dlopen libdsp_engine.so failed: %s", dlerror());
+        return false;
+    }
+    g_create      = (dsp_create_fn)dlsym(g_lib, "dsp_create");
+    g_destroy     = (dsp_destroy_fn)dlsym(g_lib, "dsp_destroy");
+    g_process     = (dsp_process_fn)dlsym(g_lib, "dsp_process");
+    g_set_enabled = (dsp_set_enabled_fn)dlsym(g_lib, "dsp_set_enabled");
+    if (!g_create || !g_process) {
+        LOGE("dlsym missing dsp_create/dsp_process");
+        return false;
+    }
+    if (!g_scratch_in) {
+        if (posix_memalign((void**)&g_scratch_in, kAlign, kScratchFloats * sizeof(float)) != 0) {
+            g_scratch_in = nullptr;
+            return false;
+        }
+        if (posix_memalign((void**)&g_scratch_out, kAlign, kScratchFloats * sizeof(float)) != 0) {
+            free(g_scratch_in);
+            g_scratch_in = nullptr;
+            return false;
+        }
+    }
+    return true;
 }
-
-void* aligned_alloc_local(size_t bytes) {
-  void* p = nullptr;
-  if (posix_memalign(&p, static_cast<size_t>(kAlignBytes), bytes) != 0) {
-    p = nullptr;
-  }
-  if (p) std::memset(p, 0, bytes);
-  return p;
-}
-
-void* cached_direct_addr(JNIEnv* env, jobject buf, jobject* global_holder, void** cached_addr) {
-  if (buf == nullptr) return nullptr;
-  // Same Java object as last time → reuse cached address (no JNI call).
-  if (*global_holder != nullptr && env->IsSameObject(buf, *global_holder)) {
-    return *cached_addr;
-  }
-  void* addr = env->GetDirectBufferAddress(buf);
-  if (addr == nullptr) return nullptr;
-  if (*global_holder != nullptr) {
-    env->DeleteGlobalRef(*global_holder);
-    *global_holder = nullptr;
-  }
-  *global_holder = env->NewGlobalRef(buf);
-  *cached_addr = addr;
-  return addr;
-}
-
-}  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_Aetherion_Resonate_dsp_DspEngineJni_nativeCreate(
-    JNIEnv* /*env*/, jclass /*clazz*/,
-    jint sample_rate, jint channels, jint buffer_frames) {
-  if (!ensure_lib()) return 0;
-  if (channels < 1 || channels > kMaxChannels) return 0;
-  if (buffer_frames < 1 || buffer_frames > kMaxFrames) buffer_frames = kMaxFrames;
-
-  auto* ne = new NativeEngine();
-  ne->channels = channels;
-  ne->sample_rate = sample_rate;
-
-  const size_t scratch_bytes = kMaxFloatSamples * sizeof(float);
-  ne->scratch_in = static_cast<float*>(aligned_alloc_local(scratch_bytes));
-  ne->scratch_out = static_cast<float*>(aligned_alloc_local(scratch_bytes));
-  if (!ne->scratch_in || !ne->scratch_out) {
-    free(ne->scratch_in);
-    free(ne->scratch_out);
-    delete ne;
-    return 0;
-  }
-
-  DspConfig cfg{};
-  cfg.sample_rate = sample_rate;
-  cfg.channels = channels;
-  cfg.buffer_frames = buffer_frames;
-  cfg.exclusive_mode = false;
-  cfg.bit_perfect = true;
-  cfg.realtime_priority = 1;
-
-  ne->engine = g_fns.create(&cfg);
-  if (!ne->engine) {
-    free(ne->scratch_in);
-    free(ne->scratch_out);
-    delete ne;
-    return 0;
-  }
-  if (g_fns.start) g_fns.start(ne->engine);
-  return reinterpret_cast<jlong>(ne);
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeCreate(JNIEnv*, jclass, jdouble sampleRate, jint channels) {
+    if (!ensure_lib() || !g_create) return 0;
+    void* h = g_create(sampleRate, channels);
+    return reinterpret_cast<jlong>(h);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_Aetherion_Resonate_dsp_DspEngineJni_nativeDestroy(
-    JNIEnv* env, jclass /*clazz*/, jlong handle) {
-  if (handle == 0) return;
-  auto* ne = reinterpret_cast<NativeEngine*>(handle);
-  if (ne->engine) {
-    if (g_fns.stop) g_fns.stop(ne->engine);
-    if (g_fns.destroy) g_fns.destroy(ne->engine);
-  }
-  if (ne->last_in_global) env->DeleteGlobalRef(ne->last_in_global);
-  if (ne->last_out_global) env->DeleteGlobalRef(ne->last_out_global);
-  free(ne->scratch_in);
-  free(ne->scratch_out);
-  delete ne;
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeDestroy(JNIEnv*, jclass, jlong handle) {
+    if (g_destroy && handle) g_destroy(reinterpret_cast<void*>(handle));
 }
 
-/**
- * Process interleaved PCM 16-bit LE in a direct ByteBuffer.
- * in/out may be the same buffer (in-place after conversion via scratch).
- * Returns frames processed, or negative on error.
- */
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetEnabled(JNIEnv*, jclass, jlong handle, jboolean enabled) {
+    if (g_set_enabled && handle) g_set_enabled(reinterpret_cast<void*>(handle), enabled ? 1 : 0);
+}
+
 extern "C" JNIEXPORT jint JNICALL
-Java_com_Aetherion_Resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
-    JNIEnv* env, jclass /*clazz*/,
-    jlong handle,
-    jobject in_buf, jint in_offset,
-    jobject out_buf, jint out_offset,
-    jint frames) {
-  if (handle == 0 || frames <= 0 || frames > kMaxFrames) return -1;
-  auto* ne = reinterpret_cast<NativeEngine*>(handle);
-  if (!ne->engine || !g_fns.process) return -2;
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
+        JNIEnv* env, jclass, jlong handle, jobject buffer, jint frames, jint channels, jdouble /*sampleRate*/) {
+    if (!handle || !g_process || frames <= 0 || frames > kMaxFrames || channels <= 0 || channels > kMaxCh) {
+        return -1;
+    }
+    if (!ensure_lib() || !g_scratch_in || !g_scratch_out) return -2;
 
-  auto* in_base = static_cast<uint8_t*>(
-      cached_direct_addr(env, in_buf, &ne->last_in_global, &ne->last_in_addr));
-  auto* out_base = static_cast<uint8_t*>(
-      cached_direct_addr(env, out_buf, &ne->last_out_global, &ne->last_out_addr));
-  if (!in_base || !out_base) return -3;
+    void* addr = env->GetDirectBufferAddress(buffer);
+    if (!addr) return -3;
 
-  const int ch = ne->channels;
-  const int samples = frames * ch;
-  if (static_cast<size_t>(samples) > kMaxFloatSamples) return -4;
+    int16_t* pcm = static_cast<int16_t*>(addr);
+    const int n = frames * channels;
 
-  const auto* in_pcm = reinterpret_cast<const int16_t*>(in_base + in_offset);
-  auto* out_pcm = reinterpret_cast<int16_t*>(out_base + out_offset);
-
-  // PCM16 → float [-1, 1)
-  constexpr float kScale = 1.0f / 32768.0f;
-  for (int i = 0; i < samples; ++i) {
-    ne->scratch_in[i] = static_cast<float>(in_pcm[i]) * kScale;
-  }
-
-  g_fns.process(ne->engine, ne->scratch_in, ne->scratch_out, frames);
-
-  // float → PCM16 with soft clip
-  for (int i = 0; i < samples; ++i) {
-    float s = ne->scratch_out[i];
-    if (s > 1.0f) s = 1.0f;
-    if (s < -1.0f) s = -1.0f;
-    out_pcm[i] = static_cast<int16_t>(s * 32767.0f);
-  }
-  return frames;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_Aetherion_Resonate_dsp_DspEngineJni_nativeIsLibReady(
-    JNIEnv* /*env*/, jclass /*clazz*/) {
-  return ensure_lib() ? JNI_TRUE : JNI_FALSE;
+    for (int i = 0; i < n; ++i) {
+        g_scratch_in[i] = (float)pcm[i] * (1.0f / 32768.0f);
+    }
+    g_process(reinterpret_cast<void*>(handle), g_scratch_in, g_scratch_out, frames, channels);
+    for (int i = 0; i < n; ++i) {
+        float s = g_scratch_out[i];
+        if (s > 1.0f) s = 1.0f;
+        if (s < -1.0f) s = -1.0f;
+        pcm[i] = (int16_t)(s * 32767.0f);
+    }
+    return 0;
 }
