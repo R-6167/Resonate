@@ -4,25 +4,33 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Tracks live native engine handles for dual-player (A/B) sinks.
+ * Live native engine handles for dual-player (A/B) sinks.
  *
- * Design (flawless dual playback):
- * - Each just_audio / ExoPlayer sink owns **one** [DspEngineAudioProcessor]
- *   and **one** native handle. Never share a handle across two audio threads.
- * - Crossfade A→B = two independent process graphs at the same sample rate.
- * - UI (preamp / EQ) will broadcast to all registered handles (future).
- * - Fail-open: [DspSessionGate] can ban new creates; existing handles may
- *   still process until reset, or processors demote to pass-through.
+ * Sticky volume/EQ: when player B is created mid-session, [register] reapplies
+ * the last UI settings so both engines stay in sync during crossfade.
  */
 object DspEngineRegistry {
     private const val TAG = "DspEngineRegistry"
 
     private val handles = ConcurrentHashMap<Int, Long>()
 
+    @Volatile
+    private var stickyLinearGain: Double = 1.0
+
+    @Volatile
+    private var stickyEqEnabled: Boolean = true
+
+    @Volatile
+    private var stickyCentersHz: DoubleArray? = null
+
+    @Volatile
+    private var stickyGainsDb: DoubleArray? = null
+
     @JvmStatic
     fun register(processorId: Int, handle: Long) {
         if (handle == 0L) return
         handles[processorId] = handle
+        applyStickyToHandle(handle)
         Log.i(TAG, "register id=$processorId handle=$handle active=${handles.size}")
     }
 
@@ -35,20 +43,63 @@ object DspEngineRegistry {
     @JvmStatic
     fun activeCount(): Int = handles.size
 
-    /** Snapshot of live handles (for future bulk volume/EQ apply). */
     @JvmStatic
     fun snapshotHandles(): List<Long> = handles.values.filter { it != 0L }.toList()
 
-    /**
-     * Apply linear gain to every live engine (DVC). Safe no-op if JNI missing.
-     * Call from UI / Dart bridge thread — not from the audio thread.
-     */
+    @JvmStatic
+    fun statusMap(): Map<String, Any> = mapOf(
+        "activeEngines" to activeCount(),
+        "gateTripped" to DspSessionGate.isTripped(),
+        "nativeAllowed" to DspSessionGate.isNativeAllowed(),
+        "linearGain" to stickyLinearGain,
+        "eqEnabled" to stickyEqEnabled,
+        "eqBands" to (stickyGainsDb?.size ?: 0),
+    )
+
+    /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
     fun applyVolumeAll(linearGain: Double) {
+        val g = linearGain.coerceIn(0.0, 4.0)
+        stickyLinearGain = g
         val list = snapshotHandles()
-        if (list.isEmpty()) return
-        // nativeSetEnabled is EQ toggle today; volume needs a dedicated JNI later.
-        // Placeholder log until dsp_set_volume is exposed on DspEngineJni.
-        Log.i(TAG, "applyVolumeAll gain=$linearGain targets=${list.size}")
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetVolume(h, g)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setVolume failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applyVolumeAll gain=$g targets=${list.size}")
+    }
+
+    /** Studio curve → all live engines. */
+    @JvmStatic
+    fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
+        stickyEqEnabled = enabled
+        stickyCentersHz = centersHz?.copyOf()
+        stickyGainsDb = gainsDb.copyOf()
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetEqBands(h, centersHz, gainsDb, enabled)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setEqBands failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} enabled=$enabled targets=${list.size}")
+    }
+
+    private fun applyStickyToHandle(handle: Long) {
+        try {
+            DspEngineJni.nativeSetVolume(handle, stickyLinearGain)
+            val gains = stickyGainsDb
+            if (gains != null && gains.isNotEmpty()) {
+                DspEngineJni.nativeSetEqBands(handle, stickyCentersHz, gains, stickyEqEnabled)
+            } else {
+                DspEngineJni.nativeSetEnabled(handle, stickyEqEnabled)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "applySticky failed", t)
+        }
     }
 }
