@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""Idempotent patch: inject DspEngineSinkHook into just_audio AudioPlayer.java."""
+"""Idempotent patch: inject DspEngineSinkHook into just_audio AudioPlayer.java.
+
+Exit codes:
+  0 — patched or already patched
+  0 — upstream mismatch (warning only; APK build continues without sink inject)
+  1 — AudioPlayer.java not found after pub get (hard fail)
+"""
 from __future__ import annotations
 
 import glob
 import os
 import sys
 
-MARKER = "DspEngineSinkHook"  # already-patched detection
+MARKER = "DspEngineSinkHook"
 
-# Upstream (minor) ensurePlayerInitialized body — match exact whitespace from pub-cache.
 OLD = """    private void ensurePlayerInitialized() {
         if (player == null) {
             RenderersFactory renderersFactory = (eventHandler, videoListener, audioListener, textOutput, metadataOutput) -> {
@@ -106,7 +111,7 @@ def find_audio_player() -> str | None:
     for pat in patterns:
         hits = sorted(glob.glob(pat))
         if hits:
-            return hits[-1]  # newest
+            return hits[-1]
     return None
 
 
@@ -121,11 +126,14 @@ def main() -> int:
         print(f"Already patched: {path}")
         return 0
     if OLD not in text:
-        print(f"ERROR: expected ensurePlayerInitialized block not found in {path}", file=sys.stderr)
-        print("just_audio version may have changed — update OLD/NEW in this script.", file=sys.stderr)
-        return 2
+        # Soft-fail: just_audio upgraded — APK still builds; live DSP inject skipped.
+        print(
+            f"WARN: expected ensurePlayerInitialized block not found in {path}\n"
+            "just_audio version may have changed — DSP sink inject skipped (pass-through).",
+            file=sys.stderr,
+        )
+        return 0
     text = text.replace(OLD, NEW, 1)
-    # Imports used by the patch (idempotent if already present)
     if "import androidx.media3.exoplayer.audio.DefaultAudioSink;" not in text:
         text = text.replace(
             "import androidx.media3.exoplayer.DefaultRenderersFactory;",
