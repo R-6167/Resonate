@@ -4,26 +4,38 @@ import androidx.media3.common.audio.AudioProcessor
 import android.util.Log
 
 /**
- * Reflection entry point for the just_audio pub-cache / fork patch.
- * just_audio calls createProcessors() so the DSP sits in DefaultAudioSink.
+ * Reflection entry for just_audio patch → DefaultAudioSink processors.
  *
- * Live native path uses ABI-correct dsp_create(const DspConfig*) via JNI.
+ * Called once per ExoPlayer / just_audio engine. Resonate dual playback
+ * therefore gets **two** independent [DspEngineAudioProcessor] instances
+ * (engine A and engine B) when both players are created — which is what
+ * we want for flawless crossfade (no shared native handle across threads).
  */
 object DspEngineSinkHook {
     private const val TAG = "DspEngineSinkHook"
 
-    /** Safe after JNI ABI fix (DspConfig*). Set false to force pass-through. */
+    /** Master switch; still subject to [DspSessionGate]. */
     private const val ENABLE_NATIVE_LIVE_DSP = true
 
     @JvmStatic
     fun createProcessors(): Array<AudioProcessor> {
         return try {
+            val allow = ENABLE_NATIVE_LIVE_DSP && DspSessionGate.isNativeAllowed()
             val proc = DspEngineAudioProcessor()
-            proc.setNativeProcessEnabled(ENABLE_NATIVE_LIVE_DSP)
-            if (ENABLE_NATIVE_LIVE_DSP) {
-                Log.i(TAG, "Injected 1 host AudioProcessor(s) with native DSP enabled")
+            proc.setNativeProcessEnabled(allow)
+            val active = DspEngineRegistry.activeCount()
+            if (allow) {
+                Log.i(
+                    TAG,
+                    "Injected 1 host AudioProcessor(s) native=ON " +
+                        "(session ok; registry_active=$active — dual A/B uses 2 injects)"
+                )
             } else {
-                Log.i(TAG, "Injected 1 host AudioProcessor(s) pass-through (native DSP disabled)")
+                Log.i(
+                    TAG,
+                    "Injected 1 host AudioProcessor(s) pass-through " +
+                        "(ENABLE=$ENABLE_NATIVE_LIVE_DSP gate_tripped=${DspSessionGate.isTripped()})"
+                )
             }
             arrayOf(proc)
         } catch (t: Throwable) {
