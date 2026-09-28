@@ -14,6 +14,7 @@
 #include <jni.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 #define LOG_TAG "DspEngineJni"
@@ -94,11 +95,9 @@ bool ensure_lib() {
 
 void* aligned_alloc_local(size_t bytes) {
   void* p = nullptr;
-#if defined(__ANDROID__)
-  if (posix_memalign(&p, kAlignBytes, bytes) != 0) p = nullptr;
-#else
-  p = std::aligned_alloc(kAlignBytes, bytes);
-#endif
+  if (posix_memalign(&p, static_cast<size_t>(kAlignBytes), bytes) != 0) {
+    p = nullptr;
+  }
   if (p) std::memset(p, 0, bytes);
   return p;
 }
