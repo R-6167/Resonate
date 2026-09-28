@@ -27,7 +27,7 @@ class ResonateNativeDspBridge {
   static Future<bool> attachSession(int sessionId) async => false;
 }
 
-/// One band in the app's fixed 10-band software curve (source of truth).
+/// One band in the app's fixed studio curve (source of truth).
 class StudioBand {
   final int index;
   final double frequencyHz;
@@ -62,7 +62,7 @@ class EqualizerBandState {
 class EqualizerPreset {
   final String name;
   final String category;
-  final List<double> gains; // 10 values, dB
+  final List<double> gains; // often 10 values, dB; expanded to studio grid
   final bool isCustom;
 
   const EqualizerPreset({
@@ -454,7 +454,7 @@ class EqualizerProvider extends ChangeNotifier {
       await _applyPreamp();
       notifyListeners();
     } catch (e) {
-      debugPrint('Equalizer initialization failed: $e');
+      debugPrint('equalizer initialization failed: $e');
     }
   }
 
@@ -529,9 +529,14 @@ class EqualizerProvider extends ChangeNotifier {
     if (_androidEqualizer != null && bandStates.isNotEmpty) {
       final mapped = mapStudioToHardware(studioGains);
       try {
+        final parameters = await _androidEqualizer!.parameters;
         for (var i = 0; i < mapped.length && i < bandStates.length; i++) {
-          await _androidEqualizer!.setBandGain(i, mapped[i]);
-          bandStates[i].gain = mapped[i];
+          final g = mapped[i]
+              .clamp(bandStates[i].minGain, bandStates[i].maxGain)
+              .toDouble();
+          bandStates[i].gain = g;
+          // just_audio: set gain on the band object, not AndroidEqualizer
+          await parameters.bands[i].setGain(isEnabled ? g : 0.0);
         }
       } catch (e) {
         debugPrint('hardware EQ push failed: $e');
@@ -550,10 +555,8 @@ class EqualizerProvider extends ChangeNotifier {
       debugPrint('loudness preamp failed: $e');
     }
     try {
-      syncPreampToDvc(preamp, enabled: isEnabled);
-    } catch (e) {
-      debugPrint('DVC preamp sync failed: $e');
-    }
+      syncPreampToDvc(effective, enabled: isEnabled);
+    } catch (_) {}
   }
 
   void _applyStudioGains(List<double> gains) {
@@ -576,7 +579,7 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setPreamp(double db) async {
-    preamp = db.clamp(-6.0, 6.0);
+    preamp = db.clamp(-6.0, 6.0).toDouble();
     await _applyPreamp();
     await _save();
     notifyListeners();
@@ -584,7 +587,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> setStudioBandGain(int index, double gainDb) async {
     if (index < 0 || index >= studioBands.length) return;
-    studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb);
+    studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb).toDouble();
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
     await _pushToHardware();
@@ -608,33 +611,27 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> attachNativeSession(int sessionId) async {
+    if (!_nativeDspEnabled) return;
     try {
       final ok = await ResonateNativeDspBridge.attachSession(sessionId);
       if (ok) {
-        final studioGains = studioBands.map((b) => b.gainDb).toList();
-        await ResonateNativeDspBridge.pushBands(
-          gainsDb: studioGains,
-          centersHz: studioBands.map((b) => b.frequencyHz).toList(),
-        );
+        ResonateNativeDspBridge.available = true;
         await ResonateNativeDspBridge.setEnabled(_nativeDspEnabled && isEnabled);
+        await _pushToHardware();
+        notifyListeners();
       }
     } catch (e) {
-      debugPrint('native session attach failed: $e');
+      debugPrint('attachNativeSession failed: $e');
     }
   }
 
   Future<void> saveCustomPreset(String name) async {
     final gains = studioBands.map((b) => b.gainDb).toList();
-    // Store as 10-point for compatibility
-    final compact = [
-      for (final hz in _legacy10Hz)
-        _interpolatedGainAt(hz),
-    ];
     customPresets.removeWhere((p) => p.name == name);
     customPresets.add(EqualizerPreset(
       name: name,
       category: 'Custom',
-      gains: compact,
+      gains: gains,
       isCustom: true,
     ));
     preset = name;
@@ -645,23 +642,21 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> deleteCustomPreset(String name) async {
     customPresets.removeWhere((p) => p.name == name);
-    if (preset == name) preset = 'Flat';
+    if (preset == name) preset = 'Custom';
     await _saveCustomPresets();
-    await _save();
     notifyListeners();
   }
 
   Future<void> _loadCustomPresets(SharedPreferences prefs) async {
     try {
       final raw = prefs.getString('equalizer_custom_presets_v1');
-      if (raw == null) return;
+      if (raw == null || raw.isEmpty) return;
       final decoded = jsonDecode(raw);
-      if (decoded is List) {
-        customPresets = decoded
-            .whereType<Map>()
-            .map((e) => EqualizerPreset.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-      }
+      if (decoded is! List) return;
+      customPresets = decoded
+          .whereType<Map>()
+          .map((e) => EqualizerPreset.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
     } catch (e) {
       debugPrint('custom presets load failed: $e');
     }
