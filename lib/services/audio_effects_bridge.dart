@@ -41,6 +41,54 @@ class AudioEffectsBridge {
     }
   }
 
+  /// Live DSP ENGINE preamp (DVC) on every registered A/B sink handle.
+  static Future<Map<String, dynamic>?> setLiveDspPreampDb(double db) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspPreampDb', {
+        'db': db.clamp(-12.0, 12.0),
+      });
+      if (raw is Map) {
+        return Map<String, dynamic>.from(raw);
+      }
+    } catch (e) {
+      debugPrint('setLiveDspPreampDb failed: $e');
+    }
+    return null;
+  }
+
+  /// Live multi-band EQ on every registered A/B sink handle.
+  static Future<Map<String, dynamic>?> setLiveDspEqBands({
+    List<double>? centersHz,
+    required List<double> gainsDb,
+    bool enabled = true,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspEqBands', {
+        if (centersHz != null) 'centersHz': centersHz,
+        'gainsDb': gainsDb,
+        'enabled': enabled,
+      });
+      if (raw is Map) {
+        return Map<String, dynamic>.from(raw);
+      }
+    } catch (e) {
+      debugPrint('setLiveDspEqBands failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> getLiveDspStatus() async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
+      if (raw is Map) {
+        return Map<String, dynamic>.from(raw);
+      }
+    } catch (e) {
+      debugPrint('getLiveDspStatus failed: $e');
+    }
+    return null;
+  }
+
   static Future<void> release() async {
     try {
       await _channel.invokeMethod('release');
