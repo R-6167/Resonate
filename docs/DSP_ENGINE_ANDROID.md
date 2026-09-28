@@ -7,44 +7,44 @@ You do **not** need Android Studio. Builds run on GitHub Actions.
 | Layer | Role |
 |-------|------|
 | **Studio curve (Dart)** | 31-band source of truth in the Equalizer UI |
-| **DSP ENGINE native** | 64-bit multi-band EQ + DVC state (`libdsp_engine.so`) when packaged |
-| **DynamicsProcessing** | Live multi-band on the Android audio session (API 28+), **user toggle** under Advanced |
-| **AndroidEqualizer** | Device hardware band mapping (always, after playback starts) |
+| **DSP ENGINE native** | 64-bit EQ + DVC state; `dsp_process()` callable offline / self-test |
+| **DynamicsProcessing** | Live multi-band on the Android session (API 28+), **user toggle** |
+| **AndroidEqualizer** | Device hardware bands (after playback starts) |
 
-`just_audio` / ExoPlayer does not expose a simple PCM callback. Inserting `dsp_process()` on every buffer would require a custom audio sink. Until that exists:
+## Custom audio sink — what is / is not possible
 
-- **Preamp / DVC** → DSP ENGINE (when `.so` loads) + `AndroidLoudnessEnhancer`
-- **Live multi-band** → enable **Native multi-band DSP** in Equalizer → Advanced (attaches `DynamicsProcessing` only after you opt in — never on first-play critical path)
-- **Hardware bands** → `AndroidEqualizer` mapped from the same studio curve
+`just_audio` owns ExoPlayer (media3) internally. It does **not** expose a hook to inject a custom `AudioProcessor` / `AudioSink`. Therefore:
+
+| Approach | Feasible without forking? |
+|----------|---------------------------|
+| Live `dsp_process()` on every playback buffer | **No** — needs just_audio fork or custom player |
+| DynamicsProcessing on audio session | **Yes** (current Advanced toggle) |
+| AndroidEqualizer mapped from studio curve | **Yes** (default live path) |
+| Offline / self-test `process()` via FFI | **Yes** (Equalizer → Advanced → Test) |
+
+A true live sink would:
+
+1. Fork `just_audio` Android and register a media3 `BaseAudioProcessor` that calls `dsp_process` on the audio thread with **pre-allocated** buffers (no Dart allocs), or
+2. Replace the player stack (breaks dual-engine crossfade + `audio_service`).
+
+Until then, **live tone shaping** = hardware EQ + optional DynamicsProcessing; **DSP ENGINE** holds authoritative EQ/DVC state and is verified with the process self-test.
 
 ## How to use on device
 
-1. Install the APK from Actions → **Android APK** → artifact `resonate-debug-apk` (or **Build Resonate APK** release artifact).
-2. Play a track, wait ~2s for hardware EQ to bind.
-3. Open **Equalizer**:
-   - **Power & engine** — shows DSP ENGINE id when the native library is present.
-   - **Preamp (DVC)** — knob; uses 64-bit DVC when available.
-   - **Presets / Studio bands** — drive the studio curve.
-   - **Advanced → Native multi-band DSP** — optional; attaches DynamicsProcessing on the current session.
+1. Install APK from Actions → **Android APK** → `resonate-debug-apk`.
+2. Play a track (~2s) so hardware EQ can bind.
+3. Equalizer:
+   - **Power & engine** — DSP ENGINE id when `.so` is present.
+   - **Preamp (DVC)** — knob.
+   - **Presets / Studio bands** — studio curve.
+   - **Advanced → Native multi-band DSP** — optional DynamicsProcessing.
+   - **Advanced → Test DSP process() path** — runs a sine through native `process()` and reports RMS.
 
-Leave Advanced off if playback becomes unstable on a given OEM; hardware EQ still works.
+## Build without a local machine
 
-## Build an APK without a local machine
-
-1. Push (or open a PR) on branch `Wire_dsp_engine`.
-2. Open **Actions** → workflow **Android APK** (or **Build Resonate APK**).
-3. Download the APK artifact.
-4. Install on a device (enable install from unknown sources if needed).
-
-Manual re-run: **Actions → Android APK → Run workflow**.
-
-## Logs to look for
-
-```
-DSP ENGINE ready: … (DSP-ENGINE/v0.2-eq31)
-```
-
-Equalizer → **Power & engine** should show that id when the `.so` is packaged.
+1. Push on `Wire_dsp_engine`.
+2. Actions → **Android APK** (or **Build Resonate APK**).
+3. Download artifact and install.
 
 ## App id
 
