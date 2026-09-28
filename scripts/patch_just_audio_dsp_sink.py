@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
-"""Patch just_audio Android AudioPlayer to inject host AudioProcessors.
-
-Finds pub-cache (or .flutter-plugins-dependencies path) copies of
-com/ryanheise/just_audio/AudioPlayer.java and replaces ensurePlayerInitialized
-so DefaultRenderersFactory.buildAudioSink installs processors from
-com.Aetherion.Resonate.dsp.DspEngineSinkHook via reflection.
-
-Idempotent: skips files that already contain DspEngineSinkHook.
-"""
+"""Idempotent patch: inject DspEngineSinkHook into just_audio AudioPlayer.java."""
 from __future__ import annotations
 
+import glob
 import os
 import sys
-from pathlib import Path
 
-MARKER = "DspEngineSinkHook"
+MARKER = "DspEngineSinkHook"  # already-patched detection
 
+# Upstream (minor) ensurePlayerInitialized body — match exact whitespace from pub-cache.
 OLD = """    private void ensurePlayerInitialized() {
         if (player == null) {
             RenderersFactory renderersFactory = (eventHandler, videoListener, audioListener, textOutput, metadataOutput) -> {
@@ -25,42 +18,51 @@ OLD = """    private void ensurePlayerInitialized() {
                 allRenderers[defaultRenderers.length] = new ObserverRenderer();
                 return allRenderers;
             };
-            ExoPlayer.Builder builder = new ExoPlayer.Builder(context, renderersFactory);"""
-
-NEW = """    /**
-     * Optional host-app hook (Resonate): com.Aetherion.Resonate.dsp.DspEngineSinkHook.createProcessors()
-     * Returns androidx.media3.common.audio.AudioProcessor[] for DefaultAudioSink.
-     * Resolved via reflection so just_audio does not depend on the app package.
-     */
-    private static androidx.media3.common.audio.AudioProcessor[] loadHostAudioProcessors() {
-        try {
-            Class<?> hook = Class.forName("com.Aetherion.Resonate.dsp.DspEngineSinkHook");
-            Object result = hook.getMethod("createProcessors").invoke(null);
-            if (result instanceof androidx.media3.common.audio.AudioProcessor[]) {
-                return (androidx.media3.common.audio.AudioProcessor[]) result;
+            ExoPlayer.Builder builder = new ExoPlayer.Builder(context, renderersFactory);
+            builder.setUseLazyPreparation(useLazyPreparation);
+            if (loadControl != null) {
+                builder.setLoadControl(loadControl);
             }
-        } catch (Throwable t) {
-            Log.d(TAG, "No host DSP AudioProcessor hook: " + t.getMessage());
+            if (livePlaybackSpeedControl != null) {
+                builder.setLivePlaybackSpeedControl(livePlaybackSpeedControl);
+            }
+            player = builder.build();
+            player.setTrackSelectionParameters(
+                player.getTrackSelectionParameters()
+                    .buildUpon()
+                    .setAudioOffloadPreferences(audioOffloadPreferences)
+                    .build()
+            );
+            setAudioSessionId(player.getAudioSessionId());
+            player.addListener(this);
         }
-        return new androidx.media3.common.audio.AudioProcessor[0];
-    }
+    }"""
 
-    private void ensurePlayerInitialized() {
+NEW = """    private void ensurePlayerInitialized() {
         if (player == null) {
-            final DefaultRenderersFactory defaultFactory = new DefaultRenderersFactory(context) {
+            DefaultRenderersFactory defaultFactory = new DefaultRenderersFactory(context) {
                 @Override
-                protected androidx.media3.exoplayer.audio.AudioSink buildAudioSink(
+                protected AudioSink buildAudioSink(
                         Context context,
                         boolean enableFloatOutput,
                         boolean enableAudioTrackPlaybackParams) {
-                    androidx.media3.common.audio.AudioProcessor[] hostProcessors = loadHostAudioProcessors();
-                    androidx.media3.exoplayer.audio.DefaultAudioSink.Builder sinkBuilder =
-                            new androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
-                                    .setEnableFloatOutput(enableFloatOutput)
-                                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams);
-                    if (hostProcessors != null && hostProcessors.length > 0) {
-                        sinkBuilder.setAudioProcessors(hostProcessors);
-                        Log.i(TAG, "Injected " + hostProcessors.length + " host AudioProcessor(s) into DefaultAudioSink");
+                    DefaultAudioSink.Builder sinkBuilder = new DefaultAudioSink.Builder(context)
+                            .setEnableFloatOutput(enableFloatOutput)
+                            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams);
+                    try {
+                        Class<?> hook = Class.forName("com.aetherion.resonate.dsp.DspEngineSinkHook");
+                        java.lang.reflect.Method m = hook.getMethod("createProcessors");
+                        Object raw = m.invoke(null);
+                        if (raw instanceof androidx.media3.common.audio.AudioProcessor[]) {
+                            androidx.media3.common.audio.AudioProcessor[] extra =
+                                    (androidx.media3.common.audio.AudioProcessor[]) raw;
+                            if (extra.length > 0) {
+                                sinkBuilder.setAudioProcessors(extra);
+                                android.util.Log.i("just_audio", "Injected " + extra.length + " host AudioProcessor(s)");
+                            }
+                        }
+                    } catch (Throwable t) {
+                        android.util.Log.w("just_audio", "DspEngineSinkHook not available, pass-through", t);
                     }
                     return sinkBuilder.build();
                 }
@@ -72,68 +74,72 @@ NEW = """    /**
                 allRenderers[defaultRenderers.length] = new ObserverRenderer();
                 return allRenderers;
             };
-            ExoPlayer.Builder builder = new ExoPlayer.Builder(context, renderersFactory);"""
+            ExoPlayer.Builder builder = new ExoPlayer.Builder(context, renderersFactory);
+            builder.setUseLazyPreparation(useLazyPreparation);
+            if (loadControl != null) {
+                builder.setLoadControl(loadControl);
+            }
+            if (livePlaybackSpeedControl != null) {
+                builder.setLivePlaybackSpeedControl(livePlaybackSpeedControl);
+            }
+            player = builder.build();
+            player.setTrackSelectionParameters(
+                player.getTrackSelectionParameters()
+                    .buildUpon()
+                    .setAudioOffloadPreferences(audioOffloadPreferences)
+                    .build()
+            );
+            setAudioSessionId(player.getAudioSessionId());
+            player.addListener(this);
+        }
+    }"""
 
 
-def candidate_roots() -> list[Path]:
-    roots: list[Path] = []
-    home = Path.home()
-    for p in (
-        home / ".pub-cache" / "hosted",
-        home / ".pub-cache" / "git",
-        Path(os.environ.get("PUB_CACHE", "")) if os.environ.get("PUB_CACHE") else None,
-    ):
-        if p and p.is_dir():
-            roots.append(p)
-    # Flutter pub-cache on CI / some installs
-    for env_key in ("FLUTTER_ROOT", "FLUTTER_HOME"):
-        fr = os.environ.get(env_key)
-        if fr:
-            roots.append(Path(fr) / ".pub-cache" / "hosted")
-    return roots
-
-
-def find_audio_players() -> list[Path]:
-    found: list[Path] = []
-    for root in candidate_roots():
-        for path in root.rglob("AudioPlayer.java"):
-            # just_audio package path
-            if "just_audio" in path.as_posix() and "ryanheise" in path.as_posix():
-                found.append(path)
-    # Also scan project relative pub-cache if present
-    cwd = Path.cwd()
-    for path in cwd.rglob("AudioPlayer.java"):
-        s = path.as_posix()
-        if "just_audio" in s and "AudioPlayer.java" in s and path not in found:
-            if "ryanheise" in s or "/.pub-cache/" in s:
-                found.append(path)
-    return found
-
-
-def patch_file(path: Path) -> str:
-    text = path.read_text(encoding="utf-8")
-    if MARKER in text:
-        return "skip"
-    if OLD not in text:
-        return "mismatch"
-    path.write_text(text.replace(OLD, NEW, 1), encoding="utf-8")
-    return "patched"
+def find_audio_player() -> str | None:
+    home = os.path.expanduser("~")
+    patterns = [
+        os.path.join(home, ".pub-cache", "hosted", "*", "just_audio-*", "android", "src", "main", "java",
+                     "com", "ryanheise", "just_audio", "AudioPlayer.java"),
+        os.path.join(home, ".pub-cache", "git", "just_audio-*", "just_audio", "android", "src", "main", "java",
+                     "com", "ryanheise", "just_audio", "AudioPlayer.java"),
+    ]
+    for pat in patterns:
+        hits = sorted(glob.glob(pat))
+        if hits:
+            return hits[-1]  # newest
+    return None
 
 
 def main() -> int:
-    files = find_audio_players()
-    if not files:
-        print("patch_just_audio_dsp_sink: no AudioPlayer.java found under pub-cache", file=sys.stderr)
-        print("  Run after: flutter pub get", file=sys.stderr)
+    path = find_audio_player()
+    if not path:
+        print("ERROR: AudioPlayer.java not found under ~/.pub-cache — run flutter pub get first", file=sys.stderr)
         return 1
-    ok = 0
-    for f in files:
-        status = patch_file(f)
-        print(f"{status}: {f}")
-        if status in ("patched", "skip"):
-            ok += 1
-    return 0 if ok else 2
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    if MARKER in text:
+        print(f"Already patched: {path}")
+        return 0
+    if OLD not in text:
+        print(f"ERROR: expected ensurePlayerInitialized block not found in {path}", file=sys.stderr)
+        print("just_audio version may have changed — update OLD/NEW in this script.", file=sys.stderr)
+        return 2
+    text = text.replace(OLD, NEW, 1)
+    # Imports used by the patch (idempotent if already present)
+    if "import androidx.media3.exoplayer.audio.DefaultAudioSink;" not in text:
+        text = text.replace(
+            "import androidx.media3.exoplayer.DefaultRenderersFactory;",
+            "import androidx.media3.exoplayer.DefaultRenderersFactory;\n"
+            "import androidx.media3.exoplayer.audio.AudioSink;\n"
+            "import androidx.media3.exoplayer.audio.DefaultAudioSink;\n"
+            "import android.content.Context;",
+            1,
+        )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"Patched: {path}")
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
