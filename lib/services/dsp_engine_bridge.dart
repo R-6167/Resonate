@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,7 +8,8 @@ import 'package:dsp_engine/dsp_engine.dart';
 /// Soft wrapper around DSP ENGINE (64-bit DVC + multi-band EQ).
 ///
 /// If `libdsp_engine.so` is missing, methods no-op and [isAvailable] is false.
-/// AndroidEqualizer remains a live fallback until process() is in the audio path.
+/// Live multi-band still uses AndroidEqualizer / DynamicsProcessing until a
+/// custom ExoPlayer AudioProcessor can call [processBuffer] on the audio thread.
 ///
 /// App id stays `com.aetherion.resonate`.
 class DspEngineBridge {
@@ -33,6 +35,9 @@ class DspEngineBridge {
       _engine = DspEngine.create(DspConfig.mobile());
       _version = DspEngine.version;
       _available = true;
+      try {
+        _engine!.start();
+      } catch (_) {}
       debugPrint('DSP ENGINE ready: $_version ($engineId)');
       return true;
     } catch (e, st) {
@@ -149,8 +154,25 @@ class DspEngineBridge {
     }
   }
 
+  /// Run [dsp_process] on interleaved float32 PCM (offline / self-test).
+  ///
+  /// Not real-time safe from Dart (allocates); a future media3 AudioProcessor
+  /// should call the C ABI on the audio thread with pre-allocated buffers.
+  bool processBuffer(Float32List input, Float32List output, int frames) {
+    final eng = _engine;
+    if (eng == null || frames <= 0) return false;
+    try {
+      eng.process(input, output, frames);
+      return true;
+    } catch (e) {
+      debugPrint('DSP processBuffer: $e');
+      return false;
+    }
+  }
+
   void dispose() {
     try {
+      _engine?.stop();
       _engine?.dispose();
     } catch (_) {}
     _engine = null;
