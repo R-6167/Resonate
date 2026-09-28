@@ -4,65 +4,34 @@
 
 | Constant | Value | Notes |
 |----------|-------|-------|
-| `DSP_ALIGN_BYTES` | **64** | Cache-line / NEON; min acceptable 32 |
-| `DSP_MAX_CHANNELS` | **2** | Stereo for first live path |
-| `DSP_MAX_FRAMES_PER_BLOCK` | **4096** | Covers 96 kHz ≈ 43 ms + headroom |
-| `DSP_POOL_SLOTS` | **4** | Double-buffer + 2 jitter slots (doc); live path uses 1 in + 1 out float plane |
-| `DSP_BYTES_PER_SAMPLE` | **2** | Live path PCM 16-bit (engine ABI is float) |
-| `DSP_MAX_BYTES_PER_BLOCK` | **16384** | `4096 × 2 × 2` |
-| Float scratch | **32768 bytes × 2** | `4096 × 2 × 4` in + out, 64-byte aligned |
+| `DSP_ALIGN_BYTES` | **64** | Cache-line / NEON |
+| `DSP_MAX_CHANNELS` | **2** | Stereo first live path |
+| `DSP_MAX_FRAMES_PER_BLOCK` | **4096** | |
+| `DSP_BYTES_PER_SAMPLE` | **2** | PCM 16-bit on the wire |
+| `DSP_MAX_BYTES_PER_BLOCK` | **16384** | |
+| Float scratch | 2 × 32 KiB | in + out, 64-byte aligned at create |
 
-Allocation order: `posix_memalign(..., 64, size)` → Android `memalign` → `malloc` last resort.  
-**Never** allocate on the audio thread / inside `queueInput`.
-
-## Implemented path (this branch)
+## Live pipeline (after just_audio patch)
 
 ```text
-libdsp_jni.so  (Resonate app)
-  dlopen → libdsp_engine.so  (Flutter plugin)
-  nativeCreate → dsp_create + start + float scratch
-  nativeProcessPcm16Direct:
-      GetDirectBufferAddress (cached per jobject identity)
-      PCM16 → float scratch_in
-      dsp_process(engine, scratch_in, scratch_out, frames)
-      float → PCM16 → out direct buffer
+just_audio AudioPlayer.ensurePlayerInitialized
+  → DefaultRenderersFactory.buildAudioSink
+       → reflection: DspEngineSinkHook.createProcessors()
+       → DefaultAudioSink.setAudioProcessors([DspEngineAudioProcessor])
 
-DspEngineAudioProcessor.queueInput
-  → if nativeProcessEnabled && handle ≠ 0 → JNI process
-  → else identity put()
+DspEngineAudioProcessor.queueInput (direct PCM16)
+  → DspEngineJni.processPcm16Direct
+       → cached GetDirectBufferAddress
+       → PCM16 → float scratch → dsp_process → float → PCM16
 ```
 
-Kotlin entry: `com.Aetherion.Resonate.dsp.DspEngineJni`  
-Processor: `com.Aetherion.Resonate.dsp.DspEngineAudioProcessor`
+Patch script: `scripts/patch_just_audio_dsp_sink.py` (run after `flutter pub get`).
 
-## Ranking (real-time audio thread)
+## Address caching
 
-| Strategy | Alloc on audio thread? | GC risk | Use |
-|----------|------------------------|---------|-----|
-| **A. Native aligned pool** (`posix_memalign`) | No (once at create) | None | Float scratch in JNI |
-| **B. Direct `ByteBuffer` + cached address** | No | None if jobject stable | Implemented |
-| **C. In-place on media3 buffer** | No | None | After convert via scratch |
-| **D. `GetPrimitiveArrayCritical`** | No | Pins GC | Avoid |
-| **E. Dart `calloc` / FFI every callback** | Yes | High | Offline self-test only |
-| **F. `malloc` per buffer** | Yes | Glitches | Forbidden |
+`GetDirectBufferAddress` runs only when the Java `ByteBuffer` identity changes (`IsSameObject`). media3 often reuses buffers; the cache stays hot.
 
-## Address caching rule
+## Remaining work
 
-`GetDirectBufferAddress` is called only when the Java `ByteBuffer` object identity changes (`IsSameObject` fails). media3 often reuses the same direct buffers; the cache then stays hot and the RT path avoids extra JNI lookups.
-
-## Injection still required
-
-`just_audio` does not expose `RenderersFactory` / processor list. Until a small fork wires:
-
-```kotlin
-DefaultAudioSink.Builder(context)
-  .setAudioProcessors(arrayOf(DspEngineAudioProcessor().also { it.nativeProcessEnabled = true }))
-```
-
-the processor is **not** on the live playback path. Offline `DspEngineBridge.processBuffer` remains the verification path.
-
-## Next
-
-1. just_audio RenderersFactory patch / dependency override.
-2. Share one engine instance with Dart (EQ/DVC param sync) instead of a second `dsp_create` in JNI.
-3. Optional: native PCM16 process entry to skip convert when bit-perfect path allows.
+1. Share one `DspEngine` handle between Dart FFI and JNI so EQ/DVC knobs affect the live path.
+2. Optional permanent just_audio fork instead of pub-cache patch.

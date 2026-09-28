@@ -39,6 +39,9 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
+      - name: Patch just_audio for DSP AudioProcessor injection
+        run: python3 scripts/patch_just_audio_dsp_sink.py
+
       - name: Analyze (non-blocking)
         continue-on-error: true
         run: flutter analyze --no-fatal-infos || true
