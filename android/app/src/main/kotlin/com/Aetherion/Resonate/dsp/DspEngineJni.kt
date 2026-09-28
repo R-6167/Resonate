@@ -4,20 +4,15 @@ object DspEngineJni {
     init {
         try {
             System.loadLibrary("dsp_jni")
-        } catch (t: Throwable) {
-            // Library optional until NDK build is wired; processor will pass-through.
+        } catch (_: Throwable) {
+            // Optional until NDK is present; processors pass-through.
         }
     }
 
-    /** Create engine; returns opaque handle (0 on failure). */
     external fun nativeCreate(sampleRate: Double, channels: Int): Long
 
     external fun nativeDestroy(handle: Long)
 
-    /**
-     * Process interleaved PCM16 in a direct ByteBuffer in-place (or via scratch).
-     * @return 0 on success, negative on error.
-     */
     external fun nativeProcessPcm16Direct(
         handle: Long,
         buffer: java.nio.ByteBuffer,
@@ -27,4 +22,18 @@ object DspEngineJni {
     ): Int
 
     external fun nativeSetEnabled(handle: Long, enabled: Boolean)
+
+    /** Linear gain (1.0 = unity). Applied via dsp_set_volume (DVC). */
+    external fun nativeSetVolume(handle: Long, linearGain: Double)
+
+    /**
+     * Bulk EQ. [centersHz] may be empty to keep existing centers.
+     * [gainsDb] length is the band count (clamped to 31 in native).
+     */
+    external fun nativeSetEqBands(
+        handle: Long,
+        centersHz: DoubleArray?,
+        gainsDb: DoubleArray,
+        enabled: Boolean
+    )
 }
