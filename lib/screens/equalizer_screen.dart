@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/bluetooth_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../services/dsp_engine_bridge.dart';
+import '../services/dsp_process_path.dart';
 import '../widgets/eq_knob.dart';
 
 /// Equalizer screen redesigned around openable sections so the main view
@@ -19,6 +20,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
   String _category = 'Genre';
   bool _categorySynced = false;
   final Set<String> _open = {'power', 'curve', 'bands'};
+  String? _processTestResult;
+  bool _processTesting = false;
 
   @override
   void initState() {
@@ -90,7 +93,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 40),
             children: [
-              // ── Power ─────────────────────────────────────────────
               _Section(
                 id: 'power',
                 title: 'Power & engine',
@@ -129,8 +131,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   ],
                 ),
               ),
-
-              // ── Curve ─────────────────────────────────────────────
               _Section(
                 id: 'curve',
                 title: 'Frequency response',
@@ -184,8 +184,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   ],
                 ),
               ),
-
-              // ── Preamp (knob) ──────────────────────────────────────
               _Section(
                 id: 'preamp',
                 title: 'Preamp (DVC)',
@@ -207,7 +205,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                         size: 96,
                         onChanged: (v) {
                           eq.setPreamp(v);
-                          // 64-bit Direct Volume Control when native lib is present
                           DspEngineBridge.instance.setVolumeRampedDb(v);
                         },
                       ),
@@ -215,15 +212,12 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     const SizedBox(height: 12),
                     _Hint(
                       'Drag the knob up/down. 0 dB is neutral. '
-                      'When DSP ENGINE is loaded, this uses 64-bit Direct Volume Control '
-                      'for smoother, cleaner level changes. Prefer cuts over big boosts '
-                      'to avoid clipping on phones.',
+                      'When DSP ENGINE is loaded, this uses 64-bit Direct Volume Control. '
+                      'Prefer cuts over big boosts to avoid clipping on phones.',
                     ),
                   ],
                 ),
               ),
-
-              // ── Presets ───────────────────────────────────────────
               _Section(
                 id: 'presets',
                 title: 'Presets',
@@ -281,8 +275,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   ],
                 ),
               ),
-
-              // ── Studio bands ──────────────────────────────────────
               _Section(
                 id: 'bands',
                 title: 'Studio bands (${eq.studioBandCount})',
@@ -333,8 +325,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   ],
                 ),
               ),
-
-              // ── Smart options ─────────────────────────────────────
               _Section(
                 id: 'smart',
                 title: 'Smart EQ',
@@ -411,8 +401,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                   ],
                 ),
               ),
-
-              // ── Advanced native ───────────────────────────────────
               _Section(
                 id: 'advanced',
                 title: 'Advanced native path',
@@ -433,11 +421,50 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                       value: eq.nativeDspUserEnabled,
                       onChanged: eq.setNativeDspEnabled,
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _processTesting
+                          ? null
+                          : () async {
+                              setState(() {
+                                _processTesting = true;
+                                _processTestResult = null;
+                              });
+                              final status =
+                                  await DspProcessPath.instance.runSelfTest();
+                              if (!mounted) return;
+                              setState(() {
+                                _processTesting = false;
+                                _processTestResult = status.summary;
+                              });
+                            },
+                      icon: _processTesting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.science_outlined),
+                      label: Text(
+                        _processTesting
+                            ? 'Running process()…'
+                            : 'Test DSP process() path',
+                      ),
+                    ),
+                    if (_processTestResult != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _processTestResult!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
                     _Hint(
-                      'DSP ENGINE (64-bit DVC) handles clean volume/preamp when the '
-                      'native library is packaged. Band shaping still uses the Resonate '
-                      'studio model mapped to Android EQ. More native EQ stages can be '
-                      'added in DSP ENGINE later without changing this screen layout.',
+                      'Live playback uses AndroidEqualizer + optional DynamicsProcessing. '
+                      'just_audio does not expose a custom ExoPlayer AudioProcessor, so '
+                      'dsp_process() cannot sit on the live path without forking the player. '
+                      'The test above runs process() on a synthetic buffer to verify the '
+                      'native library. A future sink would call the same C ABI on the audio thread.',
                     ),
                   ],
                 ),
@@ -471,11 +498,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
             SizedBox(height: 8),
             Text('5. Tap sections to collapse them and keep the screen tidy.'),
             SizedBox(height: 8),
-            Text('6. Bookmark saves your curve; reset returns to Flat.'),
+            Text('6. Bookmark saves a custom preset; reset sets Flat.'),
             SizedBox(height: 16),
             Text(
-              'Safe listening: prefer small boosts and use cuts to reduce mud or harshness. '
-              'Big boosts on bass can rattle speakers and drain battery.',
+              'Live tone uses Android hardware EQ (and optional Native multi-band). '
+              'DSP ENGINE process() is verified under Advanced → Test.',
             ),
           ],
         ),
@@ -484,7 +511,8 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
   }
 
   Future<void> _saveCustom(BuildContext context) async {
-    final controller = TextEditingController();
+    final eq = context.read<EqualizerProvider>();
+    final controller = TextEditingController(text: 'My preset');
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -492,41 +520,32 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Name',
-            hintText: 'My mix',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('Save'),
           ),
         ],
       ),
     );
-    if (name == null || name.trim().isEmpty || !context.mounted) return;
-    await context.read<EqualizerProvider>().saveCustomPreset(name);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved “${name.trim()}”')),
-    );
+    if (name == null || name.isEmpty) return;
+    await eq.saveCustomPreset(name);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved “$name”')),
+      );
+    }
   }
 }
 
-// ─── Section shell ───────────────────────────────────────────────────────────
-
 class _Section extends StatelessWidget {
-  final String id;
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final bool open;
-  final VoidCallback onToggle;
-  final Widget child;
-
   const _Section({
     required this.id,
     required this.title,
@@ -537,19 +556,24 @@ class _Section extends StatelessWidget {
     required this.child,
   });
 
+  final String id;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool open;
+  final VoidCallback onToggle;
+  final Widget child;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           ListTile(
             leading: Icon(icon, color: scheme.primary),
-            title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+            title: Text(title),
             subtitle: Text(subtitle),
             trailing: Icon(open ? Icons.expand_less : Icons.expand_more),
             onTap: onToggle,
@@ -566,8 +590,8 @@ class _Section extends StatelessWidget {
 }
 
 class _Hint extends StatelessWidget {
-  final String text;
   const _Hint(this.text);
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -581,13 +605,6 @@ class _Hint extends StatelessWidget {
 }
 
 class _EngineCard extends StatelessWidget {
-  final bool dspAvailable;
-  final String dspVersion;
-  final String dspId;
-  final String studioId;
-  final bool nativeActive;
-  final int hardwareBands;
-
   const _EngineCard({
     required this.dspAvailable,
     required this.dspVersion,
@@ -597,6 +614,13 @@ class _EngineCard extends StatelessWidget {
     required this.hardwareBands,
   });
 
+  final bool dspAvailable;
+  final String dspVersion;
+  final String dspId;
+  final String studioId;
+  final bool nativeActive;
+  final int hardwareBands;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -604,37 +628,33 @@ class _EngineCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                dspAvailable ? Icons.check_circle_rounded : Icons.info_outline,
-                size: 18,
-                color: dspAvailable ? scheme.primary : scheme.outline,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  dspAvailable
-                      ? 'DSP ENGINE $dspVersion'
-                      : 'DSP ENGINE not loaded yet',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
           Text(
-            dspAvailable
-                ? '$dspId · 64-bit DVC for preamp\nStudio model: $studioId\nHardware bands: $hardwareBands${nativeActive ? ' · native multi-band on' : ''}'
-                : 'Using studio model ($studioId) + Android EQ. '
-                    'Package libdsp_engine.so to enable 64-bit DVC.',
+            dspAvailable ? 'DSP ENGINE loaded' : 'DSP ENGINE not loaded',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: dspAvailable ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text('Id: $dspId', style: Theme.of(context).textTheme.bodySmall),
+          Text('Version: $dspVersion',
+              style: Theme.of(context).textTheme.bodySmall),
+          Text('Studio: $studioId',
+              style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            hardwareBands > 0
+                ? 'Hardware bands: $hardwareBands'
+                : 'Hardware EQ: waiting for playback',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (nativeActive)
+            Text('Native path active',
+                style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
@@ -642,28 +662,23 @@ class _EngineCard extends StatelessWidget {
 }
 
 class _StudioBandSlider extends StatelessWidget {
-  final StudioBand band;
-  final bool enabled;
-  final ValueChanged<double> onChanged;
-
   const _StudioBandSlider({
     required this.band,
     required this.enabled,
     required this.onChanged,
   });
 
+  final StudioBand band;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.labelSmall;
     return Column(
       children: [
-        Text(
-          '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(0)}',
-          style: style,
-        ),
         Expanded(
           child: RotatedBox(
-            quarterTurns: 3,
+            quarterTurns: -1,
             child: Slider(
               value: band.gainDb.clamp(
                 EqualizerProvider.studioMinDb,
@@ -671,37 +686,25 @@ class _StudioBandSlider extends StatelessWidget {
               ),
               min: EqualizerProvider.studioMinDb,
               max: EqualizerProvider.studioMaxDb,
-              divisions: 48,
               onChanged: enabled ? onChanged : null,
             ),
           ),
         ),
         Text(
-          _shortFreq(band.frequencyHz),
+          band.label,
+          style: Theme.of(context).textTheme.labelSmall,
           textAlign: TextAlign.center,
-          style: style,
+        ),
+        Text(
+          '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(0)}',
+          style: Theme.of(context).textTheme.labelSmall,
         ),
       ],
     );
   }
-
-  static String _shortFreq(double hz) {
-    if (hz >= 1000) {
-      final k = hz / 1000;
-      return k >= 10 ? '${k.toStringAsFixed(0)}k' : '${k.toStringAsFixed(1)}k';
-    }
-    return '${hz.round()}';
-  }
 }
 
 class _ResponseCurvePainter extends CustomPainter {
-  final List<Offset> points;
-  final double minDb;
-  final double maxDb;
-  final Color color;
-  final Color gridColor;
-  final bool enabled;
-
   _ResponseCurvePainter({
     required this.points,
     required this.minDb,
@@ -711,60 +714,46 @@ class _ResponseCurvePainter extends CustomPainter {
     required this.enabled,
   });
 
+  final List<Offset> points;
+  final double minDb;
+  final double maxDb;
+  final Color color;
+  final Color gridColor;
+  final bool enabled;
+
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-
-    final zeroY = size.height * (1 - (0 - minDb) / (maxDb - minDb));
-    final gridPaint = Paint()
+    final midY = size.height * 0.5;
+    final range = (maxDb - minDb).abs() < 1e-6 ? 24.0 : (maxDb - minDb);
+    final grid = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
-    canvas.drawLine(Offset(0, zeroY), Offset(size.width, zeroY), gridPaint);
-    for (final frac in [0.25, 0.5, 0.75]) {
-      final x = size.width * frac;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
+    canvas.drawLine(Offset(0, midY), Offset(size.width, midY), grid);
 
     if (points.length < 2) return;
-
     final path = Path();
     for (var i = 0; i < points.length; i++) {
       final p = points[i];
       final x = p.dx * size.width;
-      final y = size.height *
-          (1 - ((p.dy - minDb) / (maxDb - minDb)).clamp(0.0, 1.0));
+      final y = midY - ((p.dy - 0) / (range / 2)) * (size.height * 0.45);
       if (i == 0) {
         path.moveTo(x, y);
       } else {
         path.lineTo(x, y);
       }
     }
-
-    final linePaint = Paint()
+    final paint = Paint()
       ..color = enabled ? color : color.withValues(alpha: 0.35)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
+      ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-
-    final fillPath = Path.from(path)
-      ..lineTo(size.width, zeroY)
-      ..lineTo(0, zeroY)
-      ..close();
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          (enabled ? color : color.withValues(alpha: 0.35)).withValues(alpha: 0.28),
-          color.withValues(alpha: 0.02),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawPath(fillPath, fillPaint);
-    canvas.drawPath(path, linePaint);
+    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant _ResponseCurvePainter old) =>
-      old.points != points || old.enabled != enabled || old.color != color;
+  bool shouldRepaint(covariant _ResponseCurvePainter oldDelegate) =>
+      oldDelegate.points != points ||
+      oldDelegate.enabled != enabled ||
+      oldDelegate.color != color;
 }
