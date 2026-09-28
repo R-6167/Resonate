@@ -32,45 +32,22 @@ class DspProcessPathStatus {
   }
 }
 
-/// Offline / diagnostic use of [DspEngine.process].
+/// Offline / diagnostic use of DSP ENGINE [process].
 ///
 /// **Live playback** still uses AndroidEqualizer + optional DynamicsProcessing.
-/// A true custom ExoPlayer AudioSink needs a just_audio fork or a custom
-/// media3 RenderersFactory — not available from app code alone.
+/// A true custom ExoPlayer AudioSink needs a just_audio fork or custom media3
+/// RenderersFactory — not available from app code alone.
 class DspProcessPath {
   DspProcessPath._();
   static final DspProcessPath instance = DspProcessPath._();
 
-  /// Process interleaved float32 PCM in-place style (writes [output]).
-  ///
-  /// [frames] is frame count (not sample count). Stereo = frames*2 samples.
+  /// Process interleaved float32 PCM (writes [output]). Offline / tests only.
   bool processInterleaved({
     required Float32List input,
     required Float32List output,
     required int frames,
   }) {
-    final bridge = DspEngineBridge.instance;
-    if (!bridge.isAvailable) return false;
-    try {
-      // High-level API allocates temp pointers; fine for offline/self-test,
-      // not for a hard real-time audio thread.
-      final eng = _engineOrNull();
-      if (eng == null) return false;
-      eng.process(input, output, frames);
-      return true;
-    } catch (e, st) {
-      debugPrint('DspProcessPath.processInterleaved: $e');
-      assert(() {
-        debugPrint('$st');
-        return true;
-      }());
-      return false;
-    }
-  }
-
-  dynamic _engineOrNull() {
-    // Reach into bridge via public process helper on the bridge itself.
-    return null; // filled by bridge.processBuffer below
+    return DspEngineBridge.instance.processBuffer(input, output, frames);
   }
 
   /// Self-test: 1 kHz sine through EQ+DVC; returns RMS before/after.
@@ -90,7 +67,6 @@ class DspProcessPath {
     }
 
     final bridge = DspEngineBridge.instance;
-    // Mild mid boost so output RMS should rise vs flat.
     bridge.setEqBands(
       centersHz: List<double>.generate(31, (i) {
         const minF = 20.0;
@@ -98,7 +74,6 @@ class DspProcessPath {
         return minF * math.pow(maxF / minF, i / 30.0);
       }),
       gainsDb: List<double>.generate(31, (i) {
-        // Boost around 1 kHz region (indices ~15–18 on log grid).
         if (i >= 14 && i <= 18) return boostDb;
         return 0.0;
       }),
