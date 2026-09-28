@@ -23,6 +23,13 @@ dependencies:
   file_picker: ^8.1.7
   uuid: ^4.5.1
   url_launcher: ^6.3.2
+  ffi: ^2.1.0
+  # Native 64-bit DSP ENGINE (DVC). Library only — app id stays com.aetherion.resonate
+  dsp_engine:
+    git:
+      url: https://github.com/innotrepid/DSP-ENGINE.git
+      path: bindings/flutter/dsp_engine
+      ref: main
 
 dev_dependencies:
   flutter_test:
