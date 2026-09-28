@@ -2,11 +2,11 @@
 """Copy live DSP stack from Wire_dsp_engine onto dj_Mode; keep library/DJ intact."""
 from __future__ import annotations
 
-import subprocess
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = "origin/Wire_dsp_engine"
+BASE = "https://raw.githubusercontent.com/R-6167/Resonate/Wire_dsp_engine"
 
 COPY_PATHS = [
     "android/app/src/main/cpp/CMakeLists.txt",
@@ -17,9 +17,6 @@ COPY_PATHS = [
     "android/app/src/main/kotlin/com/Aetherion/Resonate/dsp/DspSessionGate.kt",
     "android/app/src/main/kotlin/com/Aetherion/Resonate/dsp/DspEngineRegistry.kt",
     "scripts/patch_just_audio_dsp_sink.py",
-    "docs/DSP_DUAL_ENGINE.md",
-    "docs/DSP_ENGINE_ANDROID.md",
-    "docs/DSP_JNI_BUFFERS.md",
 ]
 
 BUILD_GRADLE = '''plugins {
@@ -273,20 +270,18 @@ class AudioEffectsBridge {
 '''
 
 
-def git_show(path: str) -> bytes | None:
-    try:
-        return subprocess.check_output(["git", "show", f"{SRC}:{path}"], cwd=ROOT)
-    except subprocess.CalledProcessError:
-        print("skip missing", path)
-        return None
+def fetch(rel: str) -> bytes:
+    url = f"{BASE}/{rel}"
+    with urllib.request.urlopen(url, timeout=90) as r:
+        return r.read()
 
 
 def main() -> None:
-    subprocess.check_call(["git", "fetch", "origin", "Wire_dsp_engine"], cwd=ROOT)
-
     for rel in COPY_PATHS:
-        data = git_show(rel)
-        if data is None:
+        try:
+            data = fetch(rel)
+        except Exception as e:
+            print("skip", rel, e)
             continue
         dest = ROOT / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -296,20 +291,17 @@ def main() -> None:
     (ROOT / "android/app/build.gradle").write_text(BUILD_GRADLE)
     print("wrote build.gradle with NDK/cmake")
 
+    (ROOT / ".github/workflows/android-apk.yml").parent.mkdir(parents=True, exist_ok=True)
     (ROOT / ".github/workflows/android-apk.yml").write_text(ANDROID_APK_YML)
     print("wrote android-apk.yml")
 
     (ROOT / "lib/services/audio_effects_bridge.dart").write_text(AUDIO_EFFECTS_BRIDGE)
     print("wrote audio_effects_bridge.dart")
 
-    # MainActivity: inject live methods before "release"
     ma = ROOT / "android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt"
     text = ma.read_text()
     if "setLiveDspPreampDb" not in text:
-        needle = '                    "release" -> {
-                        releaseEffects()
-                        result.success(true)
-                    }'
+        needle = '                    "release" -> {\n                        releaseEffects()\n                        result.success(true)\n                    }'
         if needle not in text:
             raise SystemExit("MainActivity release block not found")
         text = text.replace(needle, LIVE_METHODS + "\n" + needle, 1)
@@ -318,25 +310,17 @@ def main() -> None:
     else:
         print("MainActivity already has live DSP methods")
 
-    # Equalizer: push studio curve + preamp to live engines (fail-open if none)
     eq = ROOT / "lib/providers/equalizer_provider.dart"
     et = eq.read_text()
     if "setLiveDspEqBands" not in et:
-        if "import '../services/audio_effects_bridge.dart';" not in et:
-            et = et.replace(
-                "import '../services/",
-                "import '../services/audio_effects_bridge.dart';\nimport '../services/",
-                1,
-            )
-            # safer: add after first import block
-            if "audio_effects_bridge" not in et:
-                lines = et.splitlines(True)
-                insert_at = 0
-                for i, line in enumerate(lines):
-                    if line.startswith("import "):
-                        insert_at = i + 1
-                lines.insert(insert_at, "import '../services/audio_effects_bridge.dart';\n")
-                et = "".join(lines)
+        if "audio_effects_bridge" not in et:
+            lines = et.splitlines(True)
+            insert_at = 0
+            for i, line in enumerate(lines):
+                if line.startswith("import "):
+                    insert_at = i + 1
+            lines.insert(insert_at, "import '../services/audio_effects_bridge.dart';\n")
+            et = "".join(lines)
 
         old_push = "  Future<void> _pushToHardware() async {\n    if (!_hardwareBound) return;"
         new_push = (
