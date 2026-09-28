@@ -10,6 +10,16 @@ You do **not** need Android Studio. Builds run on GitHub Actions.
 | **DSP ENGINE native** | 64-bit EQ + DVC state; `dsp_process()` callable offline / self-test |
 | **DynamicsProcessing** | Live multi-band on the Android session (API 28+), **user toggle** |
 | **AndroidEqualizer** | Device hardware bands (after playback starts) |
+| **DspEngineAudioProcessor** | media3 scaffold (pass-through); live `dsp_process` after just_audio injection |
+
+## Locked live-buffer policy
+
+See [DSP_JNI_BUFFERS.md](DSP_JNI_BUFFERS.md). Summary:
+
+- **Alignment:** 64 bytes (`posix_memalign`)
+- **Max block:** 4096 frames × 2 ch × 2 bytes = **16 KiB**
+- **Pool:** 4 slots (64 KiB total), allocated at configure only
+- **No malloc / no Dart alloc** on the audio thread
 
 ## Custom audio sink — what is / is not possible
 
@@ -21,13 +31,14 @@ You do **not** need Android Studio. Builds run on GitHub Actions.
 | DynamicsProcessing on audio session | **Yes** (current Advanced toggle) |
 | AndroidEqualizer mapped from studio curve | **Yes** (default live path) |
 | Offline / self-test `process()` via FFI | **Yes** (Equalizer → Advanced → Test) |
+| `DspEngineAudioProcessor` class in app | **Yes** (scaffold present; not wired into player yet) |
 
 A true live sink would:
 
 1. Fork `just_audio` Android and register a media3 `BaseAudioProcessor` that calls `dsp_process` on the audio thread with **pre-allocated** buffers (no Dart allocs), or
 2. Replace the player stack (breaks dual-engine crossfade + `audio_service`).
 
-Until then, **live tone shaping** = hardware EQ + optional DynamicsProcessing; **DSP ENGINE** holds authoritative EQ/DVC state and is verified with the process self-test.
+Until then, **live tone shaping** = hardware EQ + optional DynamicsProcessing; **DSP ENGINE** holds authoritative EQ/DVC state and is verified with the process self-test. The Kotlin processor is the RT-ready building block for step 1.
 
 ## How to use on device
 
