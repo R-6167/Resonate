@@ -42,6 +42,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
+          # Match wrapper; AGP 8.11 requires Gradle >= 8.13
           gradle-version: '8.14'
           cache-read-only: false
 
@@ -59,6 +60,7 @@ jobs:
             unzip -q /tmp/cmdtools.zip -d $HOME/android-sdk/cmdline-tools
             mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
             export ANDROID_SDK_ROOT=$HOME/android-sdk
+            export ANDROID_HOME=$ANDROID_SDK_ROOT
             export PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools"
             echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
             echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
@@ -73,8 +75,11 @@ jobs:
           sdkmanager --install "build-tools;36.0.0" 2>/dev/null || \
           sdkmanager --install "build-tools;35.0.0" 2>/dev/null || \
           sdkmanager --install "build-tools;34.0.0" 2>/dev/null || true
+          # NDK required for vendored libdsp_engine / dsp_jni
+          sdkmanager --install "ndk;28.2.13676358" 2>/dev/null || \
+          sdkmanager --install "ndk;27.0.12077973" 2>/dev/null || true
           echo "Installed packages (if any):"
-          sdkmanager --list_installed 2>/dev/null | head -30 || true
+          sdkmanager --list_installed 2>/dev/null | head -40 || true
 
       - name: Create Android local.properties
         run: |
@@ -126,6 +131,8 @@ jobs:
               echo "Transient dependency-resolution failure; waiting ${delay}s."
               sleep "$delay"
             else
+              echo "==== tail build.log ===="
+              tail -200 build.log || true
               exit 1
             fi
           done
@@ -134,6 +141,10 @@ jobs:
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
           ls -lh build/app/outputs/flutter-apk/app-release.apk
+          # Confirm vendored DSP libs are packaged
+          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E 'libdsp_(engine|jni)' || {
+            echo "::warning::libdsp_engine.so / libdsp_jni.so not found in APK"
+          }
 
       - name: Show build log on failure
         if: failure()
