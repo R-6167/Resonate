@@ -1,0 +1,14 @@
+name: Diagnose MusicProvider
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/diagnose_mp_playsong.py"
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: python3 tools/diagnose_mp_playsong.py
