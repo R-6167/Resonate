@@ -429,7 +429,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                             children: [
                               SwitchListTile.adaptive(
                                 contentPadding: EdgeInsets.zero,
-                                secondary: Icon(Icons.auto_fix_rounded,
+                                secondary: Icon(Icons.palette_rounded,
                                     color: _cViolet),
                                 title: const Text('Colour effects',
                                     style: TextStyle(fontWeight: FontWeight.w700)),
@@ -495,7 +495,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                         children: [
                           SwitchListTile.adaptive(
                             contentPadding: EdgeInsets.zero,
-                            secondary: Icon(Icons.auto_awesome_rounded,
+                            secondary: Icon(Icons.palette_rounded,
                                 color: _cPink),
                             title: const Text('Learned EQ leans',
                                 style: TextStyle(fontWeight: FontWeight.w600)),
