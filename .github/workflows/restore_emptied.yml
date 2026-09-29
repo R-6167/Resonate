@@ -1,0 +1,31 @@
+name: Restore emptied critical files
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/restore_emptied.py"
+      - "tools/settings_*.b64"
+      - "tools/eq_*.b64"
+      - "tools/music_*.b64"
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Restore from b64 chunks
+        run: python3 tools/restore_emptied.py
+      - name: Commit
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/settings_screen.dart lib/screens/equalizer_screen.dart lib/providers/music_provider.dart
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "emergency restore: music_provider, equalizer_screen, settings_screen"
+            git push
+          fi
