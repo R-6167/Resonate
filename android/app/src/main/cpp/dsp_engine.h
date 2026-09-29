@@ -1,5 +1,9 @@
 /**
  * DSP ENGINE public C ABI — vendored with Resonate.
+ *
+ * Stabilization chain (Phase 1):
+ *   EQ → bass path → auto headroom → true-peak limiter → soft clip → DVC
+ *
  * Real-time safe: no allocation inside dsp_process.
  */
 #pragma once
@@ -33,13 +37,7 @@ void  dsp_eq_set_enabled(void* handle, bool enabled);
 void  dsp_eq_set_bands(void* handle, const double* centers_hz, const double* gains_db, int32_t count);
 void  dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_db, double q);
 
-/**
- * Speaker delivery mode: mild HPF + psychoacoustic virtual bass + tighter ceiling.
- * Safe on headphones when off (default).
- */
 void  dsp_set_speaker_mode(void* handle, bool enabled);
-
-/** Virtual-bass amount 0..1 (only applied when speaker mode is on). */
 void  dsp_set_virtual_bass(void* handle, double amount);
 
 #ifdef __cplusplus
