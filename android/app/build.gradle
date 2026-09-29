@@ -57,5 +57,6 @@ flutter {
 }
 
 dependencies {
+    // Compile-time API for DspEngineAudioProcessor (runtime comes via just_audio → media3).
     implementation "androidx.media3:media3-common:1.5.1"
 }
