@@ -4,7 +4,6 @@ import '../providers/bluetooth_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/theme_provider.dart';
 import 'about_screen.dart';
-import 'audio_effects_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
@@ -32,7 +31,7 @@ class SettingsScreen extends StatelessWidget {
                 leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Audio tools are always available'),
                 subtitle: const Text(
-                  'Equalizer, Crossfade, DJ Mode, and Effects work from Settings even before you play a song. Open Playback to find DJ Mode.',
+                  'Equalizer (includes effects), Crossfade, and DJ Mode work from Settings even before you play a song.',
                 ),
               ),
             ),
@@ -55,11 +54,9 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
-              _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen()),
             ], initiallyExpanded: true),
             _section(context, 'Audio', Icons.equalizer_rounded, [
-              _item(context, 'Equalizer', 'Main sound profile', Icons.equalizer_rounded, const EqualizerScreen()),
-              _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
+              _item(context, 'Equalizer & effects', 'EQ, preamp, bass boost, virtualizer, reverb', Icons.equalizer_rounded, const EqualizerScreen()),
             ]),
             _section(context, 'Intelligence', Icons.auto_awesome, [
               _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
@@ -339,7 +336,7 @@ class _SessionControls extends StatelessWidget {
   const _SessionControls();
   @override
   Widget build(BuildContext c) => const Column(children: [
-        ListTile(leading: Icon(Icons.timeline_rounded), title: Text('Current-session signals'), subtitle: Text('Recent skips, completions, artists and transition choices can influence the next recommendation.')),
-        ListTile(leading: Icon(Icons.refresh_rounded), title: Text('Continuous adaptation'), subtitle: Text('Session direction updates as the current listening session changes.')),
+        ListTile(leading: Icon(Icons.timeline_rounded), title: Text('Current-session signals'), subtitle: Text('Recent skips, finishes and artists shape what feels right next.')),
+        ListTile(leading: Icon(Icons.psychology_alt_rounded), title: Text('Session is short-lived'), subtitle: Text('Session Intelligence focuses on the current listening direction rather than long-term memory alone.')),
       ]);
 }
