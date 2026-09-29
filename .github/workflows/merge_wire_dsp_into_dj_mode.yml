@@ -1,0 +1,102 @@
+name: Merge Wire DSP into dj_Mode
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+
+      - name: Fetch Wire and merge
+        run: |
+          set -euo pipefail
+          git config user.name "Aetherion LLC"
+          git config user.email "mosesmiggs@gmail.com"
+          git fetch origin Wire_dsp_engine
+
+          # Prefer Wire (-X theirs) for first pass, then restore dj_Mode critical product files.
+          set +e
+          git merge origin/Wire_dsp_engine -m "merge: Wire_dsp_engine live DSP into dj_Mode"
+          rc=$?
+          set -e
+
+          if [ "$rc" -ne 0 ]; then
+            echo "Conflicts — applying resolution rules"
+            # DSP / native / sink / EQ bridge → Wire (theirs)
+            for path in \
+              android/app/src/main/cpp \
+              android/app/src/main/kotlin/com/Aetherion/Resonate/dsp \
+              android/app/build.gradle \
+              scripts/patch_just_audio_dsp_sink.py \
+              lib/services/audio_effects_bridge.dart \
+              lib/services/equalizer_dvc_sync.dart \
+              lib/services/dsp_engine_bridge.dart \
+              lib/services/dsp_process_path.dart \
+              docs/DSP_DUAL_ENGINE.md \
+              docs/DSP_ENGINE_ANDROID.md \
+              docs/DSP_JNI_BUFFERS.md
+            do
+              if [ -e "$path" ] || git ls-files -u | grep -q "$path"; then
+                git checkout --theirs -- "$path" 2>/dev/null || true
+                git add -A -- "$path" 2>/dev/null || true
+              fi
+            done
+
+            # Product playback / DJ / library → dj_Mode (ours)
+            for path in \
+              lib/providers/music_provider.dart \
+              lib/providers/library_provider.dart \
+              lib/providers/dj_mode_provider.dart \
+              lib/services/dj_ \
+              lib/services/database_helper.dart \
+              lib/services/audio_file_service.dart
+            do
+              git checkout --ours -- "$path" 2>/dev/null || true
+              git add -A -- "$path" 2>/dev/null || true
+            done
+
+            # MainActivity + equalizer: prefer Wire (has live DSP + your patches),
+            # but only if present in index as conflicted
+            for path in \
+              android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt \
+              lib/providers/equalizer_provider.dart \
+              pubspec.yaml
+            do
+              git checkout --theirs -- "$path" 2>/dev/null || true
+              git add -A -- "$path" 2>/dev/null || true
+            done
+
+            # Workflows: union — prefer Wire android-apk, keep dj_Mode port tools
+            git checkout --theirs -- .github/workflows/android-apk.yml 2>/dev/null || true
+            git checkout --theirs -- .github/workflows/build_apk.yml 2>/dev/null || true
+            git add -A .github/workflows 2>/dev/null || true
+
+            # Anything still unmerged: take Wire for remaining, log them
+            if git ls-files -u | grep -q .; then
+              echo "Remaining unmerged:"
+              git ls-files -u
+              git diff --name-only --diff-filter=U | while read -r f; do
+                git checkout --theirs -- "$f" || git checkout --ours -- "$f" || true
+                git add -- "$f" || true
+              done
+            fi
+
+            git commit -m "merge: Wire_dsp_engine into dj_Mode (DSP from Wire, product paths from dj_Mode)"
+          fi
+
+          # Ensure android-apk builds dj_Mode too
+          if [ -f .github/workflows/android-apk.yml ]; then
+            sed -i 's/branches: \[Wire_dsp_engine, main\]/branches: [dj_Mode, Wire_dsp_engine, main]/' .github/workflows/android-apk.yml || true
+            sed -i 's/branches: \[Wire_dsp_engine, main\]/branches: [dj_Mode, Wire_dsp_engine, main]/' .github/workflows/android-apk.yml || true
+            git add .github/workflows/android-apk.yml
+            git diff --cached --quiet || git commit -m "ci: android-apk also builds dj_Mode"
+          fi
+
+          git push origin HEAD:dj_Mode
+          echo "Merge pushed to dj_Mode"
