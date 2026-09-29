@@ -160,3 +160,25 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
     if (!handle) return;
     dsp_reset_stats(reinterpret_cast<void*>(handle));
 }
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeRunBassStress(JNIEnv* env, jclass) {
+    DspStressResult st{};
+    const int rc = dsp_run_bass_stress(&st);
+    jdoubleArray arr = env->NewDoubleArray(7);
+    if (!arr) return nullptr;
+    double vals[7] = {
+        rc == 0 ? 1.0 : 0.0,
+        (double)st.cases_run,
+        (double)st.cases_passed,
+        (double)st.max_abs_peak,
+        (double)st.peak_failures,
+        (double)st.nan_failures,
+        (double)st.speaker_cases_ok,
+    };
+    env->SetDoubleArrayRegion(arr, 0, 7, vals);
+    LOGI("bass stress rc=%d run=%d pass=%d maxPeak=%.4f peakFail=%d nan=%d",
+         rc, st.cases_run, st.cases_passed, st.max_abs_peak,
+         st.peak_failures, st.nan_failures);
+    return arr;
+}
