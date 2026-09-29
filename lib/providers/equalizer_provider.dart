@@ -511,7 +511,10 @@ class EqualizerProvider extends ChangeNotifier {
     ];
   }
 
-  String get dspEngineId => ResonateNativeDspBridge.available
+  /// User-facing name for the in-house engine (never "unknown").
+  String get dspEngineId => 'Resonate DSP Engine';
+  /// Technical id for diagnostics / logs.
+  String get dspEngineTechnicalId => ResonateNativeDspBridge.available
       ? ResonateNativeDspBridge.engineLabel
       : _dspPipeline.id;
   bool get nativeDspActive => ResonateNativeDspBridge.available;
