@@ -112,7 +112,8 @@ class ResonateDspEngine {
     return [for (final hz in hardwareCentersHz) responseDbAt(hz)];
   }
 
-  static const String engineId = 'ResonateDSP/v1-peak31';
+  /// User-facing product name.
+  static const String engineId = 'Resonate DSP Engine';
 }
 
 /// Studio curve → hardware EQ targets (native PCM processor comes later).
@@ -140,7 +141,7 @@ class ResonateNativeDspBridge {
 
   static int? lastBandCount;
   static bool available = false;
-  static String engineLabel = 'ResonateDSP/v1-peak31';
+  static String engineLabel = 'Resonate DSP Engine';
 
   static Future<bool> attachSession(int sessionId) async {
     if (sessionId <= 0) return false;
@@ -151,7 +152,8 @@ class ResonateNativeDspBridge {
       if (raw is Map) {
         available = raw['ok'] == true;
         lastBandCount = (raw['bandCount'] as num?)?.toInt() ?? 0;
-        engineLabel = raw['engine']?.toString() ?? engineLabel;
+        // Always show product name in UI; ignore technical server strings.
+        engineLabel = 'Resonate DSP Engine';
         return available;
       }
     } catch (_) {}
