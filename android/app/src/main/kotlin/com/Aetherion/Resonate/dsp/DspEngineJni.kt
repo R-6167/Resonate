@@ -3,16 +3,17 @@ package com.aetherion.resonate.dsp
 object DspEngineJni {
     init {
         try {
+            System.loadLibrary("dsp_engine")
+        } catch (_: Throwable) {
+        }
+        try {
             System.loadLibrary("dsp_jni")
         } catch (_: Throwable) {
-            // Optional until NDK is present; processors pass-through.
         }
     }
 
     external fun nativeCreate(sampleRate: Double, channels: Int): Long
-
     external fun nativeDestroy(handle: Long)
-
     external fun nativeProcessPcm16Direct(
         handle: Long,
         buffer: java.nio.ByteBuffer,
@@ -20,20 +21,25 @@ object DspEngineJni {
         channels: Int,
         sampleRate: Double
     ): Int
-
     external fun nativeSetEnabled(handle: Long, enabled: Boolean)
-
-    /** Linear gain (1.0 = unity). Applied via dsp_set_volume (DVC). */
     external fun nativeSetVolume(handle: Long, linearGain: Double)
-
-    /**
-     * Bulk EQ. [centersHz] may be empty to keep existing centers.
-     * [gainsDb] length is the band count (clamped to 31 in native).
-     */
     external fun nativeSetEqBands(
         handle: Long,
         centersHz: DoubleArray?,
         gainsDb: DoubleArray,
         enabled: Boolean
     )
+    external fun nativeSetSpeakerMode(handle: Long, enabled: Boolean)
+    external fun nativeSetVirtualBass(handle: Long, amount: Double)
+
+    /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
+    external fun nativeGetStats(handle: Long): DoubleArray?
+
+    external fun nativeResetStats(handle: Long)
+
+    /**
+     * Offline bass stress harness.
+     * Returns [ok, casesRun, casesPassed, maxPeak, peakFailures, nanFailures, speakerOk]
+     */
+    external fun nativeRunBassStress(): DoubleArray?
 }

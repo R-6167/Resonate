@@ -125,6 +125,29 @@ class MainActivity : AudioServiceActivity() {
                         }
                         result.success(true)
                     }
+
+                    // ---- Live DSP ENGINE (per-stream A/B via DspEngineRegistry) ----
+                    "setLiveDspPreampDb" -> {
+                        val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
+                        val linear = if (db <= -120.0) 0.0 else Math.pow(10.0, db / 20.0)
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyVolumeAll(linear)
+                        result.success(mapOf("ok" to true, "linear" to linear, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
+                    }
+                    "setLiveDspEqBands" -> {
+                        val centers = (call.argument<List<Double>>("centersHz") ?: emptyList()).toDoubleArray()
+                        val gains = (call.argument<List<Double>>("gainsDb") ?: emptyList()).toDoubleArray()
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyEqBandsAll(
+                            if (centers.isEmpty()) null else centers,
+                            gains,
+                            enabled,
+                        )
+                        result.success(mapOf("ok" to true, "bands" to gains.size, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
+                    }
+                    "getLiveDspStatus" -> {
+                        result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
+                    }
+
                     "release" -> {
                         releaseEffects()
                         result.success(true)

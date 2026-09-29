@@ -12,6 +12,7 @@ import '../services/eq_lean_store.dart';
 import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
 import 'bluetooth_provider.dart';
+import '../services/audio_effects_bridge.dart';
 
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
@@ -517,6 +518,19 @@ class EqualizerProvider extends ChangeNotifier {
   int get nativeDspBandCount => ResonateNativeDspBridge.lastBandCount ?? 0;
 
   Future<void> _pushToHardware() async {
+    // Live DSP ENGINE (A/B sinks) — sticky even if hardware not bound yet.
+    try {
+      final studioGainsLive = studioBands.map((b) => b.gainDb).toList();
+      final centersLive = studioBands.map((b) => b.frequencyHz).toList();
+      // ignore: unawaited_futures
+      AudioEffectsBridge.setLiveDspEqBands(
+        centersHz: centersLive,
+        gainsDb: studioGainsLive,
+        enabled: isEnabled,
+      );
+    } catch (e) {
+      debugPrint('live DSP EQ push failed: $e');
+    }
     if (!_hardwareBound) return;
     final studioGains = studioBands.map((b) => b.gainDb).toList();
     final centers = studioBands.map((b) => b.frequencyHz).toList();
@@ -585,6 +599,10 @@ class EqualizerProvider extends ChangeNotifier {
     // Boosts (0…+6 dB): AndroidLoudnessEnhancer in millibels.
     // Never use LoudnessEnhancer for cuts — some OEMs mute below ~−4 dB.
     final effective = isEnabled ? preamp.clamp(-6.0, 6.0) : 0.0;
+    try {
+      // ignore: unawaited_futures
+      AudioEffectsBridge.setLiveDspPreampDb(effective);
+    } catch (_) {}
     final cutDb = effective < 0 ? effective : 0.0;
     final scale =
         math.pow(10.0, cutDb / 20.0).toDouble().clamp(0.25, 1.0);

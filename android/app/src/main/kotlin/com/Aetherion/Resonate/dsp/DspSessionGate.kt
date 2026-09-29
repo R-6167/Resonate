@@ -6,10 +6,21 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Process-wide fail-open for live DSP.
+ *
+ * Policy:
+ * - Native DSP is allowed until create/process failures exceed a small budget.
+ * - Once tripped, all processors stay pass-through for this process lifetime
+ *   (or until [resetForTests]). Playback must never die because of DSP.
+ * - Dual engines (A/B) share this gate so one bad create does not keep
+ *   hammering dsp_create on the other player.
  */
 object DspSessionGate {
     private const val TAG = "DspSessionGate"
+
+    /** Max nativeCreate failures before session-wide disable. */
     private const val MAX_CREATE_FAILURES = 2
+
+    /** Max consecutive process errors on any single processor before local disable. */
     const val MAX_PROCESS_ERRORS = 8
 
     private val disabled = AtomicBoolean(false)
@@ -29,6 +40,7 @@ object DspSessionGate {
 
     @JvmStatic
     fun noteCreateSuccess() {
+        // Soft recovery of the counter only — do not un-trip a session disable.
         createFailures.set(0)
     }
 
@@ -39,6 +51,7 @@ object DspSessionGate {
         }
     }
 
+    /** Test / advanced UI only. */
     @JvmStatic
     fun resetForTests() {
         disabled.set(false)

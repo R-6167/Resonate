@@ -10,14 +10,18 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Live path: PCM16 from one ExoPlayer sink → JNI → dsp_process.
- * One processor + one native handle per player (A or B).
+ *
+ * Dual-engine rule: **one processor + one native handle per player (A or B)**.
+ * Never share a handle across audio threads. Fail-open: any native trouble →
+ * pass-through; [DspSessionGate] can ban further creates for the process.
  */
 class DspEngineAudioProcessor : BaseAudioProcessor() {
 
     companion object {
         private const val TAG = "DspEngineAudioProcessor"
         const val MAX_FRAMES = 4096
-        const val MAX_BYTES = MAX_FRAMES * 2 * 2
+        const val MAX_BYTES = MAX_FRAMES * 2 * 2 // stereo PCM16
+
         private val nextId = AtomicInteger(1)
     }
 
@@ -50,6 +54,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         val rate = inputAudioFormat.sampleRate
         val ch = inputAudioFormat.channelCount.coerceIn(1, 2)
 
+        // Format change → rebuild engine (still one handle per processor).
         if (engineHandle != 0L && (rate != configuredRate || ch != configuredChannels)) {
             Log.i(TAG, "id=$processorId format change $configuredRate/$configuredChannels → $rate/$ch")
             destroyEngine()
@@ -58,6 +63,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
 
         configuredRate = rate
         configuredChannels = ch
+
         maybeCreateEngine()
         return inputAudioFormat
     }
@@ -84,6 +90,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             DspEngineRegistry.register(processorId, h)
             Log.i(TAG, "id=$processorId engine ok handle=$h sr=$configuredRate ch=$configuredChannels")
         } catch (t: Throwable) {
+            // Java exceptions only — SIGSEGV cannot be caught; ABI must stay correct.
             Log.e(TAG, "id=$processorId nativeCreate failed", t)
             engineHandle = 0
             nativeProcessEnabled = false
@@ -95,6 +102,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         val remaining = inputBuffer.remaining()
         if (remaining <= 0) return
 
+        // Fail-open pass-through
         if (!nativeProcessEnabled ||
             engineHandle == 0L ||
             !DspSessionGate.isNativeAllowed() ||
@@ -123,28 +131,44 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             )
             if (rc != 0) {
                 consecutiveProcessErrors++
+                if (consecutiveProcessErrors == 1 || consecutiveProcessErrors % 4 == 0) {
+                    Log.w(TAG, "id=$processorId process rc=$rc errs=$consecutiveProcessErrors")
+                }
                 if (consecutiveProcessErrors >= DspSessionGate.MAX_PROCESS_ERRORS) {
                     Log.e(TAG, "id=$processorId too many process errors — local pass-through")
-                    nativeProcessEnabled = false
+                    demoteToPassThrough("process_errors=$consecutiveProcessErrors")
                 }
             } else {
                 consecutiveProcessErrors = 0
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "id=$processorId process exception", t)
+            Log.e(TAG, "id=$processorId process exception — pass-through buffer intact", t)
             consecutiveProcessErrors++
             if (consecutiveProcessErrors >= DspSessionGate.MAX_PROCESS_ERRORS) {
-                nativeProcessEnabled = false
+                demoteToPassThrough("process_exception")
             }
         }
     }
 
-    override fun onFlush() {}
+    private fun demoteToPassThrough(reason: String) {
+        nativeProcessEnabled = false
+        // Keep handle registered until reset so we do not recreate in a tight loop.
+        // Optional: destroyEngine() if we want to free native memory immediately.
+        Log.w(TAG, "id=$processorId demoted reason=$reason")
+    }
+
+    override fun onFlush() {
+        // Continuous engine; no hard reset.
+    }
 
     override fun onReset() {
         destroyEngine()
         createAttempted = false
         consecutiveProcessErrors = 0
+        // Re-enable only if session still allows and hook wanted native.
+        if (DspSessionGate.isNativeAllowed()) {
+            // Leave nativeProcessEnabled as last explicit set; SinkHook sets true at inject.
+        }
     }
 
     private fun destroyEngine() {

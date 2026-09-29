@@ -5,17 +5,32 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Live native engine handles for dual-player (A/B) sinks.
- * Sticky volume/EQ so player B inherits A when created mid-crossfade.
+ *
+ * Sticky volume/EQ/speaker: when player B is created mid-session, [register] reapplies
+ * the last UI settings so both engines stay in sync during crossfade.
  */
 object DspEngineRegistry {
     private const val TAG = "DspEngineRegistry"
 
     private val handles = ConcurrentHashMap<Int, Long>()
 
-    @Volatile private var stickyLinearGain: Double = 1.0
-    @Volatile private var stickyEqEnabled: Boolean = true
-    @Volatile private var stickyCentersHz: DoubleArray? = null
-    @Volatile private var stickyGainsDb: DoubleArray? = null
+    @Volatile
+    private var stickyLinearGain: Double = 1.0
+
+    @Volatile
+    private var stickyEqEnabled: Boolean = true
+
+    @Volatile
+    private var stickyCentersHz: DoubleArray? = null
+
+    @Volatile
+    private var stickyGainsDb: DoubleArray? = null
+
+    @Volatile
+    private var stickySpeakerMode: Boolean = false
+
+    @Volatile
+    private var stickyVirtualBass: Double = 0.55
 
     @JvmStatic
     fun register(processorId: Int, handle: Long) {
@@ -37,16 +52,89 @@ object DspEngineRegistry {
     @JvmStatic
     fun snapshotHandles(): List<Long> = handles.values.filter { it != 0L }.toList()
 
+    /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
     @JvmStatic
-    fun statusMap(): Map<String, Any> = mapOf(
-        "activeEngines" to activeCount(),
-        "gateTripped" to DspSessionGate.isTripped(),
-        "nativeAllowed" to DspSessionGate.isNativeAllowed(),
-        "linearGain" to stickyLinearGain,
-        "eqEnabled" to stickyEqEnabled,
-        "eqBands" to (stickyGainsDb?.size ?: 0),
-    )
+    fun applySpeakerModeAll(enabled: Boolean) {
+        stickySpeakerMode = enabled
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetSpeakerMode(h, enabled)
+                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setSpeakerMode failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applySpeakerModeAll enabled=$enabled targets=${list.size}")
+    }
 
+    @JvmStatic
+    fun applyVirtualBassAll(amount: Double) {
+        stickyVirtualBass = amount.coerceIn(0.0, 1.0)
+        if (!stickySpeakerMode) return
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setVirtualBass failed handle=$h", t)
+            }
+        }
+    }
+
+    /** Aggregate Phase-2 latency across all live engines. */
+    @JvmStatic
+    fun latencySnapshot(): Map<String, Any> {
+        var calls = 0.0
+        var avgUs = 0.0
+        var maxUs = 0.0
+        var overruns = 0.0
+        var lastFrames = 0.0
+        var sampleRate = 0.0
+        var n = 0
+        for (h in snapshotHandles()) {
+            try {
+                val s = DspEngineJni.nativeGetStats(h) ?: continue
+                if (s.size < 6) continue
+                calls += s[0]
+                avgUs += s[1]
+                if (s[2] > maxUs) maxUs = s[2]
+                overruns += s[3]
+                lastFrames = s[4]
+                sampleRate = s[5]
+                n++
+            } catch (_: Throwable) {
+            }
+        }
+        if (n > 0) avgUs /= n.toDouble()
+        return mapOf(
+            "processCalls" to calls,
+            "avgUs" to avgUs,
+            "maxUs" to maxUs,
+            "overruns" to overruns,
+            "lastFrames" to lastFrames,
+            "sampleRate" to sampleRate,
+            "engines" to n,
+        )
+    }
+
+    @JvmStatic
+    fun statusMap(): Map<String, Any> {
+        val base = mutableMapOf<String, Any>(
+            "activeEngines" to activeCount(),
+            "gateTripped" to DspSessionGate.isTripped(),
+            "nativeAllowed" to DspSessionGate.isNativeAllowed(),
+            "linearGain" to stickyLinearGain,
+            "eqEnabled" to stickyEqEnabled,
+            "eqBands" to (stickyGainsDb?.size ?: 0),
+            "speakerMode" to stickySpeakerMode,
+            "virtualBass" to stickyVirtualBass,
+        )
+        base.putAll(latencySnapshot())
+        return base
+    }
+
+    /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
@@ -62,6 +150,7 @@ object DspEngineRegistry {
         Log.i(TAG, "applyVolumeAll gain=$g targets=${list.size}")
     }
 
+    /** Studio curve → all live engines. */
     @JvmStatic
     fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
         stickyEqEnabled = enabled
@@ -87,6 +176,8 @@ object DspEngineRegistry {
             } else {
                 DspEngineJni.nativeSetEnabled(handle, stickyEqEnabled)
             }
+            DspEngineJni.nativeSetSpeakerMode(handle, stickySpeakerMode)
+            DspEngineJni.nativeSetVirtualBass(handle, stickyVirtualBass)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed", t)
         }
