@@ -1,0 +1,25 @@
+name: Install EQ glass + colour effects
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/install_eq_glass.py"
+      - "tools/eqglass_*.b64"
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: python3 tools/install_eq_glass.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/equalizer_screen.dart
+          if git diff --staged --quiet; then echo No changes; else
+            git commit -m "ui: Equalizer glass with Colour effects (Bass/Width/Reverb), Live badge"
+            git push
+          fi
