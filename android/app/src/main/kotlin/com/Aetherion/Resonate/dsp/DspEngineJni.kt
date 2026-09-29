@@ -3,6 +3,11 @@ package com.aetherion.resonate.dsp
 object DspEngineJni {
     init {
         try {
+            System.loadLibrary("dsp_engine")
+        } catch (_: Throwable) {
+            // Still load jni which links the engine.
+        }
+        try {
             System.loadLibrary("dsp_jni")
         } catch (_: Throwable) {
             // Optional until NDK is present; processors pass-through.
@@ -36,4 +41,10 @@ object DspEngineJni {
         gainsDb: DoubleArray,
         enabled: Boolean
     )
+
+    /** Phone speaker path: HPF + virtual bass + tighter limiter. */
+    external fun nativeSetSpeakerMode(handle: Long, enabled: Boolean)
+
+    /** Virtual-bass amount 0..1 (active only in speaker mode). */
+    external fun nativeSetVirtualBass(handle: Long, amount: Double)
 }

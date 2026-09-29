@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Live native engine handles for dual-player (A/B) sinks.
  *
- * Sticky volume/EQ: when player B is created mid-session, [register] reapplies
+ * Sticky volume/EQ/speaker: when player B is created mid-session, [register] reapplies
  * the last UI settings so both engines stay in sync during crossfade.
  */
 object DspEngineRegistry {
@@ -25,6 +25,12 @@ object DspEngineRegistry {
 
     @Volatile
     private var stickyGainsDb: DoubleArray? = null
+
+    @Volatile
+    private var stickySpeakerMode: Boolean = false
+
+    @Volatile
+    private var stickyVirtualBass: Double = 0.55
 
     @JvmStatic
     fun register(processorId: Int, handle: Long) {
@@ -46,6 +52,36 @@ object DspEngineRegistry {
     @JvmStatic
     fun snapshotHandles(): List<Long> = handles.values.filter { it != 0L }.toList()
 
+    /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
+    @JvmStatic
+    fun applySpeakerModeAll(enabled: Boolean) {
+        stickySpeakerMode = enabled
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetSpeakerMode(h, enabled)
+                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setSpeakerMode failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applySpeakerModeAll enabled=$enabled targets=${list.size}")
+    }
+
+    @JvmStatic
+    fun applyVirtualBassAll(amount: Double) {
+        stickyVirtualBass = amount.coerceIn(0.0, 1.0)
+        if (!stickySpeakerMode) return
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setVirtualBass failed handle=$h", t)
+            }
+        }
+    }
+
     @JvmStatic
     fun statusMap(): Map<String, Any> = mapOf(
         "activeEngines" to activeCount(),
@@ -54,6 +90,8 @@ object DspEngineRegistry {
         "linearGain" to stickyLinearGain,
         "eqEnabled" to stickyEqEnabled,
         "eqBands" to (stickyGainsDb?.size ?: 0),
+        "speakerMode" to stickySpeakerMode,
+        "virtualBass" to stickyVirtualBass,
     )
 
     /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
@@ -98,6 +136,8 @@ object DspEngineRegistry {
             } else {
                 DspEngineJni.nativeSetEnabled(handle, stickyEqEnabled)
             }
+            DspEngineJni.nativeSetSpeakerMode(handle, stickySpeakerMode)
+            DspEngineJni.nativeSetVirtualBass(handle, stickyVirtualBass)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed", t)
         }
