@@ -1,0 +1,86 @@
+name: Emergency restore emptied files
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/emergency_restore.yml"
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - name: Restore from bd4c566
+        run: |
+          GOOD=bd4c566283accc0c7f5c5ac64d927df287629629
+          git show $GOOD:lib/providers/music_provider.dart > lib/providers/music_provider.dart
+          git show $GOOD:lib/screens/equalizer_screen.dart > lib/screens/equalizer_screen.dart
+          git show $GOOD:lib/screens/settings_screen.dart > lib/screens/settings_screen.dart
+          # Keep loudness-retired audio effects provider (already good)
+          wc -l lib/providers/music_provider.dart lib/screens/equalizer_screen.dart lib/screens/settings_screen.dart
+      - name: Soft-outgoing crossfade patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('lib/providers/music_provider.dart')
+          t = p.read_text()
+          t2, n = re.subn(
+            r'final angle = t \* \(math\.pi / 2\.0\);\s*\n\s*final outGain = math\.cos\(angle\);\s*\n\s*final inGain = math\.sin\(angle\);',
+            'final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);\n        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);\n        final outGain = math.cos(outT * (math.pi / 2.0));\n        final inGain = math.sin(inT * (math.pi / 2.0));',
+            t, count=1)
+          print('main curve', n)
+          t3, n2 = re.subn(
+            r'await outgoing\.setVolume\(\(startOut \* \(1\.0 - t\)\)\.clamp\(0\.0, 1\.0\)\);\s*\n\s*\} catch \(_\) \{\}\s*\n\s*try \{\s*\n\s*await incoming\.setVolume\(\(master \* t\)\.clamp\(0\.0, 1\.0\)\);',
+            'final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);\n        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);\n        try {\n          await outgoing.setVolume((startOut * math.cos(outT * (math.pi / 2.0))).clamp(0.0, 1.0));\n        } catch (_) {}\n        try {\n          await incoming.setVolume((master * math.sin(inT * (math.pi / 2.0))).clamp(0.0, 1.0));',
+            t2, count=1)
+          print('repeat curve', n2)
+          p.write_text(t3)
+          PY
+      - name: Settings Effects removal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/screens/settings_screen.dart')
+          t = p.read_text()
+          t = t.replace(
+            "_item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen()),\n",
+            "// Effects moved into Equalizer. Loudness retired.\n",
+          )
+          t = t.replace(
+            "_item(context, 'Equalizer', 'Main sound profile', Icons.equalizer_rounded, const EqualizerScreen())",
+            "_item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen())",
+          )
+          p.write_text(t)
+          print('settings ok')
+          PY
+      - name: EQ live badge
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/screens/equalizer_screen.dart')
+          t = p.read_text()
+          if "import '../providers/music_provider.dart';" not in t:
+            t = t.replace(
+              "import '../providers/equalizer_provider.dart';",
+              "import '../providers/equalizer_provider.dart';\nimport '../providers/music_provider.dart';",
+            )
+          t = t.replace(
+            'final live = active > 0 && eq.isEnabled;',
+            "final music = context.watch<MusicProvider>();\n                final live = eq.isEnabled && (active > 0 || music.isPlaying || eq.hasHardwareEq || (_liveStatus?['eqEnabled'] == true));",
+          )
+          p.write_text(t)
+          print('eq live ok')
+          PY
+      - name: Commit restore
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          git status
+          git commit -m "emergency restore music/eq/settings + soft-outgoing + live badge" || echo "nothing"
+          git push
