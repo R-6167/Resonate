@@ -1,9 +1,11 @@
 /**
  * DSP ENGINE public C ABI — vendored with Resonate.
  *
- * Chain: EQ → bass → auto headroom → true-peak limiter → soft clip → DVC
- * Phase 2: latency / overrun monitoring (dsp_get_stats).
- * Real-time safe: no allocation inside dsp_process.
+ * Protection chain (final stages last so DVC cannot defeat the ceiling):
+ *   EQ → speaker/bass → auto headroom → DVC → limiter → soft-clip → out
+ *
+ * Scratch buffers live on the handle (no shared globals across A/B players).
+ * dsp_process / dsp_process_pcm16 never allocate.
  */
 #pragma once
 
@@ -23,7 +25,6 @@ typedef struct DspConfig {
     int32_t realtime_priority;
 } DspConfig;
 
-/** Snapshot of process-path timing (safe to call off the audio thread). */
 typedef struct DspStats {
     int64_t process_calls;
     int64_t total_ns;
@@ -39,7 +40,14 @@ void  dsp_destroy(void* handle);
 int   dsp_start(void* handle);
 int   dsp_stop(void* handle);
 
+/** Interleaved float32 in/out. in may equal out. */
 void  dsp_process(void* handle, const float* in, float* out, int32_t frames);
+
+/**
+ * In-place PCM16 processing using the handle's private float scratch.
+ * Returns 0 on success, negative on error.
+ */
+int   dsp_process_pcm16(void* handle, int16_t* interleaved, int32_t frames);
 
 void  dsp_set_volume(void* handle, double linear_gain);
 void  dsp_eq_set_enabled(void* handle, bool enabled);
