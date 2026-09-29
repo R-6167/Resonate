@@ -14,6 +14,7 @@ def patch(path, old, new, label):
     changed.append(label)
     print('patched', label)
 
+# --- Crossfade soft-outgoing ---
 old_main = (
     '        // Equal-power: cos out / sin in — smooth energy, no mid-fade dip.' + NL +
     '        final angle = t * (math.pi / 2.0);' + NL +
@@ -53,13 +54,13 @@ new_lin = (
 )
 patch('lib/providers/music_provider.dart', old_lin, new_lin, 'repeat-self soft-outgoing')
 
+# --- Settings ---
 patch(
     'lib/screens/settings_screen.dart',
     "              _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen())," + NL,
     '              // Effects moved into Equalizer (Bass / Width / Reverb). Loudness retired.' + NL,
     'settings remove Effects',
 )
-
 patch(
     'lib/screens/settings_screen.dart',
     "_item(context, 'Equalizer', 'Main sound profile', Icons.equalizer_rounded, const EqualizerScreen()),",
@@ -67,18 +68,45 @@ patch(
     'settings equalizer subtitle',
 )
 
-import base64
-dst = ROOT / 'lib/screens/equalizer_screen.dart'
-parts = []
-for i in range(8):
-    cp = Path(__file__).resolve().parent / f'equalizer_screen_glass_{i}.b64'
-    if cp.exists():
-        parts.append(cp.read_text().strip())
-if parts:
-    dst.write_bytes(base64.b64decode(''.join(parts).encode()))
-    changed.append('equalizer glass')
-    print('wrote equalizer from', len(parts), 'b64 chunks')
-else:
-    print('no b64 equalizer chunks')
+# --- Equalizer: imports ---
+patch(
+    'lib/screens/equalizer_screen.dart',
+    "import '../providers/bluetooth_provider.dart';" + NL +
+    "import '../providers/equalizer_provider.dart';" + NL +
+    "import '../services/audio_effects_bridge.dart';",
+    "import '../providers/audio_effects_provider.dart';" + NL +
+    "import '../providers/bluetooth_provider.dart';" + NL +
+    "import '../providers/equalizer_provider.dart';" + NL +
+    "import '../providers/music_provider.dart';" + NL +
+    "import '../services/audio_effects_bridge.dart';",
+    'eq imports',
+)
+
+# --- Equalizer: live badge (no permanent Standby while playing) ---
+patch(
+    'lib/screens/equalizer_screen.dart',
+    '                final active =' + NL +
+    "                    (_liveStatus?['activeEngines'] as num?)?.toInt() ?? 0;" + NL +
+    '                final live = active > 0 && eq.isEnabled;',
+    '                final active =' + NL +
+    "                    (_liveStatus?['activeEngines'] as num?)?.toInt() ?? 0;" + NL +
+    '                final music = context.watch<MusicProvider>();' + NL +
+    '                final live = eq.isEnabled &&' + NL +
+    '                    (active > 0 ||' + NL +
+    '                        music.isPlaying ||' + NL +
+    '                        eq.hasHardwareEq ||' + NL +
+    "                        (_liveStatus?['eqEnabled'] == true));",
+    'eq live badge',
+)
+
+# --- Equalizer: friendlier standby message ---
+patch(
+    'lib/screens/equalizer_screen.dart',
+    "            _statusMessage =" + NL +
+    "                'Engine is standing by. Press play — EQ applies automatically.';",
+    "            _statusMessage =" + NL +
+    "                'Engine is standing by. Turn EQ on (and press play) to shape sound.';",
+    'eq standby message',
+)
 
 print('TOTAL', changed)
