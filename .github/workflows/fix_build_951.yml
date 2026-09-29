@@ -1,0 +1,24 @@
+name: Fix build 951 playSong + EQ icon
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_build_951.py"
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: python3 tools/fix_build_951.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/providers/music_provider.dart lib/screens/equalizer_screen.dart
+          if git diff --staged --quiet; then echo No changes; else
+            git commit -m "fix: restore playSong/playQueueIndex + palette icon (build #951)"
+            git push
+          fi
