@@ -1,112 +1,89 @@
 #!/usr/bin/env python3
 from pathlib import Path
-NL = chr(10)
+import re
+
 ROOT = Path(__file__).resolve().parents[1]
 changed = []
 
-def patch(path, old, new, label):
+def sub_file(path, pattern, repl, label, flags=re.M):
     p = ROOT / path
     text = p.read_text()
-    if old not in text:
+    new, n = re.subn(pattern, repl, text, count=1, flags=flags)
+    if n == 0:
         print('skip', label)
+        # debug: show nearby lines if marker present
+        for marker in ['cos(angle)', 'Equal-power', 'startOut * (1.0', "'Effects'", 'Main sound profile', 'activeEngines']:
+            if marker in text and marker in pattern:
+                i = text.find(marker)
+                print('  near', repr(text[max(0,i-80):i+80]))
         return
-    p.write_text(text.replace(old, new, 1))
+    p.write_text(new)
     changed.append(label)
     print('patched', label)
 
-# --- Crossfade soft-outgoing ---
-old_main = (
-    '        // Equal-power: cos out / sin in — smooth energy, no mid-fade dip.' + NL +
-    '        final angle = t * (math.pi / 2.0);' + NL +
-    '        final outGain = math.cos(angle);' + NL +
-    '        final inGain = math.sin(angle);' + NL +
-    '        final outVol = (base * outGain).clamp(0.0, 1.0);' + NL +
-    '        final inVol = (master * inGain).clamp(0.0, 1.0);'
+# Main equal-power crossfade
+sub_file(
+    'lib/providers/music_provider.dart',
+    r"final angle = t \* \(math\.pi / 2\.0\);\s*\n\s*final outGain = math\.cos\(angle\);\s*\n\s*final inGain = math\.sin\(angle\);",
+    "final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);\n"
+    "        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);\n"
+    "        final outGain = math.cos(outT * (math.pi / 2.0));\n"
+    "        final inGain = math.sin(inT * (math.pi / 2.0));",
+    'crossfade main soft-outgoing',
 )
-new_main = (
-    '        // Soft-outgoing equal-power: keep outgoing louder longer.' + NL +
-    '        final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);' + NL +
-    '        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);' + NL +
-    '        final outGain = math.cos(outT * (math.pi / 2.0));' + NL +
-    '        final inGain = math.sin(inT * (math.pi / 2.0));' + NL +
-    '        final outVol = (base * outGain).clamp(0.0, 1.0);' + NL +
-    '        final inVol = (master * inGain).clamp(0.0, 1.0);'
-)
-patch('lib/providers/music_provider.dart', old_main, new_main, 'crossfade main soft-outgoing')
 
-old_lin = (
-    '        try {' + NL +
-    '          await outgoing.setVolume((startOut * (1.0 - t)).clamp(0.0, 1.0));' + NL +
-    '        } catch (_) {}' + NL +
-    '        try {' + NL +
-    '          await incoming.setVolume((master * t).clamp(0.0, 1.0));' + NL +
-    '        } catch (_) {}'
+# Repeat-self linear ramp
+sub_file(
+    'lib/providers/music_provider.dart',
+    r"await outgoing\.setVolume\(\(startOut \* \(1\.0 - t\)\)\.clamp\(0\.0, 1\.0\)\);\s*\n\s*\} catch \(_\) \{\}\s*\n\s*try \{\s*\n\s*await incoming\.setVolume\(\(master \* t\)\.clamp\(0\.0, 1\.0\)\);",
+    "final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);\n"
+    "        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);\n"
+    "        try {\n"
+    "          await outgoing.setVolume((startOut * math.cos(outT * (math.pi / 2.0))).clamp(0.0, 1.0));\n"
+    "        } catch (_) {}\n"
+    "        try {\n"
+    "          await incoming.setVolume((master * math.sin(inT * (math.pi / 2.0))).clamp(0.0, 1.0));",
+    'repeat-self soft-outgoing',
 )
-new_lin = (
-    '        final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);' + NL +
-    '        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);' + NL +
-    '        try {' + NL +
-    '          await outgoing.setVolume((startOut * math.cos(outT * (math.pi / 2.0))).clamp(0.0, 1.0));' + NL +
-    '        } catch (_) {}' + NL +
-    '        try {' + NL +
-    '          await incoming.setVolume((master * math.sin(inT * (math.pi / 2.0))).clamp(0.0, 1.0));' + NL +
-    '        } catch (_) {}'
-)
-patch('lib/providers/music_provider.dart', old_lin, new_lin, 'repeat-self soft-outgoing')
 
-# --- Settings ---
-patch(
+# Settings: remove Effects item
+sub_file(
     'lib/screens/settings_screen.dart',
-    "              _item(context, 'Effects', 'Loudness and audio processing', Icons.tune_rounded, const AudioEffectsScreen())," + NL,
-    '              // Effects moved into Equalizer (Bass / Width / Reverb). Loudness retired.' + NL,
+    r"_item\(context, 'Effects', 'Loudness and audio processing', Icons\.tune_rounded, const AudioEffectsScreen\(\)\),\s*\n",
+    "// Effects moved into Equalizer (Bass / Width / Reverb). Loudness retired.\n",
     'settings remove Effects',
 )
-patch(
+
+sub_file(
     'lib/screens/settings_screen.dart',
-    "_item(context, 'Equalizer', 'Main sound profile', Icons.equalizer_rounded, const EqualizerScreen()),",
-    "_item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),",
+    r"_item\(context, 'Equalizer', 'Main sound profile', Icons\.equalizer_rounded, const EqualizerScreen\(\)\)",
+    "_item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen())",
     'settings equalizer subtitle',
 )
 
-# --- Equalizer: imports ---
-patch(
+# EQ imports
+sub_file(
     'lib/screens/equalizer_screen.dart',
-    "import '../providers/bluetooth_provider.dart';" + NL +
-    "import '../providers/equalizer_provider.dart';" + NL +
-    "import '../services/audio_effects_bridge.dart';",
-    "import '../providers/audio_effects_provider.dart';" + NL +
-    "import '../providers/bluetooth_provider.dart';" + NL +
-    "import '../providers/equalizer_provider.dart';" + NL +
-    "import '../providers/music_provider.dart';" + NL +
+    r"import '../providers/bluetooth_provider.dart';\nimport '../providers/equalizer_provider.dart';\nimport '../services/audio_effects_bridge.dart';",
+    "import '../providers/audio_effects_provider.dart';\n"
+    "import '../providers/bluetooth_provider.dart';\n"
+    "import '../providers/equalizer_provider.dart';\n"
+    "import '../providers/music_provider.dart';\n"
     "import '../services/audio_effects_bridge.dart';",
     'eq imports',
 )
 
-# --- Equalizer: live badge (no permanent Standby while playing) ---
-patch(
+# EQ live badge
+sub_file(
     'lib/screens/equalizer_screen.dart',
-    '                final active =' + NL +
-    "                    (_liveStatus?['activeEngines'] as num?)?.toInt() ?? 0;" + NL +
-    '                final live = active > 0 && eq.isEnabled;',
-    '                final active =' + NL +
-    "                    (_liveStatus?['activeEngines'] as num?)?.toInt() ?? 0;" + NL +
-    '                final music = context.watch<MusicProvider>();' + NL +
-    '                final live = eq.isEnabled &&' + NL +
-    '                    (active > 0 ||' + NL +
-    '                        music.isPlaying ||' + NL +
-    '                        eq.hasHardwareEq ||' + NL +
+    r"final live = active > 0 && eq\.isEnabled;",
+    "final music = context.watch<MusicProvider>();\n"
+    "                final live = eq.isEnabled &&\n"
+    "                    (active > 0 ||\n"
+    "                        music.isPlaying ||\n"
+    "                        eq.hasHardwareEq ||\n"
     "                        (_liveStatus?['eqEnabled'] == true));",
     'eq live badge',
-)
-
-# --- Equalizer: friendlier standby message ---
-patch(
-    'lib/screens/equalizer_screen.dart',
-    "            _statusMessage =" + NL +
-    "                'Engine is standing by. Press play — EQ applies automatically.';",
-    "            _statusMessage =" + NL +
-    "                'Engine is standing by. Turn EQ on (and press play) to shape sound.';",
-    'eq standby message',
 )
 
 print('TOTAL', changed)
