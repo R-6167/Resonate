@@ -1,8 +1,8 @@
 /**
- * Vendored DSP ENGINE core — Phase 1 safety + Phase 2 latency monitoring.
+ * Vendored DSP ENGINE — per-handle scratch, protection-last chain.
  *
- * Chain: EQ → speaker/bass → auto headroom → true-peak limiter → soft clip → DVC
- * dsp_process never allocates; times itself with CLOCK_MONOTONIC.
+ * Chain: EQ → speaker/bass → auto headroom → DVC → limiter → soft-clip
+ * No allocation inside dsp_process / dsp_process_pcm16.
  */
 #include "dsp_engine.h"
 
@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <cstdlib>
 #include <time.h>
 
 namespace {
@@ -17,6 +18,7 @@ namespace {
 constexpr int kMaxBands = 31;
 constexpr int kMaxCh = 2;
 constexpr int kMaxFrames = 4096;
+constexpr size_t kAlign = 64;
 
 struct Biquad {
     double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
@@ -131,12 +133,38 @@ struct Engine {
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
     PeakLimiter limiter[kMaxCh];
+
+    float* scratch_in = nullptr;
+    float* scratch_out = nullptr;
+    size_t scratch_floats = 0;
+
     int64_t process_calls = 0;
     int64_t total_ns = 0;
     int64_t max_ns = 0;
     int64_t overrun_count = 0;
     int32_t last_frames = 0;
     bool running = false;
+
+    bool allocScratch() {
+        scratch_floats = (size_t)kMaxFrames * (size_t)kMaxCh;
+        if (posix_memalign((void**)&scratch_in, kAlign, scratch_floats * sizeof(float)) != 0) {
+            scratch_in = nullptr;
+            return false;
+        }
+        if (posix_memalign((void**)&scratch_out, kAlign, scratch_floats * sizeof(float)) != 0) {
+            free(scratch_in);
+            scratch_in = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    void freeScratch() {
+        free(scratch_in);
+        free(scratch_out);
+        scratch_in = scratch_out = nullptr;
+        scratch_floats = 0;
+    }
 
     void rebuildEq() {
         double max_pos = 0.0;
@@ -189,23 +217,40 @@ void* dsp_create(const DspConfig* config) {
     if (config) {
         e->sample_rate = config->sample_rate > 0 ? config->sample_rate : 44100;
         e->channels = config->channels >= 1 && config->channels <= kMaxCh ? config->channels : 2;
-        e->buffer_frames = config->buffer_frames > 0 ? std::min(config->buffer_frames, kMaxFrames) : kMaxFrames;
+        e->buffer_frames = config->buffer_frames > 0
+                               ? std::min(config->buffer_frames, kMaxFrames)
+                               : kMaxFrames;
     }
-    static const double kDefaultHz[10] = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+    if (!e->allocScratch()) {
+        delete e;
+        return nullptr;
+    }
+    static const double kDefaultHz[10] = {
+        31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
     e->band_count = 10;
-    for (int i = 0; i < 10; ++i) { e->centers[i] = kDefaultHz[i]; e->gains[i] = 0.0; }
+    for (int i = 0; i < 10; ++i) {
+        e->centers[i] = kDefaultHz[i];
+        e->gains[i] = 0.0;
+    }
     e->rebuildEq();
     e->rebuildSpeakerFilters();
     e->rebuildLimiter();
     return e;
 }
 
-void dsp_destroy(void* handle) { delete static_cast<Engine*>(handle); }
+void dsp_destroy(void* handle) {
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    e->freeScratch();
+    delete e;
+}
+
 int dsp_start(void* handle) {
     if (!handle) return -1;
     static_cast<Engine*>(handle)->running = true;
     return 0;
 }
+
 int dsp_stop(void* handle) {
     if (!handle) return -1;
     static_cast<Engine*>(handle)->running = false;
@@ -227,7 +272,8 @@ void dsp_eq_set_enabled(void* handle, bool enabled) {
     e->rebuildEq();
 }
 
-void dsp_eq_set_bands(void* handle, const double* centers_hz, const double* gains_db, int32_t count) {
+void dsp_eq_set_bands(void* handle, const double* centers_hz,
+                      const double* gains_db, int32_t count) {
     if (!handle || !gains_db || count <= 0) return;
     auto* e = static_cast<Engine*>(handle);
     if (count > kMaxBands) count = kMaxBands;
@@ -241,7 +287,8 @@ void dsp_eq_set_bands(void* handle, const double* centers_hz, const double* gain
     e->rebuildEq();
 }
 
-void dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_db, double q) {
+void dsp_eq_set_band(void* handle, int32_t index, double freq_hz,
+                     double gain_db, double q) {
     if (!handle || index < 0 || index >= kMaxBands) return;
     auto* e = static_cast<Engine*>(handle);
     if (index >= e->band_count) e->band_count = index + 1;
@@ -289,10 +336,12 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     for (int i = 0; i < frames; ++i) {
         for (int c = 0; c < ch; ++c) {
             float s = in[i * ch + c];
+
             if (eq) {
                 for (int b = 0; b < e->band_count; ++b)
                     s = e->bands[b][c].process(s);
             }
+
             if (speaker) {
                 const float deep = e->bass_lp[c].process(s);
                 s = e->hpf[c].process(s);
@@ -303,10 +352,12 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                     s += h * (0.35f * vb);
                 }
             }
+
             s *= hr;
+            s *= vol;
             s = e->limiter[c].process(s);
             s = soft_clip(s, knee);
-            s *= vol;
+
             if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
             out[i * ch + c] = s;
@@ -325,6 +376,28 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
             (int64_t)frames * 1000000000LL / (int64_t)e->sample_rate;
         if (ns > budget_ns) e->overrun_count += 1;
     }
+}
+
+int dsp_process_pcm16(void* handle, int16_t* interleaved, int32_t frames) {
+    if (!handle || !interleaved || frames <= 0) return -1;
+    auto* e = static_cast<Engine*>(handle);
+    if (frames > kMaxFrames) return -2;
+    if (!e->scratch_in || !e->scratch_out) return -3;
+
+    const int ch = e->channels;
+    const int n = frames * ch;
+    for (int i = 0; i < n; ++i)
+        e->scratch_in[i] = (float)interleaved[i] * (1.0f / 32768.0f);
+
+    dsp_process(handle, e->scratch_in, e->scratch_out, frames);
+
+    for (int i = 0; i < n; ++i) {
+        float s = e->scratch_out[i];
+        if (s > 1.0f) s = 1.0f;
+        if (s < -1.0f) s = -1.0f;
+        interleaved[i] = (int16_t)lrintf(s * 32767.0f);
+    }
+    return 0;
 }
 
 void dsp_get_stats(void* handle, DspStats* out) {
