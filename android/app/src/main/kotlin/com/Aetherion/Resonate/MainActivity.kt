@@ -157,6 +157,26 @@ class MainActivity : AudioServiceActivity() {
                     "getLiveDspStatus" -> {
                         result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
                     }
+                    "runBassStress" -> {
+                      try {
+                        val arr = com.aetherion.resonate.dsp.DspEngineJni.nativeRunBassStress()
+                        if (arr == null || arr.size < 7) {
+                           result.success(mapOf("ok" to false, "error" to "native unavailable"))
+                        } else {
+                           result.success(mapOf(
+                               "ok" to (arr[0] >= 0.5),
+                               "casesRun" to arr[1].toInt(),
+                               "casesPassed" to arr[2].toInt(),
+                               "maxPeak" to arr[3],
+                               "peakFailures" to arr[4].toInt(),
+                               "nanFailures" to arr[5].toInt(),
+                               "speakerOk" to arr[6].toInt(),
+                         ))
+                      }
+                 } catch (t: Throwable) {
+                    result.success(mapOf("ok" to false, "error" to (t.message ?: "stress failed")))
+                 }
+             }
                     "release" -> {
                         releaseEffects()
                         result.success(true)
