@@ -36,4 +36,10 @@ object DspEngineJni {
     external fun nativeGetStats(handle: Long): DoubleArray?
 
     external fun nativeResetStats(handle: Long)
+
+    /**
+     * Offline bass stress harness.
+     * Returns [ok, casesRun, casesPassed, maxPeak, peakFailures, nanFailures, speakerOk]
+     */
+    external fun nativeRunBassStress(): DoubleArray?
 }

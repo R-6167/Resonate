@@ -33,6 +33,16 @@ typedef struct DspStats {
     int32_t channels;
 } DspStats;
 
+/** Offline bass stress harness results. */
+typedef struct DspStressResult {
+    int32_t cases_run;
+    int32_t cases_passed;
+    float   max_abs_peak;
+    int32_t peak_failures;
+    int32_t nan_failures;
+    int32_t speaker_cases_ok;
+} DspStressResult;
+
 void* dsp_create(const DspConfig* config);
 void  dsp_destroy(void* handle);
 int   dsp_start(void* handle);
@@ -51,6 +61,9 @@ void  dsp_set_virtual_bass(void* handle, double amount);
 
 void  dsp_get_stats(void* handle, DspStats* out);
 void  dsp_reset_stats(void* handle);
+
+/** Offline bass stress suite. 0 = all passed, 1 = failures, -1 = setup error. */
+int   dsp_run_bass_stress(DspStressResult* out);
 
 #ifdef __cplusplus
 }
