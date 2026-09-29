@@ -179,3 +179,32 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
     }
     return 0;
 }
+
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeGetStats(
+        JNIEnv* env, jclass, jlong handle) {
+    jdoubleArray arr = env->NewDoubleArray(6);
+    if (!arr) return nullptr;
+    double vals[6] = {0, 0, 0, 0, 0, 0};
+    if (handle) {
+        DspStats st{};
+        dsp_get_stats(reinterpret_cast<void*>(handle), &st);
+        vals[0] = (double)st.process_calls;
+        vals[1] = st.process_calls > 0
+                      ? ((double)st.total_ns / (double)st.process_calls) / 1000.0
+                      : 0.0;
+        vals[2] = (double)st.max_ns / 1000.0;
+        vals[3] = (double)st.overrun_count;
+        vals[4] = (double)st.last_frames;
+        vals[5] = (double)st.sample_rate;
+    }
+    env->SetDoubleArrayRegion(arr, 0, 6, vals);
+    return arr;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
+        JNIEnv*, jclass, jlong handle) {
+    if (!handle) return;
+    dsp_reset_stats(reinterpret_cast<void*>(handle));
+}
