@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
+import 'audio_effects_bridge.dart';
 import 'dsp_engine_bridge.dart';
 
 /// Status of the native process path (not the live ExoPlayer sink).
@@ -33,15 +34,10 @@ class DspProcessPathStatus {
 }
 
 /// Offline / diagnostic use of DSP ENGINE [process].
-///
-/// **Live playback** still uses AndroidEqualizer + optional DynamicsProcessing.
-/// A true custom ExoPlayer AudioSink needs a just_audio fork or custom media3
-/// RenderersFactory — not available from app code alone.
 class DspProcessPath {
   DspProcessPath._();
   static final DspProcessPath instance = DspProcessPath._();
 
-  /// Process interleaved float32 PCM (writes [output]). Offline / tests only.
   bool processInterleaved({
     required Float32List input,
     required Float32List output,
@@ -83,40 +79,35 @@ class DspProcessPath {
 
     final input = Float32List(frames * 2);
     final output = Float32List(frames * 2);
-    final w = 2.0 * math.pi * 1000.0 / sampleRate;
+    final w = 2 * math.pi * 1000.0 / sampleRate;
     for (var i = 0; i < frames; i++) {
       final s = 0.25 * math.sin(w * i);
       input[i * 2] = s;
       input[i * 2 + 1] = s;
     }
 
-    final processed = bridge.processBuffer(input, output, frames);
-    if (!processed) {
+    double rms(Float32List x) {
+      var a = 0.0;
+      for (final v in x) {
+        a += v * v;
+      }
+      return math.sqrt(a / x.length);
+    }
+
+    final inRms = rms(input);
+    final ok = bridge.processBuffer(input, output, frames);
+    if (!ok) {
       return DspProcessPathStatus(
         engineLoaded: true,
         processOk: false,
         version: bridge.version,
         detail: 'processBuffer returned false',
+        inputRmsDb: 20 * math.log(inRms + 1e-12) / math.ln10,
       );
     }
-
-    double rms(Float32List x) {
-      var sum = 0.0;
-      for (final v in x) {
-        sum += v * v;
-      }
-      final m = sum / x.length;
-      if (m <= 1e-20) return -100.0;
-      return 10.0 * math.log(m) / math.ln10;
-    }
-
-    final inDb = rms(input);
-    final outDb = rms(output);
-    debugPrint(
-      'DSP process self-test: in=${inDb.toStringAsFixed(2)} dB '
-      'out=${outDb.toStringAsFixed(2)} dB version=${bridge.version}',
-    );
-
+    final outRms = rms(output);
+    final inDb = 20 * math.log(inRms + 1e-12) / math.ln10;
+    final outDb = 20 * math.log(outRms + 1e-12) / math.ln10;
     return DspProcessPathStatus(
       engineLoaded: true,
       processOk: true,
@@ -124,5 +115,17 @@ class DspProcessPath {
       inputRmsDb: inDb,
       outputRmsDb: outDb,
     );
+  }
+
+  /// Aggressive offline bass stress (native true-peak path).
+  Future<Map<String, dynamic>> runBassStressHarness() async {
+    final raw = await AudioEffectsBridge.runBassStress();
+    if (raw == null) {
+      return {
+        'ok': false,
+        'detail': 'native stress unavailable',
+      };
+    }
+    return raw;
   }
 }
