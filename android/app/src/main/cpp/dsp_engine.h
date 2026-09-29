@@ -1,11 +1,9 @@
 /**
  * DSP ENGINE public C ABI — vendored with Resonate.
  *
- * Protection chain (final stages last so DVC cannot defeat the ceiling):
- *   EQ → speaker/bass → auto headroom → DVC → limiter → soft-clip → out
- *
- * Scratch buffers live on the handle (no shared globals across A/B players).
- * dsp_process / dsp_process_pcm16 never allocate.
+ * Chain: EQ → speaker/bass → auto headroom → DVC → true-peak limiter → soft-clip
+ * True-peak limiter: 4× oversampling + ~3 ms look-ahead.
+ * Scratch buffers live on the handle (safe for dual A/B players).
  */
 #pragma once
 
@@ -40,13 +38,7 @@ void  dsp_destroy(void* handle);
 int   dsp_start(void* handle);
 int   dsp_stop(void* handle);
 
-/** Interleaved float32 in/out. in may equal out. */
 void  dsp_process(void* handle, const float* in, float* out, int32_t frames);
-
-/**
- * In-place PCM16 processing using the handle's private float scratch.
- * Returns 0 on success, negative on error.
- */
 int   dsp_process_pcm16(void* handle, int16_t* interleaved, int32_t frames);
 
 void  dsp_set_volume(void* handle, double linear_gain);
