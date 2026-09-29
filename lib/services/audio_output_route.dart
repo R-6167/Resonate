@@ -92,7 +92,6 @@ class AudioOutputRouteService extends ChangeNotifier {
     bool has(bool Function(AudioDeviceType t) pred) =>
         devices.any((d) => pred(d.type));
 
-    // Prefer explicit external / headset routes over built-in speaker.
     if (has((t) => t == AudioDeviceType.carAudio)) {
       return AudioOutputRoute.car;
     }
@@ -105,19 +104,16 @@ class AudioOutputRouteService extends ChangeNotifier {
     if (has((t) =>
         t == AudioDeviceType.wiredHeadset ||
         t == AudioDeviceType.wiredHeadphones ||
-        t == AudioDeviceType.hearingAid ||
-        t == AudioDeviceType.usbHeadset)) {
+        t == AudioDeviceType.hearingAid)) {
       return AudioOutputRoute.headphones;
     }
     if (has((t) =>
         t == AudioDeviceType.usbAudio ||
         t == AudioDeviceType.hdmi ||
-        t == AudioDeviceType.lineAnalog ||
-        t == AudioDeviceType.lineDigital)) {
+        t == AudioDeviceType.lineAnalog)) {
       return AudioOutputRoute.externalSpeaker;
     }
 
-    // Only built-in speaker / earpiece (or unknown speaker types).
     final onlyBuiltIn = devices.every((d) =>
         d.type == AudioDeviceType.speaker ||
         d.type == AudioDeviceType.earpiece ||
