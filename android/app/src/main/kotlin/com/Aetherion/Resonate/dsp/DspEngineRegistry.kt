@@ -82,17 +82,57 @@ object DspEngineRegistry {
         }
     }
 
+    /** Aggregate Phase-2 latency across all live engines. */
     @JvmStatic
-    fun statusMap(): Map<String, Any> = mapOf(
-        "activeEngines" to activeCount(),
-        "gateTripped" to DspSessionGate.isTripped(),
-        "nativeAllowed" to DspSessionGate.isNativeAllowed(),
-        "linearGain" to stickyLinearGain,
-        "eqEnabled" to stickyEqEnabled,
-        "eqBands" to (stickyGainsDb?.size ?: 0),
-        "speakerMode" to stickySpeakerMode,
-        "virtualBass" to stickyVirtualBass,
-    )
+    fun latencySnapshot(): Map<String, Any> {
+        var calls = 0.0
+        var avgUs = 0.0
+        var maxUs = 0.0
+        var overruns = 0.0
+        var lastFrames = 0.0
+        var sampleRate = 0.0
+        var n = 0
+        for (h in snapshotHandles()) {
+            try {
+                val s = DspEngineJni.nativeGetStats(h) ?: continue
+                if (s.size < 6) continue
+                calls += s[0]
+                avgUs += s[1]
+                if (s[2] > maxUs) maxUs = s[2]
+                overruns += s[3]
+                lastFrames = s[4]
+                sampleRate = s[5]
+                n++
+            } catch (_: Throwable) {
+            }
+        }
+        if (n > 0) avgUs /= n.toDouble()
+        return mapOf(
+            "processCalls" to calls,
+            "avgUs" to avgUs,
+            "maxUs" to maxUs,
+            "overruns" to overruns,
+            "lastFrames" to lastFrames,
+            "sampleRate" to sampleRate,
+            "engines" to n,
+        )
+    }
+
+    @JvmStatic
+    fun statusMap(): Map<String, Any> {
+        val base = mutableMapOf<String, Any>(
+            "activeEngines" to activeCount(),
+            "gateTripped" to DspSessionGate.isTripped(),
+            "nativeAllowed" to DspSessionGate.isNativeAllowed(),
+            "linearGain" to stickyLinearGain,
+            "eqEnabled" to stickyEqEnabled,
+            "eqBands" to (stickyGainsDb?.size ?: 0),
+            "speakerMode" to stickySpeakerMode,
+            "virtualBass" to stickyVirtualBass,
+        )
+        base.putAll(latencySnapshot())
+        return base
+    }
 
     /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
