@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/bluetooth_provider.dart';
+import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_effects_bridge.dart';
@@ -413,6 +414,78 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                             ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 14),
+
+
+                    // —— Colour effects (Bass / Width / Reverb) ——
+                    // Loudness was removed: DSP preamp owns overall level.
+                    Consumer<AudioEffectsProvider>(
+                      builder: (context, fx, _) {
+                        String pct(double v) => '${(v * 100).round()}%';
+                        return _GlassCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                secondary: Icon(Icons.auto_fix_rounded,
+                                    color: _cViolet),
+                                title: const Text('Colour effects',
+                                    style: TextStyle(fontWeight: FontWeight.w700)),
+                                subtitle: Text(
+                                  fx.effectsEnabled
+                                      ? 'Bass · width · reverb on the current output'
+                                      : 'Off — pure tone from EQ only',
+                                ),
+                                value: fx.effectsEnabled,
+                                onChanged: fx.setEffectsEnabled,
+                              ),
+                              if (fx.effectsEnabled) ...[
+                                const Divider(height: 18),
+                                _FxSlider(
+                                  icon: Icons.speaker_rounded,
+                                  title: 'Bass boost',
+                                  hint: 'Extra low-end weight for earbuds / small speakers',
+                                  value: fx.bassBoost,
+                                  color: _cOrange,
+                                  enabled: fx.effectsEnabled,
+                                  onChanged: fx.setBassBoost,
+                                  label: pct(fx.bassBoost),
+                                ),
+                                _FxSlider(
+                                  icon: Icons.surround_sound_rounded,
+                                  title: 'Width',
+                                  hint: 'Stereo space / virtualizer',
+                                  value: fx.virtualizer,
+                                  color: _cBlue,
+                                  enabled: fx.effectsEnabled,
+                                  onChanged: fx.setVirtualizer,
+                                  label: pct(fx.virtualizer),
+                                ),
+                                _FxSlider(
+                                  icon: Icons.water_drop_outlined,
+                                  title: 'Reverb',
+                                  hint: 'A light room air — keep low for clarity',
+                                  value: fx.reverb,
+                                  color: _cPink,
+                                  enabled: fx.effectsEnabled,
+                                  onChanged: fx.setReverb,
+                                  label: pct(fx.reverb),
+                                ),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    onPressed: fx.reset,
+                                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                                    label: const Text('Reset colour'),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 14),
 
@@ -855,6 +928,76 @@ class _EngineStrip extends StatelessWidget {
               : const Icon(Icons.refresh_rounded),
         ),
       ],
+    );
+  }
+}
+
+
+class _FxSlider extends StatelessWidget {
+  const _FxSlider({
+    required this.icon,
+    required this.title,
+    required this.hint,
+    required this.value,
+    required this.color,
+    required this.enabled,
+    required this.onChanged,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String title;
+  final String hint;
+  final double value;
+  final Color color;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(hint, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: value.clamp(0.0, 1.0),
+            min: 0,
+            max: 1,
+            divisions: 20,
+            activeColor: color,
+            label: label,
+            onChanged: enabled ? onChanged : null,
+          ),
+        ],
+      ),
     );
   }
 }
