@@ -1,6 +1,11 @@
 /**
- * Vendored DSP ENGINE core — RBJ peaking EQ, DVC, soft limiter, virtual bass.
- * All working memory is owned by the handle; dsp_process never allocates.
+ * Vendored DSP ENGINE core — aligns with Stabilization Requirements Phase 1.
+ *
+ * Chain (per sample):
+ *   PCM in → EQ → speaker/bass path → auto headroom → true-peak limiter
+ *            → soft ceiling → DVC volume → out
+ *
+ * dsp_process never allocates.
  */
 #include "dsp_engine.h"
 
@@ -88,12 +93,53 @@ struct Biquad {
     }
 };
 
+struct PeakLimiter {
+    float envelope = 0.f;
+    float attack_coeff = 0.f;
+    float release_coeff = 0.f;
+    float ceiling = 0.8912509f;
+
+    void configure(int sample_rate, float attack_ms, float release_ms, float ceiling_db) {
+        if (sample_rate < 8000) sample_rate = 44100;
+        const float atk = std::max(0.1f, attack_ms) * 0.001f;
+        const float rel = std::max(1.0f, release_ms) * 0.001f;
+        attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
+        release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
+        ceiling = std::pow(10.0f, ceiling_db / 20.0f);
+        if (ceiling > 0.99f) ceiling = 0.99f;
+        if (ceiling < 0.1f) ceiling = 0.1f;
+    }
+
+    float process(float x) {
+        const float ax = std::fabs(x);
+        if (ax > envelope) {
+            envelope = attack_coeff * envelope + (1.0f - attack_coeff) * ax;
+            if (ax > envelope) envelope = ax;
+        } else {
+            envelope = release_coeff * envelope + (1.0f - release_coeff) * ax;
+        }
+        if (envelope <= ceiling || envelope < 1e-8f) return x;
+        return x * (ceiling / envelope);
+    }
+};
+
+inline float soft_clip(float x, float knee_start) {
+    const float ax = std::fabs(x);
+    if (ax <= knee_start) return x;
+    const float s = (x >= 0.0f) ? 1.0f : -1.0f;
+    const float over = ax - knee_start;
+    const float y = knee_start + over / (1.0f + over * 3.5f);
+    const float max_out = 0.985f;
+    return s * (y > max_out ? max_out : y);
+}
+
 struct Engine {
     int sample_rate = 44100;
     int channels = 2;
     int buffer_frames = kMaxFrames;
 
     double volume = 1.0;
+    float headroom_gain = 1.0f;
     bool eq_enabled = true;
     bool speaker_mode = false;
     double virtual_bass = 0.55;
@@ -107,12 +153,14 @@ struct Engine {
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
 
-    float env[kMaxCh]{};
+    PeakLimiter limiter[kMaxCh];
 
     bool running = false;
 
     void rebuildEq() {
+        double max_pos = 0.0;
         for (int i = 0; i < band_count; ++i) {
+            if (gains[i] > max_pos) max_pos = gains[i];
             double q = 1.0;
             if (i > 0 && i < band_count - 1) {
                 const double f0 = centers[i - 1];
@@ -126,6 +174,15 @@ struct Engine {
                 bands[i][c].setPeaking(sample_rate, centers[i], gains[i], q);
             }
         }
+        if (eq_enabled && max_pos > 0.25) {
+            const double compensate_db = max_pos * 0.92;
+            headroom_gain = (float)std::pow(10.0, -compensate_db / 20.0);
+        } else {
+            headroom_gain = 1.0f;
+        }
+        if (speaker_mode) {
+            headroom_gain *= 0.841395f;
+        }
     }
 
     void rebuildSpeakerFilters() {
@@ -135,28 +192,16 @@ struct Engine {
             bass_bp[c].setPeaking(sample_rate, 160.0, 0.0, 0.8);
         }
     }
-};
 
-inline float soft_ceiling(float x) {
-    const float ax = std::fabs(x);
-    if (ax <= 0.88f) return x;
-    const float s = (x >= 0.0f) ? 1.0f : -1.0f;
-    const float over = ax - 0.88f;
-    const float y = 0.88f + over / (1.0f + over * 3.2f);
-    return s * (y > 0.98f ? 0.98f : y);
-}
-
-inline float limit_sample(float x, float& env, float threshold, float release) {
-    const float ax = std::fabs(x);
-    if (ax > env) {
-        env = ax;
-    } else {
-        env = env * release + ax * (1.0f - release);
+    void rebuildLimiter() {
+        const float atk = speaker_mode ? 2.0f : 3.0f;
+        const float rel = speaker_mode ? 80.0f : 120.0f;
+        const float ceil_db = speaker_mode ? -1.5f : -1.0f;
+        for (int c = 0; c < channels; ++c) {
+            limiter[c].configure(sample_rate, atk, rel, ceil_db);
+        }
     }
-    if (env <= threshold) return x;
-    const float g = threshold / env;
-    return x * g;
-}
+};
 
 } // namespace
 
@@ -183,6 +228,7 @@ void* dsp_create(const DspConfig* config) {
     }
     e->rebuildEq();
     e->rebuildSpeakerFilters();
+    e->rebuildLimiter();
     return e;
 }
 
@@ -212,7 +258,9 @@ void dsp_set_volume(void* handle, double linear_gain) {
 
 void dsp_eq_set_enabled(void* handle, bool enabled) {
     if (!handle) return;
-    static_cast<Engine*>(handle)->eq_enabled = enabled;
+    auto* e = static_cast<Engine*>(handle);
+    e->eq_enabled = enabled;
+    e->rebuildEq();
 }
 
 void dsp_eq_set_bands(void* handle, const double* centers_hz,
@@ -243,6 +291,7 @@ void dsp_eq_set_band(void* handle, int32_t index, double freq_hz,
     for (int c = 0; c < e->channels; ++c) {
         e->bands[index][c].setPeaking(e->sample_rate, freq_hz, gain_db, q);
     }
+    e->rebuildEq();
 }
 
 void dsp_set_speaker_mode(void* handle, bool enabled) {
@@ -250,6 +299,8 @@ void dsp_set_speaker_mode(void* handle, bool enabled) {
     auto* e = static_cast<Engine*>(handle);
     e->speaker_mode = enabled;
     e->rebuildSpeakerFilters();
+    e->rebuildEq();
+    e->rebuildLimiter();
 }
 
 void dsp_set_virtual_bass(void* handle, double amount) {
@@ -267,11 +318,11 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
 
     const int ch = e->channels;
     const float vol = static_cast<float>(e->volume);
+    const float hr = e->headroom_gain;
     const bool eq = e->eq_enabled;
     const bool speaker = e->speaker_mode;
     const float vb = static_cast<float>(e->virtual_bass);
-    const float thresh = speaker ? 0.82f : 0.90f;
-    const float release = speaker ? 0.9992f : 0.9985f;
+    const float knee = speaker ? 0.80f : 0.88f;
 
     for (int i = 0; i < frames; ++i) {
         for (int c = 0; c < ch; ++c) {
@@ -294,9 +345,13 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                 }
             }
 
+            s *= hr;
+            s = e->limiter[c].process(s);
+            s = soft_clip(s, knee);
             s *= vol;
-            s = limit_sample(s, e->env[c], thresh, release);
-            s = soft_ceiling(s);
+
+            if (s > 1.0f) s = 1.0f;
+            if (s < -1.0f) s = -1.0f;
             out[i * ch + c] = s;
         }
     }
