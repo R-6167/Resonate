@@ -1,0 +1,29 @@
+name: Apply EQ + crossfade harden
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/apply_eq_crossfade_harden.py"
+      - "tools/equalizer_screen_glass.dart"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - name: Apply surgical patches
+        run: python3 tools/apply_eq_crossfade_harden.py
+      - name: Commit if changed
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "harden: soft-outgoing crossfade, EQ colour effects, retire Loudness nav, Live badge"
+            git push
+          fi
