@@ -21,15 +21,18 @@ static constexpr int kMaxCh = 2;
 static constexpr size_t kScratchFloats = (size_t)kMaxFrames * kMaxCh;
 static constexpr int kMaxEqBands = 31;
 
-/** Soft knee into ±1.0 — avoids harsh hard-clip on boosted bass peaks. */
+/**
+ * Soft true-peak-ish ceiling into ±1.0.
+ * Linear below ~0.85; smooth knee above so boosted bass does not hard-clip.
+ * Always on — does not reduce average loudness for clean signals.
+ */
 static inline float soft_clip(float x) {
-    // tanh-ish: x / (1 + |x|) scaled so small signals stay linear-ish
     const float ax = fabsf(x);
-    if (ax < 0.9f) return x;
+    if (ax <= 0.85f) return x;
     const float s = (x >= 0.0f) ? 1.0f : -1.0f;
-    // map [0.9, +inf) smoothly toward 1.0
-    const float t = (ax - 0.9f) / (ax - 0.9f + 0.35f);
-    return s * (0.9f + 0.1f * t);
+    const float over = ax - 0.85f;
+    const float y = 0.85f + over / (1.0f + over * 2.5f);
+    return s * (y > 0.999f ? 0.999f : y);
 }
 
 struct DspConfigJni {
