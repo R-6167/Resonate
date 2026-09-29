@@ -44,8 +44,9 @@ class AudioEffectsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deprecated — Loudness UI removed; use EQ Preamp (DVC).
   Future<void> setLoudness(double value) async {
-    loudness = value.clamp(0.0, 1.0).toDouble();
+    loudness = 0.0;
     await _applyNative();
     await _save();
     notifyListeners();
@@ -65,13 +66,13 @@ class AudioEffectsProvider extends ChangeNotifier {
       debugPrint('Native audio effects failed: $e');
     }
 
+    // Loudness removed from UI — EQ Preamp (DVC) owns overall level.
+    // Keep loudnessEnhancer disabled so it cannot stack with DVC.
     if (loudnessEnhancer != null) {
       try {
-        await loudnessEnhancer!.setTargetGain(enabled ? loudness * 600.0 : 0.0);
-        await loudnessEnhancer!.setEnabled(enabled && loudness > 0);
-      } catch (e) {
-        debugPrint('Loudness effect failed: $e');
-      }
+        await loudnessEnhancer!.setTargetGain(0.0);
+        await loudnessEnhancer!.setEnabled(false);
+      } catch (_) {}
     }
   }
 
@@ -82,7 +83,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       reverb = prefs.getDouble('reverb') ?? 0.0;
       bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
       virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
-      loudness = prefs.getDouble('loudness') ?? 0.0;
+      loudness = 0.0; // Loudness retired; Preamp owns level
       // Do not apply native effects at load — no audio session yet.
       notifyListeners();
     } catch (e) {
