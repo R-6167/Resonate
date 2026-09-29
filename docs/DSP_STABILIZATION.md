@@ -2,11 +2,12 @@
 
 | Requirement | Status |
 |-------------|--------|
-| 1. Automatic headroom | **Native** — compensates max positive band gain (~0.92×) when EQ set; extra −1.5 dB in speaker mode |
-| 2. True-peak limiter | **Native** — envelope limiter, ceiling −1.0 dBFS (−1.5 speaker), attack ~2–3 ms, release ~80–120 ms |
+| 1. Automatic headroom | **Native** — max positive band ×0.92; extra −1.5 dB speaker |
+| 2. True-peak limiter | **Native** — ceiling −1.0/−1.5 dBFS, attack 2–3 ms, release 80–120 ms |
 | 3. Soft clipping | **Native** + JNI secondary net |
-| 4. No RT allocations | **Done** — handle-owned filters/limiter; JNI scratch at create only |
-| 5. DSP testing tools | **Partial** — offline process self-test; full sweep/xrun suite = Phase 3 |
+| 4. No RT allocations | **Done** |
+| 5a. Latency monitoring | **Phase 2** — `dsp_get_stats` / `getLiveDspStatus` (`avgUs`, `maxUs`, `overruns`) |
+| 5b. Full test suite | **Phase 3** — sweeps / max-level |
 
 ## Chain
 
@@ -14,6 +15,15 @@
 PCM → EQ → speaker/bass → auto headroom → limiter → soft clip → DVC → out
 ```
 
-## Not killing potential
+## Latency fields (getLiveDspStatus)
 
-Headroom reduces *overall* level so the EQ *shape* (boosted bass relative to mids) stays. User raises system volume for loudness. Limiter only acts on peaks.
+| Key | Meaning |
+|-----|--------|
+| `processCalls` | Total `dsp_process` calls |
+| `avgUs` | Mean process time (µs) |
+| `maxUs` | Worst-case process time (µs) |
+| `overruns` | Calls slower than block duration |
+| `lastFrames` | Frames in last block |
+| `sampleRate` | Engine sample rate |
+
+Healthy target: `avgUs` ≪ block time (e.g. ~10–20 ms for 512 frames @ 48 kHz → budget ~10 000 µs).

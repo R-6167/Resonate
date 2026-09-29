@@ -1,9 +1,8 @@
 /**
  * DSP ENGINE public C ABI — vendored with Resonate.
  *
- * Stabilization chain (Phase 1):
- *   EQ → bass path → auto headroom → true-peak limiter → soft clip → DVC
- *
+ * Chain: EQ → bass → auto headroom → true-peak limiter → soft clip → DVC
+ * Phase 2: latency / overrun monitoring (dsp_get_stats).
  * Real-time safe: no allocation inside dsp_process.
  */
 #pragma once
@@ -24,12 +23,22 @@ typedef struct DspConfig {
     int32_t realtime_priority;
 } DspConfig;
 
+/** Snapshot of process-path timing (safe to call off the audio thread). */
+typedef struct DspStats {
+    int64_t process_calls;
+    int64_t total_ns;
+    int64_t max_ns;
+    int64_t overrun_count;
+    int32_t last_frames;
+    int32_t sample_rate;
+    int32_t channels;
+} DspStats;
+
 void* dsp_create(const DspConfig* config);
 void  dsp_destroy(void* handle);
 int   dsp_start(void* handle);
 int   dsp_stop(void* handle);
 
-/** Process interleaved float32 in [-1,1]. in may equal out. frames <= buffer_frames. */
 void  dsp_process(void* handle, const float* in, float* out, int32_t frames);
 
 void  dsp_set_volume(void* handle, double linear_gain);
@@ -39,6 +48,9 @@ void  dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_d
 
 void  dsp_set_speaker_mode(void* handle, bool enabled);
 void  dsp_set_virtual_bass(void* handle, double amount);
+
+void  dsp_get_stats(void* handle, DspStats* out);
+void  dsp_reset_stats(void* handle);
 
 #ifdef __cplusplus
 }
