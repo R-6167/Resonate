@@ -1,11 +1,8 @@
 /**
- * Vendored DSP ENGINE core — aligns with Stabilization Requirements Phase 1.
+ * Vendored DSP ENGINE core — Phase 1 safety + Phase 2 latency monitoring.
  *
- * Chain (per sample):
- *   PCM in → EQ → speaker/bass path → auto headroom → true-peak limiter
- *            → soft ceiling → DVC volume → out
- *
- * dsp_process never allocates.
+ * Chain: EQ → speaker/bass → auto headroom → true-peak limiter → soft clip → DVC
+ * dsp_process never allocates; times itself with CLOCK_MONOTONIC.
  */
 #include "dsp_engine.h"
 
@@ -13,6 +10,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <time.h>
 
 namespace {
 
@@ -23,16 +21,13 @@ constexpr int kMaxFrames = 4096;
 struct Biquad {
     double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
     double z1 = 0, z2 = 0;
-
     void reset() { z1 = z2 = 0; }
-
     float process(float x) {
         const double y = b0 * x + z1;
         z1 = b1 * x - a1 * y + z2;
         z2 = b2 * x - a2 * y;
         return static_cast<float>(y);
     }
-
     void setPeaking(double sr, double freq, double gainDb, double q) {
         if (freq < 20.0) freq = 20.0;
         if (freq > sr * 0.49) freq = sr * 0.49;
@@ -47,13 +42,9 @@ struct Biquad {
         const double a0n = 1.0 + alpha / A;
         const double a1n = -2.0 * cosw;
         const double a2n = 1.0 - alpha / A;
-        b0 = b0n / a0n;
-        b1 = b1n / a0n;
-        b2 = b2n / a0n;
-        a1 = a1n / a0n;
-        a2 = a2n / a0n;
+        b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
+        a1 = a1n / a0n; a2 = a2n / a0n;
     }
-
     void setHighPass(double sr, double freq) {
         if (freq < 10.0) freq = 10.0;
         const double w0 = 2.0 * M_PI * freq / sr;
@@ -66,13 +57,9 @@ struct Biquad {
         const double a0n = 1.0 + alpha;
         const double a1n = -2.0 * cosw;
         const double a2n = 1.0 - alpha;
-        b0 = b0n / a0n;
-        b1 = b1n / a0n;
-        b2 = b2n / a0n;
-        a1 = a1n / a0n;
-        a2 = a2n / a0n;
+        b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
+        a1 = a1n / a0n; a2 = a2n / a0n;
     }
-
     void setLowPass(double sr, double freq) {
         if (freq < 20.0) freq = 20.0;
         const double w0 = 2.0 * M_PI * freq / sr;
@@ -85,11 +72,8 @@ struct Biquad {
         const double a0n = 1.0 + alpha;
         const double a1n = -2.0 * cosw;
         const double a2n = 1.0 - alpha;
-        b0 = b0n / a0n;
-        b1 = b1n / a0n;
-        b2 = b2n / a0n;
-        a1 = a1n / a0n;
-        a2 = a2n / a0n;
+        b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
+        a1 = a1n / a0n; a2 = a2n / a0n;
     }
 };
 
@@ -98,7 +82,6 @@ struct PeakLimiter {
     float attack_coeff = 0.f;
     float release_coeff = 0.f;
     float ceiling = 0.8912509f;
-
     void configure(int sample_rate, float attack_ms, float release_ms, float ceiling_db) {
         if (sample_rate < 8000) sample_rate = 44100;
         const float atk = std::max(0.1f, attack_ms) * 0.001f;
@@ -109,7 +92,6 @@ struct PeakLimiter {
         if (ceiling > 0.99f) ceiling = 0.99f;
         if (ceiling < 0.1f) ceiling = 0.1f;
     }
-
     float process(float x) {
         const float ax = std::fabs(x);
         if (ax > envelope) {
@@ -129,32 +111,31 @@ inline float soft_clip(float x, float knee_start) {
     const float s = (x >= 0.0f) ? 1.0f : -1.0f;
     const float over = ax - knee_start;
     const float y = knee_start + over / (1.0f + over * 3.5f);
-    const float max_out = 0.985f;
-    return s * (y > max_out ? max_out : y);
+    return s * (y > 0.985f ? 0.985f : y);
 }
 
 struct Engine {
     int sample_rate = 44100;
     int channels = 2;
     int buffer_frames = kMaxFrames;
-
     double volume = 1.0;
     float headroom_gain = 1.0f;
     bool eq_enabled = true;
     bool speaker_mode = false;
     double virtual_bass = 0.55;
-
     int band_count = 0;
     double centers[kMaxBands]{};
     double gains[kMaxBands]{};
     Biquad bands[kMaxBands][kMaxCh];
-
     Biquad hpf[kMaxCh];
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
-
     PeakLimiter limiter[kMaxCh];
-
+    int64_t process_calls = 0;
+    int64_t total_ns = 0;
+    int64_t max_ns = 0;
+    int64_t overrun_count = 0;
+    int32_t last_frames = 0;
     bool running = false;
 
     void rebuildEq() {
@@ -170,19 +151,15 @@ struct Engine {
                 if (q < 0.5) q = 0.5;
                 if (q > 4.0) q = 4.0;
             }
-            for (int c = 0; c < channels; ++c) {
+            for (int c = 0; c < channels; ++c)
                 bands[i][c].setPeaking(sample_rate, centers[i], gains[i], q);
-            }
         }
         if (eq_enabled && max_pos > 0.25) {
-            const double compensate_db = max_pos * 0.92;
-            headroom_gain = (float)std::pow(10.0, -compensate_db / 20.0);
+            headroom_gain = (float)std::pow(10.0, -(max_pos * 0.92) / 20.0);
         } else {
             headroom_gain = 1.0f;
         }
-        if (speaker_mode) {
-            headroom_gain *= 0.841395f;
-        }
+        if (speaker_mode) headroom_gain *= 0.841395f;
     }
 
     void rebuildSpeakerFilters() {
@@ -197,9 +174,8 @@ struct Engine {
         const float atk = speaker_mode ? 2.0f : 3.0f;
         const float rel = speaker_mode ? 80.0f : 120.0f;
         const float ceil_db = speaker_mode ? -1.5f : -1.0f;
-        for (int c = 0; c < channels; ++c) {
+        for (int c = 0; c < channels; ++c)
             limiter[c].configure(sample_rate, atk, rel, ceil_db);
-        }
     }
 };
 
@@ -212,36 +188,24 @@ void* dsp_create(const DspConfig* config) {
     if (!e) return nullptr;
     if (config) {
         e->sample_rate = config->sample_rate > 0 ? config->sample_rate : 44100;
-        e->channels = config->channels >= 1 && config->channels <= kMaxCh
-                          ? config->channels
-                          : 2;
-        e->buffer_frames = config->buffer_frames > 0
-                               ? std::min(config->buffer_frames, kMaxFrames)
-                               : kMaxFrames;
+        e->channels = config->channels >= 1 && config->channels <= kMaxCh ? config->channels : 2;
+        e->buffer_frames = config->buffer_frames > 0 ? std::min(config->buffer_frames, kMaxFrames) : kMaxFrames;
     }
-    static const double kDefaultHz[10] = {
-        31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+    static const double kDefaultHz[10] = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
     e->band_count = 10;
-    for (int i = 0; i < 10; ++i) {
-        e->centers[i] = kDefaultHz[i];
-        e->gains[i] = 0.0;
-    }
+    for (int i = 0; i < 10; ++i) { e->centers[i] = kDefaultHz[i]; e->gains[i] = 0.0; }
     e->rebuildEq();
     e->rebuildSpeakerFilters();
     e->rebuildLimiter();
     return e;
 }
 
-void dsp_destroy(void* handle) {
-    delete static_cast<Engine*>(handle);
-}
-
+void dsp_destroy(void* handle) { delete static_cast<Engine*>(handle); }
 int dsp_start(void* handle) {
     if (!handle) return -1;
     static_cast<Engine*>(handle)->running = true;
     return 0;
 }
-
 int dsp_stop(void* handle) {
     if (!handle) return -1;
     static_cast<Engine*>(handle)->running = false;
@@ -263,34 +227,29 @@ void dsp_eq_set_enabled(void* handle, bool enabled) {
     e->rebuildEq();
 }
 
-void dsp_eq_set_bands(void* handle, const double* centers_hz,
-                      const double* gains_db, int32_t count) {
+void dsp_eq_set_bands(void* handle, const double* centers_hz, const double* gains_db, int32_t count) {
     if (!handle || !gains_db || count <= 0) return;
     auto* e = static_cast<Engine*>(handle);
     if (count > kMaxBands) count = kMaxBands;
     e->band_count = count;
     for (int i = 0; i < count; ++i) {
         e->gains[i] = gains_db[i];
-        if (centers_hz) {
-            e->centers[i] = centers_hz[i];
-        } else if (e->centers[i] <= 0.0) {
+        if (centers_hz) e->centers[i] = centers_hz[i];
+        else if (e->centers[i] <= 0.0)
             e->centers[i] = 20.0 * std::pow(1000.0, i / (double)std::max(count - 1, 1));
-        }
     }
     e->rebuildEq();
 }
 
-void dsp_eq_set_band(void* handle, int32_t index, double freq_hz,
-                     double gain_db, double q) {
+void dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_db, double q) {
     if (!handle || index < 0 || index >= kMaxBands) return;
     auto* e = static_cast<Engine*>(handle);
     if (index >= e->band_count) e->band_count = index + 1;
     e->centers[index] = freq_hz;
     e->gains[index] = gain_db;
     if (q <= 0.0) q = 1.0;
-    for (int c = 0; c < e->channels; ++c) {
+    for (int c = 0; c < e->channels; ++c)
         e->bands[index][c].setPeaking(e->sample_rate, freq_hz, gain_db, q);
-    }
     e->rebuildEq();
 }
 
@@ -316,6 +275,9 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     auto* e = static_cast<Engine*>(handle);
     if (frames > kMaxFrames) frames = kMaxFrames;
 
+    struct timespec t0{}, t1{};
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+
     const int ch = e->channels;
     const float vol = static_cast<float>(e->volume);
     const float hr = e->headroom_gain;
@@ -327,13 +289,10 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     for (int i = 0; i < frames; ++i) {
         for (int c = 0; c < ch; ++c) {
             float s = in[i * ch + c];
-
             if (eq) {
-                for (int b = 0; b < e->band_count; ++b) {
+                for (int b = 0; b < e->band_count; ++b)
                     s = e->bands[b][c].process(s);
-                }
             }
-
             if (speaker) {
                 const float deep = e->bass_lp[c].process(s);
                 s = e->hpf[c].process(s);
@@ -344,17 +303,58 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                     s += h * (0.35f * vb);
                 }
             }
-
             s *= hr;
             s = e->limiter[c].process(s);
             s = soft_clip(s, knee);
             s *= vol;
-
             if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
             out[i * ch + c] = s;
         }
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const int64_t ns = (int64_t)(t1.tv_sec - t0.tv_sec) * 1000000000LL
+                     + (int64_t)(t1.tv_nsec - t0.tv_nsec);
+    e->process_calls += 1;
+    e->total_ns += ns;
+    if (ns > e->max_ns) e->max_ns = ns;
+    e->last_frames = frames;
+    if (e->sample_rate > 0 && frames > 0) {
+        const int64_t budget_ns =
+            (int64_t)frames * 1000000000LL / (int64_t)e->sample_rate;
+        if (ns > budget_ns) e->overrun_count += 1;
+    }
+}
+
+void dsp_get_stats(void* handle, DspStats* out) {
+    if (!out) return;
+    out->process_calls = 0;
+    out->total_ns = 0;
+    out->max_ns = 0;
+    out->overrun_count = 0;
+    out->last_frames = 0;
+    out->sample_rate = 0;
+    out->channels = 0;
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    out->process_calls = e->process_calls;
+    out->total_ns = e->total_ns;
+    out->max_ns = e->max_ns;
+    out->overrun_count = e->overrun_count;
+    out->last_frames = e->last_frames;
+    out->sample_rate = e->sample_rate;
+    out->channels = e->channels;
+}
+
+void dsp_reset_stats(void* handle) {
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    e->process_calls = 0;
+    e->total_ns = 0;
+    e->max_ns = 0;
+    e->overrun_count = 0;
+    e->last_frames = 0;
 }
 
 } // extern "C"
