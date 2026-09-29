@@ -1,8 +1,8 @@
 /**
- * Vendored DSP ENGINE — per-handle scratch, protection-last chain.
+ * Vendored DSP ENGINE — true-peak limiter (look-ahead + 4× oversampling).
  *
- * Chain: EQ → speaker/bass → auto headroom → DVC → limiter → soft-clip
- * No allocation inside dsp_process / dsp_process_pcm16.
+ * Chain: EQ → speaker/bass → auto headroom → DVC → true-peak limiter → soft-clip
+ * All buffers owned by the handle; process path never allocates.
  */
 #include "dsp_engine.h"
 
@@ -19,21 +19,33 @@ constexpr int kMaxBands = 31;
 constexpr int kMaxCh = 2;
 constexpr int kMaxFrames = 4096;
 constexpr size_t kAlign = 64;
+constexpr int kOsFactor = 4;
+constexpr int kMaxLookahead = 512;
+
+inline float sanitize(float x) {
+    if (!std::isfinite(x)) return 0.f;
+    if (x > 8.f) return 8.f;
+    if (x < -8.f) return -8.f;
+    return x;
+}
 
 struct Biquad {
     double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
     double z1 = 0, z2 = 0;
     void reset() { z1 = z2 = 0; }
     float process(float x) {
+        x = sanitize(x);
         const double y = b0 * x + z1;
         z1 = b1 * x - a1 * y + z2;
         z2 = b2 * x - a2 * y;
-        return static_cast<float>(y);
+        return sanitize(static_cast<float>(y));
     }
     void setPeaking(double sr, double freq, double gainDb, double q) {
         if (freq < 20.0) freq = 20.0;
         if (freq > sr * 0.49) freq = sr * 0.49;
         if (q < 0.1) q = 0.707;
+        if (gainDb > 24.0) gainDb = 24.0;
+        if (gainDb < -24.0) gainDb = -24.0;
         const double A = std::pow(10.0, gainDb / 40.0);
         const double w0 = 2.0 * M_PI * freq / sr;
         const double alpha = std::sin(w0) / (2.0 * q);
@@ -79,31 +91,83 @@ struct Biquad {
     }
 };
 
-struct PeakLimiter {
-    float envelope = 0.f;
+struct TruePeakLimiter {
+    float ceiling = 0.8912509f;
     float attack_coeff = 0.f;
     float release_coeff = 0.f;
-    float ceiling = 0.8912509f;
-    void configure(int sample_rate, float attack_ms, float release_ms, float ceiling_db) {
+    float envelope = 0.f;
+    float gain = 1.f;
+    float prev_in = 0.f;
+    float delay[kMaxLookahead]{};
+    int delay_len = 64;
+    int delay_pos = 0;
+
+    void configure(int sample_rate, float attack_ms, float release_ms,
+                   float ceiling_db, float lookahead_ms) {
         if (sample_rate < 8000) sample_rate = 44100;
-        const float atk = std::max(0.1f, attack_ms) * 0.001f;
+        const float atk = std::max(0.05f, attack_ms) * 0.001f;
         const float rel = std::max(1.0f, release_ms) * 0.001f;
         attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
         release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
         ceiling = std::pow(10.0f, ceiling_db / 20.0f);
         if (ceiling > 0.99f) ceiling = 0.99f;
         if (ceiling < 0.1f) ceiling = 0.1f;
+
+        int la = (int)std::lround(lookahead_ms * 0.001f * (float)sample_rate);
+        if (la < 8) la = 8;
+        if (la > kMaxLookahead) la = kMaxLookahead;
+        delay_len = la;
+        delay_pos = 0;
+        std::memset(delay, 0, sizeof(delay));
+        envelope = 0.f;
+        gain = 1.f;
+        prev_in = 0.f;
     }
-    float process(float x) {
-        const float ax = std::fabs(x);
-        if (ax > envelope) {
-            envelope = attack_coeff * envelope + (1.0f - attack_coeff) * ax;
-            if (ax > envelope) envelope = ax;
-        } else {
-            envelope = release_coeff * envelope + (1.0f - release_coeff) * ax;
+
+    float truePeakAbs(float x) const {
+        float peak = std::fabs(x);
+        const float a = prev_in;
+        const float b = x;
+        const float d = b - a;
+        for (int k = 1; k < kOsFactor; ++k) {
+            const float y = a + d * ((float)k / (float)kOsFactor);
+            const float ay = std::fabs(y);
+            if (ay > peak) peak = ay;
         }
-        if (envelope <= ceiling || envelope < 1e-8f) return x;
-        return x * (ceiling / envelope);
+        const float mid = 0.5f * (a + b);
+        const float am = std::fabs(mid);
+        if (am > peak) peak = am;
+        return peak;
+    }
+
+    float process(float x) {
+        x = sanitize(x);
+        const float tp = truePeakAbs(x);
+        prev_in = x;
+
+        if (tp > envelope) {
+            envelope = attack_coeff * envelope + (1.0f - attack_coeff) * tp;
+            if (tp > envelope) envelope = tp;
+        } else {
+            envelope = release_coeff * envelope + (1.0f - release_coeff) * tp;
+        }
+
+        float target = 1.f;
+        if (envelope > ceiling && envelope > 1e-8f)
+            target = ceiling / envelope;
+        if (target < 0.05f) target = 0.05f;
+
+        if (target < gain)
+            gain = attack_coeff * gain + (1.0f - attack_coeff) * target;
+        else
+            gain = release_coeff * gain + (1.0f - release_coeff) * target;
+
+        const float delayed = delay[delay_pos];
+        delay[delay_pos] = x;
+        delay_pos++;
+        if (delay_pos >= delay_len) delay_pos = 0;
+
+        return sanitize(delayed * gain);
     }
 };
 
@@ -132,7 +196,7 @@ struct Engine {
     Biquad hpf[kMaxCh];
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
-    PeakLimiter limiter[kMaxCh];
+    TruePeakLimiter limiter[kMaxCh];
 
     float* scratch_in = nullptr;
     float* scratch_out = nullptr;
@@ -199,11 +263,12 @@ struct Engine {
     }
 
     void rebuildLimiter() {
-        const float atk = speaker_mode ? 2.0f : 3.0f;
-        const float rel = speaker_mode ? 80.0f : 120.0f;
+        const float atk = speaker_mode ? 0.5f : 1.0f;
+        const float rel = speaker_mode ? 60.0f : 100.0f;
         const float ceil_db = speaker_mode ? -1.5f : -1.0f;
+        const float la_ms = 3.0f;
         for (int c = 0; c < channels; ++c)
-            limiter[c].configure(sample_rate, atk, rel, ceil_db);
+            limiter[c].configure(sample_rate, atk, rel, ceil_db, la_ms);
     }
 };
 
@@ -279,7 +344,10 @@ void dsp_eq_set_bands(void* handle, const double* centers_hz,
     if (count > kMaxBands) count = kMaxBands;
     e->band_count = count;
     for (int i = 0; i < count; ++i) {
-        e->gains[i] = gains_db[i];
+        double g = gains_db[i];
+        if (g > 24.0) g = 24.0;
+        if (g < -24.0) g = -24.0;
+        e->gains[i] = g;
         if (centers_hz) e->centers[i] = centers_hz[i];
         else if (e->centers[i] <= 0.0)
             e->centers[i] = 20.0 * std::pow(1000.0, i / (double)std::max(count - 1, 1));
@@ -293,6 +361,8 @@ void dsp_eq_set_band(void* handle, int32_t index, double freq_hz,
     auto* e = static_cast<Engine*>(handle);
     if (index >= e->band_count) e->band_count = index + 1;
     e->centers[index] = freq_hz;
+    if (gain_db > 24.0) gain_db = 24.0;
+    if (gain_db < -24.0) gain_db = -24.0;
     e->gains[index] = gain_db;
     if (q <= 0.0) q = 1.0;
     for (int c = 0; c < e->channels; ++c)
@@ -335,7 +405,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
 
     for (int i = 0; i < frames; ++i) {
         for (int c = 0; c < ch; ++c) {
-            float s = in[i * ch + c];
+            float s = sanitize(in[i * ch + c]);
 
             if (eq) {
                 for (int b = 0; b < e->band_count; ++b)
@@ -353,8 +423,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                 }
             }
 
-            s *= hr;
-            s *= vol;
+            s = sanitize(s * hr * vol);
             s = e->limiter[c].process(s);
             s = soft_clip(s, knee);
 
