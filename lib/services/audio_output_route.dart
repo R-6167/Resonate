@@ -71,8 +71,10 @@ class AudioOutputRouteService extends ChangeNotifier {
   Future<void> refresh([AudioSession? session]) async {
     try {
       session ??= await AudioSession.instance;
+      // audio_session 0.1.x returns Set<AudioDevice>, not List.
       final devices =
-          await session.getDevices(includeInputs: false, includeOutputs: true);
+          (await session.getDevices(includeInputs: false, includeOutputs: true))
+              .toList();
       final next = _classify(devices);
       final label = _labelFor(devices, next);
       if (next != _route || label != _deviceLabel) {
@@ -114,15 +116,9 @@ class AudioOutputRouteService extends ChangeNotifier {
       return AudioOutputRoute.externalSpeaker;
     }
 
-    final onlyBuiltIn = devices.every((d) =>
-        d.type == AudioDeviceType.speaker ||
-        d.type == AudioDeviceType.earpiece ||
-        d.type.name.toLowerCase().contains('speaker') ||
-        d.type.name.toLowerCase().contains('builtin'));
-    if (onlyBuiltIn || devices.length == 1) {
-      return AudioOutputRoute.builtInSpeaker;
-    }
-    return AudioOutputRoute.unknown;
+    // No external route matched → treat as built-in phone speaker.
+    // (audio_session 0.1.x has no AudioDeviceType.speaker / earpiece.)
+    return AudioOutputRoute.builtInSpeaker;
   }
 
   static String _labelFor(List<AudioDevice> devices, AudioOutputRoute route) {
@@ -131,14 +127,22 @@ class AudioOutputRouteService extends ChangeNotifier {
       final n = d.name.trim();
       if (n.isEmpty) continue;
       final t = d.type;
-      if (t == AudioDeviceType.speaker || t == AudioDeviceType.earpiece) {
-        continue;
+      // Prefer a named external / headset device over anonymous built-in.
+      if (t == AudioDeviceType.bluetoothA2dp ||
+          t == AudioDeviceType.bluetoothSco ||
+          t == AudioDeviceType.bluetoothLe ||
+          t == AudioDeviceType.wiredHeadset ||
+          t == AudioDeviceType.wiredHeadphones ||
+          t == AudioDeviceType.hearingAid ||
+          t == AudioDeviceType.usbAudio ||
+          t == AudioDeviceType.hdmi ||
+          t == AudioDeviceType.lineAnalog ||
+          t == AudioDeviceType.carAudio) {
+        return n;
       }
-      return n;
     }
-    return devices.first.name.trim().isNotEmpty
-        ? devices.first.name.trim()
-        : route.name;
+    final fallback = devices.first.name.trim();
+    return fallback.isNotEmpty ? fallback : route.name;
   }
 
   @override
