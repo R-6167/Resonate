@@ -1226,8 +1226,7 @@ class MusicProvider extends ChangeNotifier {
       for (var i = 1; i <= steps; i++) {
         if (!_userWantsPlaying || !_repeatSelfHandoffInFlight) return false;
         final t = i / steps;
-        try {
-          final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);
+        final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);
         final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);
         try {
           await outgoing.setVolume((startOut * math.cos(outT * (math.pi / 2.0))).clamp(0.0, 1.0));
