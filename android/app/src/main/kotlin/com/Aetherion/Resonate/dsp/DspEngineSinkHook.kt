@@ -11,20 +11,19 @@ import android.util.Log
  * (engine A and engine B) when both players are created — which is what
  * we want for flawless crossfade (no shared native handle across threads).
  *
- * IMPORTANT: [ENABLE_NATIVE_LIVE_DSP] must stay false until libdsp_engine.so
- * dsp_create is fixed. Device tombstone 2026-09-28:
- *   SIGSEGV in libdsp_engine.so (dsp_create+36) on ExoPlayer:Playb
- * Java cannot catch that; process dies ~2s after play.
+ * Crash history (2026-09-28): old JNI called dsp_create(double, int) but the
+ * real ABI is dsp_create(const DspConfig*). That treated the sample-rate bits
+ * as a pointer → SIGSEGV in dsp_create+36. JNI was corrected to build a
+ * DspConfig and pass &cfg; native can be ON again.
  */
 object DspEngineSinkHook {
     private const val TAG = "DspEngineSinkHook"
 
     /**
      * Master switch for live native EQ/DVC.
-     * false = pass-through only (safe playback).
-     * true  = calls nativeCreate → currently crashes in dsp_create.
+     * Requires libdsp_engine.so in the APK and ABI-matched JNI.
      */
-    private const val ENABLE_NATIVE_LIVE_DSP = false
+    private const val ENABLE_NATIVE_LIVE_DSP = true
 
     @JvmStatic
     fun createProcessors(): Array<AudioProcessor> {
