@@ -21,6 +21,17 @@ static constexpr int kMaxCh = 2;
 static constexpr size_t kScratchFloats = (size_t)kMaxFrames * kMaxCh;
 static constexpr int kMaxEqBands = 31;
 
+/** Soft knee into ±1.0 — avoids harsh hard-clip on boosted bass peaks. */
+static inline float soft_clip(float x) {
+    // tanh-ish: x / (1 + |x|) scaled so small signals stay linear-ish
+    const float ax = fabsf(x);
+    if (ax < 0.9f) return x;
+    const float s = (x >= 0.0f) ? 1.0f : -1.0f;
+    // map [0.9, +inf) smoothly toward 1.0
+    const float t = (ax - 0.9f) / (ax - 0.9f + 0.35f);
+    return s * (0.9f + 0.1f * t);
+}
+
 struct DspConfigJni {
     int32_t sample_rate;
     int32_t channels;
@@ -146,7 +157,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetVolume(
         JNIEnv*, jclass, jlong handle, jdouble linearGain) {
     if (!handle || !g_set_volume) return;
     if (linearGain < 0.0) linearGain = 0.0;
-    if (linearGain > 4.0) linearGain = 4.0; // ~+12 dB cap
+    if (linearGain > 4.0) linearGain = 4.0;
     g_set_volume(reinterpret_cast<void*>(handle), linearGain);
 }
 
@@ -218,7 +229,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
     g_process(reinterpret_cast<void*>(handle), g_scratch_in, g_scratch_out, frames);
 
     for (int i = 0; i < n; ++i) {
-        float s = g_scratch_out[i];
+        float s = soft_clip(g_scratch_out[i]);
         if (s > 1.0f) s = 1.0f;
         if (s < -1.0f) s = -1.0f;
         pcm[i] = (int16_t)(s * 32767.0f);
