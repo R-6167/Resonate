@@ -1,10 +1,9 @@
 /**
- * JNI bridge — links vendored libdsp_engine (preferred).
+ * JNI bridge — linked to vendored libdsp_engine.
+ * No global scratch: each handle owns its float buffers.
  */
 #include <jni.h>
 #include <android/log.h>
-#include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
 #include <math.h>
 
@@ -14,43 +13,13 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-static constexpr size_t kAlign = 64;
 static constexpr int kMaxFrames = 4096;
 static constexpr int kMaxCh = 2;
-static constexpr size_t kScratchFloats = (size_t)kMaxFrames * kMaxCh;
 static constexpr int kMaxEqBands = 31;
-
-static inline float soft_clip(float x) {
-    const float ax = fabsf(x);
-    if (ax <= 0.90f) return x;
-    const float s = (x >= 0.0f) ? 1.0f : -1.0f;
-    const float over = ax - 0.90f;
-    const float y = 0.90f + over / (1.0f + over * 4.0f);
-    return s * (y > 0.995f ? 0.995f : y);
-}
-
-static float* g_scratch_in  = nullptr;
-static float* g_scratch_out = nullptr;
-
-static bool ensure_scratch() {
-    if (g_scratch_in && g_scratch_out) return true;
-    if (posix_memalign((void**)&g_scratch_in, kAlign, kScratchFloats * sizeof(float)) != 0) {
-        g_scratch_in = nullptr;
-        return false;
-    }
-    if (posix_memalign((void**)&g_scratch_out, kAlign, kScratchFloats * sizeof(float)) != 0) {
-        free(g_scratch_in);
-        g_scratch_in = nullptr;
-        return false;
-    }
-    return true;
-}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeCreate(
         JNIEnv*, jclass, jdouble sampleRate, jint channels) {
-    if (!ensure_scratch()) return 0;
-
     int sr = (int)lround(sampleRate);
     if (sr < 8000) sr = 44100;
     if (channels < 1) channels = 1;
@@ -71,7 +40,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeCreate(
     }
     dsp_start(h);
     dsp_set_volume(h, 1.0);
-    LOGI("dsp_create ok handle=%p sr=%d ch=%d (linked)", h, sr, channels);
+    LOGI("dsp_create ok handle=%p sr=%d ch=%d (per-handle scratch)", h, sr, channels);
     return reinterpret_cast<jlong>(h);
 }
 
@@ -155,29 +124,12 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeProcessPcm16Direct(
         channels <= 0 || channels > kMaxCh) {
         return -1;
     }
-    if (!g_scratch_in || !g_scratch_out) {
-        if (!ensure_scratch()) return -2;
-    }
 
     void* addr = env->GetDirectBufferAddress(buffer);
     if (!addr) return -3;
 
     int16_t* pcm = static_cast<int16_t*>(addr);
-    const int n = frames * channels;
-
-    for (int i = 0; i < n; ++i) {
-        g_scratch_in[i] = (float)pcm[i] * (1.0f / 32768.0f);
-    }
-
-    dsp_process(reinterpret_cast<void*>(handle), g_scratch_in, g_scratch_out, frames);
-
-    for (int i = 0; i < n; ++i) {
-        float s = soft_clip(g_scratch_out[i]);
-        if (s > 1.0f) s = 1.0f;
-        if (s < -1.0f) s = -1.0f;
-        pcm[i] = (int16_t)lrintf(s * 32767.0f);
-    }
-    return 0;
+    return dsp_process_pcm16(reinterpret_cast<void*>(handle), pcm, frames);
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
