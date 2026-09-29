@@ -67,18 +67,17 @@ patch(
     'settings equalizer subtitle',
 )
 
-# Equalizer glass from b64 chunks if present
 import base64
 dst = ROOT / 'lib/screens/equalizer_screen.dart'
 parts = []
-for i in range(3):
+for i in range(8):
     cp = Path(__file__).resolve().parent / f'equalizer_screen_glass_{i}.b64'
     if cp.exists():
         parts.append(cp.read_text().strip())
 if parts:
     dst.write_bytes(base64.b64decode(''.join(parts).encode()))
     changed.append('equalizer glass')
-    print('wrote equalizer from b64 chunks')
+    print('wrote equalizer from', len(parts), 'b64 chunks')
 else:
     print('no b64 equalizer chunks')
 
