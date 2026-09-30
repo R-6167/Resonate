@@ -4,9 +4,6 @@ on:
   push:
     paths:
       - "tools/port_dsp_route_speaker.py"
-      - "lib/services/audio_output_route.dart"
-      - "lib/services/equalizer_dvc_sync.dart"
-      - "lib/services/audio_effects_bridge.dart"
 jobs:
   port:
     runs-on: ubuntu-latest
@@ -16,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: dj_Mode
+          fetch-depth: 0
       - run: python3 tools/port_dsp_route_speaker.py
       - run: |
           git config user.name "resonate-bot"
@@ -26,7 +24,7 @@ jobs:
             lib/services/audio_output_route.dart \
             lib/services/equalizer_dvc_sync.dart \
             lib/services/audio_effects_bridge.dart
-          if git diff --staged --quiet; then echo No changes; else
-            git commit -m "feat(dsp): speaker mode + route policy + EQ live DVC sync"
-            git push
-          fi
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(dsp): speaker mode + route policy + EQ live DVC sync"
+          git pull --rebase origin dj_Mode
+          git push origin dj_Mode
