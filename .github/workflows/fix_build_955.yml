@@ -1,0 +1,25 @@
+name: Fix build 955
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_build_955.py"
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/fix_build_955.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/library_management_screen.dart lib/screens/about_screen.dart
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "fix(ui): library scaffold + about GlassCard (build #955)"
+          git pull --rebase origin dj_Mode || true
+          git push origin dj_Mode
