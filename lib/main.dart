@@ -277,10 +277,12 @@ class ResonateApp extends StatelessWidget {
           create: (context) =>
               PlaybackDiagnosticsObserver(music: context.read<MusicProvider>()),
         ),
+        ChangeNotifierProvider(create: (_) => BluetoothProvider()),
         ChangeNotifierProvider(
           create: (context) {
             final modes = ModeProvider();
             modes.attachMusic(context.read<MusicProvider>());
+            modes.attachBluetooth(context.read<BluetoothProvider>());
             return modes;
           },
         ),
@@ -292,7 +294,6 @@ class ResonateApp extends StatelessWidget {
           ),
         ),
         // Bluetooth before Equalizer so EQ can bind device profiles.
-        ChangeNotifierProvider(create: (_) => BluetoothProvider()),
         ChangeNotifierProvider(
           create: (context) => EqualizerProvider(
             equalizer: context.read<MusicProvider>().equalizer,

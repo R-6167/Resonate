@@ -156,6 +156,39 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
+              if (context.watch<ModeProvider>().hasDrivingSuggestion)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ResonateGlassCard(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+                      child: Row(
+                        children: [
+                          const Text('🚗', style: TextStyle(fontSize: 22)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Car audio detected — switch to Driving mode?',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => context
+                                .read<ModeProvider>()
+                                .dismissDrivingSuggestion(),
+                            child: const Text('Not now'),
+                          ),
+                          FilledButton(
+                            onPressed: () => context
+                                .read<ModeProvider>()
+                                .acceptDrivingSuggestion(),
+                            child: const Text('Driving'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               GestureDetector(
                 onHorizontalDragEnd: (details) {
                   final v = details.primaryVelocity ?? 0;
@@ -258,25 +291,39 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       state.processingState != ProcessingState.completed;
                   final currentMs = music.currentPosition.inMilliseconds;
 
+                  // Driving (minimal): fewer, larger hit targets — no ±10s seeks.
+                  final skipSize = minimal ? 52.0 : (reduced ? 42.0 : 36.0);
+                  final playMin = minimal ? 84.0 : (reduced ? 68.0 : 56.0);
+
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        iconSize: 36,
+                        iconSize: skipSize,
+                        style: IconButton.styleFrom(
+                          minimumSize: Size(skipSize + 16, skipSize + 16),
+                          tapTargetSize: MaterialTapTargetSize.padded,
+                        ),
                         icon: const Icon(Icons.skip_previous_rounded),
                         onPressed: () {
                           PlaybackAuthority.instance.userPrevious(music);
                         },
                       ),
-                      IconButton(
-                        iconSize: 30,
-                        icon: const Icon(Icons.replay_10_rounded),
-                        onPressed: () => PlaybackAuthority.instance.userSeek(
-                          music,
-                          Duration(milliseconds: math.max(0, currentMs - 10000)),
+                      if (!minimal)
+                        IconButton(
+                          iconSize: 30,
+                          icon: const Icon(Icons.replay_10_rounded),
+                          onPressed: () => PlaybackAuthority.instance.userSeek(
+                            music,
+                            Duration(milliseconds: math.max(0, currentMs - 10000)),
+                          ),
                         ),
-                      ),
                       FilledButton(
+                        style: FilledButton.styleFrom(
+                          minimumSize: Size(playMin, playMin),
+                          shape: const CircleBorder(),
+                          padding: EdgeInsets.all(minimal ? 20 : 12),
+                        ),
                         onPressed: () {
                           music.togglePlayPause();
                         },
@@ -284,18 +331,26 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           playing
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
+                          size: minimal ? 40 : 28,
                         ),
                       ),
-                      IconButton(
-                        iconSize: 30,
-                        icon: const Icon(Icons.forward_10_rounded),
-                        onPressed: () => PlaybackAuthority.instance.userSeek(
-                          music,
-                          Duration(milliseconds: math.min(max.toInt(), currentMs + 10000)),
+                      if (!minimal)
+                        IconButton(
+                          iconSize: 30,
+                          icon: const Icon(Icons.forward_10_rounded),
+                          onPressed: () => PlaybackAuthority.instance.userSeek(
+                            music,
+                            Duration(
+                              milliseconds: math.min(max.toInt(), currentMs + 10000),
+                            ),
+                          ),
                         ),
-                      ),
                       IconButton(
-                        iconSize: 36,
+                        iconSize: skipSize,
+                        style: IconButton.styleFrom(
+                          minimumSize: Size(skipSize + 16, skipSize + 16),
+                          tapTargetSize: MaterialTapTargetSize.padded,
+                        ),
                         icon: const Icon(Icons.skip_next_rounded),
                         onPressed: () {
                           music.nextSong();

@@ -6,6 +6,7 @@ import '../models/playback_policy.dart';
 import '../models/resonate_mode.dart';
 import '../models/song.dart';
 import 'music_provider.dart';
+import 'bluetooth_provider.dart';
 import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
 import '../services/mode_policy_catalog.dart';
@@ -18,14 +19,20 @@ class ModeProvider extends ChangeNotifier {
   final MediaClassifier _classifier = MediaClassifier.instance;
   final MediaClassificationStore _store = MediaClassificationStore();
   MusicProvider? _music;
+  BluetoothProvider? _bluetooth;
 
   ResonateMode _mode = ResonateMode.normal;
   Map<String, MediaClassification> _userOverrides = {};
   bool _ready = false;
+  bool _drivingSuggestOpen = false;
+  bool _drivingSuggestDismissed = false;
 
   ResonateMode get mode => _mode;
   PlaybackPolicy get policy => ModePolicyCatalog.policyFor(_mode);
   bool get isReady => _ready;
+  /// True when car Bluetooth is active and Driving mode is not selected.
+  bool get hasDrivingSuggestion =>
+      _drivingSuggestOpen && _mode != ResonateMode.driving;
 
   ModeProvider() {
     _init();
@@ -35,6 +42,56 @@ class ModeProvider extends ChangeNotifier {
   void attachMusic(MusicProvider music) {
     _music = music;
     _pushPolicyToEngine();
+  }
+
+  /// Listen for car/vehicle audio context and offer Driving mode (non-blocking).
+  void attachBluetooth(BluetoothProvider bluetooth) {
+    _bluetooth?.removeListener(_onBluetoothChanged);
+    _bluetooth = bluetooth;
+    _bluetooth!.addListener(_onBluetoothChanged);
+    _onBluetoothChanged();
+  }
+
+  void _onBluetoothChanged() {
+    final ctx = _bluetooth?.audioContext ?? BluetoothAudioContext.unknown;
+    final car = ctx == BluetoothAudioContext.car;
+
+    if (!car) {
+      // Reset session dismiss so the next car connection can suggest again.
+      final changed = _drivingSuggestOpen || _drivingSuggestDismissed;
+      _drivingSuggestOpen = false;
+      _drivingSuggestDismissed = false;
+      if (changed) notifyListeners();
+      return;
+    }
+
+    // Already driving — no banner.
+    if (_mode == ResonateMode.driving) {
+      if (_drivingSuggestOpen) {
+        _drivingSuggestOpen = false;
+        notifyListeners();
+      }
+      return;
+    }
+
+    if (_drivingSuggestDismissed) return;
+
+    if (!_drivingSuggestOpen) {
+      _drivingSuggestOpen = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> acceptDrivingSuggestion() async {
+    _drivingSuggestOpen = false;
+    _drivingSuggestDismissed = false;
+    await setMode(ResonateMode.driving);
+  }
+
+  void dismissDrivingSuggestion() {
+    _drivingSuggestOpen = false;
+    _drivingSuggestDismissed = true;
+    notifyListeners();
   }
 
   void _pushPolicyToEngine() {
@@ -61,6 +118,10 @@ class ModeProvider extends ChangeNotifier {
   Future<void> setMode(ResonateMode mode) async {
     if (_mode == mode) return;
     _mode = mode;
+    if (mode == ResonateMode.driving) {
+      _drivingSuggestOpen = false;
+      _drivingSuggestDismissed = false;
+    }
     _pushPolicyToEngine();
     notifyListeners();
     try {
