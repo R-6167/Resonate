@@ -65,12 +65,6 @@ class SettingsScreen extends StatelessWidget {
             _section(context, 'Intelligence', Icons.auto_awesome, [
               _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
               _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
-              _item(context, 'Suggestions', 'Recommendation confidence, explanations and ranking behavior', Icons.lightbulb_outline_rounded, const IntelligenceDetailScreen(section: 'Suggestions')),
-              _item(context, 'Automatic queue', 'How Resonate prepares likely next tracks', Icons.playlist_add_rounded, const IntelligenceDetailScreen(section: 'Automatic queue')),
-              _item(context, 'Exploration', 'Balance familiar listening with discovery', Icons.explore_outlined, const IntelligenceDetailScreen(section: 'Exploration')),
-              _item(context, 'Explanations', 'Control the reasons and confidence shown with choices', Icons.question_mark_rounded, const IntelligenceDetailScreen(section: 'Explanations')),
-              _item(context, 'Learning', 'See and control how local listening memory is formed', Icons.insights_rounded, const IntelligenceDetailScreen(section: 'Learning')),
-              _item(context, 'Session Intelligence', 'Use the current listening direction when ranking tracks', Icons.timeline_rounded, const IntelligenceDetailScreen(section: 'Session Intelligence')),
               ListTile(
                 leading: const Icon(Icons.restart_alt_rounded),
                 title: const Text('Reset learned feedback'),

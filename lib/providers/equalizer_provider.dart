@@ -461,6 +461,16 @@ class EqualizerProvider extends ChangeNotifier {
         bands[b.label] = b.gainDb;
       }
 
+      // Re-assert saved preset onto studio bands (Custom keeps restored prefs).
+      if (preset != 'Custom') {
+        final match = allPresets.where((p) => p.name == preset);
+        if (match.isNotEmpty) {
+          _applyStudioGains(match.first.gains);
+          for (final b in studioBands) {
+            bands[b.label] = b.gainDb;
+          }
+        }
+      }
       // Digital preamp only at startup (player volume scale). Hardware EQ
       // bind waits until playback has been running for a moment.
       await _applyPreamp();
@@ -476,8 +486,20 @@ class EqualizerProvider extends ChangeNotifier {
     try {
       await _loadHardwareBands();
       await _androidEqualizer?.setEnabled(isEnabled);
+      // Re-apply studio curve after hardware is live so preset survives app restart.
+      if (preset != 'Custom') {
+        final match = allPresets.where((p) => p.name == preset);
+        if (match.isNotEmpty) {
+          _applyStudioGains(match.first.gains);
+        }
+      }
       await _pushToHardware();
       await _applyPreamp();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('equalizer_enabled', isEnabled);
+        await prefs.setString('equalizer_preset', preset);
+      } catch (_) {}
       notifyListeners();
     } catch (e) {
       debugPrint('deferred hardware EQ bind failed: $e');

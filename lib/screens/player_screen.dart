@@ -28,9 +28,39 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   double? _dragPosition;
   bool _swipeTutorialChecked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Leaving the player must not silence active playback.
+    _keepAudioAlive();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _keepAudioAlive();
+    }
+  }
+
+  void _keepAudioAlive() {
+    try {
+      final music = context.read<MusicProvider>();
+      if (music.isPlaying || music.currentSong != null) {
+        unawaited(music.ensureAudiblePlayback());
+      }
+    } catch (_) {}
+  }
 
   Future<void> _maybeShowSwipeTutorial() async {
     if (_swipeTutorialChecked) return;

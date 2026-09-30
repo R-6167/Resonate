@@ -513,6 +513,23 @@ class MusicProvider extends ChangeNotifier {
   }
 
 
+  /// Public: re-claim focus and restore volume if playback went silent while UI moved.
+  Future<void> ensureAudiblePlayback() async {
+    try {
+      if (!_userWantsPlaying && !audioPlayer.playing) return;
+      await _claimAudioFocus(reason: 'ensure_audible');
+      final vol = volume.clamp(0.05, 1.0);
+      if (audioPlayer.volume < vol * 0.85) {
+        await audioPlayer.setVolume(vol);
+      }
+      if (_userWantsPlaying && !audioPlayer.playing) {
+        await audioPlayer.play();
+      }
+    } catch (e) {
+      debugPrint('ensureAudiblePlayback: $e');
+    }
+  }
+
   /// Claim media focus before any intentional play. Safe to call often.
   Future<void> _claimAudioFocus({String reason = 'play'}) async {
     try {

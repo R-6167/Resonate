@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../models/song.dart';
@@ -64,11 +65,9 @@ class _AutopilotTakeoverCardState extends State<AutopilotTakeoverCard> {
             if (pendingSong != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  elevation: 7,
-                  shadowColor: scheme.shadow.withOpacity(.28),
-                  borderRadius: BorderRadius.circular(20),
-                  color: scheme.primaryContainer,
+                child: ResonateGlassCard(
+                  borderRadius: 20,
+                  padding: EdgeInsets.zero,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
                     child: Row(

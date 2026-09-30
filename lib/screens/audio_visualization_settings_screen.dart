@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_visualization_provider.dart';
 
 class AudioVisualizationSettingsScreen extends StatelessWidget {
   const AudioVisualizationSettingsScreen({Key? key}) : super(key: key);
   @override Widget build(BuildContext context) {
-    return Scaffold(appBar: AppBar(title: const Text('Visualization')), body: Consumer<AudioVisualizationProvider>(builder: (context, p, _) {
+    return ResonateGlassScaffold(title: const Text('Visualization'), body: Consumer<AudioVisualizationProvider>(builder: (context, p, _) {
       final types = {'bars':'Spectrum Bars','waveform':'Waveform','circular':'Circular Spectrum','dots':'Particles','wave':'Animated Wave'};
       return ListView(padding: const EdgeInsets.only(bottom: 32), children: [
         _header(context),
@@ -26,7 +27,7 @@ class AudioVisualizationSettingsScreen extends StatelessWidget {
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Performance', style: TextStyle(fontWeight: FontWeight.bold))),
         SwitchListTile(title: const Text('Smooth Animation'), subtitle: const Text('Use continuous motion when enabled'), value: p.smoothAnimation, onChanged: p.enabled ? p.setSmoothAnimation : null),
         _slider(context, 'Frame Rate', p.frameRate, 15, 60, p.setFrameRate, '${p.frameRate.round()} FPS', divisions: 9),
-        const Padding(padding: EdgeInsets.all(16), child: Card(child: Padding(padding: EdgeInsets.all(16), child: Text('The current visualizer is intentionally lightweight. Lower frame rates reduce redraw work; a future native FFT visualizer can feed real frequency data into the same surface.')))),
+        const Padding(padding: EdgeInsets.all(16), child: ResonateGlassCard(child: Padding(padding: EdgeInsets.all(16), child: Text('The current visualizer is intentionally lightweight. Lower frame rates reduce redraw work; a future native FFT visualizer can feed real frequency data into the same surface.')))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: OutlinedButton.icon(onPressed: p.reset, icon: const Icon(Icons.restore), label: const Text('Reset Visualization Settings'))),
       ]);
     }));
