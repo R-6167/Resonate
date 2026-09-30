@@ -202,13 +202,13 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Bluetooth & media controls')),
+  Widget build(BuildContext context) => ResonateGlassScaffold(
+        title: const Text('Bluetooth & media controls'),
         body: Consumer<BluetoothProvider>(
           builder: (_, bt, __) => ListView(
             padding: const EdgeInsets.all(14),
             children: [
-              Card(
+              ResonateGlassCard(
                 child: Padding(
                   padding: const EdgeInsets.all(18),
                   child: Text(
