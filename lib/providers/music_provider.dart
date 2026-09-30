@@ -88,6 +88,7 @@ class MusicProvider extends ChangeNotifier {
   /// Mode policy gate — user crossfade pref stays in _crossfadeEnabled.
   bool _policyCrossfadeAllowed = true;
   bool _policyShuffleAllowed = true;
+  bool _policyPreciseResume = false;
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
@@ -205,6 +206,16 @@ class MusicProvider extends ChangeNotifier {
   bool get crossfadeUserPreference => _crossfadeEnabled;
   bool get modeAllowsCrossfade => _policyCrossfadeAllowed;
   bool get modeAllowsShuffle => _policyShuffleAllowed;
+  bool get modePreciseResume => _policyPreciseResume;
+
+  /// Minimum saved position to treat as resumable.
+  int get _resumeMinMs => _policyPreciseResume ? 400 : 1500;
+
+  /// Within this many ms of duration end → treat as finished.
+  int get _resumeEndGuardMs => _policyPreciseResume ? 600 : 2000;
+
+  Duration get _resumePersistInterval =>
+      _policyPreciseResume ? const Duration(seconds: 1) : const Duration(seconds: 3);
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
   String get activeEngineLabel => _authority.engineLabel(this);
@@ -219,9 +230,9 @@ class MusicProvider extends ChangeNotifier {
     final song = currentSong;
     if (song == null) return false;
     if (_resumeSongId != song.id) return false;
-    if (_resumePositionMs < 1500) return false;
+    if (_resumePositionMs < _resumeMinMs) return false;
     final dur = (currentDuration ?? song.duration).inMilliseconds;
-    if (dur > 0 && _resumePositionMs >= dur - 2000) return false;
+    if (dur > 0 && _resumePositionMs >= dur - _resumeEndGuardMs) return false;
     return true;
   }
 
@@ -508,11 +519,14 @@ class MusicProvider extends ChangeNotifier {
   void applyModePlaybackPolicy({
     required bool crossfadeAllowed,
     required bool shuffleAllowed,
+    bool preciseResume = false,
   }) {
     final changed = _policyCrossfadeAllowed != crossfadeAllowed ||
-        _policyShuffleAllowed != shuffleAllowed;
+        _policyShuffleAllowed != shuffleAllowed ||
+        _policyPreciseResume != preciseResume;
     _policyCrossfadeAllowed = crossfadeAllowed;
     _policyShuffleAllowed = shuffleAllowed;
+    _policyPreciseResume = preciseResume;
     if (changed) notifyListeners();
   }
 
@@ -844,7 +858,7 @@ class MusicProvider extends ChangeNotifier {
       currentSong = _queue[_queueIndex];
       currentDuration = currentSong!.duration;
       // Restore last known position for the current song (if any).
-      if (_resumeSongId == currentSong!.id && _resumePositionMs > 1500) {
+      if (_resumeSongId == currentSong!.id && _resumePositionMs > _resumeMinMs) {
         final cap = currentDuration?.inMilliseconds ?? _resumePositionMs;
         final ms = _resumePositionMs.clamp(0, cap).toInt();
         // Don't resume at the very end — treat as finished.
@@ -1027,16 +1041,16 @@ class MusicProvider extends ChangeNotifier {
     final song = currentSong;
     if (song == null) return;
     final now = DateTime.now();
-    if (!force && _lastResumePersist != null && now.difference(_lastResumePersist!) < const Duration(seconds: 3)) return;
+    if (!force && _lastResumePersist != null && now.difference(_lastResumePersist!) < _resumePersistInterval) return;
     _lastResumePersist = now;
     final raw = currentPosition.inMilliseconds > 0
         ? currentPosition.inMilliseconds
         : _activeHistoryPositionMs;
     final cap = currentDuration?.inMilliseconds ?? 0;
     final position = (cap > 0 ? raw.clamp(0, cap) : raw).toInt();
-    if (!force && position < 1500) return;
+    if (!force && position < _resumeMinMs) return;
     // Near end → treat as finished for this song.
-    if (cap > 0 && position >= cap - 2000) {
+    if (cap > 0 && position >= cap - _resumeEndGuardMs) {
       _resumeBySongId.remove(song.id);
       if (_resumeSongId == song.id) {
         _resumeSongId = null;
@@ -1084,8 +1098,8 @@ class MusicProvider extends ChangeNotifier {
   /// Position to resume a specific song, if known (per-song map or last resume).
   int? resumePositionFor(String songId) {
     final mapped = _resumeBySongId[songId];
-    if (mapped != null && mapped > 1500) return mapped;
-    if (_resumeSongId == songId && _resumePositionMs > 1500) return _resumePositionMs;
+    if (mapped != null && mapped > _resumeMinMs) return mapped;
+    if (_resumeSongId == songId && _resumePositionMs > _resumeMinMs) return _resumePositionMs;
     return null;
   }
 
@@ -2120,14 +2134,16 @@ class MusicProvider extends ChangeNotifier {
       _resumeSongId = song.id;
       _resumePositionMs = resumeAtMs;
       _resumeBySongId[song.id] = resumeAtMs;
-    } else if (resumeIfPossible) {
+    } else if (resumeIfPossible || _policyPreciseResume) {
       final mapped = resumePositionFor(song.id);
       if (mapped != null) {
         _resumeSongId = song.id;
         _resumePositionMs = mapped;
       }
     }
-    final shouldResume = resumeIfPossible && _resumeSongId == song.id && _resumePositionMs > 1500;
+    // Podcast/Audiobook policy: always try mid-episode resume unless an explicit resumeAtMs was passed as 0-start later.
+    final effectiveResume = resumeIfPossible || _policyPreciseResume;
+    final shouldResume = effectiveResume && _resumeSongId == song.id && _resumePositionMs > _resumeMinMs;
     return _serializePlayback(
       () => _playSongInternal(song, queue: queue, startIndex: startIndex, resume: shouldResume, playbackIntentToken: intentToken),
       command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,

@@ -129,6 +129,7 @@ class ModeProvider extends ChangeNotifier {
     _music?.applyModePlaybackPolicy(
       crossfadeAllowed: p.crossfadeAllowed,
       shuffleAllowed: p.shuffleAllowed,
+      preciseResume: p.preciseResume,
     );
   }
 

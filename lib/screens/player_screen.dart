@@ -189,6 +189,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
                 ),
+              if (context.watch<ModeProvider>().policy.preciseResume &&
+                  music.canResumeCurrentQueueSong)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Chip(
+                      avatar: const Icon(Icons.history_rounded, size: 18),
+                      label: Text(
+                        'Episode position saved · resumes from '
+                        '${_fmtMs(music.resumePositionMs)}',
+                      ),
+                    ),
+                  ),
+                ),
               GestureDetector(
                 onHorizontalDragEnd: (details) {
                   final v = details.primaryVelocity ?? 0;
@@ -489,6 +504,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 
+
+  String _fmtMs(int ms) {
+    final total = (ms / 1000).floor();
+    final m = total ~/ 60;
+    final s = total % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
   Future<void> _showMoreOptions(BuildContext context) async {
     final playback = context.read<PlaybackFeaturesProvider>();
     final eq = context.read<EqualizerProvider>();
