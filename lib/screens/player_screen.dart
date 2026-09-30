@@ -23,6 +23,7 @@ import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
+import 'modes_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -102,8 +103,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 avatar: Text(mode.emoji, style: const TextStyle(fontSize: 14)),
                 label: Text(mode.label),
                 onPressed: () {
-                  // Cycle is intentional for Driving/Running quick access later;
-                  // for now open is not needed — chip is informational.
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ModesScreen()),
+                  );
                 },
               ),
             ),
