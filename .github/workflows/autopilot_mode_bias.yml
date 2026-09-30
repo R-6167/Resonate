@@ -1,0 +1,25 @@
+name: Autopilot mode bias
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/autopilot_mode_bias.py"
+jobs:
+  bias:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_lab
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 tools/autopilot_mode_bias.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(modes): Autopilot content bias from PlaybackPolicy"
+          git push origin modes_lab
