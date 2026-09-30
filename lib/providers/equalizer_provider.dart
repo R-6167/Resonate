@@ -13,6 +13,8 @@ import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
 import 'bluetooth_provider.dart';
 import '../services/audio_effects_bridge.dart';
+import '../services/audio_output_route.dart';
+import '../services/equalizer_dvc_sync.dart';
 
 /// One band in the app's fixed 10-band software curve (source of truth).
 class StudioBand {
@@ -162,6 +164,10 @@ class EqualizerProvider extends ChangeNotifier {
     _initialize();
     _music?.addListener(_onMusicChanged);
     _bluetooth?.addListener(_onBluetoothChanged);
+    // Output route → speaker protection / virtual bass on live DSP engines.
+    unawaited(AudioOutputRouteService.instance.start());
+    AudioOutputRouteService.instance.addListener(_onOutputRouteChanged);
+    _onOutputRouteChanged();
     // Reconnected: session events drive native DSP only when the user has
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
@@ -229,6 +235,15 @@ class EqualizerProvider extends ChangeNotifier {
     _lastBtContext = ctx;
     unawaited(_applyLeanForCurrent());
   }
+
+  void _onOutputRouteChanged() {
+    final route = AudioOutputRouteService.instance;
+    syncSpeakerPolicy(
+      needsSpeakerProtection: route.needsSpeakerProtection,
+      virtualBassAmount: 0.55,
+    );
+  }
+
 
   bool get btProfilesEnabled => _btProfilesEnabled;
   bool get nativeDspUserEnabled => _nativeDspEnabled;
@@ -526,7 +541,7 @@ class EqualizerProvider extends ChangeNotifier {
       final studioGainsLive = studioBands.map((b) => b.gainDb).toList();
       final centersLive = studioBands.map((b) => b.frequencyHz).toList();
       // ignore: unawaited_futures
-      AudioEffectsBridge.setLiveDspEqBands(
+      syncStudioBandsToNativeEq(
         centersHz: centersLive,
         gainsDb: studioGainsLive,
         enabled: isEnabled,
@@ -604,7 +619,7 @@ class EqualizerProvider extends ChangeNotifier {
     final effective = isEnabled ? preamp.clamp(-6.0, 6.0) : 0.0;
     try {
       // ignore: unawaited_futures
-      AudioEffectsBridge.setLiveDspPreampDb(effective);
+      syncPreampToDvc(effective, enabled: isEnabled);
     } catch (_) {}
     final cutDb = effective < 0 ? effective : 0.0;
     final scale =

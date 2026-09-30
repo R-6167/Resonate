@@ -144,6 +144,20 @@ class MainActivity : AudioServiceActivity() {
                         )
                         result.success(mapOf("ok" to true, "bands" to gains.size, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
                     }
+                    "setLiveDspSpeakerMode" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applySpeakerModeAll(enabled)
+                        result.success(mapOf(
+                            "ok" to true,
+                            "enabled" to enabled,
+                            "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount(),
+                        ))
+                    }
+                    "setLiveDspVirtualBass" -> {
+                        val amount = (call.argument<Number>("amount") ?: 0.55).toDouble().coerceIn(0.0, 1.0)
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyVirtualBassAll(amount)
+                        result.success(mapOf("ok" to true, "amount" to amount))
+                    }
                     "getLiveDspStatus" -> {
                         result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
                     }
