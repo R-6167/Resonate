@@ -85,6 +85,9 @@ class MusicProvider extends ChangeNotifier {
   bool _completionObservedDuringCrossfade = false;
   bool _queueRestoreInProgress = false;
   bool _crossfadeEnabled = false;
+  /// Mode policy gate — user crossfade pref stays in _crossfadeEnabled.
+  bool _policyCrossfadeAllowed = true;
+  bool _policyShuffleAllowed = true;
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
@@ -157,7 +160,8 @@ class MusicProvider extends ChangeNotifier {
   List<Song> get queue => List.unmodifiable(_queue);
   int get queueIndex => _queueIndex;
   List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
-  bool get shuffleEnabled => _shuffleEnabled;
+  bool get shuffleEnabled => _shuffleEnabled && _policyShuffleAllowed;
+  bool get shuffleUserPreference => _shuffleEnabled;
   PlaybackRepeatMode get repeatMode => _repeatMode;
   bool get canCrossfadeNext {
     if (_crossfadeInProgress || _queue.isEmpty || _queueIndex < 0) return false;
@@ -169,7 +173,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Seamless loop: same song on the idle engine when repeat-one + crossfade.
   bool get canRepeatSelfHandoff {
-    if (!_crossfadeEnabled) return false;
+    if (!crossfadeEnabled) return false;
     if (_repeatMode != PlaybackRepeatMode.one) return false;
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
@@ -196,7 +200,11 @@ class MusicProvider extends ChangeNotifier {
     return _queueIndex;
   }
 
-  bool get crossfadeEnabled => _crossfadeEnabled;
+  /// Effective crossfade (user pref AND mode policy).
+  bool get crossfadeEnabled => _crossfadeEnabled && _policyCrossfadeAllowed;
+  bool get crossfadeUserPreference => _crossfadeEnabled;
+  bool get modeAllowsCrossfade => _policyCrossfadeAllowed;
+  bool get modeAllowsShuffle => _policyShuffleAllowed;
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
   String get activeEngineLabel => _authority.engineLabel(this);
@@ -493,6 +501,19 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('DJ engine recover failed: $e');
     }
+  }
+
+  /// Called by ModeProvider when the active mode's PlaybackPolicy changes.
+  /// Does not overwrite user preferences — only gates runtime behavior.
+  void applyModePlaybackPolicy({
+    required bool crossfadeAllowed,
+    required bool shuffleAllowed,
+  }) {
+    final changed = _policyCrossfadeAllowed != crossfadeAllowed ||
+        _policyShuffleAllowed != shuffleAllowed;
+    _policyCrossfadeAllowed = crossfadeAllowed;
+    _policyShuffleAllowed = shuffleAllowed;
+    if (changed) notifyListeners();
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async { _crossfadeEnabled = enabled; if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000; await _persistCrossfadeSettings(); notifyListeners(); }
@@ -953,7 +974,7 @@ class MusicProvider extends ChangeNotifier {
     });
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
-      if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
+      if (index == null || crossfadeEnabled || _crossfadeInProgress) return;
       if (!_gaplessSourceActive || _transportInFlight) return;
       if (index < 0 || index >= _gaplessWindowIds.length) return;
       final songId = _gaplessWindowIds[index];
@@ -1069,7 +1090,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _maybeStartAutomaticCrossfade(Duration position) {
-    if (!_crossfadeEnabled || !audioPlayer.playing) return;
+    if (!crossfadeEnabled || !audioPlayer.playing) return;
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight) {
@@ -1083,7 +1104,7 @@ class MusicProvider extends ChangeNotifier {
     // Repeat-one + crossfade: dual-engine A→B self-handoff (same song).
     // Soft single-engine loop is the fallback if the idle engine load times out.
     if (_repeatMode == PlaybackRepeatMode.one) {
-      if (!_crossfadeEnabled ||
+      if (!crossfadeEnabled ||
           _repeatSelfHandoffInFlight ||
           _transportInFlight ||
           _crossfadeInProgress) {
@@ -1540,7 +1561,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _preloadNextForCrossfade() async {
-    if (!_crossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
+    if (!crossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
     final next = _crossfadeTargetSong;
     if (next == null) return;
     if (_preloadedNextSongId == next.id) return;
@@ -1747,7 +1768,7 @@ class MusicProvider extends ChangeNotifier {
     // "Connection aborted" + static on content:// URIs.
     final expectedSongId = currentSong?.id;
     final expectedIndex = _queueIndex;
-    final graceMs = _crossfadeEnabled
+    final graceMs = crossfadeEnabled
         ? (_crossfadeDurationMs + 4500).clamp(5000, 20000)
         : 1200;
 
@@ -2209,14 +2230,14 @@ class MusicProvider extends ChangeNotifier {
       }
       final selectedSong = normalized[selectedIndex];
 
-      final nextQueue = _shuffleEnabled && normalized.length > 1
+      final nextQueue = shuffleEnabled && normalized.length > 1
           ? () {
               final selected = normalized[selectedIndex];
               final upcoming = <Song>[...normalized]..removeAt(selectedIndex)..shuffle(math.Random());
               return <Song>[selected, ...upcoming];
             }()
           : normalized;
-      final nextIndex = _shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
+      final nextIndex = shuffleEnabled && normalized.length > 1 ? 0 : selectedIndex;
 
       // Pin UI to the song we intend to play before any native load races.
       currentSong = selectedSong;
@@ -2234,7 +2255,7 @@ class MusicProvider extends ChangeNotifier {
         debugPrint('AudioSession setActive (pre-source) failed: $e');
       }
 
-      final loopMode = (!_crossfadeEnabled)
+      final loopMode = (!crossfadeEnabled)
           ? switch (_repeatMode) {
               PlaybackRepeatMode.one => LoopMode.one,
               PlaybackRepeatMode.all => LoopMode.all,
@@ -2248,7 +2269,7 @@ class MusicProvider extends ChangeNotifier {
       // Gapless: only a short window around the current track — never the entire
       // library (270+ content:// URIs caused Loading interrupted / stalled UI).
       const gaplessWindow = 12;
-      final wantGapless = !_crossfadeEnabled && nextQueue.length > 1;
+      final wantGapless = !crossfadeEnabled && nextQueue.length > 1;
       _gaplessSourceActive = false;
       _gaplessWindowIds = const [];
       if (wantGapless) {
@@ -2505,7 +2526,7 @@ class MusicProvider extends ChangeNotifier {
     return next;
   }
 
-  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (_shuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
+  Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (shuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> addToQueue(Song song) => enqueueSongs([song]);
   Future<bool> playNext(Song song) async { await _visibility.load(); if (!_visibility.isVisible(song.id) || song.filePath.trim().isEmpty || currentSong?.id == song.id || _queue.any((q) => q.id == song.id)) return false; final insertAt = (_queueIndex + 1).clamp(0, _queue.length).toInt(); _queue.insert(insertAt, song); await _persistQueue(); notifyListeners(); return true; }
   Future<bool> removeFromQueue(int index) async {
@@ -3341,7 +3362,7 @@ Future<void> pause({String source = 'normal_player'}) {
   /// If the target queue index is already inside the active gapless window,
   /// seek to that local index instead of rebuilding ConcatenatingAudioSource.
   Future<bool> _tryGaplessSeekToQueueIndex(int queueIndex) async {
-    if (!_gaplessSourceActive || _crossfadeEnabled) return false;
+    if (!_gaplessSourceActive || crossfadeEnabled) return false;
     if (queueIndex < 0 || queueIndex >= _queue.length) return false;
     final song = _queue[queueIndex];
     final local = _gaplessWindowIds.indexOf(song.id);

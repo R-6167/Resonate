@@ -9,6 +9,8 @@ class CrossfadeProvider extends ChangeNotifier {
   final MusicProvider music;
   double duration = 0.0;
   bool isEnabled = false;
+  /// User pref AND mode policy (podcast/audiobook force off).
+  bool get effectivelyEnabled => isEnabled && music.modeAllowsCrossfade;
   String fadeType = 'linear';
 
   CrossfadeProvider({required this.music}) {

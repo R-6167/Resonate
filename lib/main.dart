@@ -307,7 +307,13 @@ class ResonateApp extends StatelessWidget {
           create: (context) =>
               DjModeProvider(music: context.read<MusicProvider>()),
         ),
-        ChangeNotifierProvider(create: (_) => ModeProvider()),
+        ChangeNotifierProvider(
+          create: (context) {
+            final modes = ModeProvider();
+            modes.attachMusic(context.read<MusicProvider>());
+            return modes;
+          },
+        ),
         ChangeNotifierProvider(
           create: (context) =>
               PlaybackFeaturesProvider(music: context.read<MusicProvider>()),

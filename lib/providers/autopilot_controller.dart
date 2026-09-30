@@ -11,6 +11,7 @@ import '../services/companion_decision_log.dart';
 import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
+import 'mode_provider.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
@@ -18,6 +19,7 @@ import 'music_provider.dart';
 /// the provider listener remains only as a state-boundary fallback.
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
+  final ModeProvider? modes;
   final IntelligenceProvider intelligence;
   final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
@@ -32,7 +34,7 @@ class AutopilotController extends ChangeNotifier {
   DateTime? _lastEvaluation;
   bool _evaluationScheduled = false;
 
-  AutopilotController({required this.music, required this.intelligence}) {
+  AutopilotController({required this.music, required this.intelligence, this.modes}) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
     _authority.addListener(_onAuthorityEvent);
@@ -169,6 +171,10 @@ class AutopilotController extends ChangeNotifier {
     if (candidates.isNotEmpty) {
       recommendation = candidates.first;
       nextSong = recommendation.song;
+      // Mode policy: soft content bias (never blocks explicit user play).
+      if (modes != null && !modes!.shouldPreferSong(nextSong)) {
+        nextSong = null;
+      }
     } else if (intelligence.isAutopilotGraduated) {
       // Prefer existing queue next. Phase 5: only enqueue with consent.
       if (music.queueIndex < music.queue.length - 1) {

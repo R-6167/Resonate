@@ -5,6 +5,7 @@ import '../models/media_type.dart';
 import '../models/playback_policy.dart';
 import '../models/resonate_mode.dart';
 import '../models/song.dart';
+import 'music_provider.dart';
 import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
 import '../services/mode_policy_catalog.dart';
@@ -16,6 +17,7 @@ class ModeProvider extends ChangeNotifier {
 
   final MediaClassifier _classifier = MediaClassifier.instance;
   final MediaClassificationStore _store = MediaClassificationStore();
+  MusicProvider? _music;
 
   ResonateMode _mode = ResonateMode.normal;
   Map<String, MediaClassification> _userOverrides = {};
@@ -29,6 +31,20 @@ class ModeProvider extends ChangeNotifier {
     _init();
   }
 
+  /// Bind the single playback engine so policy can gate crossfade/shuffle.
+  void attachMusic(MusicProvider music) {
+    _music = music;
+    _pushPolicyToEngine();
+  }
+
+  void _pushPolicyToEngine() {
+    final p = policy;
+    _music?.applyModePlaybackPolicy(
+      crossfadeAllowed: p.crossfadeAllowed,
+      shuffleAllowed: p.shuffleAllowed,
+    );
+  }
+
   Future<void> _init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -38,12 +54,14 @@ class ModeProvider extends ChangeNotifier {
       debugPrint('ModeProvider init: $e');
     }
     _ready = true;
+    _pushPolicyToEngine();
     notifyListeners();
   }
 
   Future<void> setMode(ResonateMode mode) async {
     if (_mode == mode) return;
     _mode = mode;
+    _pushPolicyToEngine();
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
