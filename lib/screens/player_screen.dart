@@ -12,6 +12,9 @@ import '../models/intelligence_recommendation.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
+import '../providers/mode_provider.dart';
+import '../models/playback_policy.dart';
+import '../models/resonate_mode.dart';
 import '../providers/playback_features_provider.dart';
 import '../services/audio_file_service.dart';
 import '../services/playback_authority.dart';
@@ -79,28 +82,51 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    final modeProvider = context.watch<ModeProvider>();
+    final density = modeProvider.policy.uiDensity;
+    final mode = modeProvider.mode;
+    final minimal = density == UiDensity.minimal;
+    final reduced = density == UiDensity.reduced || minimal;
+    final hideAdvanced = modeProvider.policy.hideAdvancedSettingsEntry || minimal;
+
     return ResonateGlassScaffold(
-      title: const Text('Now Playing'),
+      title: Text(minimal ? '${mode.emoji} ${mode.label}' : 'Now Playing'),
       actions: [
-          const DjModeStatusChip(dense: true),
-          Consumer<MusicProvider>(
-            builder: (_, music, __) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Center(
-                  child: Chip(
-                    avatar: Icon(
-                      music.activeEngineLabel == 'A'
-                          ? Icons.looks_one_rounded
-                          : Icons.looks_two_rounded,
-                      size: 17,
-                    ),
-                    label: Text('Engine ${music.activeEngineLabel}'),
-                  ),
-                ),
-              );
-            },
+          if (!minimal) const DjModeStatusChip(dense: true),
+          // Compact mode chip always visible so density is obvious.
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Center(
+              child: ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: Text(mode.emoji, style: const TextStyle(fontSize: 14)),
+                label: Text(mode.label),
+                onPressed: () {
+                  // Cycle is intentional for Driving/Running quick access later;
+                  // for now open is not needed — chip is informational.
+                },
+              ),
+            ),
           ),
+          if (!reduced)
+            Consumer<MusicProvider>(
+              builder: (_, music, __) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Center(
+                    child: Chip(
+                      avatar: Icon(
+                        music.activeEngineLabel == 'A'
+                            ? Icons.looks_one_rounded
+                            : Icons.looks_two_rounded,
+                        size: 17,
+                      ),
+                      label: Text('Engine ${music.activeEngineLabel}'),
+                    ),
+                  ),
+                );
+              },
+            ),
         ],
 
       body: Consumer<MusicProvider>(
@@ -139,7 +165,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(26),
                   child: SizedBox(
-                    height: 250,
+                    height: minimal ? 160 : (reduced ? 200 : 250),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -320,41 +346,47 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                           music.setRepeatMode(next);
                         },
                       ),
-                      IconButton(
-                        tooltip: 'Queue',
-                        icon: const Icon(Icons.queue_music_rounded),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const QueueScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'More options',
-                        icon: const Icon(Icons.more_vert_rounded),
-                        onPressed: () => _showMoreOptions(context),
-                      ),
+                      if (!minimal)
+                        IconButton(
+                          tooltip: 'Queue',
+                          icon: const Icon(Icons.queue_music_rounded),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const QueueScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      if (!hideAdvanced)
+                        IconButton(
+                          tooltip: 'More options',
+                          icon: const Icon(Icons.more_vert_rounded),
+                          onPressed: () => _showMoreOptions(context),
+                        ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
-              Consumer<IntelligenceProvider>(
-                builder: (context, intelligence, _) {
-                  final item = intelligence.anticipatedNext;
-                  if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
-                  return Column(
-                    children: [
-                      _NextCard(item: item, mode: intelligence.autonomyLabel),
-                      const SizedBox(height: 10),
-                      const AutopilotTakeoverCard(),
-                    ],
-                  );
-                },
-              ),
+              if (!minimal) ...[
+                const SizedBox(height: 14),
+                Consumer<IntelligenceProvider>(
+                  builder: (context, intelligence, _) {
+                    final item = intelligence.anticipatedNext;
+                    if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
+                    return Column(
+                      children: [
+                        if (!reduced)
+                          _NextCard(item: item, mode: intelligence.autonomyLabel),
+                        if (!reduced) const SizedBox(height: 10),
+                        // Autopilot takeover stays in reduced (Running) so consent is reachable.
+                        const AutopilotTakeoverCard(),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ],
           );
         },
