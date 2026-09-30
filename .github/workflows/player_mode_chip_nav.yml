@@ -1,0 +1,24 @@
+name: Player mode chip nav
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/player_mode_chip_nav.py"]
+jobs:
+  nav:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_lab
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 tools/player_mode_chip_nav.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/player_screen.dart
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(modes): mode chip opens Modes screen from player"
+          git push origin modes_lab
