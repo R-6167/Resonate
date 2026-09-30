@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_mix.dart';
@@ -98,17 +99,8 @@ class _GenerateCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final controller = context.read<IntelligenceMixController>();
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-        gradient: LinearGradient(
-          colors: [
-            scheme.tertiaryContainer.withValues(alpha: 0.35),
-            scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-          ],
-        ),
-      ),
+    return ResonateGlassCard(
+      borderRadius: 20,
       padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
       child: Row(
         children: [
@@ -174,12 +166,9 @@ class _JourneyCard extends StatelessWidget {
     final score = (continuity?['score'] as num?)?.toDouble() ?? mix.previousContinuityScore;
     final minutes = mix.targetDuration.inMinutes;
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.55)),
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-      ),
+    return ResonateGlassCard(
+      borderRadius: 20,
+      padding: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
         child: Column(

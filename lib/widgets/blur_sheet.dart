@@ -2,7 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-/// Bottom sheet with a lightly blurred dimmed barrier (Material-style glass).
+import '../ui/resonate_glass.dart';
+
+/// Bottom sheet with Resonate glass barrier + frosted panel.
 Future<T?> showBlurredModalBottomSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -17,15 +19,29 @@ Future<T?> showBlurredModalBottomSheet<T>({
     isDismissible: isDismissible,
     enableDrag: enableDrag,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.35),
+    barrierColor: Colors.black.withValues(alpha: 0.38),
     builder: (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
+      final isDark = Theme.of(ctx).brightness == Brightness.dark;
       return BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: 0.92),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            color: (isDark ? Colors.white : scheme.surface)
+                .withValues(alpha: isDark ? 0.10 : 0.88),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(
+                color: scheme.outlineVariant.withValues(alpha: 0.40),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.10),
+                blurRadius: 24,
+                offset: const Offset(0, -4),
+              ),
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -42,7 +58,37 @@ Future<T?> showBlurredModalBottomSheet<T>({
                     ),
                   ),
                 ),
-              builder(ctx),
+              // Soft brand wash under sheet content
+              Flexible(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: isDark
+                                  ? [
+                                      ResonateAccents.violet.withValues(alpha: 0.10),
+                                      Colors.transparent,
+                                      ResonateAccents.blue.withValues(alpha: 0.06),
+                                    ]
+                                  : [
+                                      ResonateAccents.blue.withValues(alpha: 0.06),
+                                      Colors.transparent,
+                                      ResonateAccents.pink.withValues(alpha: 0.04),
+                                    ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    builder(ctx),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -51,7 +97,7 @@ Future<T?> showBlurredModalBottomSheet<T>({
   );
 }
 
-/// Dialog with blurred barrier.
+/// Dialog with blurred barrier + optional glass frame via [builder].
 Future<T?> showBlurredDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -60,12 +106,15 @@ Future<T?> showBlurredDialog<T>({
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Dismiss',
-    barrierColor: Colors.black.withValues(alpha: 0.4),
+    barrierColor: Colors.black.withValues(alpha: 0.42),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (ctx, anim, sec) => builder(ctx),
     transitionBuilder: (ctx, anim, sec, child) {
       return BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6 * anim.value, sigmaY: 6 * anim.value),
+        filter: ImageFilter.blur(
+          sigmaX: 14 * anim.value,
+          sigmaY: 14 * anim.value,
+        ),
         child: FadeTransition(opacity: anim, child: child),
       );
     },

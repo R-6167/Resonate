@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import '../providers/listening_history_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -57,19 +58,9 @@ class AutopilotHomeCard extends StatelessWidget {
     final status = _statusLabel(intelligence, autopilot);
     final statusColor = _statusColor(scheme, intelligence, autopilot);
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            scheme.primaryContainer.withValues(alpha: 0.95),
-            scheme.surfaceContainerHighest.withValues(alpha: 0.9),
-          ],
-        ),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.65)),
-      ),
+    return ResonateGlassCard(
+      borderRadius: 24,
+      padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
