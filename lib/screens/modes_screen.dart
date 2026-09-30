@@ -49,6 +49,20 @@ class ModesScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+              ResonateGlassCard(
+                padding: EdgeInsets.zero,
+                child: SwitchListTile.adaptive(
+                  secondary: const Icon(Icons.directions_car_rounded),
+                  title: const Text('Auto-enter Driving in the car'),
+                  subtitle: const Text(
+                    'When car Bluetooth is detected, switch to Driving immediately. '
+                    'Off = ask first.',
+                  ),
+                  value: modes.autoEnterDrivingOnCar,
+                  onChanged: (v) => modes.setAutoEnterDrivingOnCar(v),
+                ),
+              ),
+              const SizedBox(height: 12),
               for (final mode in ResonateMode.values)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),

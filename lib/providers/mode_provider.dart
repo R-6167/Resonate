@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,6 +16,7 @@ import '../services/mode_policy_catalog.dart';
 /// Sits above playback: exposes [policy] for engines and UI to consume.
 class ModeProvider extends ChangeNotifier {
   static const _modeKey = 'resonate_active_mode_v1';
+  static const _autoEnterDrivingKey = 'resonate_auto_enter_driving_on_car_v1';
 
   final MediaClassifier _classifier = MediaClassifier.instance;
   final MediaClassificationStore _store = MediaClassificationStore();
@@ -26,13 +28,19 @@ class ModeProvider extends ChangeNotifier {
   bool _ready = false;
   bool _drivingSuggestOpen = false;
   bool _drivingSuggestDismissed = false;
+  bool _autoEnterDrivingOnCar = false;
 
   ResonateMode get mode => _mode;
   PlaybackPolicy get policy => ModePolicyCatalog.policyFor(_mode);
   bool get isReady => _ready;
   /// True when car Bluetooth is active and Driving mode is not selected.
   bool get hasDrivingSuggestion =>
-      _drivingSuggestOpen && _mode != ResonateMode.driving;
+      _drivingSuggestOpen &&
+      _mode != ResonateMode.driving &&
+      !_autoEnterDrivingOnCar;
+
+  /// When true, car Bluetooth enters Driving immediately (no banner).
+  bool get autoEnterDrivingOnCar => _autoEnterDrivingOnCar;
 
   ModeProvider() {
     _init();
@@ -74,6 +82,14 @@ class ModeProvider extends ChangeNotifier {
       return;
     }
 
+    // Auto-enter: switch immediately, no prompt.
+    if (_autoEnterDrivingOnCar) {
+      _drivingSuggestOpen = false;
+      _drivingSuggestDismissed = false;
+      unawaited(setMode(ResonateMode.driving));
+      return;
+    }
+
     if (_drivingSuggestDismissed) return;
 
     if (!_drivingSuggestOpen) {
@@ -94,6 +110,20 @@ class ModeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setAutoEnterDrivingOnCar(bool value) async {
+    if (_autoEnterDrivingOnCar == value) return;
+    _autoEnterDrivingOnCar = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_autoEnterDrivingKey, value);
+    } catch (e) {
+      debugPrint('ModeProvider auto-enter driving: $e');
+    }
+    // If already on car audio, apply immediately.
+    _onBluetoothChanged();
+  }
+
   void _pushPolicyToEngine() {
     final p = policy;
     _music?.applyModePlaybackPolicy(
@@ -106,6 +136,8 @@ class ModeProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _mode = ResonateModeX.fromId(prefs.getString(_modeKey));
+      _autoEnterDrivingOnCar =
+          prefs.getBool(_autoEnterDrivingKey) ?? false;
       _userOverrides = await _store.loadAll();
     } catch (e) {
       debugPrint('ModeProvider init: $e');
