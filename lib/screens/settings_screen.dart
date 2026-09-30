@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/bluetooth_provider.dart';
 import '../providers/intelligence_provider.dart';
@@ -21,10 +22,10 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Settings')),
+  Widget build(BuildContext context) => ResonateGlassScaffold(
+        title: const Text('Settings'),
         body: ListView(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
           children: [
             Card(
               elevation: 0,
@@ -108,30 +109,27 @@ class SettingsScreen extends StatelessWidget {
         ),
       );
 
-  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children, {bool initiallyExpanded = false}) => Card(
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ExpansionTile(
-          initiallyExpanded: initiallyExpanded,
-          leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-          title: Text(title),
-          children: children,
-        ),
+  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children, {bool initiallyExpanded = false}) =>
+      ResonateGlassSection(
+        title: title,
+        icon: icon,
+        initiallyExpanded: initiallyExpanded,
+        children: children,
       );
 
-  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget screen) => ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
+  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget screen) =>
+      ResonateGlassTile(
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
       );
 
-  Widget _confirmItem(BuildContext context, String title, String subtitle, IconData icon, String text, IconData trailingIcon, Future<void> Function() action) => ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(subtitle),
+  Widget _confirmItem(BuildContext context, String title, String subtitle, IconData icon, String text, IconData trailingIcon, Future<void> Function() action) =>
+      ResonateGlassTile(
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
         trailing: Icon(trailingIcon),
         onTap: () => _confirm(context, title, text, action),
       );
