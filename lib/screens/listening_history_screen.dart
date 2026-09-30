@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/listening_history_provider.dart';
 import '../providers/music_provider.dart';
@@ -28,8 +29,7 @@ class ListeningHistoryScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+  Widget build(BuildContext context) => ResonateGlassScaffold(
       title: const Text('Listening History'),
       actions: [
         Consumer<ListeningHistoryProvider>(builder: (context, provider, _) => IconButton(
@@ -45,8 +45,7 @@ class ListeningHistoryScreen extends StatelessWidget {
           icon: const Icon(Icons.delete_sweep_rounded),
         )),
       ],
-    ),
-    body: Consumer<ListeningHistoryProvider>(builder: (context, provider, _) {
+      body: Consumer<ListeningHistoryProvider>(builder: (context, provider, _) {
       if (provider.isLoading && provider.items.isEmpty) return const Center(child: CircularProgressIndicator());
       final stats = provider.stats;
       return RefreshIndicator(
@@ -54,7 +53,7 @@ class ListeningHistoryScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           children: [
-            Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+            ResonateGlassCard(padding: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
               _Stat(label: 'Plays', value: '${stats['events'] ?? 0}'),
               _Stat(label: 'Completed', value: '${stats['completed'] ?? 0}'),
               _Stat(label: 'Skipped', value: '${stats['skipped'] ?? 0}'),
@@ -94,7 +93,7 @@ class ListeningHistoryScreen extends StatelessWidget {
         ),
       );
     }),
-  );
+    );
 
   static String _relative(DateTime value) {
     final delta = DateTime.now().difference(value);

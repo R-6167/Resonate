@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
@@ -10,10 +11,9 @@ class QueueScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Queue'),
-        actions: [
+    return ResonateGlassScaffold(
+      title: const Text('Queue'),
+      actions: [
           Consumer<MusicProvider>(
             builder: (context, music, _) {
               final upcoming = music.queue.length - music.queueIndex - 1;
@@ -38,7 +38,6 @@ class QueueScreen extends StatelessWidget {
             },
           ),
         ],
-      ),
       body: Consumer<MusicProvider>(
         builder: (context, music, _) {
           if (music.currentSong == null && music.queue.isEmpty) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
@@ -219,10 +220,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Library'),
-        actions: [
+    return ResonateGlassScaffold(
+      title: const Text('Library'),
+      actions: [
           IconButton(
             tooltip: 'Liked Songs',
             icon: const Icon(Icons.favorite_rounded),
@@ -281,13 +281,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
         ],
-      ),
       body: Column(
         children: [
           if (!_hasSelectedFolders)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Card(
+              child: ResonateGlassCard(
+                padding: EdgeInsets.zero,
                 child: ListTile(
                   leading: const Icon(Icons.folder_open_rounded),
                   title: const Text('Choose a music folder'),

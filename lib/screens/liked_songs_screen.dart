@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../models/song.dart';
 import '../providers/library_provider.dart';
@@ -26,10 +27,9 @@ class LikedSongsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Liked Songs'),
-        actions: [
+    return ResonateGlassScaffold(
+      title: const Text('Liked Songs'),
+      actions: [
           Consumer<LibraryProvider>(
             builder: (_, library, __) => IconButton(
               tooltip: 'Add all to queue',
@@ -38,7 +38,6 @@ class LikedSongsScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
       body: Consumer<LibraryProvider>(
         builder: (context, library, _) {
           final songs = library.favoriteSongs;

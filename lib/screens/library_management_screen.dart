@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/library_provider.dart';
 import '../services/audio_file_service.dart';
@@ -44,10 +45,10 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
     final library = context.watch<LibraryProvider>();
     final text = Theme.of(context).textTheme;
     final hasFolders = _folders.isNotEmpty;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Library')),
+    return ResonateGlassScaffold(
+      title: const Text('Library')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ResonateGlassCard(padding: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Icon(Icons.library_music_rounded, size: 30, color: Theme.of(context).colorScheme.primary), const SizedBox(width: 12), Expanded(child: Text('Your music', style: text.headlineSmall))]),
           const SizedBox(height: 10),
           Text(hasFolders ? 'Resonate is using the folders you selected below.' : 'On first startup, Resonate scans the audio Android makes available to the app. You do not need to choose a folder first.', style: text.bodyMedium),
@@ -89,14 +90,14 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
           ),
         ),
         const SizedBox(height: 14),
-        Card(child: ListTile(leading: const Icon(Icons.music_note_rounded), title: Text('${library.allSongs.length} songs indexed', style: text.titleMedium), subtitle: Text(hasFolders ? 'Restricted to your selected folders' : 'Discovered from local Android audio', style: text.bodyMedium))),
+        ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: const Icon(Icons.music_note_rounded), title: Text('${library.allSongs.length} songs indexed', style: text.titleMedium), subtitle: Text(hasFolders ? 'Restricted to your selected folders' : 'Discovered from local Android audio', style: text.bodyMedium))),
         const SizedBox(height: 12),
         if (_loading) const Center(child: CircularProgressIndicator())
         else if (hasFolders) ...[
           Text('Selected folders', style: text.titleLarge),
           const SizedBox(height: 6),
-          ..._folders.map((folder) => Card(child: ListTile(leading: const Icon(Icons.folder_outlined), title: Text(folder['name'] ?? 'Selected folder'), subtitle: const Text('Included in future scans'), trailing: IconButton(tooltip: 'Remove folder', icon: const Icon(Icons.remove_circle_outline), onPressed: () => _removeFolder(folder['uri']!))))),
-        ] else Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [Icon(Icons.auto_awesome, size: 44, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 10), Text('No folder restriction', style: text.titleMedium), const SizedBox(height: 6), Text('This is the easiest setup for a new user. If you later want tighter control, choose one or more folders above.', textAlign: TextAlign.center, style: text.bodyMedium)]))),
+          ..._folders.map((folder) => ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: const Icon(Icons.folder_outlined), title: Text(folder['name'] ?? 'Selected folder'), subtitle: const Text('Included in future scans'), trailing: IconButton(tooltip: 'Remove folder', icon: const Icon(Icons.remove_circle_outline), onPressed: () => _removeFolder(folder['uri']!))))),
+        ] else ResonateGlassCard(padding: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(22), child: Column(children: [Icon(Icons.auto_awesome, size: 44, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 10), Text('No folder restriction', style: text.titleMedium), const SizedBox(height: 6), Text('This is the easiest setup for a new user. If you later want tighter control, choose one or more folders above.', textAlign: TextAlign.center, style: text.bodyMedium)]))),
         const SizedBox(height: 16),
         Text('How it works', style: text.titleLarge),
         const SizedBox(height: 8),
