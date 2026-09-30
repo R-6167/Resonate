@@ -98,11 +98,33 @@ class ModeProvider extends ChangeNotifier {
   }
 
   /// Soft content filter for AutoNext / Intelligence (never blocks explicit play).
+  /// Rejects avoided types; requires preferred match when the mode has a prefer set.
   bool shouldPreferSong(Song song) {
     final type = mediaTypeFor(song);
     final p = policy;
     if (!p.allowsMediaType(type)) return false;
     return p.prefersMediaType(type);
+  }
+
+  /// Autopilot may pick this track (not on the avoided list).
+  /// Explicit user play is never blocked by this.
+  bool isAcceptableForAutopilot(Song song) {
+    return policy.allowsMediaType(mediaTypeFor(song));
+  }
+
+  /// Mode actively prefers this content kind (empty prefer set = no bias).
+  bool isPreferredContent(Song song) {
+    return policy.prefersMediaType(mediaTypeFor(song));
+  }
+
+  /// Sort key: preferred first, then acceptable, avoided last (-1).
+  int contentBiasScore(Song song) {
+    final type = mediaTypeFor(song);
+    final p = policy;
+    if (!p.allowsMediaType(type)) return -1;
+    if (p.preferredMediaTypes.isEmpty) return 1;
+    if (p.preferredMediaTypes.contains(type)) return 2;
+    return 0; // allowed but not preferred (e.g. unknown while Running)
   }
 
   /// Whether crossfade is allowed under the active mode policy.

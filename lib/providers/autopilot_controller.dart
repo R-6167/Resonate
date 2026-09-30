@@ -37,6 +37,7 @@ class AutopilotController extends ChangeNotifier {
   AutopilotController({required this.music, required this.intelligence, this.modes}) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
+    modes?.addListener(_onModeChanged);
     _authority.addListener(_onAuthorityEvent);
     unawaited(_loadConsentAndEvaluate());
   }
@@ -70,6 +71,7 @@ class AutopilotController extends ChangeNotifier {
 
   void _onPlaybackChanged() => _scheduleEvaluate();
   void _onIntelligenceChanged() => _scheduleEvaluate();
+  void _onModeChanged() => _scheduleEvaluate();
 
   void _onAuthorityEvent() {
     final event = _authority.lastEvent;
@@ -141,7 +143,8 @@ class AutopilotController extends ChangeNotifier {
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
-    final useCrossfade = await IntelligenceSettingsStore.autopilotCrossfade();
+    final autopilotWantsXf = await IntelligenceSettingsStore.autopilotCrossfade();
+    final useCrossfade = autopilotWantsXf && (modes?.crossfadeAllowed ?? true);
 
     // Keep the queue topped up early — Phase 5: only with explicit consent.
     final duration = music.currentDuration;
@@ -160,10 +163,12 @@ class AutopilotController extends ChangeNotifier {
     if (!forceTransition && currentRemaining > const Duration(seconds: 10)) return;
     if (_transitionSongId == music.currentSong?.id) return;
 
-    // Prefer the highest-confidence recommendation that is not the current song
-    final candidates = intelligence.recommendations
+    // Rank recommendations by mode content bias, then keep confidence order.
+    // Avoided types are dropped; preferred types sort first. Never blocks explicit user play.
+    final rawCandidates = intelligence.recommendations
         .where((r) => r.song.id != music.currentSong?.id && r.confidence >= threshold)
         .toList();
+    final candidates = _rankByModeBias(rawCandidates);
 
     Song? nextSong;
     IntelligenceRecommendation? recommendation;
@@ -171,18 +176,17 @@ class AutopilotController extends ChangeNotifier {
     if (candidates.isNotEmpty) {
       recommendation = candidates.first;
       nextSong = recommendation.song;
-      // Mode policy: soft content bias (never blocks explicit user play).
-      if (modes != null && !modes!.shouldPreferSong(nextSong)) {
-        nextSong = null;
-      }
     } else if (intelligence.isAutopilotGraduated) {
       // Prefer existing queue next. Phase 5: only enqueue with consent.
       if (music.queueIndex < music.queue.length - 1) {
-        nextSong = music.queue[music.queueIndex + 1];
+        final queued = music.queue[music.queueIndex + 1];
+        if (_acceptable(queued)) {
+          nextSong = queued;
+        }
       } else if (_consentGranted) {
         await _ensurePredictedQueue(threshold);
         final top = intelligence.anticipatedNext?.song;
-        if (top != null && top.id != music.currentSong?.id) {
+        if (top != null && top.id != music.currentSong?.id && _acceptable(top)) {
           await music.enqueueSongs([top]);
           nextSong = top;
         }
@@ -222,6 +226,7 @@ class AutopilotController extends ChangeNotifier {
       'mode': intelligence.autonomyLabel,
       'fromSongId': music.currentSong?.id,
       'toSongId': nextSong.id,
+      'resonateMode': modes?.mode.id ?? 'unknown',
       'confidence': recommendation?.confidence ?? 0,
       'reason': recommendation?.reason ?? 'graduated_autopilot',
     });
@@ -290,11 +295,12 @@ class AutopilotController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         count: 2,
       );
-      if (candidates.isNotEmpty) {
-        final added = await music.enqueueSongs(candidates);
+      final modeFiltered = candidates.where(_acceptable).toList();
+      if (modeFiltered.isNotEmpty) {
+        final added = await music.enqueueSongs(modeFiltered);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
-          'candidates': candidates.map((song) => song.id).toList(),
+          'candidates': modeFiltered.map((song) => song.id).toList(),
           'added': added,
           'queueLength': music.queue.length,
           'queueIndex': music.queueIndex,
@@ -304,7 +310,7 @@ class AutopilotController extends ChangeNotifier {
             source: 'autopilot',
             action: 'enqueue',
             detail: 'Queued predicted track(s) under your consent.',
-            songId: candidates.first.id,
+            songId: modeFiltered.first.id,
           ));
         }
       }
@@ -313,10 +319,34 @@ class AutopilotController extends ChangeNotifier {
     }
   }
 
+
+  bool _acceptable(Song song) {
+    final m = modes;
+    if (m == null) return true;
+    return m.isAcceptableForAutopilot(song);
+  }
+
+  /// Drop avoided types; stable-sort preferred ahead of neutral (confidence order kept).
+  List<IntelligenceRecommendation> _rankByModeBias(
+    List<IntelligenceRecommendation> input,
+  ) {
+    final m = modes;
+    if (m == null) return input;
+    final kept = input.where((r) => m.isAcceptableForAutopilot(r.song)).toList();
+    kept.sort((a, b) {
+      final sa = m.contentBiasScore(a.song);
+      final sb = m.contentBiasScore(b.song);
+      if (sa != sb) return sb.compareTo(sa); // higher score first
+      return 0; // preserve relative confidence order within same score
+    });
+    return kept;
+  }
+
   @override
   void dispose() {
     music.removeListener(_onPlaybackChanged);
     intelligence.removeListener(_onIntelligenceChanged);
+    modes?.removeListener(_onModeChanged);
     _authority.removeListener(_onAuthorityEvent);
     super.dispose();
   }
