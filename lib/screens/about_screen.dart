@@ -173,8 +173,6 @@ class AboutScreen extends StatelessWidget {
     return ResonateGlassCard(
       padding: EdgeInsets.zero,
       margin: const EdgeInsets.only(bottom: 12),
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
       child: ExpansionTile(
         leading: Icon(icon),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),

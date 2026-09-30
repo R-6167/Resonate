@@ -46,7 +46,7 @@ class _LibraryManagementScreenState extends State<LibraryManagementScreen> {
     final text = Theme.of(context).textTheme;
     final hasFolders = _folders.isNotEmpty;
     return ResonateGlassScaffold(
-      title: const Text('Library')),
+      title: const Text('Library'),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         ResonateGlassCard(padding: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [Icon(Icons.library_music_rounded, size: 30, color: Theme.of(context).colorScheme.primary), const SizedBox(width: 12), Expanded(child: Text('Your music', style: text.headlineSmall))]),
