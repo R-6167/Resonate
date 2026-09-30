@@ -1,0 +1,32 @@
+name: Port DSP route + speaker mode
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/port_dsp_route_speaker.py"
+      - "lib/services/audio_output_route.dart"
+      - "lib/services/equalizer_dvc_sync.dart"
+      - "lib/services/audio_effects_bridge.dart"
+jobs:
+  port:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+      - run: python3 tools/port_dsp_route_speaker.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add \
+            android/app/src/main/kotlin/com/Aetherion/Resonate/MainActivity.kt \
+            lib/providers/equalizer_provider.dart \
+            lib/services/audio_output_route.dart \
+            lib/services/equalizer_dvc_sync.dart \
+            lib/services/audio_effects_bridge.dart
+          if git diff --staged --quiet; then echo No changes; else
+            git commit -m "feat(dsp): speaker mode + route policy + EQ live DVC sync"
+            git push
+          fi

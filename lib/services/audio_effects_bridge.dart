@@ -71,6 +71,30 @@ class AudioEffectsBridge {
     return null;
   }
 
+  static Future<Map<String, dynamic>?> setLiveDspSpeakerMode(bool enabled) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspSpeakerMode', {
+        'enabled': enabled,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspSpeakerMode failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspVirtualBass(double amount) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspVirtualBass', {
+        'amount': amount.clamp(0.0, 1.0),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspVirtualBass failed: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> getLiveDspStatus() async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
