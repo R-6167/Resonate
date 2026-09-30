@@ -12,6 +12,7 @@ import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 import 'mode_provider.dart';
+import '../models/resonate_mode.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.

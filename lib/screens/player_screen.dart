@@ -190,7 +190,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
               if (context.watch<ModeProvider>().policy.preciseResume &&
-                  music.canResumeCurrentQueueSong)
+                  music.canContinueListening)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Align(
