@@ -58,36 +58,37 @@ Future<T?> showBlurredModalBottomSheet<T>({
                     ),
                   ),
                 ),
-              // Soft brand wash under sheet content
-              Flexible(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: isDark
-                                  ? [
-                                      ResonateAccents.violet.withValues(alpha: 0.10),
-                                      Colors.transparent,
-                                      ResonateAccents.blue.withValues(alpha: 0.06),
-                                    ]
-                                  : [
-                                      ResonateAccents.blue.withValues(alpha: 0.06),
-                                      Colors.transparent,
-                                      ResonateAccents.pink.withValues(alpha: 0.04),
-                                    ],
-                            ),
+              // Soft brand tint behind sheet content
+              Stack(
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: isDark
+                                ? [
+                                    ResonateAccents.violet.withValues(alpha: 0.12),
+                                    Colors.transparent,
+                                    ResonateAccents.blue.withValues(alpha: 0.08),
+                                  ]
+                                : [
+                                    ResonateAccents.blue.withValues(alpha: 0.07),
+                                    Colors.transparent,
+                                    ResonateAccents.pink.withValues(alpha: 0.05),
+                                  ],
                           ),
                         ),
                       ),
                     ),
-                    builder(ctx),
-                  ],
-                ),
+                  ),
+                  builder(ctx),
+                ],
               ),
             ],
           ),
@@ -97,7 +98,7 @@ Future<T?> showBlurredModalBottomSheet<T>({
   );
 }
 
-/// Dialog with blurred barrier + optional glass frame via [builder].
+/// Dialog with blurred barrier (builder supplies the dialog body).
 Future<T?> showBlurredDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
