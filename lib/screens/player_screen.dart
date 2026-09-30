@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
-import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
@@ -18,7 +18,6 @@ import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/autopilot_takeover_card.dart';
-import 'audio_effects_screen.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
 
@@ -50,10 +49,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Now Playing'),
-        actions: [
+    return ResonateGlassScaffold(
+      title: const Text('Now Playing'),
+      actions: [
           const DjModeStatusChip(dense: true),
           Consumer<MusicProvider>(
             builder: (_, music, __) {
@@ -74,7 +72,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             },
           ),
         ],
-      ),
+
       body: Consumer<MusicProvider>(
         builder: (context, music, _) {
           final song = music.currentSong;
@@ -249,7 +247,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              Card(
+              ResonateGlassCard(
+                padding: EdgeInsets.zero,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -373,8 +372,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _showMoreOptions(BuildContext context) async {
     final playback = context.read<PlaybackFeaturesProvider>();
     final eq = context.read<EqualizerProvider>();
-    final effects = context.read<AudioEffectsProvider>();
-
     await showBlurredModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -393,24 +390,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => const EqualizerScreen(),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.auto_awesome_rounded),
-                title: const Text('Audio effects'),
-                subtitle: Text(
-                  effects.effectsEnabled
-                      ? 'Bass, width, reverb and loudness'
-                      : 'Disabled',
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const AudioEffectsScreen(),
                     ),
                   );
                 },
@@ -667,7 +646,8 @@ class _NextCard extends StatelessWidget {
     final confidence =
         (item.confidence.clamp(0.0, 1.0) * 100).round();
 
-    return Card(
+    return ResonateGlassCard(
+      padding: EdgeInsets.zero,
       color: Theme.of(context).colorScheme.primaryContainer,
       child: ListTile(
         leading: const Icon(Icons.auto_awesome),
