@@ -55,61 +55,60 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-            _section(context, 'Playback', Icons.play_circle_outline, [
-              _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
-              _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
-              _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
-              // Effects moved into Equalizer. Loudness retired.
-            ], initiallyExpanded: true),
-            _section(context, 'Modes', Icons.tune_rounded, [
-              _item(context, 'Listening modes', 'Normal, Running, Driving, Work, Podcast, Motivation, Audiobook', Icons.tune_rounded, const ModesScreen()),
-            ]),
-            _section(context, 'Audio', Icons.equalizer_rounded, [
-              _item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),
-              _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
-            ]),
-            _section(context, 'Intelligence', Icons.auto_awesome, [
-              _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
-              _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
-              ListTile(
-                leading: const Icon(Icons.restart_alt_rounded),
-                title: const Text('Reset learned feedback'),
-                subtitle: const Text('Clear recommendation feedback, not listening history'),
-                onTap: () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
-              ),
-            ]),
-            _section(context, 'Bluetooth & Devices', Icons.bluetooth_audio_rounded, [
-              _item(context, 'Device controls', 'Media buttons, notification and connection behavior', Icons.settings_input_component_rounded, const BluetoothSettingsScreen()),
-            ]),
-            _section(context, 'Library', Icons.library_music_rounded, [
-              _item(context, 'Liked Songs', 'Your personal collection of favorites', Icons.favorite_rounded, const LikedSongsScreen()),
-              _item(context, 'Playlists', 'Create and manage personal and smart playlists', Icons.queue_music_rounded, const PlaylistsScreen()),
-              _item(context, 'Scan & folders', 'Scan now or choose folders', Icons.folder_open_rounded, const LibraryManagementScreen()),
-            ]),
-            _section(context, 'Appearance', Icons.palette_outlined, [
-              ListTile(
-                leading: const Icon(Icons.brightness_6_outlined),
-                title: const Text('Theme'),
-                subtitle: Text(context.watch<ThemeProvider>().useSystemTheme
-                    ? 'System'
-                    : (context.watch<ThemeProvider>().isDarkMode ? 'Dark' : 'Light')),
-                onTap: () => context.read<ThemeProvider>().cycleThemeMode(),
-              ),
-              _item(context, 'Visualization', 'Audio spectrum and waveform display', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
-            ]),
-            _section(context, 'Privacy', Icons.lock_outline_rounded, [
-              ListTile(
-                leading: const Icon(Icons.history_rounded),
-                title: const Text('Listening history'),
-                subtitle: const Text('Local playback history on this device'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ListeningHistoryScreen())),
-              ),
-            ]),
-            _section(context, 'About', Icons.info_outline_rounded, [
-              _item(context, 'About Resonate', 'Version, credits and diagnostics entry', Icons.info_outline_rounded, const AboutScreen()),
-              _item(context, 'Diagnostics', 'Playback and system diagnostics', Icons.bug_report_outlined, const DiagnosticsScreen()),
-            ]),
+          _section(context, 'Playback', Icons.play_circle_outline, [
+            _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
+            _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
+            _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
+          ], initiallyExpanded: true),
+          _section(context, 'Modes', Icons.tune_rounded, [
+            _item(context, 'Listening modes', 'Normal, Running, Driving, Work, Podcast, Motivation, Audiobook', Icons.tune_rounded, const ModesScreen()),
+          ]),
+          _section(context, 'Audio', Icons.equalizer_rounded, [
+            _item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),
+            _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
+          ]),
+          _section(context, 'Intelligence', Icons.auto_awesome, [
+            _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
+            _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
+            ListTile(
+              leading: const Icon(Icons.restart_alt_rounded),
+              title: const Text('Reset learned feedback'),
+              subtitle: const Text('Clear recommendation feedback, not listening history'),
+              onTap: () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
+            ),
+          ]),
+          _section(context, 'Bluetooth & Devices', Icons.bluetooth_audio_rounded, [
+            _item(context, 'Device controls', 'Media buttons, notification and connection behavior', Icons.settings_input_component_rounded, const BluetoothSettingsScreen()),
+          ]),
+          _section(context, 'Library', Icons.library_music_rounded, [
+            _item(context, 'Liked Songs', 'Your personal collection of favorites', Icons.favorite_rounded, const LikedSongsScreen()),
+            _item(context, 'Playlists', 'Create and manage personal and smart playlists', Icons.queue_music_rounded, const PlaylistsScreen()),
+            _item(context, 'Scan & folders', 'Scan now or choose folders', Icons.folder_open_rounded, const LibraryManagementScreen()),
+          ]),
+          _section(context, 'Appearance', Icons.palette_outlined, [
+            ListTile(
+              leading: const Icon(Icons.brightness_6_outlined),
+              title: const Text('Theme'),
+              subtitle: Text(context.watch<ThemeProvider>().useSystemTheme
+                  ? 'System'
+                  : (context.watch<ThemeProvider>().isDarkMode ? 'Dark' : 'Light')),
+              onTap: () => context.read<ThemeProvider>().toggleTheme(),
+            ),
+            _item(context, 'Visualization', 'Audio spectrum and waveform display', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
+          ]),
+          _section(context, 'Privacy', Icons.lock_outline_rounded, [
+            ListTile(
+              leading: const Icon(Icons.history_rounded),
+              title: const Text('Listening history'),
+              subtitle: const Text('Local playback history on this device'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ListeningHistoryScreen())),
+            ),
+          ]),
+          _section(context, 'About', Icons.info_outline_rounded, [
+            _item(context, 'About Resonate', 'Version, credits and diagnostics entry', Icons.info_outline_rounded, const AboutScreen()),
+            _item(context, 'Diagnostics', 'Playback and system diagnostics', Icons.bug_report_outlined, const DiagnosticsScreen()),
+          ]),
         ],
       ),
     );
@@ -180,7 +179,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
                 ),
               ),
               SwitchListTile.adaptive(title: const Text('Bluetooth controls'), subtitle: const Text('Accept play, pause, next and previous commands from connected devices.'), value: bt.isEnabled, onChanged: bt.toggleBluetooth),
-              SwitchListTile.adaptive(title: const Text('Show media notification'), subtitle: const Text('Keep transport controls available from the system notification.'), value: bt.showNotification, onChanged: bt.toggleNotification),
+              SwitchListTile.adaptive(title: const Text('Playback notification'), subtitle: const Text('Show Resonate playback controls in the Android notification shade.'), value: bt.showNotification, onChanged: bt.toggleNotification),
               SwitchListTile.adaptive(title: const Text('Resume when device connects'), subtitle: const Text('Resume the previous session when a Bluetooth device connects.'), value: bt.resumeOnConnect, onChanged: bt.toggleResumeOnConnect),
               SwitchListTile.adaptive(title: const Text('Pause when device disconnects'), subtitle: const Text('Pause playback when the active Bluetooth device disconnects.'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect),
               const Divider(),
@@ -215,7 +214,6 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
       );
 }
 
-// Legacy detail screens kept for any deep links; Settings menu no longer lists them.
 class IntelligenceDetailScreen extends StatelessWidget {
   final String section;
   const IntelligenceDetailScreen({super.key, required this.section});
