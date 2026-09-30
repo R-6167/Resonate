@@ -648,7 +648,6 @@ class _NextCard extends StatelessWidget {
 
     return ResonateGlassCard(
       padding: EdgeInsets.zero,
-      color: Theme.of(context).colorScheme.primaryContainer,
       child: ListTile(
         leading: const Icon(Icons.auto_awesome),
         title: Row(

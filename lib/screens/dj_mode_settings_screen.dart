@@ -35,7 +35,6 @@ class DjModeSettingsScreen extends StatelessWidget {
               ResonateGlassCard(
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
                 child: SwitchListTile.adaptive(
                   contentPadding: const EdgeInsets.fromLTRB(18, 8, 14, 8),
                   secondary: Icon(
@@ -131,7 +130,6 @@ class DjModeSettingsScreen extends StatelessWidget {
               ResonateGlassCard(
                 margin: EdgeInsets.zero,
                 padding: EdgeInsets.zero,
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
