@@ -1,0 +1,25 @@
+name: Polish step 5 Player glass
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/polish_step5_player.py"
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/polish_step5_player.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/player_screen.dart
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "ui: glass Player + drop duplicate Audio effects under More"
+          git pull --rebase origin dj_Mode || true
+          git push origin dj_Mode
