@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
@@ -101,11 +102,11 @@ class _HomeDashboard extends StatelessWidget {
 
   List<Widget> _recommendations(IntelligenceProvider intelligence, List<dynamic> songs) {
     if (!intelligence.isEnabled) {
-      return const [Card(child: ListTile(leading: Icon(Icons.auto_awesome_outlined), title: Text('Intelligence is off'), subtitle: Text('Your player remains fully manual. Enable it from Settings when you want local anticipation.')))];
+      return const [ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: Icon(Icons.auto_awesome_outlined), title: Text('Intelligence is off'), subtitle: Text('Your player remains fully manual. Enable it from Settings when you want local anticipation.')))];
     }
     final recommendations = intelligence.recommendations.skip(1).toList();
     if (recommendations.isEmpty) {
-      return const [Card(child: ListTile(leading: Icon(Icons.headphones_rounded), title: Text('Let Resonate get to know your taste'), subtitle: Text('Finishes, skips and song-to-song choices become local signals for future decisions.')))];
+      return const [ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: Icon(Icons.headphones_rounded), title: Text('Let Resonate get to know your taste'), subtitle: Text('Finishes, skips and song-to-song choices become local signals for future decisions.')))];
     }
     return recommendations.map<Widget>((item) => _RecommendationTile(item: item, songs: songs)).toList();
   }
@@ -130,9 +131,8 @@ class _HomeDashboard extends StatelessWidget {
       final progress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
       children.addAll([
         const SizedBox(height: 14),
-        Card(
-          elevation: 0,
-          color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.45),
+        ResonateGlassCard(
+          padding: EdgeInsets.zero,
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.history_rounded)),
             title: const Text('Continue listening', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -168,7 +168,7 @@ class _HomeDashboard extends StatelessWidget {
       children.addAll([
         const SizedBox(height: 20),
         _sectionTitle(context, 'Now playing'),
-        Card(child: ListTile(
+        ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(
           leading: CircleAvatar(child: Icon(music.isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
           title: Text(music.currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Column(
@@ -194,11 +194,11 @@ class _HomeDashboard extends StatelessWidget {
       const SizedBox(height: 30),
     ]);
 
-    return Scaffold(
-      appBar: AppBar(title: const ResonateLogo(size: 48)),
+    return ResonateGlassScaffold(
+      title: const ResonateLogo(size: 48),
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
-        child: ListView(padding: const EdgeInsets.fromLTRB(18, 0, 18, 34), children: children),
+        child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 34), children: children),
       ),
     );
   }
@@ -216,7 +216,8 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return ResonateGlassCard(
+      padding: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -324,7 +325,8 @@ class _RecommendationTileState extends State<_RecommendationTile> {
         final liked = library.isFavoriteSync(widget.item.song.id);
         final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
         final confidenceText = '${widget.item.confidenceLabel} • $confidence%';
-        return Card(
+        return ResonateGlassCard(
+          padding: EdgeInsets.zero,
           margin: const EdgeInsets.only(bottom: 9),
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)),
