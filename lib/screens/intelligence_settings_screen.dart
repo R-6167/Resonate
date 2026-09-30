@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/autopilot_controller.dart';
 import '../providers/intelligence_provider.dart';
@@ -48,9 +49,11 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Resonate Intelligence')),
-      body: _loading ? const Center(child: CircularProgressIndicator()) : Consumer<IntelligenceProvider>(builder: (context, intelligence, _) => ListView(padding: const EdgeInsets.only(bottom: 36), children: [
+    return ResonateGlassScaffold(
+      title: const Text('Resonate Intelligence'),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Consumer<IntelligenceProvider>(builder: (context, intelligence, _) => ListView(padding: const EdgeInsets.fromLTRB(14, 8, 14, 36), children: [
         _header(context, 'Core control', 'When Intelligence is active and how much authority it has.'),
         SwitchListTile.adaptive(title: const Text('Intelligence'), subtitle: Text(intelligence.isEnabled ? 'Learning and anticipating locally' : 'Completely inactive; normal player behavior continues'), value: intelligence.isEnabled, onChanged: intelligence.setEnabled),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('Autonomy', style: Theme.of(context).textTheme.titleMedium)),

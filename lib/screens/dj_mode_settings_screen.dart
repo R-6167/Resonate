@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/dj_mode_provider.dart';
@@ -12,8 +13,8 @@ class DjModeSettingsScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('DJ Mode')),
+    return ResonateGlassScaffold(
+      title: const Text('DJ Mode'),
       body: Consumer<DjModeProvider>(
         builder: (context, dj, _) {
           final on = dj.isEnabled;

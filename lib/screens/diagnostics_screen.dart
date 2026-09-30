@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/resonate_diagnostics.dart';
 
@@ -112,14 +113,16 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     final djHint = summary['djHealthHint']?.toString() ?? '';
     final intelStages = (summary['intelligenceStages'] as Map?)?.length ?? 0;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Privacy & Diagnostics')),
+    return ResonateGlassScaffold(
+      title: const Text('Privacy & Diagnostics'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 36),
               children: [
-                Card(
+                ResonateGlassCard(
+                  padding: EdgeInsets.zero,
+                  margin: const EdgeInsets.only(bottom: 12),
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Column(

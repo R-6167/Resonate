@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../widgets/dj_mode_status_chip.dart';
 
@@ -13,17 +14,15 @@ class CrossfadeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Crossfade'),
-        actions: [
-          IconButton(
-            tooltip: 'Reset',
-            icon: const Icon(Icons.restart_alt_rounded),
-            onPressed: () => _confirmReset(context),
-          ),
-        ],
-      ),
+    return ResonateGlassScaffold(
+      title: const Text('Crossfade'),
+      actions: [
+        IconButton(
+          tooltip: 'Reset',
+          icon: const Icon(Icons.restart_alt_rounded),
+          onPressed: () => _confirmReset(context),
+        ),
+      ],
       body: Consumer<CrossfadeProvider>(
         builder: (context, crossfade, _) {
           final enabled = crossfade.isEnabled;

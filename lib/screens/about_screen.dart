@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../ui/resonate_glass.dart';
 
 import '../widgets/resonate_logo.dart';
 
@@ -15,10 +16,10 @@ class AboutScreen extends StatelessWidget {
     final scheme = theme.colorScheme;
     final versionLabel = '$kResonateVersion+$kResonateBuild';
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('About Resonate')),
+    return ResonateGlassScaffold(
+      title: const Text('About Resonate'),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 36),
         children: [
           Container(
             padding: const EdgeInsets.all(24),
@@ -169,7 +170,9 @@ class AboutScreen extends StatelessWidget {
     required String title,
     required Widget child,
   }) {
-    return Card(
+    return ResonateGlassCard(
+      padding: EdgeInsets.zero,
+      margin: const EdgeInsets.only(bottom: 12),
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       child: ExpansionTile(
