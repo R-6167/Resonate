@@ -9,6 +9,7 @@ import 'audio_effects_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
+import 'modes_screen.dart';
 import 'diagnostics_screen.dart';
 import 'equalizer_screen.dart';
 import 'intelligence_settings_screen.dart';
@@ -22,42 +23,47 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => ResonateGlassScaffold(
-        title: const Text('Settings'),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
-          children: [
-            Card(
-              elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('Audio tools are always available'),
-                subtitle: const Text(
-                  'Equalizer, Crossfade, DJ Mode, and Effects work from Settings even before you play a song. Open Playback to find DJ Mode.',
-                ),
+  Widget build(BuildContext context) {
+    return ResonateGlassScaffold(
+      title: const Text('Settings'),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 36),
+        children: [
+          ResonateGlassCard(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Resonate', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Local-first listening. Tune playback, intelligence and devices here.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Audio tools are always available',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    'Equalizer, Crossfade, DJ Mode, and Effects work from Settings even before you play a song. Open Playback to find DJ Mode.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-            Card(
-              elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.volume_down_rounded),
-                title: const Text('Interruptions are automatic'),
-                subtitle: const Text(
-                  'Calls pause Resonate and resume when they end if you were listening. '
-                  'Notifications briefly lower the music, then restore it. '
-                  'Unplugging headphones always pauses. Long calls do not auto-resume.',
-                ),
-                isThreeLine: true,
-              ),
-            ),
-            const SizedBox(height: 10),
+          ),
+          const SizedBox(height: 10),
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
               _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
               // Effects moved into Equalizer. Loudness retired.
             ], initiallyExpanded: true),
+            _section(context, 'Modes', Icons.tune_rounded, [
+              _item(context, 'Listening modes', 'Normal, Running, Driving, Work, Podcast, Motivation, Audiobook', Icons.tune_rounded, const ModesScreen()),
+            ]),
             _section(context, 'Audio', Icons.equalizer_rounded, [
               _item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),
               _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
@@ -84,104 +90,60 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.brightness_6_outlined),
                 title: const Text('Theme'),
-                subtitle: const Text('Light, dark or system'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _showTheme(context),
+                subtitle: Text(context.watch<ThemeProvider>().useSystemTheme
+                    ? 'System'
+                    : (context.watch<ThemeProvider>().isDarkMode ? 'Dark' : 'Light')),
+                onTap: () => context.read<ThemeProvider>().cycleThemeMode(),
               ),
               _item(context, 'Visualization', 'Audio spectrum and waveform display', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
             ]),
             _section(context, 'Privacy', Icons.lock_outline_rounded, [
-              const ListTile(leading: Icon(Icons.phone_android_rounded), title: Text('Local-only learning'), subtitle: Text('Intelligence uses on-device listening data.')),
-              _item(context, 'Privacy & Diagnostics', 'Crash capture, technical events, feedback and report export', Icons.health_and_safety_rounded, const DiagnosticsScreen()),
-              _item(context, 'Listening history', 'Browse, understand or clear playback events', Icons.history_rounded, const ListeningHistoryScreen()),
-              _confirmItem(context, 'Delete Intelligence history', 'Erase recommendation feedback', Icons.delete_outline_rounded, 'Clear recommendation feedback now?', Icons.delete_outline_rounded, () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
+              ListTile(
+                leading: const Icon(Icons.history_rounded),
+                title: const Text('Listening history'),
+                subtitle: const Text('Local playback history on this device'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ListeningHistoryScreen())),
+              ),
             ]),
             _section(context, 'About', Icons.info_outline_rounded, [
-              _item(context, 'About & How to use', 'Guide, privacy notes and copyright', Icons.menu_book_outlined, const AboutScreen()),
+              _item(context, 'About Resonate', 'Version, credits and diagnostics entry', Icons.info_outline_rounded, const AboutScreen()),
+              _item(context, 'Diagnostics', 'Playback and system diagnostics', Icons.bug_report_outlined, const DiagnosticsScreen()),
             ]),
-          ],
-        ),
-      );
-
-  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children, {bool initiallyExpanded = false}) =>
-      ResonateGlassSection(
-        title: title,
-        icon: icon,
-        initiallyExpanded: initiallyExpanded,
-        children: children,
-      );
-
-  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget screen) =>
-      ResonateGlassTile(
-        title: title,
-        subtitle: subtitle,
-        icon: icon,
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
-      );
-
-  Widget _confirmItem(BuildContext context, String title, String subtitle, IconData icon, String text, IconData trailingIcon, Future<void> Function() action) =>
-      ResonateGlassTile(
-        title: title,
-        subtitle: subtitle,
-        icon: icon,
-        trailing: Icon(trailingIcon),
-        onTap: () => _confirm(context, title, text, action),
-      );
-
-  Future<void> _showTheme(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => Consumer<ThemeProvider>(
-        builder: (_, theme, __) {
-          final selected = theme.useSystemTheme ? 'system' : (theme.isDarkMode ? 'dark' : 'light');
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const ListTile(title: Text('Theme'), subtitle: Text('Choose how Resonate looks.')),
-                RadioGroup<String>(
-                  groupValue: selected,
-                  onChanged: (value) async {
-                    if (value == null) return;
-                    if (value == 'system') {
-                      await theme.toggleSystemTheme(true);
-                    } else {
-                      if (theme.useSystemTheme) await theme.toggleSystemTheme(false);
-                      final wantsDark = value == 'dark';
-                      if (theme.isDarkMode != wantsDark) await theme.toggleTheme();
-                    }
-                    if (sheetContext.mounted) Navigator.pop(sheetContext);
-                  },
-                  child: const Column(
-                    children: [
-                      RadioListTile<String>(value: 'system', title: Text('System')),
-                      RadioListTile<String>(value: 'light', title: Text('Light')),
-                      RadioListTile<String>(value: 'dark', title: Text('Dark')),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+        ],
       ),
     );
   }
 
-  Future<void> _confirm(BuildContext context, String title, String text, Future<void> Function() action) async {
-    final yes = await showDialog<bool>(
+  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children, {bool initiallyExpanded = false}) =>
+      ExpansionTile(
+        leading: Icon(icon),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        initiallyExpanded: initiallyExpanded,
+        children: children,
+      );
+
+  Widget _item(BuildContext context, String title, String subtitle, IconData icon, Widget page) => ListTile(
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
+      );
+
+  Future<void> _confirm(BuildContext context, String title, String body, Future<void> Function() action) async {
+    final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(title),
-        content: Text(text),
+        content: Text(body),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Continue')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
         ],
       ),
     );
-    if (yes == true) await action();
+    if (ok == true) await action();
   }
 }
 
@@ -218,7 +180,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
                 ),
               ),
               SwitchListTile.adaptive(title: const Text('Bluetooth controls'), subtitle: const Text('Accept play, pause, next and previous commands from connected devices.'), value: bt.isEnabled, onChanged: bt.toggleBluetooth),
-              SwitchListTile.adaptive(title: const Text('Playback notification'), subtitle: const Text('Show Resonate playback controls in the Android notification shade.'), value: bt.showNotification, onChanged: bt.toggleNotification),
+              SwitchListTile.adaptive(title: const Text('Show media notification'), subtitle: const Text('Keep transport controls available from the system notification.'), value: bt.showNotification, onChanged: bt.toggleNotification),
               SwitchListTile.adaptive(title: const Text('Resume when device connects'), subtitle: const Text('Resume the previous session when a Bluetooth device connects.'), value: bt.resumeOnConnect, onChanged: bt.toggleResumeOnConnect),
               SwitchListTile.adaptive(title: const Text('Pause when device disconnects'), subtitle: const Text('Pause playback when the active Bluetooth device disconnects.'), value: bt.pauseOnDisconnect, onChanged: bt.togglePauseOnDisconnect),
               const Divider(),
@@ -253,6 +215,7 @@ class _BluetoothSettingsScreenState extends State<BluetoothSettingsScreen> {
       );
 }
 
+// Legacy detail screens kept for any deep links; Settings menu no longer lists them.
 class IntelligenceDetailScreen extends StatelessWidget {
   final String section;
   const IntelligenceDetailScreen({super.key, required this.section});
@@ -272,19 +235,25 @@ class IntelligenceDetailScreen extends StatelessWidget {
             if (section == 'Learning') const _LearningControls(),
             if (section == 'Session Intelligence') const _SessionControls(),
             const SizedBox(height: 18),
-            OutlinedButton.icon(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen())), icon: const Icon(Icons.tune_rounded), label: const Text('Open all Intelligence settings')),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('Open Advanced Intelligence'),
+              subtitle: const Text('Real controls live there'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const IntelligenceSettingsScreen())),
+            ),
           ],
         ),
       );
 
-  String _description(String s) => switch (s) {
+  String _description(String section) => switch (section) {
         'Suggestions' => 'Suggestions are the lowest-authority Intelligence layer. Resonate can recommend tracks with a confidence score and a human-readable reason without taking playback control.',
-        'Automatic queue' => 'Automatic queue prepares a small runway of likely next tracks. It does not replace the normal player when Intelligence is disabled.',
+        'Automatic queue' => 'Automatic queue keeps a small runway of likely next tracks ready when autonomy and consent allow it.',
         'Exploration' => 'Exploration controls how aggressively Resonate moves beyond familiar listening. Higher values favor new or less-heard tracks.',
-        'Explanations' => 'Explanations keep Intelligence understandable by showing why a recommendation was selected and how confident Resonate is.',
-        'Learning' => 'Learning is continuous and local. Finishes, skips, replay behavior, recency and song-to-song choices become evidence over time; there is no artificial graduation shortcut.',
+        'Explanations' => 'Explanations control whether recommendation reasons and confidence are shown with companion choices.',
+        'Learning' => 'Learning forms local memory from skips, completions and feedback without leaving this device.',
         'Session Intelligence' => 'Session Intelligence reads the current listening direction so recent artists, completions and skips can influence what feels right next.',
-        _ => '',
+        _ => 'Intelligence detail',
       };
 }
 
@@ -292,7 +261,7 @@ class _SuggestionsControls extends StatelessWidget {
   const _SuggestionsControls();
   @override
   Widget build(BuildContext c) => Consumer<IntelligenceProvider>(builder: (_, i, __) => Column(children: [
-        SwitchListTile.adaptive(title: const Text('Intelligence suggestions'), subtitle: const Text('Allow local recommendations to appear on For You and Player.'), value: i.isEnabled, onChanged: i.setEnabled),
+        SwitchListTile.adaptive(title: const Text('Intelligence'), subtitle: Text(i.isEnabled ? 'Active' : 'Off'), value: i.isEnabled, onChanged: i.setEnabled),
         const ListTile(title: Text('Confidence and explanations'), subtitle: Text('Tune these in Advanced Intelligence.')),
       ]));
 }
