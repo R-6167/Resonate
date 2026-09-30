@@ -1,0 +1,29 @@
+name: Polish step 2 glass
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/polish_step2_glass.py"
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/polish_step2_glass.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/crossfade_screen.dart \
+                  lib/screens/dj_mode_settings_screen.dart \
+                  lib/screens/intelligence_settings_screen.dart \
+                  lib/screens/diagnostics_screen.dart \
+                  lib/screens/about_screen.dart
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "ui: glass polish step 2 (Crossfade, DJ, Intelligence, Diagnostics, About)"
+          git pull --rebase origin dj_Mode || true
+          git push origin dj_Mode
