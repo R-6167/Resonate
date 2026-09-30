@@ -1,0 +1,32 @@
+name: Polish step 3 glass
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/polish_step3_glass.py"
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_Mode
+          fetch-depth: 0
+      - run: python3 tools/polish_step3_glass.py
+      - name: show diffstat
+        run: git diff --stat
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/screens/library_screen.dart \
+                  lib/screens/playlists_screen.dart \
+                  lib/screens/queue_screen.dart \
+                  lib/screens/liked_songs_screen.dart \
+                  lib/screens/listening_history_screen.dart \
+                  lib/screens/library_management_screen.dart
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "ui: glass polish step 3 (Library, Playlists, Queue, Liked, History)"
+          git pull --rebase origin dj_Mode || true
+          git push origin dj_Mode
