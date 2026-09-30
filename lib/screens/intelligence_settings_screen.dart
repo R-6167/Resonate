@@ -75,8 +75,9 @@ class _IntelligenceSettingsScreenState extends State<IntelligenceSettingsScreen>
                 }
               : null,
         ),
-        Card(
+        ResonateGlassCard(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: EdgeInsets.zero,
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(

@@ -32,9 +32,9 @@ class DjModeSettingsScreen extends StatelessWidget {
                 style: text.bodyMedium,
               ),
               const SizedBox(height: 20),
-              Card(
+              ResonateGlassCard(
                 margin: EdgeInsets.zero,
-                elevation: 0,
+                padding: EdgeInsets.zero,
                 color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
                 child: SwitchListTile.adaptive(
                   contentPadding: const EdgeInsets.fromLTRB(18, 8, 14, 8),
@@ -128,9 +128,9 @@ class DjModeSettingsScreen extends StatelessWidget {
                 onChanged: on ? dj.setAnalyzeIdle : null,
               ),
               const SizedBox(height: 24),
-              Card(
+              ResonateGlassCard(
                 margin: EdgeInsets.zero,
-                elevation: 0,
+                padding: EdgeInsets.zero,
                 color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
