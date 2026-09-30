@@ -143,8 +143,11 @@ class MusicProvider extends ChangeNotifier {
 
   /// True while system asked us to duck (notification / nav / transient).
   bool _isDucked = false;
-  /// When exclusive focus was lost (call / other media) — used for long-call gate.
+  /// When exclusive focus was lost (call / other media).
   DateTime? _focusLostAt;
+  /// True after exclusive focus loss until the user explicitly plays again.
+  /// Prevents silent-watchdog / route recovery from reclaiming focus.
+  bool _focusSuspended = false;
   int _volumeFadeGen = 0;
   static const double _duckLevel = 0.32;
   static const int _duckFadeMs = 180;
@@ -419,6 +422,8 @@ class MusicProvider extends ChangeNotifier {
         _loadingSource) {
       return;
     }
+    // Do not reclaim focus after yielding to a call / another player.
+    if (_focusSuspended) return;
     if (!_userWantsPlaying) return;
     try {
       final active = audioPlayer;
@@ -551,6 +556,7 @@ class MusicProvider extends ChangeNotifier {
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
     try {
+      if (_focusSuspended) return;
       if (!_userWantsPlaying && !audioPlayer.playing) return;
       await _claimAudioFocus(reason: 'ensure_audible');
       final vol = volume.clamp(0.05, 1.0);
@@ -607,9 +613,16 @@ class MusicProvider extends ChangeNotifier {
         }));
         if (event.begin) {
           if (event.type == AudioInterruptionType.pause) {
-            // Calls / exclusive media: pause, keep intent, stamp focus-loss time.
+            // Calls / other media: yield completely. Do not keep play-intent
+            // or we will reclaim focus from Google Files / the phone app.
             _focusLostAt = DateTime.now();
+            _focusSuspended = true;
+            _userWantsPlaying = false;
             unawaited(pause(source: 'system'));
+            unawaited(ResonateDiagnostics.record('audio_focus_event', {
+              'action': 'yield_exclusive_focus',
+              'songId': currentSong?.id,
+            }));
           } else if (event.type == AudioInterruptionType.duck) {
             // Notifications / nav / transient: soft duck with fade.
             unawaited(_duckForInterruption());
@@ -619,27 +632,22 @@ class MusicProvider extends ChangeNotifier {
           }
         } else {
           if (event.type == AudioInterruptionType.duck) {
-            if (_userWantsPlaying) unawaited(_unduckAfterInterruption());
+            if (_userWantsPlaying && !_focusSuspended) {
+              unawaited(_unduckAfterInterruption());
+            }
           } else if (event.type == AudioInterruptionType.pause) {
+            // Never auto-resume after exclusive focus loss. User must press play.
             final lostAt = _focusLostAt;
             _focusLostAt = null;
-            final lostLong = lostAt != null &&
-                DateTime.now().difference(lostAt) > _autoResumeMaxFocusLoss;
-            if (lostLong) {
-              // Long call: do not surprise-resume; user taps play when ready.
-              _userWantsPlaying = false;
-              unawaited(ResonateDiagnostics.record('audio_focus_event', {
-                'action': 'skip_auto_resume_long_focus_loss',
-                'lostMs': lostAt == null
-                    ? null
-                    : DateTime.now().difference(lostAt).inMilliseconds,
-              }));
-              return;
-            }
-            if (_userWantsPlaying) {
-              unawaited(_resumeAfterSystemFocus());
-            }
-          } else if (_userWantsPlaying && _isDucked) {
+            _focusSuspended = true;
+            _userWantsPlaying = false;
+            unawaited(ResonateDiagnostics.record('audio_focus_event', {
+              'action': 'skip_auto_resume_exclusive_focus_loss',
+              'lostMs': lostAt == null
+                  ? null
+                  : DateTime.now().difference(lostAt).inMilliseconds,
+            }));
+          } else if (_userWantsPlaying && _isDucked && !_focusSuspended) {
             unawaited(_unduckAfterInterruption());
           }
         }
@@ -681,6 +689,7 @@ class MusicProvider extends ChangeNotifier {
         'songId': currentSong?.id,
       });
     } catch (_) {}
+    if (_focusSuspended) return;
     if (!_userWantsPlaying) return;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
     try {
@@ -691,6 +700,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
     for (final delayMs in <int>[200, 700, 1600, 3200]) {
       await Future<void>.delayed(Duration(milliseconds: delayMs));
+      if (_focusSuspended) return;
       if (!_userWantsPlaying) return;
       if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
       try {
@@ -810,6 +820,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// Re-claim session then resume after a call / exclusive focus loss.
   Future<void> _resumeAfterSystemFocus() async {
+    // Exclusive focus loss must not auto-resume (other apps / calls).
+    if (_focusSuspended || !_userWantsPlaying) return;
     try {
       final session = await AudioSession.instance;
       await session.setActive(true);
@@ -2177,6 +2189,7 @@ class MusicProvider extends ChangeNotifier {
 
     _loadingSource = true;
     _userWantsPlaying = true;
+    _focusSuspended = false;
     await _claimAudioFocus(reason: 'play_song_internal');
 
     Future<void> step(String name, [Map<String, Object?> extra = const {}]) async {
@@ -3221,6 +3234,8 @@ class MusicProvider extends ChangeNotifier {
   /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
   /// Never toggles; never pauses.
   Future<void> resumePlayback({String source = 'normal_player'}) {
+    _focusSuspended = false;
+
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
