@@ -1,0 +1,26 @@
+name: Wire modes foundation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/wire_modes_foundation.py"
+      - "lib/providers/mode_provider.dart"
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_lab
+          fetch-depth: 0
+      - run: python3 tools/wire_modes_foundation.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(modes): wire ModeProvider + Modes settings entry"
+          git pull --rebase origin modes_lab || true
+          git push origin modes_lab
