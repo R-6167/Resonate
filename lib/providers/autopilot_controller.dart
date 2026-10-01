@@ -133,6 +133,8 @@ class AutopilotController extends ChangeNotifier {
     if (!_consentLoaded || !intelligence.isEnabled || !intelligence.isAutopilot) return;
     if (music.currentSong == null) return;
     if (!music.isPlaying && !forceTransition) return;
+    // Do not drive queue/transitions while audio focus is yielded.
+    if (music.isFocusSuspended) return;
 
     final now = DateTime.now();
     if (!forceTransition &&

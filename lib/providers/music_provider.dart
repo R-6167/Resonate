@@ -571,8 +571,64 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+
+  /// True while we have yielded to a call / another player.
+  /// Public so Autopilot / UI can avoid driving playback.
+  bool get isFocusSuspended => _focusSuspended;
+
+  /// Explicitly release Android/iOS audio focus so other apps can play undisturbed.
+  Future<void> _abandonAudioFocus({String reason = 'yield'}) async {
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(false);
+    } catch (_) {}
+    try {
+      await ResonateDiagnostics.record('audio_focus_event', {
+        'action': 'abandon_focus',
+        'reason': reason,
+        'songId': currentSong?.id,
+      });
+    } catch (_) {}
+  }
+
+  /// Yield to an external audio source (call, Files, other player).
+  /// Clears play-intent and abandons focus so we cannot bully them back.
+  Future<void> _yieldToExternalAudio({String reason = 'exclusive_loss'}) async {
+    _focusSuspended = true;
+    _userWantsPlaying = false;
+    _focusLostAt = DateTime.now();
+    _isDucked = false;
+    try {
+      await audioPlayer.pause();
+    } catch (_) {}
+    try {
+      await inactivePlayer.pause();
+    } catch (_) {}
+    isPlaying = false;
+    await _abandonAudioFocus(reason: reason);
+    _publishServiceState();
+    notifyListeners();
+    try {
+      await ResonateDiagnostics.record('audio_focus_event', {
+        'action': 'yield_to_external',
+        'reason': reason,
+        'songId': currentSong?.id,
+      });
+    } catch (_) {}
+  }
+
   /// Claim media focus before any intentional play. Safe to call often.
   Future<void> _claimAudioFocus({String reason = 'play'}) async {
+    if (_focusSuspended) {
+      try {
+        await ResonateDiagnostics.record('audio_focus_event', {
+          'action': 'claim_blocked_while_suspended',
+          'reason': reason,
+          'songId': currentSong?.id,
+        });
+      } catch (_) {}
+      return;
+    }
     try {
       final session = await AudioSession.instance;
       await session.setActive(true);
@@ -613,16 +669,8 @@ class MusicProvider extends ChangeNotifier {
         }));
         if (event.begin) {
           if (event.type == AudioInterruptionType.pause) {
-            // Calls / other media: yield completely. Do not keep play-intent
-            // or we will reclaim focus from Google Files / the phone app.
-            _focusLostAt = DateTime.now();
-            _focusSuspended = true;
-            _userWantsPlaying = false;
-            unawaited(pause(source: 'system'));
-            unawaited(ResonateDiagnostics.record('audio_focus_event', {
-              'action': 'yield_exclusive_focus',
-              'songId': currentSong?.id,
-            }));
+            // Calls / other media: full yield + abandon focus (subjective player).
+            unawaited(_yieldToExternalAudio(reason: 'interruption_pause'));
           } else if (event.type == AudioInterruptionType.duck) {
             // Notifications / nav / transient: soft duck with fade.
             unawaited(_duckForInterruption());
@@ -636,11 +684,12 @@ class MusicProvider extends ChangeNotifier {
               unawaited(_unduckAfterInterruption());
             }
           } else if (event.type == AudioInterruptionType.pause) {
-            // Never auto-resume after exclusive focus loss. User must press play.
+            // Focus returned to the system pool — still do not auto-resume.
             final lostAt = _focusLostAt;
             _focusLostAt = null;
             _focusSuspended = true;
             _userWantsPlaying = false;
+            unawaited(_abandonAudioFocus(reason: 'interruption_pause_end'));
             unawaited(ResonateDiagnostics.record('audio_focus_event', {
               'action': 'skip_auto_resume_exclusive_focus_loss',
               'lostMs': lostAt == null
@@ -922,6 +971,15 @@ class MusicProvider extends ChangeNotifier {
         // Clearing it races with _playSongInternal and causes "loaded but needs resume".
         // Advance / queue-exhaust paths own the final isPlaying value.
       } else if (state.playing) {
+        if (_focusSuspended) {
+          // External focus owns the stream — do not adopt play-intent.
+          unawaited(() async {
+            try {
+              await player.pause();
+            } catch (_) {}
+          }());
+          return;
+        }
         if (!isPlaying) {
           isPlaying = true;
           _userWantsPlaying = true;
@@ -937,11 +995,11 @@ class MusicProvider extends ChangeNotifier {
       } else if (!loading &&
           !state.playing &&
           _userWantsPlaying &&
+          !_focusSuspended &&
           !_loadingSource &&
           player.audioSource != null) {
         // Kick play when a source is loaded and we still want audio.
-        // Shorter throttle so auto-next / library taps recover quickly if the
-        // first play() after setAudioSource did not stick.
+        // Never while focus is yielded to another app/call.
         final now = DateTime.now();
         final due = _lastPlayKickAt == null ||
             now.difference(_lastPlayKickAt!) > const Duration(milliseconds: 250);
@@ -949,12 +1007,12 @@ class MusicProvider extends ChangeNotifier {
           _lastPlayKickAt = now;
           isPlaying = true;
           unawaited(() async {
-            // Do not re-claim focus mid-crossfade — it can reset OEM volume/routing mid-ramp.
+            if (_focusSuspended) return;
             if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
             try {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
+              await _claimAudioFocus(reason: 'kick_play');
             } catch (_) {}
+            if (_focusSuspended) return;
             try {
               await player.seek(player.position);
             } catch (_) {}
@@ -973,10 +1031,11 @@ class MusicProvider extends ChangeNotifier {
         if (completedSongId == null || completedSongId == _lastCompletionSongId) return;
         _lastCompletionSongId = completedSongId;
         currentPosition = currentDuration ?? currentPosition;
-        // Stay "want playing" so the next track auto-starts (not resume).
-        // Do NOT set isPlaying=false here — that raced with the advance play()
-        // and left the new track loaded but paused.
-        _userWantsPlaying = true;
+        // Stay "want playing" so the next track auto-starts (not resume),
+        // but never while focus is yielded to another app/call.
+        if (!_focusSuspended) {
+          _userWantsPlaying = true;
+        }
         notifyListeners();
         _publishServiceState();
         final upcoming = _queueIndex < _queue.length - 1 || _repeatMode == PlaybackRepeatMode.all;
