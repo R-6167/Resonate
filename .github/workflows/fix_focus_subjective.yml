@@ -1,0 +1,25 @@
+name: Subjective audio focus
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_focus_subjective.py"
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_lab
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 tools/fix_focus_subjective.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "fix(audio): hard yield — abandon focus until explicit user play"
+          git push origin modes_lab
