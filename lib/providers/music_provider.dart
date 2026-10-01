@@ -606,7 +606,17 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
     isPlaying = false;
     await _abandonAudioFocus(reason: reason);
-    _publishServiceState();
+    // Honest MediaSession immediately (paused, not ready/playing).
+    final handler = audioHandler;
+    if (handler is AudioServiceHandler) {
+      Duration pos = currentPosition;
+      try {
+        pos = audioPlayer.position;
+      } catch (_) {}
+      handler.publishYielded(position: pos);
+    } else {
+      _publishServiceState();
+    }
     notifyListeners();
     try {
       await ResonateDiagnostics.record('audio_focus_event', {
@@ -950,11 +960,30 @@ class MusicProvider extends ChangeNotifier {
     Duration pos = currentPosition;
     Duration? buffered;
     try { pos = audioPlayer.position; buffered = audioPlayer.bufferedPosition; } catch (_) { buffered = currentPosition; }
+    // While focus is yielded, never advertise playing to MediaSession.
+    final sessionPlaying = isPlaying && !_focusSuspended;
     if (positionOnly) {
-      handler.publishPositionTick(playing: isPlaying, position: pos, bufferedPosition: buffered, speed: 1.0);
+      if (_focusSuspended) {
+        handler.publishYielded(position: pos);
+        return;
+      }
+      handler.publishPositionTick(playing: sessionPlaying, position: pos, bufferedPosition: buffered, speed: 1.0);
       return;
     }
-    handler.publishPlayback(song: currentSong, playing: isPlaying, position: pos, duration: currentDuration ?? currentSong?.duration, speed: 1.0, bufferedPosition: buffered, playbackQueue: _queue, queueIndex: _queueIndex);
+    if (_focusSuspended) {
+      handler.publishYielded(position: pos);
+      return;
+    }
+    handler.publishPlayback(
+      song: currentSong,
+      playing: sessionPlaying,
+      position: pos,
+      duration: currentDuration ?? currentSong?.duration,
+      speed: 1.0,
+      bufferedPosition: buffered,
+      playbackQueue: _queue,
+      queueIndex: _queueIndex,
+    );
   }
 
   void _bindActivePlayerStreams() {

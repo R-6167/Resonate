@@ -96,7 +96,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
         MediaAction.skipToNext, MediaAction.skipToPrevious, MediaAction.play, MediaAction.pause, MediaAction.stop,
       },
       androidCompactActionIndices: const [0, 1, 2],
-      processingState: song == null ? AudioProcessingState.idle : AudioProcessingState.ready,
+      processingState: song == null
+          ? AudioProcessingState.idle
+          : (playing ? AudioProcessingState.ready : AudioProcessingState.paused),
       playing: playing,
       updatePosition: position,
       bufferedPosition: bufferedPosition ?? position,
@@ -110,10 +112,14 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     if (!force && _lastPlaying == playing && now.difference(_lastPositionPublish) < const Duration(milliseconds: 400)) return;
     _lastPlaying = playing;
     _lastPositionPublish = now;
+    final hasItem = mediaItem.value != null;
     playbackState.add(playbackState.value.copyWith(
       controls: [MediaControl.skipToPrevious, playing ? MediaControl.pause : MediaControl.play, MediaControl.skipToNext],
       systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward, MediaAction.skipToNext, MediaAction.skipToPrevious, MediaAction.play, MediaAction.pause, MediaAction.stop},
       androidCompactActionIndices: const [0, 1, 2],
+      processingState: !hasItem
+          ? AudioProcessingState.idle
+          : (playing ? AudioProcessingState.ready : AudioProcessingState.paused),
       playing: playing,
       updatePosition: position,
       bufferedPosition: bufferedPosition ?? position,
@@ -121,6 +127,40 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     ));
   }
 
+
+
+  /// Force MediaSession into a non-playing paused state after exclusive focus loss.
+  /// Bypasses position-tick throttling so other apps see an honest session immediately.
+  void publishYielded({Duration? position}) {
+    final pos = position ?? playbackState.value.position;
+    _lastPlaying = false;
+    _lastPositionPublish = DateTime.now();
+    final hasItem = mediaItem.value != null;
+    playbackState.add(playbackState.value.copyWith(
+      controls: const [
+        MediaControl.skipToPrevious,
+        MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+        MediaAction.skipToNext,
+        MediaAction.skipToPrevious,
+        MediaAction.play,
+        MediaAction.pause,
+        MediaAction.stop,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState:
+          hasItem ? AudioProcessingState.paused : AudioProcessingState.idle,
+      playing: false,
+      updatePosition: pos,
+      bufferedPosition: pos,
+      speed: 1.0,
+    ));
+  }
 
   MediaItem songToMediaItem(Song song) {
     final art = song.albumArt?.trim() ?? '';
@@ -168,7 +208,8 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     final callback = _onPlay;
     if (callback == null) return;
     PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'play');
-    publishPositionTick(playing: true, position: playbackState.value.position, force: true);
+    // Do not optimistically set playing:true — wait for MusicProvider to publish
+    // after the engine actually starts (avoids fighting other apps for focus).
     await callback();
   }
 
