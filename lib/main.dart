@@ -18,6 +18,7 @@ import 'providers/listening_history_provider.dart';
 import 'providers/music_provider.dart';
 import 'providers/playback_features_provider.dart';
 import 'providers/playlist_provider.dart';
+import 'providers/security_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
@@ -148,6 +149,7 @@ class ResonateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => SecurityProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (_) => MusicProvider(audioHandler: audioHandler),
