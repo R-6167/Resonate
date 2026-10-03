@@ -27,7 +27,7 @@ dependencies:
     git:
       url: https://github.com/innotrepid/Innotrepid-Security.git
       path: packages/innotrepid_security
-      ref: foundation
+      ref: e1a77102721e7e36cbd83688de932a41b7a8e0ed
 
 dev_dependencies:
   flutter_test:
