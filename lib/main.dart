@@ -149,7 +149,7 @@ class ResonateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => SecurityProvider()),
+        ChangeNotifierProvider(create: (_) => SecurityProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(
           create: (_) => MusicProvider(audioHandler: audioHandler),
