@@ -30,7 +30,7 @@ class DjPcmProfileAnalyzer {
 
   const DjPcmProfileAnalyzer({
     DjPcmBpmAnalyzer bpm = const DjPcmBpmAnalyzer(),
-    DjPcmFeatureAnalyzer features = DjPcmFeatureAnalyzer(),
+    DjPcmFeatureAnalyzer features = const DjPcmFeatureAnalyzer(),
   }) : _bpm = bpm, _features = features;
 
   DjTrackProfile analyze({
