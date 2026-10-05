@@ -18,7 +18,6 @@ class DjRiskEngine {
     if ((outgoing.spectrum.bassDensity - incoming.spectrum.bassDensity).abs() > 0.5) {
       risks.add(DjRiskType.bassCollision);
     }
-
     return risks.toSet().toList();
   }
 
@@ -34,6 +33,6 @@ class DjRiskEngine {
         DjRiskType.lowConfidence => 0.25,
       };
     }
-    return value.clamp(0.0, 1.0);
+    return value.clamp(0.0, 1.0).toDouble();
   }
 }
