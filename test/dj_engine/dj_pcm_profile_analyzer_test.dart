@@ -39,8 +39,6 @@ void main() {
     expect(profile.hasKey, isFalse);
     expect(profile.analysisConfidence, 0);
   });
-}
-
 
   test('decoded PCM contributes real spectral profile data', () {
     const sampleRate = 11025;
@@ -66,3 +64,5 @@ void main() {
     expect(profile.spectrum.mids, greaterThan(profile.spectrum.bass));
     expect(profile.spectrum.spectralFlux, greaterThanOrEqualTo(0));
   });
+
+}
