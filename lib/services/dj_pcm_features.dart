@@ -19,6 +19,12 @@ class DjPcmFeatures {
   /// intro | build | drop | chorus | breakdown | outro | quiet_intro |
   /// quiet_outro | energetic | unknown
   final String sectionHint;
+  final double bassEnergy;
+  final double midsEnergy;
+  final double highsEnergy;
+  final double spectralCentroid;
+  final double spectralFlux;
+  final double bassDensity;
 
   const DjPcmFeatures({
     this.keyRoot,
@@ -32,6 +38,12 @@ class DjPcmFeatures {
     this.bodyEnergy,
     this.peakEnergy,
     this.sectionHint = 'unknown',
+    this.bassEnergy = 0.0,
+    this.midsEnergy = 0.0,
+    this.highsEnergy = 0.0,
+    this.spectralCentroid = 0.0,
+    this.spectralFlux = 0.0,
+    this.bassDensity = 0.0,
   });
 }
 
@@ -57,6 +69,7 @@ class DjPcmFeatureAnalyzer {
       const rate = 11025;
       final section = _structureFromMono(mono, rate, windowRole: windowRole);
       final key = _keyFromMono(mono, rate);
+      final spectral = _spectralFromMono(mono, rate);
 
       return DjPcmFeatures(
         keyRoot: key.$1,
@@ -70,6 +83,12 @@ class DjPcmFeatureAnalyzer {
         bodyEnergy: section.bodyEnergy,
         peakEnergy: section.peakEnergy,
         sectionHint: section.sectionHint,
+        bassEnergy: spectral.bass,
+        midsEnergy: spectral.mids,
+        highsEnergy: spectral.highs,
+        spectralCentroid: spectral.centroid,
+        spectralFlux: spectral.flux,
+        bassDensity: spectral.bassDensity,
       );
     } catch (_) {
       return const DjPcmFeatures();
@@ -254,6 +273,21 @@ class DjPcmFeatureAnalyzer {
       } else {
         hint = 'energetic';
       }
+    } else {
+      final early = means.take(2).fold<double>(0, (a, b) => a + b) / 2.0;
+      final center = means.skip(3).take(2).fold<double>(0, (a, b) => a + b) / 2.0;
+      final late = means.skip(6).fold<double>(0, (a, b) => a + b) / math.max(1, means.length - 6);
+      if (peak > math.max(1e-9, body) * 1.22 && peakIdx > n ~/ 5) {
+        hint = peakIdx > n * 0.55 ? 'drop' : 'chorus';
+      } else if (center < early * 0.78 && center < late * 0.78) {
+        hint = 'breakdown';
+      } else if (late > early * 1.18 && late > center * 1.05) {
+        hint = 'build';
+      } else if (early > late * 1.20) {
+        hint = 'outro';
+      } else {
+        hint = 'energetic';
+      }
     }
 
     return (
@@ -264,6 +298,66 @@ class DjPcmFeatureAnalyzer {
       bodyEnergy: body.isFinite ? body : null,
       peakEnergy: peak.isFinite ? peak : null,
       sectionHint: hint,
+    );
+  }
+
+  ({double bass, double mids, double highs, double centroid, double flux, double bassDensity})
+      _spectralFromMono(Float64List mono, int rate) {
+    const frame = 512;
+    const hop = 256;
+    if (mono.length < frame) {
+      return (bass: 0, mids: 0, highs: 0, centroid: 0, flux: 0, bassDensity: 0);
+    }
+    var bassSum = 0.0, midsSum = 0.0, highsSum = 0.0;
+    var centroidSum = 0.0, fluxSum = 0.0;
+    var frames = 0;
+    var previous = List<double>.filled(frame ~/ 2, 0.0);
+    for (var start = 0; start + frame <= mono.length; start += hop) {
+      final magnitudes = List<double>.filled(frame ~/ 2, 0.0);
+      var total = 0.0, weighted = 0.0;
+      for (var k = 1; k < frame ~/ 2; k++) {
+        var re = 0.0, im = 0.0;
+        for (var n = 0; n < frame; n++) {
+          final w = 0.5 - 0.5 * math.cos(2 * math.pi * n / (frame - 1));
+          final a = 2 * math.pi * k * n / frame;
+          final s = mono[start + n] * w;
+          re += s * math.cos(a);
+          im -= s * math.sin(a);
+        }
+        final mag = math.sqrt(re * re + im * im);
+        magnitudes[k] = mag;
+        total += mag;
+        weighted += mag * k;
+      }
+      if (total <= 1e-9) continue;
+      var bass = 0.0, mids = 0.0, highs = 0.0, flux = 0.0;
+      for (var k = 1; k < frame ~/ 2; k++) {
+        final freq = k * rate / frame;
+        final mag = magnitudes[k];
+        if (freq < 180) bass += mag;
+        else if (freq < 2000) mids += mag;
+        else highs += mag;
+        final current = mag / total;
+        flux += math.max(0.0, current - previous[k]);
+        previous[k] = current;
+      }
+      final norm = math.max(1e-9, bass + mids + highs);
+      bassSum += bass / norm;
+      midsSum += mids / norm;
+      highsSum += highs / norm;
+      centroidSum += weighted / total / (frame / 2);
+      fluxSum += flux.clamp(0.0, 1.0).toDouble();
+      frames++;
+    }
+    if (frames == 0) return (bass: 0, mids: 0, highs: 0, centroid: 0, flux: 0, bassDensity: 0);
+    final bass = bassSum / frames, mids = midsSum / frames, highs = highsSum / frames;
+    return (
+      bass: bass.clamp(0.0, 1.0).toDouble(),
+      mids: mids.clamp(0.0, 1.0).toDouble(),
+      highs: highs.clamp(0.0, 1.0).toDouble(),
+      centroid: (centroidSum / frames).clamp(0.0, 1.0).toDouble(),
+      flux: (fluxSum / frames).clamp(0.0, 1.0).toDouble(),
+      bassDensity: (bass / math.max(1e-9, bass + mids + highs)).clamp(0.0, 1.0).toDouble(),
     );
   }
 
