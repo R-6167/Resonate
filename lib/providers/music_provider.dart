@@ -2608,6 +2608,7 @@ class MusicProvider extends ChangeNotifier {
         equalizerB: _equalizerB,
         outgoing: audioPlayer,
         outgoingUri: currentSong?.filePath,
+        beatMs: (await _djAnalysis!.getProfile(currentSong!.id))?.beatGrid.beatMs ?? const <int>[],
       );
       _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
