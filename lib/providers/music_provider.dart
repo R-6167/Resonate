@@ -2729,6 +2729,7 @@ class MusicProvider extends ChangeNotifier {
             profileB: profileB,
             plan: v2,
           );
+          _activeDjExecutionPlan = v2;
           return;
         }
         await ResonateDiagnostics.recordDj(stage: 'v2_brain', outcome: 'fallback', reason: v2.reason, songId: incomingSong.id, extra: {'kind': v2.candidate.kind.name, 'score': v2.candidate.score});
