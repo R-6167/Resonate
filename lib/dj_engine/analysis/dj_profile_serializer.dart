@@ -57,9 +57,9 @@ class DjProfileSerializer {
         'transitions': {
           'bestIntroMs': profile.transitions.bestIntroMs,
           'bestOutroMs': profile.transitions.bestOutroMs,
-          'safeMixIns': _points(profile.transitions.safeMixIns),
-          'safeMixOuts': _points(profile.transitions.safeMixOuts),
-          'riskyPoints': _points(profile.transitions.riskyPoints),
+          'safeMixIns': _encodePoints(profile.transitions.safeMixIns),
+          'safeMixOuts': _encodePoints(profile.transitions.safeMixOuts),
+          'riskyPoints': _encodePoints(profile.transitions.riskyPoints),
         },
       });
 
@@ -107,11 +107,10 @@ class DjProfileSerializer {
     );
   }
 
-  List<Map<String, dynamic>> _points(List<dynamic>? values) => (values ?? [])
-      .whereType<Map>()
+  List<Map<String, dynamic>> _encodePoints(List<DjTimePoint> values) => (values ?? [])
       .map((p) => {
-            'timeMs': (p['timeMs'] as num?)?.toInt() ?? 0,
-            'confidence': (p['confidence'] as num?)?.toDouble() ?? 0,
+            'timeMs': p.timeMs,
+            'confidence': p.confidence,
           })
       .toList();
 
