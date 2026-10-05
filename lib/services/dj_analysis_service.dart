@@ -249,7 +249,7 @@ class DjAnalysisService {
     );
     await saveProfile(profile);
 
-    final bpm = profile.hasTempo ? profile.beatGrid!.bpm : legacy?.bpm ?? 0;
+    final bpm = profile.beatGrid.bpm ?? legacy?.bpm ?? 0;
     final bpmConfidence = profile.hasTempo
         ? profile.beatGrid!.confidence
         : legacy?.confidence ?? 0;
@@ -258,9 +258,7 @@ class DjAnalysisService {
     final keyConfidence = profile.hasKey
         ? profile.keyConfidence
         : legacy?.keyConfidence ?? 0;
-    final beatOffset = profile.hasTempo
-        ? profile.beatGrid!.firstBeatMs
-        : legacy?.beatOffsetMs ?? 0;
+    final beatOffset = profile.beatGrid.firstBeatMs ?? legacy?.beatOffsetMs ?? 0;
 
     return DjBpmEstimate(
       bpm: bpm,
