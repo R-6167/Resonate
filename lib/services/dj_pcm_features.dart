@@ -346,7 +346,7 @@ class DjPcmFeatureAnalyzer {
       env.add(sum / hop);
     }
     if (env.length < 40) {
-      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+      return (positions: const <int>[], confidence: 0.0, phaseStability: 0.0, downbeatMs: const <int>[], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
 
     final onset = List<double>.filled(env.length, 0.0);
@@ -356,7 +356,7 @@ class DjPcmFeatureAnalyzer {
       onsetEnergy += onset[i];
     }
     if (onsetEnergy <= 1e-9) {
-      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+      return (positions: const <int>[], confidence: 0.0, phaseStability: 0.0, downbeatMs: const <int>[], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
 
     final minLag = (rate / hop * 60 / 180).round().clamp(8, 200);
@@ -378,7 +378,7 @@ class DjPcmFeatureAnalyzer {
       }
     }
     if (bestLag == 0 || bestScore <= 1e-9) {
-      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+      return (positions: const <int>[], confidence: 0.0, phaseStability: 0.0, downbeatMs: const <int>[], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
 
     final periodFrames = bestLag;
@@ -400,7 +400,7 @@ class DjPcmFeatureAnalyzer {
       }
     }
     if (seedValue <= 1e-9) {
-      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+      return (positions: const <int>[], confidence: 0.0, phaseStability: 0.0, downbeatMs: const <int>[], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
 
     final phaseResiduals = <double>[];
