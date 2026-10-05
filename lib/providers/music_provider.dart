@@ -2852,10 +2852,10 @@ class MusicProvider extends ChangeNotifier {
       _lastDjFromId = outgoingSong.id;
       _lastDjToId = incomingSong.id;
       _lastDjStrategy = appliedStrategy;
-      _lastDjTransitionScore = plan.score;
-      _lastDjTransitionConfidence = plan.confidence;
+      _lastDjTransitionScore = null;
+      _lastDjTransitionConfidence = math.min(plan.confidenceA, plan.confidenceB);
       _lastDjTransitionRisks = const <String>[];
-      _lastDjTransitionDurationMs = plan.durationMs;
+      _lastDjTransitionDurationMs = plan.crossfadeBiasMs.abs();
       _lastDjRecoveryAttempts = 0;
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
