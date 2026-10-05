@@ -108,6 +108,7 @@ class MusicProvider extends ChangeNotifier {
   final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
   final DjEngine _djEngine = const DjEngine();
+  DjExecutionPlan? _activeDjExecutionPlan;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
   DateTime? _lastDjHandoffAt;
@@ -1653,8 +1654,9 @@ class MusicProvider extends ChangeNotifier {
     final fromSongId = currentSong?.id;
     try {
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+      final plannedBias = _lastDjCrossfadeBiasMs;
       final xfMs = (djActive
-              ? _crossfadeDurationMs.clamp(500, 6500)
+              ? (_crossfadeDurationMs + plannedBias).clamp(500, 6500)
               : _crossfadeDurationMs)
           .toInt();
       final timeout =
@@ -2701,6 +2703,7 @@ class MusicProvider extends ChangeNotifier {
     required Song incomingSong,
   }) async {
     _lastDjCrossfadeBiasMs = 0;
+    _activeDjExecutionPlan = null;
     if ((!_djBeatAlignActive && !_djTempoMatchActive) || _djAnalysis == null) {
       return;
     }
@@ -3110,6 +3113,7 @@ class MusicProvider extends ChangeNotifier {
         outgoingSong: outgoingSong,
         incomingSong: nextSong,
       );
+      final djExecution = _activeDjExecutionPlan;
       final bassDuckNeeded = _lastDjBassDuckNeeded;
       if (_automaticTransitionGeneration != transitionGeneration ||
           _authority.isStale(generation) ||
@@ -3133,7 +3137,7 @@ class MusicProvider extends ChangeNotifier {
           'songId': nextSong.id,
         }));
       }
-      final sfxStep = plan.steps.cast<DjExecutionStep?>().firstWhere(
+      final sfxStep = djExecution == null ? null : djExecution.steps.cast<DjExecutionStep?>().firstWhere(
         (step) => step?.action == 'trigger_sfx',
         orElse: () => null,
       );
