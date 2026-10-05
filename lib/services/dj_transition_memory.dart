@@ -72,7 +72,7 @@ class DjTransitionMemory {
         final total = effective.$1 + effective.$2;
         if (total <= 0) continue;
         out[entry.key] = (
-          _bias(effective.$1.round(), effective.$2.round()),
+          _biasDouble(effective.$1, effective.$2),
           (total / 8.0).clamp(0.0, 1.0).toDouble(),
         );
       }
@@ -228,10 +228,12 @@ class DjTransitionMemory {
     return (ok * factor, bad * factor);
   }
 
-  static double _bias(int ok, int bad) {
+  static double _bias(int ok, int bad) => _biasDouble(ok.toDouble(), bad.toDouble());
+
+  static double _biasDouble(double ok, double bad) {
     final total = ok + bad;
     if (total <= 0) return 0.0;
-    return ((ok - bad) / total).clamp(-1.0, 1.0);
+    return ((ok - bad) / total).clamp(-1.0, 1.0).toDouble();
   }
 
   static String _pairKey(String fromId, String toId) => '$fromId>$toId';
