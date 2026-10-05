@@ -608,7 +608,7 @@ class MainActivity : AudioServiceActivity() {
                             if (inBuf != null) {
                                 inBuf.clear()
                                 val sampleSize = extractor.readSampleData(inBuf, 0)
-                                if (sampleSize < 0 || extractor.sampleTime > maxUs) {
+                                if (sampleSize < 0 || extractor.sampleTime < 0L || extractor.sampleTime > startMs * 1000L + maxUs) {
                                     codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                     inputDone = true
                                 } else {
