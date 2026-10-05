@@ -462,11 +462,11 @@ class DjSfxRack {
             ? DjSfxPreset.repeatRestart
             : DjSfxPreset.repeat;
       case DjTransitionKind.beatBlend:
-        return energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat;
+        return energyScore >= 0.86 ? DjSfxPreset.stutter : (energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat);
       case DjTransitionKind.energyBridge:
         return energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo;
       case DjTransitionKind.outroIntro:
-        return energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo;
+        return energyScore >= 0.82 ? DjSfxPreset.brake : (energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo);
       case DjTransitionKind.safeCrossfade:
         return DjSfxPreset.dryEcho;
       case null:
@@ -475,7 +475,7 @@ class DjSfxRack {
     if (section?.type == DjSectionType.build ||
         section?.type == DjSectionType.chorus ||
         section?.type == DjSectionType.drop) {
-      return energyScore >= 0.8 ? DjSfxPreset.scratch : DjSfxPreset.echo;
+      return energyScore >= 0.86 ? DjSfxPreset.stutter : (energyScore >= 0.8 ? DjSfxPreset.scratch : DjSfxPreset.echo);
     }
     return pickRandom(energyScore: energyScore);
   }
