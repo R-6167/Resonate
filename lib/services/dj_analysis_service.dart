@@ -6,6 +6,7 @@ import '../models/dj_analysis.dart';
 import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_bpm_estimator.dart';
+import '../dj_engine/analysis/dj_pcm_profile_analyzer.dart';
 
 /// Loads and computes BPM / key hints for library tracks (DJ Mode).
 ///
@@ -18,6 +19,7 @@ class DjAnalysisService {
 
   final DatabaseHelper _db;
   final DjBpmEstimator _estimator;
+  final DjPcmProfileAnalyzer _profileAnalyzer = const DjPcmProfileAnalyzer();
   final Map<String, DjAnalysis> _memory = {};
   final Set<String> _inFlight = {};
 
@@ -109,10 +111,11 @@ class DjAnalysisService {
     _inFlight.add(song.id);
     try {
       final size = await _fileSize(song.filePath);
-      final estimate = await _estimator.estimateFile(
+      final legacyEstimate = await _estimator.estimateFile(
         song.filePath,
         durationMs: song.duration.inMilliseconds,
       );
+      final estimate = await _estimateWithV2Profile(song, legacyEstimate);
       final analysis = estimate == null
           ? DjAnalysis(
               songId: song.id,
@@ -161,6 +164,90 @@ class DjAnalysisService {
     } finally {
       _inFlight.remove(song.id);
     }
+  }
+
+  Future<DjBpmEstimate?> _estimateWithV2Profile(
+    Song song,
+    DjBpmEstimate? legacy,
+  ) async {
+    final durationMs = song.duration.inMilliseconds;
+    if (durationMs <= 0) return legacy;
+
+    final windows = <DjDecodedPcmWindow>[];
+    Future<void> addWindow(int startMs, String role, double seconds) async {
+      final decoded = await _estimator.extractDecodedPcmWindow(
+        song.filePath,
+        maxSeconds: seconds,
+        startMs: startMs,
+      );
+      if (decoded == null) return;
+      windows.add(
+        DjDecodedPcmWindow(
+          pcm: decoded.pcm,
+          sampleRate: decoded.sampleRate,
+          channels: decoded.channels,
+          startMs: startMs,
+          role: role,
+        ),
+      );
+    }
+
+    await addWindow(0, 'start', 15.0);
+    if (durationMs > 60000) {
+      await addWindow(durationMs ~/ 2, 'mid', 15.0);
+    }
+    if (durationMs > 45000) {
+      await addWindow(
+        (durationMs - 15000).clamp(0, durationMs - 1000),
+        'end',
+        15.0,
+      );
+    }
+
+    if (windows.isEmpty) return legacy;
+
+    final profile = _profileAnalyzer.analyze(
+      songId: song.id,
+      durationMs: durationMs,
+      windows: windows,
+      analysisVersion: DjAnalysis.currentVersion,
+    );
+
+    final bpm = profile.hasTempo ? profile.beatGrid!.bpm : legacy?.bpm ?? 0;
+    final bpmConfidence = profile.hasTempo
+        ? profile.beatGrid!.confidence
+        : legacy?.confidence ?? 0;
+    final keyRoot = profile.hasKey ? profile.keyRoot : legacy?.keyRoot;
+    final keyMode = profile.hasKey ? profile.keyMode : legacy?.keyMode;
+    final keyConfidence = profile.hasKey
+        ? profile.keyConfidence
+        : legacy?.keyConfidence ?? 0;
+    final beatOffset = profile.hasTempo
+        ? profile.beatGrid!.firstBeatMs
+        : legacy?.beatOffsetMs ?? 0;
+
+    return DjBpmEstimate(
+      bpm: bpm,
+      confidence: bpmConfidence,
+      beatOffsetMs: beatOffset,
+      source: profile.hasTempo ? 'pcm_profile_v2' : legacy?.source ?? 'none',
+      keyRoot: keyRoot,
+      keyMode: keyMode,
+      keyConfidence: keyConfidence,
+      energy: profile.energyCurve.isNotEmpty
+          ? profile.energyCurve.first.value
+          : legacy?.energy,
+      loudness: profile.energyCurve.isNotEmpty
+          ? profile.energyCurve.first.loudness
+          : legacy?.loudness,
+      introHintMs: profile.transitions.bestIntroMs ?? legacy?.introHintMs,
+      outroHintMs: profile.transitions.bestOutroMs != null
+          ? durationMs - profile.transitions.bestOutroMs!
+          : legacy?.outroHintMs,
+      sectionHint: profile.sections.isNotEmpty
+          ? profile.sections.first.type.name
+          : legacy?.sectionHint,
+    );
   }
 
   /// Fire-and-forget analysis for preload / idle.
