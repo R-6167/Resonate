@@ -1641,6 +1641,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _runAutomaticCrossfade() async {
     final generation = _authority.beginAutomatic('automatic_crossfade');
+    final transitionMarker = _automaticTransitionGeneration + 1;
     final fromIndex = _queueIndex;
     final fromSongId = currentSong?.id;
     try {
@@ -1660,7 +1661,9 @@ class MusicProvider extends ChangeNotifier {
         return false;
       });
       if (ok) return;
-      if (currentSong?.id != fromSongId || _queueIndex != fromIndex) {
+      if (_automaticTransitionGeneration != transitionMarker ||
+          _authority.isStale(generation) ||
+          currentSong?.id != fromSongId || _queueIndex != fromIndex) {
         await ResonateDiagnostics.record('crossfade_fallback_skipped_already_advanced', {
           'fromSongId': fromSongId,
           'fromIndex': fromIndex,
@@ -1680,7 +1683,9 @@ class MusicProvider extends ChangeNotifier {
         await inactivePlayer.stop();
       } catch (_) {}
       await _softFadeOutActive(milliseconds: 500);
-      if (currentSong?.id != fromSongId || _queueIndex != fromIndex) return;
+      if (_automaticTransitionGeneration != transitionMarker ||
+          _authority.isStale(generation) ||
+          currentSong?.id != fromSongId || _queueIndex != fromIndex) return;
       final nextIdx = fromIndex < _queue.length - 1
           ? fromIndex + 1
           : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1);
@@ -1691,7 +1696,9 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('automatic crossfade error: $e');
-      if (currentSong?.id == fromSongId && _queueIndex == fromIndex) {
+      if (_automaticTransitionGeneration == transitionMarker &&
+          !_authority.isStale(generation) &&
+          currentSong?.id == fromSongId && _queueIndex == fromIndex) {
         try {
           await inactivePlayer.stop();
         } catch (_) {}
@@ -1710,8 +1717,10 @@ class MusicProvider extends ChangeNotifier {
         }
       }
     } finally {
-      _automaticCrossfadeInFlight = false;
-      _crossfadeInProgress = false;
+      if (_automaticTransitionGeneration == transitionMarker) {
+        _automaticCrossfadeInFlight = false;
+        _crossfadeInProgress = false;
+      }
     }
   }
 
