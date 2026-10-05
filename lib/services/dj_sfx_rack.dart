@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
+import '../dj_engine/core/dj_types.dart';
 
 /// Transition SFX — engine FX + optional one-shot sample packs.
 enum DjSfxPreset {
@@ -41,6 +42,7 @@ class DjSfxRack {
   int _trackFxGen = 0;
   bool _trackActionRunning = false;
   List<int> _beatMs = const <int>[];
+  List<int> _phraseAnchors = const <int>[];
 
   static const presets = DjSfxPreset.values;
 
@@ -93,14 +95,17 @@ class DjSfxRack {
     AudioPlayer? outgoing,
     String? outgoingUri,
     List<int> beatMs = const <int>[],
+    List<DjSection> sections = const <DjSection>[],
+    DjTransitionKind? transitionKind,
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    activePreset = preset ?? pickRandom(energyScore: score);
+    activePreset = preset ?? _pickPhraseAwarePreset(energyScore: score, transitionKind: transitionKind, sections: sections, positionMs: outgoing?.position.inMilliseconds ?? 0);
     engaged = true;
     _eqTouched = false;
     _outgoing = outgoing;
     _beatMs = List<int>.from(beatMs)..sort();
+    _phraseAnchors = _buildPhraseAnchors(_beatMs);
     _savedOutgoingSpeed = 1.0;
     try {
       if (outgoing != null) {
@@ -192,6 +197,7 @@ class DjSfxRack {
       _outgoing = null;
       _savedOutgoingSpeed = 1.0;
       _beatMs = const <int>[];
+      _phraseAnchors = const <int>[];
     }
   }
 
@@ -226,7 +232,7 @@ class DjSfxRack {
     if (out == null) return;
     final gen = ++_oneshotGen;
     try {
-      final startMs = out.position.inMilliseconds;
+      final startMs = _musicalEchoStart(out.position.inMilliseconds);
       if (startMs < 0) return;
       final durationMs = out.duration?.inMilliseconds;
       final endMs = math.min(
@@ -295,7 +301,7 @@ class DjSfxRack {
       if (current < 120) return;
 
       if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
-        final anchor = _musicalAnchor(current);
+        final anchor = _musicalPhraseAnchor(current);
         final sliceMs = _musicalSliceMs(anchor);
         final repeatAnchor = math.max(0, anchor - sliceMs);
         for (var i = 0; i < 3; i++) {
@@ -313,7 +319,7 @@ class DjSfxRack {
         return;
       }
 
-      final center = _musicalAnchor(current);
+      final center = _musicalPhraseAnchor(current);
       const strokes = <int>[120, -100, 150, -130, 80];
       for (final delta in strokes) {
         if (gen != _trackFxGen || !engaged) return;
@@ -348,6 +354,78 @@ class DjSfxRack {
     final i = _beatMs.indexOf(anchorMs);
     if (i < 0 || i + 1 >= _beatMs.length) return 700;
     return (_beatMs[i + 1] - _beatMs[i]).clamp(250, 1400);
+  }
+
+  DjSfxPreset _pickPhraseAwarePreset({
+    required double energyScore,
+    required DjTransitionKind? transitionKind,
+    required List<DjSection> sections,
+    required int positionMs,
+  }) {
+    DjSection? section;
+    for (final s in sections) {
+      if (positionMs >= s.startMs && positionMs < s.endMs) {
+        section = s;
+        break;
+      }
+    }
+    switch (transitionKind) {
+      case DjTransitionKind.breakdownDrop:
+        return energyScore >= 0.72 ? DjSfxPreset.impact : DjSfxPreset.whoosh;
+      case DjTransitionKind.phraseBlend:
+        return section?.type == DjSectionType.breakdown
+            ? DjSfxPreset.repeatRestart
+            : DjSfxPreset.repeat;
+      case DjTransitionKind.beatBlend:
+        return energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat;
+      case DjTransitionKind.energyBridge:
+        return energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo;
+      case DjTransitionKind.outroIntro:
+        return energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo;
+      case DjTransitionKind.safeCrossfade:
+        return DjSfxPreset.dryEcho;
+      case null:
+        break;
+    }
+    if (section?.type == DjSectionType.build ||
+        section?.type == DjSectionType.chorus ||
+        section?.type == DjSectionType.drop) {
+      return energyScore >= 0.8 ? DjSfxPreset.scratch : DjSfxPreset.echo;
+    }
+    return pickRandom(energyScore: energyScore);
+  }
+
+  List<int> _buildPhraseAnchors(List<int> beats) {
+    if (beats.length < 16) return const <int>[];
+    final result = <int>[];
+    for (var i = 0; i < beats.length; i += 16) {
+      result.add(beats[i]);
+    }
+    return result;
+  }
+
+  int _musicalPhraseAnchor(int currentMs) {
+    if (_phraseAnchors.isEmpty) return _musicalAnchor(currentMs);
+    var best = _phraseAnchors.first;
+    var distance = (best - currentMs).abs();
+    for (final anchor in _phraseAnchors) {
+      if (anchor > currentMs + 1400) break;
+      final d = (anchor - currentMs).abs();
+      if (d < distance) {
+        best = anchor;
+        distance = d;
+      }
+    }
+    return math.max(0, best);
+  }
+
+  int _musicalEchoStart(int currentMs) {
+    if (_beatMs.length < 2) return math.max(0, currentMs - 850);
+    final anchor = _musicalAnchor(currentMs);
+    final i = _beatMs.indexOf(anchor);
+    if (i <= 0) return math.max(0, anchor - 850);
+    final beatDuration = (_beatMs[i] - _beatMs[i - 1]).clamp(250, 1400);
+    return math.max(0, anchor - beatDuration);
   }
 
   bool _usesEq(DjSfxPreset p) =>
