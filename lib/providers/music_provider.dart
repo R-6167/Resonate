@@ -113,6 +113,7 @@ class MusicProvider extends ChangeNotifier {
   /// Soft energy-bridge bias applied to the next crossfade length (ms).
   int _lastDjCrossfadeBiasMs = 0;
   double _lastDjEnergyScore = 0.5;
+  bool _lastDjBassDuckNeeded = false;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -2863,6 +2864,7 @@ class MusicProvider extends ChangeNotifier {
     final candidate = plan.candidate;
     _lastDjCrossfadeBiasMs = 0;
     _lastDjEnergyScore = candidate.scores['energy'] ?? 0.5;
+    _lastDjBassDuckNeeded = candidate.risks.contains(DjRiskType.bassCollision);
 
     // The V2 execution planner is now the source of truth for transition
     // timing. The existing A/B crossfade loop remains the actual audio executor.
@@ -3017,6 +3019,18 @@ class MusicProvider extends ChangeNotifier {
         outgoingSong: outgoingSong,
         incomingSong: nextSong,
       );
+      if (_lastDjBassDuckNeeded) {
+        bassDuckOriginal = await _audioEffectsController.duckBassForTransition(
+          equalizer: incomingEq,
+          attenuationDb: 4.0,
+        );
+        unawaited(ResonateDiagnostics.record('dj_bass_duck', {
+          'action': 'engage',
+          'attenuationDb': 4.0,
+          'bands': bassDuckOriginal.keys.toList(),
+          'songId': nextSong.id,
+        }));
+      }
       await _engageDjTransitionSfx(energyScore: _lastDjEnergyScore);
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
@@ -3235,6 +3249,20 @@ class MusicProvider extends ChangeNotifier {
       try {
         await _restoreDjTransitionSfx();
       } catch (_) {}
+      try {
+        if (bassDuckOriginal.isNotEmpty) {
+          await _audioEffectsController.restoreBassAfterTransition(
+            equalizer: incomingEq,
+            original: bassDuckOriginal,
+          );
+          await ResonateDiagnostics.record('dj_bass_duck', {
+            'action': 'restore',
+            'bands': bassDuckOriginal.keys.toList(),
+            'songId': nextSong.id,
+          });
+        }
+      } catch (_) {}
+      _lastDjBassDuckNeeded = false;
       // If UI thinks we are playing but active engine is near-silent, unstick.
       try {
         final active = audioPlayer;
