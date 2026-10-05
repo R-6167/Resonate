@@ -24,6 +24,8 @@ class DjPcmBpmEstimate {
 }
 
 class DjPcmBpmAnalyzer {
+  const DjPcmBpmAnalyzer();
+
   /// Uncompressed WAV path helper (legacy).
   Future<DjPcmBpmEstimate?> analyzeWav(
     String path, {
