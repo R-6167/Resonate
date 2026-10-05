@@ -67,7 +67,9 @@ void main() {
       gaps.where((gap) => (gap - 500).abs() <= 30).length,
       greaterThan(gaps.length * 0.8),
     );
-    expect(profile.beatGrid.beatMs.last, lessThan(profile.durationMs));
+    final lastBeat = profile.beatGrid.beatMs.last;
+    expect(lastBeat, isNotNull);
+    expect(lastBeat!, lessThan(profile.durationMs));
   });
 
   test('an incompatible local tempo does not create a mixed beat grid', () {
