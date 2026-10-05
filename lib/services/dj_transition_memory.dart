@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -50,6 +51,59 @@ class DjTransitionMemory {
       return _bias(_count(strategyRow['ok']), _count(strategyRow['bad']));
     } catch (_) {
       return 0.0;
+    }
+  }
+
+  /// Returns a decayed signal and evidence strength for each learned strategy.
+  /// Evidence strength is normalized so old/small samples cannot overpower the
+  /// musical score in the autonomous selector.
+  static Future<Map<String, (double signal, double evidence)>> pairStrategySignals(
+    String fromId,
+    String toId,
+  ) async {
+    if (fromId.isEmpty || toId.isEmpty) return {};
+    try {
+      final row = (await _load())[_pairKey(fromId, toId)];
+      if (row == null) return {};
+      final now = DateTime.now();
+      final out = <String, (double, double)>{};
+      for (final entry in _strategyRows(row).entries) {
+        final effective = _decayedCounts(entry.value, now);
+        final total = effective.$1 + effective.$2;
+        if (total <= 0) continue;
+        out[entry.key] = (
+          _bias(effective.$1.round(), effective.$2.round()),
+          (total / 8.0).clamp(0.0, 1.0).toDouble(),
+        );
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Returns decayed global strategy signals for autonomous reranking.
+  static Future<Map<String, (double signal, double evidence)>> strategySignals() async {
+    try {
+      final map = await _load();
+      final now = DateTime.now();
+      final totals = <String, (double ok, double bad)>{};
+      for (final row in map.values) {
+        for (final entry in _strategyRows(row).entries) {
+          final x = _decayedCounts(entry.value, now);
+          final old = totals[entry.key] ?? (0.0, 0.0);
+          totals[entry.key] = (old.$1 + x.$1, old.$2 + x.$2);
+        }
+      }
+      return {
+        for (final entry in totals.entries)
+          entry.key: (
+            _bias(entry.value.$1.round(), entry.value.$2.round()),
+            ((entry.value.$1 + entry.value.$2) / 20.0).clamp(0.0, 1.0).toDouble(),
+          ),
+      };
+    } catch (_) {
+      return {};
     }
   }
 
@@ -157,6 +211,22 @@ class DjTransitionMemory {
   }
 
   static int _count(dynamic value) => value is num ? value.toInt() : 0;
+
+  /// Exponential evidence decay prevents one early mistake or success from
+  /// permanently defining a transition. Half-life is 21 days.
+  static (double, double) _decayedCounts(
+    Map<String, dynamic> row,
+    DateTime now,
+  ) {
+    final ok = (_count(row['ok'])).toDouble();
+    final bad = (_count(row['bad'])).toDouble();
+    final raw = DateTime.tryParse(row['updatedAt']?.toString() ?? '');
+    if (raw == null) return (ok, bad);
+    final ageDays = now.difference(raw).inHours / 24.0;
+    if (ageDays <= 0) return (ok, bad);
+    final factor = math.exp(-math.ln2 * ageDays / 21.0);
+    return (ok * factor, bad * factor);
+  }
 
   static double _bias(int ok, int bad) {
     final total = ok + bad;
