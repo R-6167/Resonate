@@ -1788,6 +1788,10 @@ class MusicProvider extends ChangeNotifier {
           'graceMs': graceMs,
           'activeEngine': _activeIsA ? 'A' : 'B',
         }));
+        // Invalidate any in-flight transition before the watchdog takes
+        // ownership. Its async cleanup will see the new generation and will
+        // not mutate the watchdog's engine state.
+        _automaticTransitionGeneration++;
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
         _completionObservedDuringCrossfade = false;
@@ -3349,19 +3353,36 @@ class MusicProvider extends ChangeNotifier {
       try { await outgoing.stop(); await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken); return true; } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); await ResonateDiagnostics.record('crossfade_fallback_failed', {'incomingSongId': nextSong.id, 'error': fallbackError.toString(), 'intentToken': intentToken}); return false; }
     } finally {
       // A stale transition may finish after a newer user/automatic command.
-      // Never let its finally block clear the newer transition's flag.
-      if (_automaticTransitionGeneration == transitionGeneration) {
+      // Its cleanup must never touch resources currently owned by the newer
+      // transition. This matters because A/B reuses the same two engine/effect
+      // instances across rapid Next/Previous commands.
+      final ownsTransition = _automaticTransitionGeneration == transitionGeneration;
+      if (ownsTransition) {
         _crossfadeInProgress = false;
+        try {
+          await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+        } catch (_) {}
+        try {
+          await _restoreDjTransitionSfx();
+        } catch (_) {}
+        _lastDjBassDuckNeeded = false;
+      } else if (!_crossfadeInProgress && bassDuckOriginal.isNotEmpty) {
+        // No newer transition took ownership, so the cancelled transition
+        // still needs to restore its own captured EQ state.
+        try {
+          await _audioEffectsController.restoreBassAfterTransition(
+            equalizer: incomingEq,
+            original: bassDuckOriginal,
+          );
+          await ResonateDiagnostics.record('dj_bass_duck', {
+            'action': 'restore_stale',
+            'bands': bassDuckOriginal.keys.toList(),
+            'songId': nextSong.id,
+          });
+        } catch (_) {}
       }
-      // Always clear stretch + SFX even when the try path returned early.
-      try {
-        await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
-      } catch (_) {}
-      try {
-        await _restoreDjTransitionSfx();
-      } catch (_) {}
-      try {
-        if (bassDuckOriginal.isNotEmpty) {
+      if (ownsTransition && bassDuckOriginal.isNotEmpty) {
+        try {
           await _audioEffectsController.restoreBassAfterTransition(
             equalizer: incomingEq,
             original: bassDuckOriginal,
@@ -3371,9 +3392,8 @@ class MusicProvider extends ChangeNotifier {
             'bands': bassDuckOriginal.keys.toList(),
             'songId': nextSong.id,
           });
-        }
-      } catch (_) {}
-      _lastDjBassDuckNeeded = false;
+        } catch (_) {}
+      }
       // If UI thinks we are playing but active engine is near-silent, unstick.
       try {
         final active = audioPlayer;
