@@ -110,6 +110,11 @@ class MusicProvider extends ChangeNotifier {
   String? _lastDjFromId;
   String? _lastDjToId;
   String? _lastDjStrategy;
+  double? _lastDjTransitionScore;
+  double? _lastDjTransitionConfidence;
+  List<String> _lastDjTransitionRisks = const <String>[];
+  int? _lastDjTransitionDurationMs;
+  int _lastDjRecoveryAttempts = 0;
   /// Soft energy-bridge bias applied to the next crossfade length (ms).
   int _lastDjCrossfadeBiasMs = 0;
   double _lastDjEnergyScore = 0.5;
@@ -2479,6 +2484,11 @@ class MusicProvider extends ChangeNotifier {
             toId: toId,
             strategy: strategy,
             successful: true,
+            score: _lastDjTransitionScore,
+            confidence: _lastDjTransitionConfidence,
+            risks: _lastDjTransitionRisks,
+            transitionDurationMs: _lastDjTransitionDurationMs,
+            recoveryAttempts: _lastDjRecoveryAttempts,
           ));
           unawaited(ResonateDiagnostics.recordDj(
             stage: 'learn',
@@ -2842,6 +2852,11 @@ class MusicProvider extends ChangeNotifier {
       _lastDjFromId = outgoingSong.id;
       _lastDjToId = incomingSong.id;
       _lastDjStrategy = appliedStrategy;
+      _lastDjTransitionScore = plan.score;
+      _lastDjTransitionConfidence = plan.confidence;
+      _lastDjTransitionRisks = const <String>[];
+      _lastDjTransitionDurationMs = plan.durationMs;
+      _lastDjRecoveryAttempts = 0;
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
       try {
@@ -2926,6 +2941,11 @@ class MusicProvider extends ChangeNotifier {
     _lastDjFromId = outgoingSong.id;
     _lastDjToId = incomingSong.id;
     _lastDjStrategy = candidate.kind.name;
+    _lastDjTransitionScore = candidate.score;
+    _lastDjTransitionConfidence = candidate.confidence;
+    _lastDjTransitionRisks = candidate.risks.map((r) => r.name).toList();
+    _lastDjTransitionDurationMs = candidate.durationMs;
+    _lastDjRecoveryAttempts = 0;
     await ResonateDiagnostics.recordDj(
       stage: 'v2_handoff',
       outcome: 'applied',
@@ -3609,6 +3629,11 @@ Future<void> pause({String source = 'normal_player'}) {
                 strategy: strategy,
                 successful: false,
                 weight: weight,
+                score: _lastDjTransitionScore,
+                confidence: _lastDjTransitionConfidence,
+                risks: _lastDjTransitionRisks,
+                transitionDurationMs: _lastDjTransitionDurationMs,
+                recoveryAttempts: _lastDjRecoveryAttempts,
               ));
               unawaited(ResonateDiagnostics.recordDj(
                 stage: 'learn',
