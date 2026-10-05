@@ -33,6 +33,7 @@ class DjExecutionPlanner {
 
     final bassDuck = risks.contains(DjRiskType.bassCollision);
     final longerFade = risks.contains(DjRiskType.energyShock);
+    final sfxTriggerMs = (candidate.durationMs * 0.35).round().clamp(250, 2200).toInt();
     final steps = <DjExecutionStep>[
       DjExecutionStep(action: 'prepare_incoming', atMs: 0, parameters: {
         'seekMs': candidate.incomingStartMs,
@@ -48,6 +49,9 @@ class DjExecutionPlanner {
           'durationMs': candidate.durationMs ~/ 2,
         }),
       DjExecutionStep(action: 'phrase_align', atMs: 0, parameters: {
+        'kind': candidate.kind.name,
+      }),
+      DjExecutionStep(action: 'trigger_sfx', atMs: sfxTriggerMs, parameters: {
         'kind': candidate.kind.name,
       }),
       DjExecutionStep(action: 'complete_transition', atMs: candidate.durationMs),
