@@ -82,6 +82,50 @@ class AudioEffectsController {
     } catch (_) {}
   }
 
+
+  /// Temporarily attenuate the lowest EQ bands during a DJ overlap.
+  /// Returns the exact pre-transition gains so the user's EQ is restored byte-for-byte.
+  Future<Map<int, double>> duckBassForTransition({
+    required AndroidEqualizer equalizer,
+    double attenuationDb = 4.0,
+  }) async {
+    final original = <int, double>{};
+    try {
+      final parameters = await equalizer.parameters;
+      final bands = parameters.bands.take(2).toList();
+      for (final band in bands) {
+        final gain = band.gain;
+        original[band.index] = gain;
+        final next = (gain - attenuationDb)
+            .clamp(parameters.minDecibels, parameters.maxDecibels)
+            .toDouble();
+        await band.setGain(next);
+      }
+    } catch (_) {
+      // Partial application is restored by restoreBassAfterTransition.
+    }
+    return original;
+  }
+
+  /// Restore the exact EQ gains captured before a DJ bass duck.
+  Future<void> restoreBassAfterTransition({
+    required AndroidEqualizer equalizer,
+    required Map<int, double> original,
+  }) async {
+    if (original.isEmpty) return;
+    try {
+      final parameters = await equalizer.parameters;
+      for (final band in parameters.bands) {
+        final gain = original[band.index];
+        if (gain != null) {
+          await band.setGain(
+            gain.clamp(parameters.minDecibels, parameters.maxDecibels).toDouble(),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> applyNativeEffects({
     required bool effectsEnabled,
     required double bassBoost,
