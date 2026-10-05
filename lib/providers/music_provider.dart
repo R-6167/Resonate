@@ -89,6 +89,10 @@ class MusicProvider extends ChangeNotifier {
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
   bool _automaticCrossfadeInFlight = false;
+  /// Monotonic identity for the currently-owned automatic A/B transition.
+  /// User transport invalidates the previous identity so stale async work
+  /// cannot clear flags or commit an engine swap after a newer command.
+  int _automaticTransitionGeneration = 0;
   String? _preloadedNextSongId;
   bool _crossfadePreloadInFlight = false;
   /// Repeat-one + crossfade: seamless loop via idle engine (no queue advance).
@@ -2965,6 +2969,8 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType = 'linear', required int generation, int? playbackIntentToken}) async {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
+    final transitionGeneration = ++_automaticTransitionGeneration;
+    final bassDuckOriginal = <int, double>{};
     if (!_playbackIntentGate.isCurrent(intentToken)) return false;
     if (!canCrossfadeNext || currentSong == null || !audioPlayer.playing) return false;
     final nextIndex = _crossfadeTargetIndex;
@@ -3039,11 +3045,22 @@ class MusicProvider extends ChangeNotifier {
         outgoingSong: outgoingSong,
         incomingSong: nextSong,
       );
-      if (_lastDjBassDuckNeeded) {
-        bassDuckOriginal = await _audioEffectsController.duckBassForTransition(
+      final bassDuckNeeded = _lastDjBassDuckNeeded;
+      if (_automaticTransitionGeneration != transitionGeneration ||
+          _authority.isStale(generation) ||
+          !_playbackIntentGate.isCurrent(intentToken)) {
+        try { await incoming.stop(); } catch (_) {}
+        await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+        return false;
+      }
+      if (bassDuckNeeded) {
+        final capturedBassDuck = await _audioEffectsController.duckBassForTransition(
           equalizer: incomingEq,
           attenuationDb: 4.0,
         );
+        bassDuckOriginal
+          ..clear()
+          ..addAll(capturedBassDuck);
         unawaited(ResonateDiagnostics.record('dj_bass_duck', {
           'action': 'engage',
           'attenuationDb': 4.0,
@@ -3138,7 +3155,9 @@ class MusicProvider extends ChangeNotifier {
       var incomingRecoveryAttempts = 0;
       var monitorTick = 0;
       while (true) {
-        if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
+        if (_automaticTransitionGeneration != transitionGeneration ||
+            _authority.isStale(generation) ||
+            !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
           try { await outgoing.setVolume(master); } catch (_) {}
           await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
@@ -3250,7 +3269,9 @@ class MusicProvider extends ChangeNotifier {
           break;
         }
       }
-      if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
+      if (_automaticTransitionGeneration != transitionGeneration ||
+          _authority.isStale(generation) ||
+          !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
       // Mutating currentSong first caused history to be attributed to the next track.
       await _finishHistoryEvent();
@@ -3313,10 +3334,16 @@ class MusicProvider extends ChangeNotifier {
           songId: nextSong.id,
         );
       } catch (_) {}
-      if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) return false;
+      if (_automaticTransitionGeneration != transitionGeneration ||
+          _authority.isStale(generation) ||
+          !_playbackIntentGate.isCurrent(intentToken)) return false;
       try { await outgoing.stop(); await _playSongInternal(nextSong, queue: _queue, startIndex: nextIndex, playbackIntentToken: intentToken); return true; } catch (fallbackError) { debugPrint('Crossfade fallback failed: $fallbackError'); await ResonateDiagnostics.record('crossfade_fallback_failed', {'incomingSongId': nextSong.id, 'error': fallbackError.toString(), 'intentToken': intentToken}); return false; }
     } finally {
-      _crossfadeInProgress = false;
+      // A stale transition may finish after a newer user/automatic command.
+      // Never let its finally block clear the newer transition's flag.
+      if (_automaticTransitionGeneration == transitionGeneration) {
+        _crossfadeInProgress = false;
+      }
       // Always clear stretch + SFX even when the try path returned early.
       try {
         await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
@@ -3371,6 +3398,9 @@ class MusicProvider extends ChangeNotifier {
 
   /// Phase 4: user transport always wins over automatic work.
   void _cancelAutomaticPlaybackWork() {
+    // Invalidate all in-flight automatic A/B work before starting the user's
+    // transport operation. Old futures may still unwind, but cannot commit.
+    _automaticTransitionGeneration++;
     _automaticCrossfadeInFlight = false;
     _crossfadeInProgress = false;
     _completionAdvanceInProgress = false;
