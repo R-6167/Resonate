@@ -1,3 +1,4 @@
+    await db.execute('CREATE TABLE $tableSongDjProfiles ($columnDjProfileSongId TEXT PRIMARY KEY, $columnDjProfileFingerprint TEXT, $columnDjProfileDurationMs INTEGER, $columnDjProfileAnalyzedAt TEXT, $columnDjProfileAnalysisVersion INTEGER NOT NULL DEFAULT 0, $columnDjProfileJson TEXT NOT NULL, FOREIGN KEY ($columnDjProfileSongId) REFERENCES $tableSongs($columnSongId))');
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -8,13 +9,14 @@ import '../models/dj_analysis.dart';
 
 class DatabaseHelper {
   static const _databaseName = 'resonate.db';
-  static const _databaseVersion = 7;
+  static const _databaseVersion = 8;
   static const String tableSongs = 'songs';
   static const String tablePlaylists = 'playlists';
   static const String tablePlaylistSongs = 'playlist_songs';
   static const String tableFavorites = 'favorites';
   static const String tableListeningEvents = 'listening_events';
   static const String tableSongDjAnalysis = 'song_dj_analysis';
+  static const String tableSongDjProfiles = 'song_dj_profiles';
   static const String columnDjSongId = 'song_id';
   static const String columnDjBpm = 'bpm';
   static const String columnDjBpmConfidence = 'bpm_confidence';
@@ -31,6 +33,12 @@ class DatabaseHelper {
   static const String columnDjIntroHintMs = 'intro_hint_ms';
   static const String columnDjOutroHintMs = 'outro_hint_ms';
   static const String columnDjSectionHint = 'section_hint';
+  static const String columnDjProfileSongId = 'song_id';
+  static const String columnDjProfileFingerprint = 'fingerprint';
+  static const String columnDjProfileDurationMs = 'duration_ms';
+  static const String columnDjProfileAnalyzedAt = 'analyzed_at';
+  static const String columnDjProfileAnalysisVersion = 'analysis_version';
+  static const String columnDjProfileJson = 'profile_json';
   static const String columnSongId = 'id';
   static const String columnSongTitle = 'title';
   static const String columnSongArtist = 'artist';
@@ -130,6 +138,9 @@ class DatabaseHelper {
       try { await db.execute('ALTER TABLE $tableSongDjAnalysis ADD COLUMN $columnDjOutroHintMs INTEGER'); } catch (_) {}
       try { await db.execute('ALTER TABLE $tableSongDjAnalysis ADD COLUMN $columnDjSectionHint TEXT'); } catch (_) {}
     }
+    if (oldVersion < 8) {
+      await db.execute('CREATE TABLE IF NOT EXISTS $tableSongDjProfiles ($columnDjProfileSongId TEXT PRIMARY KEY, $columnDjProfileFingerprint TEXT, $columnDjProfileDurationMs INTEGER, $columnDjProfileAnalyzedAt TEXT, $columnDjProfileAnalysisVersion INTEGER NOT NULL DEFAULT 0, $columnDjProfileJson TEXT NOT NULL, FOREIGN KEY ($columnDjProfileSongId) REFERENCES $tableSongs($columnSongId))');
+    }
   }
   Future<int> insertListeningEvent(ListeningEvent event) async {
     try {
@@ -184,6 +195,61 @@ class DatabaseHelper {
   Future<Map<String,dynamic>> getStatistics() async { try{final db=await database;final totalSongs=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableSongs'))??0;final totalPlaylists=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tablePlaylists'))??0;final favoriteCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM $tableFavorites'))??0;final totalPlayCount=Sqflite.firstIntValue(await db.rawQuery('SELECT COALESCE(SUM($columnSongPlayCount),0) FROM $tableSongs'))??0;return {'totalSongs':totalSongs,'totalPlaylists':totalPlaylists,'favoriteCount':favoriteCount,'totalPlayCount':totalPlayCount};}catch(e){_markDatabaseFailure('database_operation',e);return {'totalSongs':0,'totalPlaylists':0,'favoriteCount':0,'totalPlayCount':0};} }
   Song _songFromMap(Map<String,dynamic> map) => Song(id:map[columnSongId] as String,title:map[columnSongTitle] as String,artist:map[columnSongArtist]?.toString() ?? 'Unknown Artist',album:map[columnSongAlbum]?.toString() ?? 'Unknown Album',filePath:map[columnSongFilePath] as String,duration:Duration(milliseconds:(map[columnSongDuration] as num?)?.toInt()??0),dateAdded:DateTime.tryParse(map[columnSongDateAdded]?.toString()??'')??DateTime.now(),albumArt:map[columnSongAlbumArt]?.toString());
   Playlist _playlistFromMap(Map<String,dynamic> map) => Playlist(id:map[columnPlaylistId] as String,name:map[columnPlaylistName] as String,songIds:const [],createdAt:DateTime.tryParse(map[columnPlaylistCreatedAt]?.toString()??'')??DateTime.now(),description:map[columnPlaylistDescription]?.toString());
+
+  Future<String?> getDjProfileJson(String songId) async {
+    try {
+      final rows = await (await database).query(
+        tableSongDjProfiles,
+        where: '$columnDjProfileSongId = ?',
+        whereArgs: [songId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      return rows.first[columnDjProfileJson]?.toString();
+    } catch (e) {
+      _markDatabaseFailure('database_operation', e);
+      return null;
+    }
+  }
+
+  Future<void> upsertDjProfileJson({
+    required String songId,
+    required String? fingerprint,
+    required int? durationMs,
+    required DateTime analyzedAt,
+    required int analysisVersion,
+    required String profileJson,
+  }) async {
+    try {
+      await (await database).insert(
+        tableSongDjProfiles,
+        {
+          columnDjProfileSongId: songId,
+          columnDjProfileFingerprint: fingerprint,
+          columnDjProfileDurationMs: durationMs,
+          columnDjProfileAnalyzedAt: analyzedAt.toIso8601String(),
+          columnDjProfileAnalysisVersion: analysisVersion,
+          columnDjProfileJson: profileJson,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    } catch (e) {
+      _markDatabaseFailure('database_operation', e);
+      print('Error upserting dj profile: $e');
+    }
+  }
+
+  Future<void> deleteDjProfile(String songId) async {
+    try {
+      await (await database).delete(
+        tableSongDjProfiles,
+        where: '$columnDjProfileSongId = ?',
+        whereArgs: [songId],
+      );
+    } catch (e) {
+      _markDatabaseFailure('database_operation', e);
+    }
+  }
 
   Future<DjAnalysis?> getDjAnalysis(String songId) async {
     try {
