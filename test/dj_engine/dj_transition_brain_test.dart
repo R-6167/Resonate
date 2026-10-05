@@ -58,4 +58,49 @@ void main() {
     expect(plan.candidate.kind, DjTransitionKind.safeCrossfade);
     expect(plan.steps, isNotEmpty);
   });
+  test('prefers beat-aligned incoming anchors', () {
+    final incoming = track(id: 'b', section: DjSectionType.intro);
+    final plan = engine.planTransition(
+      outgoing: track(id: 'a'),
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+    );
+    expect(plan.candidate.incomingStartMs, anyOf(0, 469, 938, 1406, 1875, 2344, 2813, 3281));
+  });
+
+  test('uses energy slope when ranking candidates', () {
+    final outgoing = track(id: 'a', energy: 0.7);
+    final incoming = DjTrackProfile(
+      songId: 'b',
+      durationMs: 240000,
+      beatGrid: const DjBeatGrid(
+        bpm: 128,
+        confidence: 0.95,
+        firstBeatMs: 0,
+        beatMs: [0, 469, 938, 1406, 1875, 2344, 2813, 3281],
+        downbeatMs: [0, 1875],
+        downbeatConfidence: 0.85,
+        barConfidence: 0.85,
+        phraseConfidence: 0.8,
+      ),
+      keyRoot: 0,
+      keyMode: 'minor',
+      keyConfidence: 0.9,
+      sections: const [DjSection(type: DjSectionType.intro, startMs: 0, endMs: 20000, confidence: 0.9)],
+      energyCurve: const [
+        DjEnergyPoint(timeMs: 0, value: 0.5, slope: 0.5),
+        DjEnergyPoint(timeMs: 10000, value: 0.7, slope: 0.5),
+      ],
+      spectrum: const DjSpectralProfile(bassDensity: 0.65, centroid: 0.5, spectralFlux: 0.5, confidence: 0.9),
+      transitions: const DjTransitionMarkers(bestIntroMs: 0, bestOutroMs: 220000),
+      analysisConfidence: 0.9,
+    );
+    final plan = engine.planTransition(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+    );
+    expect(plan.candidate.score, greaterThan(0.0));
+  });
+
 }
