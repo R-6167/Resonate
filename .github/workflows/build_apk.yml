@@ -99,7 +99,7 @@ jobs:
           exit 0
 
       - name: Run Flutter tests
-        run: flutter test --reporter expanded || true
+        run: flutter test --reporter expanded
 
       - name: Verify architecture wiring
         run: |
