@@ -2599,16 +2599,32 @@ class MusicProvider extends ChangeNotifier {
 
 
   /// Soft transition SFX: mild reverb glue, always restored after crossfade.
-  Future<void> _engageDjTransitionSfx({double energyScore = 0.5}) async {
+  DjTransitionKind? _djTransitionKindFromName(String? name) {
+    if (name == null) return null;
+    for (final kind in DjTransitionKind.values) {
+      if (kind.name == name) return kind;
+    }
+    return null;
+  }
+
+  Future<void> _engageDjTransitionSfx({
+    double energyScore = 0.5,
+    DjTransitionKind? transitionKind,
+  }) async {
     if (!_djSfxActive) return;
     try {
+      final profile = currentSong == null
+          ? null
+          : await _djAnalysis?.getProfile(currentSong!.id);
       await _djSfxRack.engage(
         energyScore: energyScore,
         equalizerA: _equalizerA,
         equalizerB: _equalizerB,
         outgoing: audioPlayer,
         outgoingUri: currentSong?.filePath,
-        beatMs: (await _djAnalysis!.getProfile(currentSong!.id))?.beatGrid.beatMs ?? const <int>[],
+        beatMs: profile?.beatGrid.beatMs ?? const <int>[],
+        sections: profile?.sections ?? const <DjSection>[],
+        transitionKind: transitionKind,
       );
       _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -3093,7 +3109,10 @@ class MusicProvider extends ChangeNotifier {
           'songId': nextSong.id,
         }));
       }
-      await _engageDjTransitionSfx(energyScore: _lastDjEnergyScore);
+      await _engageDjTransitionSfx(
+        energyScore: _lastDjEnergyScore,
+        transitionKind: _djTransitionKindFromName(_lastDjStrategy),
+      );
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
