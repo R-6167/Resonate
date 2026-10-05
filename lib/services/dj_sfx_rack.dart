@@ -367,6 +367,43 @@ class DjSfxRack {
         return;
       }
 
+      if (preset == DjSfxPreset.stutter || preset == DjSfxPreset.beatRepeat) {
+        final anchor = _musicalAnchor(current);
+        final beat = _musicalSliceMs(anchor);
+        final slice = preset == DjSfxPreset.stutter ? (beat ~/ 2).clamp(120, 700) : beat.clamp(250, 1400);
+        final start = math.max(0, anchor - slice);
+        final count = preset == DjSfxPreset.stutter ? 5 : 4;
+        for (var i = 0; i < count; i++) {
+          if (gen != _trackFxGen || !engaged) return;
+          await out.seek(Duration(milliseconds: start));
+          await out.setSpeed(originalSpeed);
+          await Future<void>.delayed(Duration(milliseconds: slice));
+        }
+        return;
+      }
+
+      if (preset == DjSfxPreset.retrigger) {
+        final anchor = _musicalAnchor(current);
+        final beat = _musicalSliceMs(anchor);
+        final start = math.max(0, anchor - beat);
+        for (var i = 0; i < 3; i++) {
+          if (gen != _trackFxGen || !engaged) return;
+          await out.seek(Duration(milliseconds: start));
+          await out.setSpeed(originalSpeed);
+          await Future<void>.delayed(Duration(milliseconds: beat.clamp(250, 1400)));
+        }
+        return;
+      }
+
+      if (preset == DjSfxPreset.brake) {
+        for (final multiplier in <double>[0.94, 0.82, 0.70, 0.58, 0.50]) {
+          if (gen != _trackFxGen || !engaged) return;
+          await out.setSpeed((originalSpeed * multiplier).clamp(0.5, 1.5));
+          await Future<void>.delayed(const Duration(milliseconds: 110));
+        }
+        if (gen == _trackFxGen && engaged) await out.setSpeed(originalSpeed);
+        return;
+      }
       final center = _musicalPhraseAnchor(current);
       const strokes = <int>[120, -100, 150, -130, 80];
       for (final delta in strokes) {
