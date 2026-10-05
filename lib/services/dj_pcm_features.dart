@@ -31,6 +31,10 @@ class DjPcmFeatures {
   final double beatConfidence;
   /// Phase stability of detected beats (1 = tightly locked to the inferred grid).
   final double beatPhaseStability;
+  final List<int> downbeatMs;
+  final double downbeatConfidence;
+  final double barConfidence;
+  final double phraseConfidence;
 
   const DjPcmFeatures({
     this.keyRoot,
@@ -53,6 +57,10 @@ class DjPcmFeatures {
     this.beatMs = const [],
     this.beatConfidence = 0.0,
     this.beatPhaseStability = 0.0,
+    this.downbeatMs = const [],
+    this.downbeatConfidence = 0.0,
+    this.barConfidence = 0.0,
+    this.phraseConfidence = 0.0,
   });
 }
 
@@ -104,6 +112,10 @@ class DjPcmFeatureAnalyzer {
         beatMs: beats.positions,
         beatConfidence: beats.confidence,
         beatPhaseStability: beats.phaseStability,
+        downbeatMs: beats.downbeatMs,
+        downbeatConfidence: beats.downbeatConfidence,
+        barConfidence: beats.barConfidence,
+        phraseConfidence: beats.phraseConfidence,
       );
     } catch (_) {
       return const DjPcmFeatures();
@@ -316,7 +328,7 @@ class DjPcmFeatureAnalyzer {
     );
   }
 
-  ({List<int> positions, double confidence, double phaseStability}) _beatsFromMono(
+  ({List<int> positions, double confidence, double phaseStability, List<int> downbeatMs, double downbeatConfidence, double barConfidence, double phraseConfidence}) _beatsFromMono(
     Float64List mono,
     int rate,
   ) {
@@ -325,7 +337,7 @@ class DjPcmFeatureAnalyzer {
     // output conservative: uncertain windows contribute no beat grid.
     const hop = 256;
     if (mono.length < rate) {
-      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0, downbeatMs: const [], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
     final env = <double>[];
     for (var i = 0; i + hop <= mono.length; i += hop) {
@@ -423,7 +435,7 @@ class DjPcmFeatureAnalyzer {
     // Only expose a grid when the phase is credible. This prevents a weak
     // autocorrelation peak from causing aggressive beat/phrase alignment.
     if (confidence < 0.38 || phaseStability < 0.35) {
-      return (positions: const [], confidence: confidence, phaseStability: phaseStability);
+      return (positions: const [], confidence: confidence, phaseStability: phaseStability, downbeatMs: const [], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
     }
 
     final positions = <int>[];
@@ -432,7 +444,21 @@ class DjPcmFeatureAnalyzer {
       positions.add((frame * hop * 1000 ~/ rate));
       frame += periodFrames;
     }
-    return (positions: positions, confidence: confidence, phaseStability: phaseStability);
+    final downbeats = <int>[];
+    for (var i = 0; i < positions.length; i += 4) {
+      downbeats.add(positions[i]);
+    }
+    final barConfidence = (confidence * 0.78).clamp(0.0, 0.9).toDouble();
+    final phraseConfidence = (barConfidence * 0.82).clamp(0.0, 0.85).toDouble();
+    return (
+      positions: positions,
+      confidence: confidence,
+      phaseStability: phaseStability,
+      downbeatMs: downbeats,
+      downbeatConfidence: barConfidence,
+      barConfidence: barConfidence,
+      phraseConfidence: phraseConfidence,
+    );
   }
 
   ({double bass, double mids, double highs, double centroid, double flux, double bassDensity})
