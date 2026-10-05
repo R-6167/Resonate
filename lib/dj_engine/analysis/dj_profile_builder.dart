@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import '../core/dj_types.dart';
 import '../../models/dj_analysis.dart';
 
-/// Builds a useful V2 profile from the existing analysis row.
+/// Builds a useful V2 profile from the existing analysis row. Updated analysis bridge.
 ///
 /// This is intentionally deterministic and cheap. Rich PCM-derived analyzers
 /// can replace/augment these values later without changing the transition brain.
