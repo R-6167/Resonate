@@ -18,6 +18,24 @@ class DjRiskEngine {
     if ((outgoing.spectrum.bassDensity - incoming.spectrum.bassDensity).abs() > 0.5) {
       risks.add(DjRiskType.bassCollision);
     }
+    if (outgoing.hasKey && incoming.hasKey) {
+      final rootDistance = (outgoing.keyRoot! - incoming.keyRoot!).abs();
+      final chromatic = rootDistance > 6 ? 12 - rootDistance : rootDistance;
+      if (chromatic >= 4 && outgoing.keyMode != incoming.keyMode) {
+        risks.add(DjRiskType.harmonicConflict);
+      }
+    }
+    final tempoA = outgoing.beatGrid.bpm;
+    final tempoB = incoming.beatGrid.bpm;
+    if (tempoA != null && tempoB != null) {
+      final ratio = tempoA > tempoB ? tempoA / tempoB : tempoB / tempoA;
+      if (ratio > 1.20 && ratio < 1.80) risks.add(DjRiskType.tempoInstability);
+    }
+    if (candidate.confidence < 0.35 ||
+        outgoing.beatGrid.confidence < 0.35 ||
+        incoming.beatGrid.confidence < 0.35) {
+      risks.add(DjRiskType.lowConfidence);
+    }
     return risks.toSet().toList();
   }
 
