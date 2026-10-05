@@ -37,6 +37,7 @@ class DjTransitionBrain {
   }) {
     final result = <DjTransitionCandidate>[];
     final outRemaining = (outgoing.durationMs ?? 0) - outgoingPositionMs;
+    final outgoingAnchor = _bestOutgoingAnchor(outgoing, outgoingPositionMs);
     final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
@@ -55,14 +56,14 @@ class DjTransitionBrain {
       ));
     }
 
-    final intro = incoming.transitions.bestIntroMs ?? 0;
+    final intro = _bestIncomingAnchor(incoming);
     final out = outgoing.transitions.bestOutroMs;
     if (out != null && outRemaining > 2500) {
       add(
         DjTransitionKind.outroIntro,
         intro,
         baseDuration,
-        _scorePair(outgoing, incoming, outgoingPositionMs, intro, 0.92, 0.90),
+        _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.92, 0.90),
       );
     }
 
@@ -72,7 +73,7 @@ class DjTransitionBrain {
         DjTransitionKind.beatBlend,
         aligned,
         baseDuration,
-        _scorePair(outgoing, incoming, outgoingPositionMs, aligned, 0.80, 0.78),
+        _scorePair(outgoing, incoming, outgoingAnchor, aligned, 0.80, 0.78),
       );
 
       final phrase = _nextPhrase(incoming, aligned);
@@ -80,7 +81,7 @@ class DjTransitionBrain {
         DjTransitionKind.phraseBlend,
         phrase,
         (baseDuration * 1.15).round().clamp(3000, maxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingPositionMs, phrase, 0.92, 0.88),
+        _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88),
       );
     }
 
@@ -91,7 +92,7 @@ class DjTransitionBrain {
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
         (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingPositionMs, breakdown.startMs, 0.88, 0.95),
+        _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95),
       );
     }
 
@@ -99,14 +100,14 @@ class DjTransitionBrain {
       DjTransitionKind.energyBridge,
       intro,
       baseDuration,
-      _scorePair(outgoing, incoming, outgoingPositionMs, intro, 0.72, 0.72),
+      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.72, 0.72),
     );
 
     add(
       DjTransitionKind.safeCrossfade,
       intro,
       baseDuration,
-      _scorePair(outgoing, incoming, outgoingPositionMs, intro, 0.55, 0.60),
+      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.55, 0.60),
     );
 
     return result;
@@ -118,9 +119,9 @@ class DjTransitionBrain {
   ) {
     final tempo = _tempoScore(a, b);
     final harmonic = _harmonicScore(a, b);
-    final energy = 1 - (a.energyAt(outPos) - b.energyAt(inPos)).abs();
+    final energy = _energyTrajectoryScore(a, b, outPos, inPos);
     final spectrum = _spectrumScore(a, b);
-    final phrase = _phraseScore(a, b);
+    final phrase = _phraseScore(a, b, inPos);
     final structure = _structureScore(a, b, outPos, inPos);
     return {
       'tempo': tempo,
@@ -173,9 +174,74 @@ class DjTransitionBrain {
     return (bass * 0.45 + centroid * 0.30 + flux * 0.25).clamp(0.0, 1.0).toDouble();
   }
 
-  double _phraseScore(DjTrackProfile a, DjTrackProfile b) {
+  double _phraseScore(DjTrackProfile a, DjTrackProfile b, int inPos) {
     if (!a.beatGrid.usable || !b.beatGrid.usable) return 0.5;
-    return a.beatGrid.beatsPerPhrase == b.beatGrid.beatsPerPhrase ? 1.0 : 0.65;
+    final bar = b.beatGrid.downbeatMs.isEmpty
+        ? b.beatGrid.barConfidence
+        : _distanceToAny(inPos, b.beatGrid.downbeatMs) <= 140
+            ? b.beatGrid.downbeatConfidence
+            : 0.45;
+    final phrase = b.beatGrid.phraseConfidence;
+    final compatibleMeter = a.beatGrid.beatsPerPhrase == b.beatGrid.beatsPerPhrase;
+    return ((bar * 0.40) + (phrase * 0.40) + (compatibleMeter ? 0.20 : 0.0))
+        .clamp(0.0, 1.0).toDouble();
+  }
+
+  double _energyTrajectoryScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
+    final level = 1 - (a.energyAt(outPos) - b.energyAt(inPos)).abs();
+    final outSlope = _slopeAt(a, outPos);
+    final inSlope = _slopeAt(b, inPos);
+    final direction = ((-outSlope * inSlope) > 0 ? 0.78 : 1.0);
+    final choreography = (0.5 + (inSlope - outSlope).clamp(-0.5, 0.5)).clamp(0.0, 1.0);
+    return (level * 0.65 + choreography * 0.20 + direction * 0.15)
+        .clamp(0.0, 1.0).toDouble();
+  }
+
+  double _slopeAt(DjTrackProfile p, int ms) {
+    if (p.energyCurve.isEmpty) return 0;
+    var best = p.energyCurve.first;
+    var distance = (best.timeMs - ms).abs();
+    for (final point in p.energyCurve.skip(1)) {
+      final d = (point.timeMs - ms).abs();
+      if (d < distance) {
+        best = point;
+        distance = d;
+      }
+    }
+    return best.slope;
+  }
+
+  double _distanceToAny(int target, List<int> points) {
+    var best = 1 << 30;
+    for (final point in points) {
+      final d = (point - target).abs();
+      if (d < best) best = d;
+      if (point > target + best) break;
+    }
+    return best.toDouble();
+  }
+
+  int _bestOutgoingAnchor(DjTrackProfile profile, int currentMs) {
+    final candidates = profile.transitions.safeMixOuts
+        .map((p) => p.timeMs)
+        .where((ms) => ms >= currentMs &&
+            (profile.durationMs == null || ms < profile.durationMs!))
+        .toList();
+    final outro = profile.transitions.bestOutroMs;
+    if (outro != null && outro >= currentMs) candidates.add(outro);
+    if (candidates.isEmpty) return currentMs;
+    candidates.sort();
+    return candidates.first;
+  }
+
+  int _bestIncomingAnchor(DjTrackProfile profile) {
+    final candidates = <int>[
+      ...profile.transitions.safeMixIns.map((p) => p.timeMs),
+      if (profile.transitions.bestIntroMs != null) profile.transitions.bestIntroMs!,
+    ];
+    if (candidates.isEmpty) return 0;
+    candidates.sort();
+    return candidates.first;
   }
 
   double _structureScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
