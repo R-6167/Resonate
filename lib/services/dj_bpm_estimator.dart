@@ -230,6 +230,19 @@ class DjBpmEstimator {
         );
       }
       final mergedNative = _mergeStructure(nativePcm, endPcm);
+      // Whole-track structure: second window near the end when duration is known.
+      DjBpmEstimate? endPcm;
+      final dur = durationMs ?? 0;
+      if (dur > 45000) {
+        final startMs = (dur - 18000).clamp(20000, dur - 8000);
+        endPcm = await _estimateFromNativePcm(
+          filePath,
+          maxSeconds: 14.0,
+          startMs: startMs,
+          windowRole: 'end',
+        );
+      }
+      final mergedNative = _mergeStructure(nativePcm, endPcm);
       if (mergedNative != null) {
         final nativePcm = mergedNative;
         // Prefer tagged BPM when present (higher trust), keep PCM energy/offset.
