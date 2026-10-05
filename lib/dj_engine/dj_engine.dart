@@ -4,6 +4,7 @@ export 'intelligence/dj_risk_engine.dart';
 export 'execution/dj_execution_planner.dart';
 export 'adapters/dj_analysis_bridge.dart';
 export 'analysis/dj_profile_builder.dart';
+export 'analysis/dj_pcm_profile_analyzer.dart';
 
 import 'core/dj_types.dart';
 import 'intelligence/dj_transition_brain.dart';
