@@ -2855,7 +2855,7 @@ class MusicProvider extends ChangeNotifier {
       _lastDjTransitionScore = null;
       _lastDjTransitionConfidence = math.min(plan.confidenceA, plan.confidenceB);
       _lastDjTransitionRisks = const <String>[];
-      _lastDjTransitionDurationMs = plan.crossfadeBiasMs.abs();
+      _lastDjTransitionDurationMs = null;
       _lastDjRecoveryAttempts = 0;
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
