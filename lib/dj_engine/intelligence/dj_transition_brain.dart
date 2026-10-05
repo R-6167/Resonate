@@ -230,6 +230,15 @@ class DjTransitionBrain {
   }
 
   int _nextPhrase(DjTrackProfile profile, int ms) {
+    final beats = profile.beatGrid.beatMs;
+    final phraseSize = profile.beatGrid.beatsPerPhrase;
+    if (beats.length >= phraseSize) {
+      final start = beats.indexWhere((b) => b >= ms);
+      if (start >= 0) {
+        final boundary = start + ((phraseSize - (start % phraseSize)) % phraseSize);
+        if (boundary < beats.length) return beats[boundary];
+      }
+    }
     final beat = _nextBeat(profile, ms);
     final bpm = profile.beatGrid.bpm;
     if (bpm == null) return beat;
