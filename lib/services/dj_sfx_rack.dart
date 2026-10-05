@@ -19,6 +19,9 @@ enum DjSfxPreset {
   airHorn,
   gunshot,
   vinylScratch,
+  repeat,
+  repeatRestart,
+  scratch,
   whoosh,
   impact,
 }
@@ -35,6 +38,8 @@ class DjSfxRack {
   AudioPlayer? _outgoing;
   AudioPlayer? _oneshot;
   int _oneshotGen = 0;
+  int _trackFxGen = 0;
+  bool _trackActionRunning = false;
 
   static const presets = DjSfxPreset.values;
 
@@ -64,6 +69,9 @@ class DjSfxRack {
       DjSfxPreset.airHorn: high ? 3 : 2,
       DjSfxPreset.gunshot: high ? 2 : 1,
       DjSfxPreset.vinylScratch: 2,
+      DjSfxPreset.repeat: 2,
+      DjSfxPreset.repeatRestart: high ? 2 : 1,
+      DjSfxPreset.scratch: 2,
       DjSfxPreset.whoosh: 2,
       DjSfxPreset.impact: high ? 2 : 1,
     };
@@ -108,6 +116,9 @@ class DjSfxRack {
       // Fire one-shot early so it sits over the outgoing fade.
       if (_isSample(activePreset!)) {
         unawaited(_playOneshot(activePreset!, score));
+      }
+      if (_usesTrackManipulation(activePreset!)) {
+        unawaited(_runTrackManipulation(activePreset!));
       }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
@@ -213,6 +224,59 @@ class DjSfxRack {
     } catch (_) {}
   }
 
+  bool _usesTrackManipulation(DjSfxPreset p) =>
+      p == DjSfxPreset.repeat ||
+      p == DjSfxPreset.repeatRestart ||
+      p == DjSfxPreset.scratch;
+
+  /// Manipulates the actual outgoing track using just_audio controls.
+  Future<void> _runTrackManipulation(DjSfxPreset preset) async {
+    final out = _outgoing;
+    if (out == null || _trackActionRunning) return;
+    final gen = ++_trackFxGen;
+    _trackActionRunning = true;
+    try {
+      final originalSpeed = _savedOutgoingSpeed.clamp(0.5, 1.5).toDouble();
+      final current = out.position.inMilliseconds;
+      if (current < 120) return;
+
+      if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
+        const sliceMs = 700;
+        final anchor = math.max(0, current - sliceMs);
+        for (var i = 0; i < 3; i++) {
+          if (gen != _trackFxGen || !engaged) return;
+          await out.seek(Duration(milliseconds: anchor));
+          await out.setSpeed(originalSpeed);
+          await Future<void>.delayed(const Duration(milliseconds: 680));
+        }
+        if (preset == DjSfxPreset.repeatRestart &&
+            gen == _trackFxGen &&
+            engaged) {
+          await out.seek(Duration.zero);
+          await out.setSpeed(originalSpeed);
+        }
+        return;
+      }
+
+      const strokes = <int>[180, -140, 220, -190, 110];
+      final center = current;
+      for (final delta in strokes) {
+        if (gen != _trackFxGen || !engaged) return;
+        final target = math.max(0, center + delta);
+        await out.seek(Duration(milliseconds: target));
+        await out.setSpeed(
+          delta >= 0 ? originalSpeed * 1.55 : originalSpeed * 0.62,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 115));
+      }
+      if (gen == _trackFxGen) await out.setSpeed(originalSpeed);
+    } catch (e) {
+      debugPrint('DjSfxRack track manipulation $preset: $e');
+    } finally {
+      if (gen == _trackFxGen) _trackActionRunning = false;
+    }
+  }
+
   bool _usesEq(DjSfxPreset p) =>
       p == DjSfxPreset.filterOpen || p == DjSfxPreset.filterClose;
 
@@ -257,6 +321,12 @@ class DjSfxRack {
         case DjSfxPreset.filterClose:
           width = (0.05 + 0.08 * x).clamp(0.0, 0.16);
           reverb = (0.08 + 0.10 * math.sin(x * math.pi)).clamp(0.04, 0.22);
+          break;
+        case DjSfxPreset.repeat:
+        case DjSfxPreset.repeatRestart:
+        case DjSfxPreset.scratch:
+          width = (0.05 * env).clamp(0.0, 0.10);
+          reverb = (0.06 * env).clamp(0.0, 0.12);
           break;
         case DjSfxPreset.tightGlue:
           width = (0.04 + 0.06 * x).clamp(0.0, 0.12);
