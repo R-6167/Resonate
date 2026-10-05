@@ -81,7 +81,8 @@ class DjPcmProfileAnalyzer {
     }
 
     final tempo = _aggregateTempo(bpmSamples);
-    final beatPositions = _aggregateBeats(bpmSamples, featureSamples, durationMs);
+    final beatEvidence = _aggregateBeatEvidence(featureSamples);
+    final beatPositions = _aggregateBeats(featureSamples, durationMs);
     final key = _aggregateKey(featureSamples);
     final energy = _buildEnergyCurve(durationMs, bpmSamples, featureSamples);
     final sections = _buildSections(durationMs, featureSamples);
@@ -89,8 +90,13 @@ class DjPcmProfileAnalyzer {
 
     final energyConfidence = energy.isEmpty ? 0.0 : 0.65;
     final structureConfidence = featureSamples.isEmpty ? 0.0 : 0.65;
+    final tempoConfidence = beatEvidence.hasEvidence
+        ? (tempo.confidence * 0.58 + beatEvidence.confidence * 0.42)
+            .clamp(0.0, 0.95)
+            .toDouble()
+        : tempo.confidence;
     final confidence = _overallConfidence(
-      tempo.confidence,
+      tempoConfidence,
       key.confidence,
       energyConfidence,
       structureConfidence,
@@ -110,7 +116,7 @@ class DjPcmProfileAnalyzer {
       fingerprint: fingerprint,
       beatGrid: DjBeatGrid(
         bpm: tempo.bpm,
-        confidence: tempo.confidence,
+        confidence: tempoConfidence,
         firstBeatMs: beatPositions.isEmpty ? tempo.beatOffsetMs : beatPositions.first,
         beatMs: beatPositions,
         beatsPerBar: 4,
@@ -128,8 +134,32 @@ class DjPcmProfileAnalyzer {
     );
   }
 
+  ({double confidence, double phaseStability, bool hasEvidence}) _aggregateBeatEvidence(
+    List<_FeatureSample> samples,
+  ) {
+    final values = samples
+        .where((s) => s.features.beatConfidence > 0)
+        .map((s) => s.features.beatConfidence)
+        .toList();
+    if (values.isEmpty) {
+      return (confidence: 0.0, phaseStability: 0.0, hasEvidence: false);
+    }
+    final confidence = values.reduce((a, b) => a + b) / values.length;
+    final stabilityValues = samples
+        .where((s) => s.features.beatPhaseStability > 0)
+        .map((s) => s.features.beatPhaseStability)
+        .toList();
+    final stability = stabilityValues.isEmpty
+        ? 0.0
+        : stabilityValues.reduce((a, b) => a + b) / stabilityValues.length;
+    return (
+      confidence: confidence.clamp(0.0, 0.95).toDouble(),
+      phaseStability: stability.clamp(0.0, 1.0).toDouble(),
+      hasEvidence: true,
+    );
+  }
+
   List<int> _aggregateBeats(
-    List<_BpmSample> bpmSamples,
     List<_FeatureSample> featureSamples,
     int durationMs,
   ) {
