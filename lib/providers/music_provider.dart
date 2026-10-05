@@ -2863,9 +2863,44 @@ class MusicProvider extends ChangeNotifier {
     final candidate = plan.candidate;
     _lastDjCrossfadeBiasMs = 0;
     _lastDjEnergyScore = candidate.scores['energy'] ?? 0.5;
+
+    // The V2 execution planner is now the source of truth for transition
+    // timing. The existing A/B crossfade loop remains the actual audio executor.
+    // This deliberately keeps execution engine-neutral: if a step is unknown,
+    // ordinary crossfade behavior remains the safe fallback.
+    for (final step in plan.steps) {
+      if (step.action == 'extend_crossfade') {
+        final requested = (step.parameters['durationMs'] as num?)?.toInt();
+        if (requested != null) {
+          _lastDjCrossfadeBiasMs =
+              (requested - candidate.durationMs).clamp(-4000, 8000).toInt();
+        }
+      }
+    }
+
     final incomingDuration = incoming.duration ?? incomingSong.duration;
-    final seekMs = candidate.incomingStartMs.clamp(0, incomingDuration.inMilliseconds).toInt();
+    final seekMs = candidate.incomingStartMs
+        .clamp(0, incomingDuration.inMilliseconds)
+        .toInt();
     await incoming.seek(Duration(milliseconds: seekMs));
+
+    await ResonateDiagnostics.recordDj(
+      stage: 'v2_execution',
+      outcome: 'prepared',
+      reason: 'timeline_mapped_to_ab',
+      songId: incomingSong.id,
+      extra: {
+        'kind': candidate.kind.name,
+        'incomingStartMs': seekMs,
+        'durationMs': candidate.durationMs,
+        'crossfadeBiasMs': _lastDjCrossfadeBiasMs,
+        'steps': plan.steps.map((step) => {
+          'action': step.action,
+          'atMs': step.atMs,
+          'parameters': step.parameters,
+        }).toList(),
+      },
+    );
 
     var tempoApplied = false;
     final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
