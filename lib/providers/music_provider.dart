@@ -18,6 +18,7 @@ import '../services/dj_analysis_service.dart';
 import '../services/dj_bpm_estimator.dart';
 import '../services/dj_transition_planner.dart';
 import '../services/dj_transition_memory.dart';
+import '../dj_engine/dj_engine.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -102,6 +103,7 @@ class MusicProvider extends ChangeNotifier {
   bool _djSfxEngaged = false;
   final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
+  final DjEngine _djEngine = const DjEngine();
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
   DateTime? _lastDjHandoffAt;
@@ -2637,6 +2639,23 @@ class MusicProvider extends ChangeNotifier {
     }
     if (outgoingSong == null) return;
     try {
+      final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
+      final profileB = await _djAnalysis!.getProfile(incomingSong.id);
+      if (profileA != null && profileB != null) {
+        final v2 = _djEngine.planTransition(
+          outgoing: profileA,
+          incoming: profileB,
+          outgoingPositionMs: outgoing.position.inMilliseconds,
+          preferredDurationMs: _crossfadeDurationMs,
+          maxDurationMs: 6500,
+        );
+        if (!v2.fallback) {
+          await _applyV2DjHandoff(outgoing: outgoing, incoming: incoming, outgoingSong: outgoingSong, incomingSong: incomingSong, plan: v2);
+          return;
+        }
+        await ResonateDiagnostics.recordDj(stage: 'v2_brain', outcome: 'fallback', reason: v2.reason, songId: incomingSong.id, extra: {'kind': v2.candidate.kind.name, 'score': v2.candidate.score});
+      }
+
       List<DjAnalysis> results;
       try {
         final aFuture = _djAnalysis!.analyzeSongCachedFirst(outgoingSong);
@@ -2832,6 +2851,59 @@ class MusicProvider extends ChangeNotifier {
         );
       } catch (_) {}
     }
+  }
+
+  Future<void> _applyV2DjHandoff({
+    required AudioPlayer outgoing,
+    required AudioPlayer incoming,
+    required Song outgoingSong,
+    required Song incomingSong,
+    required DjExecutionPlan plan,
+  }) async {
+    final candidate = plan.candidate;
+    _lastDjCrossfadeBiasMs = 0;
+    _lastDjEnergyScore = candidate.scores['energy'] ?? 0.5;
+    final incomingDuration = incoming.duration ?? incomingSong.duration;
+    final seekMs = candidate.incomingStartMs.clamp(0, incomingDuration.inMilliseconds).toInt();
+    await incoming.seek(Duration(milliseconds: seekMs));
+
+    var tempoApplied = false;
+    final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
+    final profileB = await _djAnalysis!.getProfile(incomingSong.id);
+    if (_djTempoMatchActive && profileA?.beatGrid.bpm != null && profileB?.beatGrid.bpm != null) {
+      final stretch = computeTempoStretch(
+        bpmA: profileA!.beatGrid.bpm!,
+        bpmB: profileB!.beatGrid.bpm!,
+        maxStretchPercent: _djMaxStretchPercent,
+      );
+      if (stretch != null) {
+        await outgoing.setSpeed(stretch.speedOutgoing);
+        await incoming.setSpeed(stretch.speedIncoming);
+        _djStretchSpeedOut = stretch.speedOutgoing;
+        _djStretchSpeedIn = stretch.speedIncoming;
+        tempoApplied = true;
+      }
+    }
+
+    _lastDjHandoffAt = DateTime.now();
+    _lastDjFromId = outgoingSong.id;
+    _lastDjToId = incomingSong.id;
+    _lastDjStrategy = candidate.kind.name;
+    await ResonateDiagnostics.recordDj(
+      stage: 'v2_handoff',
+      outcome: 'applied',
+      reason: plan.reason,
+      songId: incomingSong.id,
+      extra: {
+        'kind': candidate.kind.name,
+        'score': candidate.score,
+        'confidence': candidate.confidence,
+        'seekMs': seekMs,
+        'tempoApplied': tempoApplied,
+        'risks': candidate.risks.map((r) => r.name).toList(),
+        'scores': candidate.scores,
+      },
+    );
   }
 
   Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType = 'linear', required int generation, int? playbackIntentToken}) async {
