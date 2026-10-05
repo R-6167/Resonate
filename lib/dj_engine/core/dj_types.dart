@@ -21,6 +21,10 @@ class DjBeatGrid {
   final double confidence;
   final int? firstBeatMs;
   final List<int> beatMs;
+  final List<int> downbeatMs;
+  final double downbeatConfidence;
+  final double barConfidence;
+  final double phraseConfidence;
   final int beatsPerBar;
   final int beatsPerPhrase;
 
@@ -29,6 +33,10 @@ class DjBeatGrid {
     this.confidence = 0,
     this.firstBeatMs,
     this.beatMs = const [],
+    this.downbeatMs = const [],
+    this.downbeatConfidence = 0,
+    this.barConfidence = 0,
+    this.phraseConfidence = 0,
     this.beatsPerBar = 4,
     this.beatsPerPhrase = 16,
   });
@@ -61,6 +69,7 @@ class DjEnergyPoint {
   final double bass;
   final double mids;
   final double highs;
+  final double slope;
 
   const DjEnergyPoint({
     required this.timeMs,
@@ -69,6 +78,7 @@ class DjEnergyPoint {
     this.bass = 0.5,
     this.mids = 0.5,
     this.highs = 0.5,
+    this.slope = 0.0,
   });
 }
 
