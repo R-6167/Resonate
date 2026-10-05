@@ -3284,7 +3284,6 @@ class MusicProvider extends ChangeNotifier {
                 }
               }
               if (incomingPos > lastIncomingPositionMs + 20) {
-              if (incomingPos > lastIncomingPositionMs + 20) {
                 lastIncomingPositionMs = incomingPos;
                 lastIncomingProgressAt = DateTime.now();
                 incomingRecoveryAttempts = 0;
