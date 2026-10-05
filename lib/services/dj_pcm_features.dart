@@ -27,6 +27,10 @@ class DjPcmFeatures {
   final double bassDensity;
   /// Beat locations detected inside this decoded window, relative to its start.
   final List<int> beatMs;
+  /// Confidence that the detected beat period/phase is stable across the window.
+  final double beatConfidence;
+  /// Phase stability of detected beats (1 = tightly locked to the inferred grid).
+  final double beatPhaseStability;
 
   const DjPcmFeatures({
     this.keyRoot,
@@ -47,6 +51,8 @@ class DjPcmFeatures {
     this.spectralFlux = 0.0,
     this.bassDensity = 0.0,
     this.beatMs = const [],
+    this.beatConfidence = 0.0,
+    this.beatPhaseStability = 0.0,
   });
 }
 
@@ -93,7 +99,9 @@ class DjPcmFeatureAnalyzer {
         spectralCentroid: spectral.centroid,
         spectralFlux: spectral.flux,
         bassDensity: spectral.bassDensity,
-        beatMs: beats,
+        beatMs: beats.positions,
+        beatConfidence: beats.confidence,
+        beatPhaseStability: beats.phaseStability,
       );
     } catch (_) {
       return const DjPcmFeatures();
@@ -306,47 +314,123 @@ class DjPcmFeatureAnalyzer {
     );
   }
 
-  List<int> _beatsFromMono(Float64List mono, int rate) {
-    // Detect onset peaks in a smoothed energy envelope, then regularize them
-    // around the dominant BPM. This produces useful phase/beat evidence without
-    // requiring a codec-specific decoder or an external DSP library.
+  ({List<int> positions, double confidence, double phaseStability}) _beatsFromMono(
+    Float64List mono,
+    int rate,
+  ) {
+    // Estimate a dominant onset period, then measure how consistently the
+    // observed onsets support that period and phase. We deliberately keep the
+    // output conservative: uncertain windows contribute no beat grid.
     const hop = 256;
-    if (mono.length < rate) return const [];
+    if (mono.length < rate) {
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+    }
     final env = <double>[];
     for (var i = 0; i + hop <= mono.length; i += hop) {
       var sum = 0.0;
       for (var j = 0; j < hop; j++) sum += mono[i + j].abs();
       env.add(sum / hop);
     }
-    if (env.length < 40) return const [];
+    if (env.length < 40) {
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+    }
+
     final onset = List<double>.filled(env.length, 0.0);
+    var onsetEnergy = 0.0;
     for (var i = 1; i < env.length; i++) {
       onset[i] = math.max(0.0, env[i] - env[i - 1]);
+      onsetEnergy += onset[i];
     }
+    if (onsetEnergy <= 1e-9) {
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+    }
+
+    final minLag = (rate / hop * 60 / 180).round().clamp(8, 200);
+    final maxLag = (rate / hop * 60 / 55).round().clamp(minLag + 1, 260);
     var bestLag = 0;
     var bestScore = 0.0;
-    final minLag = (rate / 256 * 60 / 180).round().clamp(8, 200);
-    final maxLag = (rate / 256 * 60 / 55).round().clamp(minLag + 1, 260);
+    var secondScore = 0.0;
     for (var lag = minLag; lag <= maxLag; lag++) {
       var score = 0.0;
-      for (var i = lag; i < onset.length; i++) score += onset[i] * onset[i - lag];
-      if (score > bestScore) { bestScore = score; bestLag = lag; }
+      for (var i = lag; i < onset.length; i++) {
+        score += onset[i] * onset[i - lag];
+      }
+      if (score > bestScore) {
+        secondScore = bestScore;
+        bestScore = score;
+        bestLag = lag;
+      } else if (score > secondScore) {
+        secondScore = score;
+      }
     }
-    if (bestLag == 0 || bestScore <= 1e-9) return const [];
-    final periodMs = bestLag * hop * 1000 ~/ rate;
-    final beats = <int>[];
+    if (bestLag == 0 || bestScore <= 1e-9) {
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
+    }
+
+    final periodFrames = bestLag;
+    final periodMs = periodFrames * hop * 1000 / rate;
+    final normalizedPeak = bestScore /
+        math.max(1e-9, onsetEnergy * onsetEnergy / math.max(1, onset.length));
+    final peakStrength = (normalizedPeak / 2.5).clamp(0.0, 1.0).toDouble();
+    final peakSeparation = secondScore <= 1e-12
+        ? 1.0
+        : (1.0 - secondScore / bestScore).clamp(0.0, 1.0).toDouble();
+
+    // Find the strongest onset inside one period and use it as the phase seed.
     var seed = 0;
     var seedValue = 0.0;
-    for (var i = 0; i < bestLag && i < onset.length; i++) {
-      if (onset[i] > seedValue) { seedValue = onset[i]; seed = i; }
+    for (var i = 0; i < periodFrames && i < onset.length; i++) {
+      if (onset[i] > seedValue) {
+        seedValue = onset[i];
+        seed = i;
+      }
     }
-    var t = seed * hop;
-    final step = math.max(1, bestLag * hop);
-    while (t < mono.length) {
-      beats.add((t * 1000 ~/ rate));
-      t += step;
+    if (seedValue <= 1e-9) {
+      return (positions: const [], confidence: 0.0, phaseStability: 0.0);
     }
-    return beats;
+
+    final phaseResiduals = <double>[];
+    var supportingOnsets = 0;
+    for (var i = seed; i < onset.length; i += periodFrames) {
+      var bestResidual = double.infinity;
+      var bestOnset = 0.0;
+      final lo = math.max(0, i - periodFrames ~/ 5);
+      final hi = math.min(onset.length - 1, i + periodFrames ~/ 5);
+      for (var j = lo; j <= hi; j++) {
+        if (onset[j] > bestOnset) {
+          bestOnset = onset[j];
+          bestResidual = (j - i).abs().toDouble();
+        }
+      }
+      if (bestOnset > 0) {
+        supportingOnsets++;
+        phaseResiduals.add(bestResidual / math.max(1, periodFrames));
+      }
+    }
+
+    final meanResidual = phaseResiduals.isEmpty
+        ? 1.0
+        : phaseResiduals.reduce((a, b) => a + b) / phaseResiduals.length;
+    final phaseStability = (1.0 - meanResidual * 4.0).clamp(0.0, 1.0).toDouble();
+    final support = (supportingOnsets / math.max(1, (onset.length - seed) ~/ periodFrames))
+        .clamp(0.0, 1.0).toDouble();
+    final confidence = (peakStrength * 0.35 + peakSeparation * 0.20 +
+            phaseStability * 0.30 + support * 0.15)
+        .clamp(0.0, 1.0).toDouble();
+
+    // Only expose a grid when the phase is credible. This prevents a weak
+    // autocorrelation peak from causing aggressive beat/phrase alignment.
+    if (confidence < 0.38 || phaseStability < 0.35) {
+      return (positions: const [], confidence: confidence, phaseStability: phaseStability);
+    }
+
+    final positions = <int>[];
+    var frame = seed;
+    while (frame < mono.length ~/ hop) {
+      positions.add((frame * hop * 1000 ~/ rate));
+      frame += periodFrames;
+    }
+    return (positions: positions, confidence: confidence, phaseStability: phaseStability);
   }
 
   ({double bass, double mids, double highs, double centroid, double flux, double bassDensity})
