@@ -84,6 +84,7 @@ class DjPcmProfileAnalyzer {
     final beatEvidence = _aggregateBeatEvidence(featureSamples);
     final beatPositions = _aggregateBeats(featureSamples, durationMs);
     final key = _aggregateKey(featureSamples);
+    final harmonicChanges = _detectHarmonicChanges(featureSamples);
     final energy = _buildEnergyCurve(durationMs, bpmSamples, featureSamples);
     final sections = _buildSections(durationMs, featureSamples);
     final markers = _buildMarkers(durationMs, featureSamples, sections);
@@ -109,6 +110,7 @@ class DjPcmProfileAnalyzer {
         ? 0.5
         : energy.fold<double>(0, (s, p) => s + p.loudness) / energy.length;
     final spectrum = _aggregateSpectrum(featureSamples);
+    final downbeat = _aggregateDownbeatEvidence(featureSamples, beatPositions);
 
     return DjTrackProfile(
       songId: songId,
@@ -119,12 +121,17 @@ class DjPcmProfileAnalyzer {
         confidence: tempoConfidence,
         firstBeatMs: beatPositions.isEmpty ? tempo.beatOffsetMs : beatPositions.first,
         beatMs: beatPositions,
+        downbeatMs: downbeat.positions,
+        downbeatConfidence: downbeat.downbeatConfidence,
+        barConfidence: downbeat.barConfidence,
+        phraseConfidence: downbeat.phraseConfidence,
         beatsPerBar: 4,
         beatsPerPhrase: 16,
       ),
       keyRoot: key.root,
       keyMode: key.mode,
       keyConfidence: key.confidence,
+      harmonicChanges: harmonicChanges,
       sections: sections,
       energyCurve: energy,
       spectrum: spectrum,
@@ -324,8 +331,9 @@ class DjPcmProfileAnalyzer {
         value: value,
         loudness: loudness,
         bass: (value * 0.80).clamp(0.0, 1.0).toDouble(),
-        mids: (value * 0.95).clamp(0.0, 1.0).toDouble(),
-        highs: (loudness * 0.90).clamp(0.0, 1.0).toDouble(),
+        mids: f.midsEnergy.clamp(0.0, 1.0).toDouble(),
+        highs: f.highsEnergy.clamp(0.0, 1.0).toDouble(),
+        slope: 0.0,
       ));
     }
 
@@ -336,11 +344,37 @@ class DjPcmProfileAnalyzer {
         timeMs: sample.window.startMs.clamp(0, durationMs),
         value: value,
         loudness: (sample.estimate.loudness ?? value).clamp(0.0, 1.0).toDouble(),
+        slope: 0.0,
       ));
     }
 
     points.sort((a, b) => a.timeMs.compareTo(b.timeMs));
     return points;
+  }
+
+  ({List<int> positions, double downbeatConfidence, double barConfidence, double phraseConfidence})
+      _aggregateDownbeatEvidence(List<_FeatureSample> samples, List<int> globalBeats) {
+    final values = samples.map((s) => s.features.downbeatConfidence).where((v) => v > 0).toList();
+    if (values.isEmpty || globalBeats.length < 8) {
+      return (positions: const <int>[], downbeatConfidence: 0.0, barConfidence: 0.0, phraseConfidence: 0.0);
+    }
+    final confidence = (values.reduce((a, b) => a + b) / values.length).clamp(0.0, 0.9).toDouble();
+    final positions = <int>[];
+    for (var i = 0; i < globalBeats.length; i += 4) positions.add(globalBeats[i]);
+    return (positions: positions, downbeatConfidence: confidence, barConfidence: confidence, phraseConfidence: (confidence * 0.82).clamp(0.0, 0.85).toDouble());
+  }
+
+  List<DjTimePoint> _detectHarmonicChanges(List<_FeatureSample> samples) {
+    final ordered = samples.where((s) => s.features.keyRoot != null && s.features.keyConfidence > 0.3).toList()..sort((a, b) => a.window.startMs.compareTo(b.window.startMs));
+    if (ordered.length < 2) return const [];
+    final changes = <DjTimePoint>[];
+    for (var i = 1; i < ordered.length; i++) {
+      final a = ordered[i - 1].features, b = ordered[i].features;
+      if (a.keyRoot == b.keyRoot && a.keyMode == b.keyMode) continue;
+      final confidence = math.min(a.keyConfidence, b.keyConfidence).clamp(0.0, 0.9).toDouble();
+      if (confidence >= 0.38) changes.add(DjTimePoint(ordered[i].window.startMs, confidence: confidence));
+    }
+    return changes;
   }
 
   DjSpectralProfile _aggregateSpectrum(List<_FeatureSample> samples) {
