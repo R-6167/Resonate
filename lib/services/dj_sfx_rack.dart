@@ -212,7 +212,8 @@ class DjSfxRack {
     }
   }
 
-  /// Schedule an actual-track SFX without blocking transition playback.\n  Future<void> engageDelayed({
+  /// Schedule an actual-track SFX without blocking transition playback.
+  Future<void> engageDelayed({
     required Duration delay,
     required double energyScore,
     DjSfxPreset? preset,
