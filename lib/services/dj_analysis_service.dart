@@ -109,7 +109,10 @@ class DjAnalysisService {
     _inFlight.add(song.id);
     try {
       final size = await _fileSize(song.filePath);
-      final estimate = await _estimator.estimateFile(song.filePath);
+      final estimate = await _estimator.estimateFile(
+        song.filePath,
+        durationMs: song.duration.inMilliseconds,
+      );
       final analysis = estimate == null
           ? DjAnalysis(
               songId: song.id,
