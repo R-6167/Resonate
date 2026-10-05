@@ -3584,12 +3584,24 @@ Future<void> pause({String source = 'normal_player'}) {
   int _pendingNextSteps = 0;
 
   Future<void> nextSong({String source = 'normal_player'}) {
-    if (_transportInFlight || _loadingSource || _crossfadeInProgress) {
+    // Manual Next supersedes an automatic DJ/crossfade transition. The intent
+    // token below invalidates the in-flight fade so it cannot commit afterward.
+    // Keep queueing only for unrelated transport/load contention.
+    if (_transportInFlight || _loadingSource) {
       _pendingNextSteps = (_pendingNextSteps + 1).clamp(0, 12);
       return Future<void>.value();
     }
+    final wasCrossfadeActive = _crossfadeInProgress || _automaticCrossfadeInFlight;
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
+    if (wasCrossfadeActive) {
+      unawaited(ResonateDiagnostics.record('automatic_transition_preempted', {
+        'command': 'next',
+        'source': source,
+        'songId': currentSong?.id,
+        'queueIndex': _queueIndex,
+      }));
+    }
 
     return _serializePlayback(
       () async {
