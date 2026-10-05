@@ -2610,26 +2610,41 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _engageDjTransitionSfx({
     double energyScore = 0.5,
     DjTransitionKind? transitionKind,
+    Duration delay = Duration.zero,
   }) async {
     if (!_djSfxActive) return;
     try {
       final profile = currentSong == null
           ? null
           : await _djAnalysis?.getProfile(currentSong!.id);
-      await _djSfxRack.engage(
-        energyScore: energyScore,
-        equalizerA: _equalizerA,
-        equalizerB: _equalizerB,
-        outgoing: audioPlayer,
-        outgoingUri: currentSong?.filePath,
-        beatMs: profile?.beatGrid.beatMs ?? const <int>[],
-        sections: profile?.sections ?? const <DjSection>[],
-        transitionKind: transitionKind,
-      );
-      _djSfxEngaged = true;
+      if (delay > Duration.zero) {
+        unawaited(_djSfxRack.engageDelayed(
+          delay: delay,
+          energyScore: energyScore,
+          equalizerA: _equalizerA,
+          equalizerB: _equalizerB,
+          outgoing: audioPlayer,
+          outgoingUri: currentSong?.filePath,
+          beatMs: profile?.beatGrid.beatMs ?? const <int>[],
+          sections: profile?.sections ?? const <DjSection>[],
+          transitionKind: transitionKind,
+        ));
+      } else {
+        await _djSfxRack.engage(
+          energyScore: energyScore,
+          equalizerA: _equalizerA,
+          equalizerB: _equalizerB,
+          outgoing: audioPlayer,
+          outgoingUri: currentSong?.filePath,
+          beatMs: profile?.beatGrid.beatMs ?? const <int>[],
+          sections: profile?.sections ?? const <DjSection>[],
+          transitionKind: transitionKind,
+        );
+        _djSfxEngaged = true;
+      }
       await ResonateDiagnostics.record('dj_transition_sfx', {
-        'action': 'engage',
-        'preset': _djSfxRack.presetName,
+        'action': delay > Duration.zero ? 'scheduled' : 'engage',
+        'delayMs': delay.inMilliseconds,
         'energyScore': energyScore,
       });
     } catch (e) {
