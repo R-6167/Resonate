@@ -25,6 +25,8 @@ class DjPcmFeatures {
   final double spectralCentroid;
   final double spectralFlux;
   final double bassDensity;
+  /// Beat locations detected inside this decoded window, relative to its start.
+  final List<int> beatMs;
 
   const DjPcmFeatures({
     this.keyRoot,
@@ -44,6 +46,7 @@ class DjPcmFeatures {
     this.spectralCentroid = 0.0,
     this.spectralFlux = 0.0,
     this.bassDensity = 0.0,
+    this.beatMs = const [],
   });
 }
 
@@ -70,6 +73,7 @@ class DjPcmFeatureAnalyzer {
       final section = _structureFromMono(mono, rate, windowRole: windowRole);
       final key = _keyFromMono(mono, rate);
       final spectral = _spectralFromMono(mono, rate);
+      final beats = _beatsFromMono(mono, rate);
 
       return DjPcmFeatures(
         keyRoot: key.$1,
@@ -89,6 +93,7 @@ class DjPcmFeatureAnalyzer {
         spectralCentroid: spectral.centroid,
         spectralFlux: spectral.flux,
         bassDensity: spectral.bassDensity,
+        beatMs: beats,
       );
     } catch (_) {
       return const DjPcmFeatures();
@@ -299,6 +304,49 @@ class DjPcmFeatureAnalyzer {
       peakEnergy: peak.isFinite ? peak : null,
       sectionHint: hint,
     );
+  }
+
+  List<int> _beatsFromMono(Float64List mono, int rate) {
+    // Detect onset peaks in a smoothed energy envelope, then regularize them
+    // around the dominant BPM. This produces useful phase/beat evidence without
+    // requiring a codec-specific decoder or an external DSP library.
+    const hop = 256;
+    if (mono.length < rate) return const [];
+    final env = <double>[];
+    for (var i = 0; i + hop <= mono.length; i += hop) {
+      var sum = 0.0;
+      for (var j = 0; j < hop; j++) sum += mono[i + j].abs();
+      env.add(sum / hop);
+    }
+    if (env.length < 40) return const [];
+    final onset = List<double>.filled(env.length, 0.0);
+    for (var i = 1; i < env.length; i++) {
+      onset[i] = math.max(0.0, env[i] - env[i - 1]);
+    }
+    var bestLag = 0;
+    var bestScore = 0.0;
+    final minLag = (rate / 256 * 60 / 180).round().clamp(8, 200);
+    final maxLag = (rate / 256 * 60 / 55).round().clamp(minLag + 1, 260);
+    for (var lag = minLag; lag <= maxLag; lag++) {
+      var score = 0.0;
+      for (var i = lag; i < onset.length; i++) score += onset[i] * onset[i - lag];
+      if (score > bestScore) { bestScore = score; bestLag = lag; }
+    }
+    if (bestLag == 0 || bestScore <= 1e-9) return const [];
+    final periodMs = bestLag * hop * 1000 ~/ rate;
+    final beats = <int>[];
+    var seed = 0;
+    var seedValue = 0.0;
+    for (var i = 0; i < bestLag && i < onset.length; i++) {
+      if (onset[i] > seedValue) { seedValue = onset[i]; seed = i; }
+    }
+    var t = seed * hop;
+    final step = math.max(1, bestLag * hop);
+    while (t < mono.length) {
+      beats.add((t * 1000 ~/ rate));
+      t += step;
+    }
+    return beats;
   }
 
   ({double bass, double mids, double highs, double centroid, double flux, double bassDensity})
