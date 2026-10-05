@@ -72,7 +72,9 @@ class DjPcmProfileAnalyzer {
           features.bodyEnergy != null ||
           features.peakEnergy != null ||
           features.introHintMs != null ||
-          features.outroHintMs != null) {
+          features.outroHintMs != null ||
+          features.spectralCentroid > 0 ||
+          features.bassEnergy > 0) {
         featureSamples.add(_FeatureSample(window, features));
       }
     }
@@ -98,6 +100,7 @@ class DjPcmProfileAnalyzer {
     final meanLoudness = energy.isEmpty
         ? 0.5
         : energy.fold<double>(0, (s, p) => s + p.loudness) / energy.length;
+    final spectrum = _aggregateSpectrum(featureSamples);
 
     return DjTrackProfile(
       songId: songId,
@@ -115,15 +118,7 @@ class DjPcmProfileAnalyzer {
       keyConfidence: key.confidence,
       sections: sections,
       energyCurve: energy,
-      spectrum: DjSpectralProfile(
-        bass: (meanEnergy * 0.82).clamp(0.0, 1.0).toDouble(),
-        mids: (meanEnergy * 0.94).clamp(0.0, 1.0).toDouble(),
-        highs: (meanLoudness * 0.88).clamp(0.0, 1.0).toDouble(),
-        bassDensity: (meanEnergy * 0.70 + 0.12).clamp(0.0, 1.0).toDouble(),
-        centroid: (0.30 + meanLoudness * 0.35).clamp(0.0, 1.0).toDouble(),
-        spectralFlux: _flux(energy),
-        confidence: energy.isEmpty ? 0.0 : 0.45,
-      ),
+      spectrum: spectrum,
       transitions: markers,
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
@@ -231,6 +226,33 @@ class DjPcmProfileAnalyzer {
 
     points.sort((a, b) => a.timeMs.compareTo(b.timeMs));
     return points;
+  }
+
+  DjSpectralProfile _aggregateSpectrum(List<_FeatureSample> samples) {
+    if (samples.isEmpty) return const DjSpectralProfile();
+    var bass = 0.0, mids = 0.0, highs = 0.0, centroid = 0.0;
+    var flux = 0.0, density = 0.0, count = 0;
+    for (final sample in samples) {
+      final f = sample.features;
+      if (f.bassEnergy <= 0 && f.midsEnergy <= 0 && f.highsEnergy <= 0) continue;
+      bass += f.bassEnergy;
+      mids += f.midsEnergy;
+      highs += f.highsEnergy;
+      centroid += f.spectralCentroid;
+      flux += f.spectralFlux;
+      density += f.bassDensity;
+      count++;
+    }
+    if (count == 0) return const DjSpectralProfile();
+    return DjSpectralProfile(
+      bass: (bass / count).clamp(0.0, 1.0).toDouble(),
+      mids: (mids / count).clamp(0.0, 1.0).toDouble(),
+      highs: (highs / count).clamp(0.0, 1.0).toDouble(),
+      centroid: (centroid / count).clamp(0.0, 1.0).toDouble(),
+      bassDensity: (density / count).clamp(0.0, 1.0).toDouble(),
+      spectralFlux: (flux / count).clamp(0.0, 1.0).toDouble(),
+      confidence: count >= 3 ? 0.78 : 0.58,
+    );
   }
 
   List<DjSection> _buildSections(
