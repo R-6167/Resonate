@@ -19,6 +19,7 @@ import '../services/dj_bpm_estimator.dart';
 import '../services/dj_transition_planner.dart';
 import '../services/dj_transition_memory.dart';
 import '../dj_engine/dj_engine.dart';
+import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -108,6 +109,7 @@ class MusicProvider extends ChangeNotifier {
   final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
   final DjEngine _djEngine = const DjEngine();
+  final DjAutopilotPlanner _djAutopilotPlanner = const DjAutopilotPlanner();
   DjExecutionPlan? _activeDjExecutionPlan;
   double? _djStretchSpeedOut;
   double? _djStretchSpeedIn;
@@ -2712,12 +2714,19 @@ class MusicProvider extends ChangeNotifier {
       final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
       final profileB = await _djAnalysis!.getProfile(incomingSong.id);
       if (profileA != null && profileB != null) {
-        final v2 = _djEngine.planTransition(
+        // Autonomous layer: the musical brain proposes valid candidates;
+        // local learning softly reranks them without ever removing fallback.
+        final learnedCandidate = await _djAutopilotPlanner.choose(
           outgoing: profileA,
           incoming: profileB,
           outgoingPositionMs: outgoing.position.inMilliseconds,
           preferredDurationMs: _crossfadeDurationMs,
           maxDurationMs: 6500,
+        );
+        final v2 = _djEngine.execution.plan(
+          outgoing: profileA,
+          incoming: profileB,
+          candidate: learnedCandidate,
         );
         if (!v2.fallback) {
           await _applyV2DjHandoff(
