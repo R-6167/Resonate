@@ -39,6 +39,7 @@ class DjSfxRack {
   AudioPlayer? _outgoing;
   AudioPlayer? _oneshot;
   int _oneshotGen = 0;
+  int _delayedSfxGen = 0;
   int _trackFxGen = 0;
   bool _trackActionRunning = false;
   List<int> _beatMs = const <int>[];
@@ -162,6 +163,8 @@ class DjSfxRack {
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
   }) async {
+    ++_delayedSfxGen;
+    ++_trackFxGen;
     if (!engaged && !_eqTouched) return;
     try {
       final out = _outgoing;
@@ -201,7 +204,7 @@ class DjSfxRack {
     }
   }
 
-  Future<void> _playOneshot(DjSfxPreset preset, double score) async {
+  /// Schedule an actual-track SFX without blocking transition playback.\n  Future<void> engageDelayed({\n    required Duration delay,\n    required double energyScore,\n    DjSfxPreset? preset,\n    AndroidEqualizer? equalizerA,\n    AndroidEqualizer? equalizerB,\n    AudioPlayer? outgoing,\n    String? outgoingUri,\n    List<int> beatMs = const <int>[],\n    List<DjSection> sections = const <DjSection>[],\n    DjTransitionKind? transitionKind,\n  }) async {\n    final gen = ++_delayedSfxGen;\n    try {\n      await Future<void>.delayed(delay);\n      if (gen != _delayedSfxGen || !engaged) return;\n      await engage(\n        energyScore: energyScore,\n        preset: preset,\n        equalizerA: equalizerA,\n        equalizerB: equalizerB,\n        outgoing: outgoing,\n        outgoingUri: outgoingUri,\n        beatMs: beatMs,\n        sections: sections,\n        transitionKind: transitionKind,\n      );\n    } catch (e) {\n      debugPrint('DjSfxRack.engageDelayed: $e');\n    }\n  }\n\n  Future<void> _playOneshot(DjSfxPreset preset, double score) async {
     final asset = sampleAssets[preset];
     if (asset == null) return;
     final gen = ++_oneshotGen;
