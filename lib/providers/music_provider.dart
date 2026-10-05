@@ -3166,6 +3166,10 @@ class MusicProvider extends ChangeNotifier {
         }
       } catch (_) {}
       final total = remainingMs;
+      // Snapshot analysis for this transition. A stale A/B loop must never
+      // read a newer transition's beat grid while it is unwinding.
+      final runtimeBeatMs = List<int>.from(_lastDjIncomingBeatMs);
+      final runtimeBpm = _lastDjIncomingBpm;
       final gentle = Platform.isAndroid;
       final stepMs = gentle ? 36 : 24;
       final fadeStartedAt = DateTime.now();
@@ -3241,15 +3245,15 @@ class MusicProvider extends ChangeNotifier {
               // Conservative beat-phase correction: only correct small drift
               // against a credible track-wide beat grid. Never invent beats and
               // never seek repeatedly; playback remains valid if analysis is absent.
-              if (_lastDjIncomingBeatMs.length >= 4 &&
+              if (runtimeBeatMs.length >= 4 &&
                   _djBeatCorrectionAttempts < 2 &&
-                  (_lastDjIncomingBpm ?? 0) >= 40 &&
-                  (_lastDjIncomingBpm ?? 0) <= 240 &&
+                  (runtimeBpm ?? 0) >= 40 &&
+                  (runtimeBpm ?? 0) <= 240 &&
                   linear > 0.08 &&
                   linear < 0.92) {
-                var nearest = _lastDjIncomingBeatMs.first;
+                var nearest = runtimeBeatMs.first;
                 var distance = (incomingPos - nearest).abs();
-                for (final beat in _lastDjIncomingBeatMs) {
+                for (final beat in runtimeBeatMs) {
                   final d = (incomingPos - beat).abs();
                   if (d < distance) {
                     distance = d;
@@ -3259,7 +3263,7 @@ class MusicProvider extends ChangeNotifier {
                 }
                 // Scale tolerance with tempo, capped so ordinary decoder jitter
                 // is not mistaken for musical drift.
-                final periodMs = 60000.0 / (_lastDjIncomingBpm ?? 120.0);
+                final periodMs = 60000.0 / (runtimeBpm ?? 120.0);
                 final toleranceMs = periodMs.clamp(55.0, 90.0).toInt();
                 if (distance > 18 && distance <= toleranceMs) {
                   _djBeatCorrectionAttempts++;
