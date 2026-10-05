@@ -23,6 +23,10 @@ enum DjSfxPreset {
   repeat,
   repeatRestart,
   scratch,
+  stutter,
+  beatRepeat,
+  retrigger,
+  brake,
   whoosh,
   impact,
 }
@@ -76,6 +80,10 @@ class DjSfxRack {
       DjSfxPreset.repeat: 2,
       DjSfxPreset.repeatRestart: high ? 2 : 1,
       DjSfxPreset.scratch: 2,
+      DjSfxPreset.stutter: high ? 2 : 1,
+      DjSfxPreset.beatRepeat: high ? 2 : 1,
+      DjSfxPreset.retrigger: 2,
+      DjSfxPreset.brake: 2,
       DjSfxPreset.whoosh: 2,
       DjSfxPreset.impact: high ? 2 : 1,
     };
@@ -323,7 +331,11 @@ class DjSfxRack {
   bool _usesTrackManipulation(DjSfxPreset p) =>
       p == DjSfxPreset.repeat ||
       p == DjSfxPreset.repeatRestart ||
-      p == DjSfxPreset.scratch;
+      p == DjSfxPreset.scratch ||
+      p == DjSfxPreset.stutter ||
+      p == DjSfxPreset.beatRepeat ||
+      p == DjSfxPreset.retrigger ||
+      p == DjSfxPreset.brake;
 
   /// Manipulates the actual outgoing track using just_audio controls.
   Future<void> _runTrackManipulation(DjSfxPreset preset) async {
