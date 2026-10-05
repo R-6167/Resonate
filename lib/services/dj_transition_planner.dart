@@ -387,7 +387,15 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   );
 
   final stratBias = await DjTransitionMemory.strategyBias(plan.strategy);
-  plan = plan.copyWith(strategyBias: stratBias);
+  final pairStrategyBias =
+      (fromSongId != null && toSongId != null && fromSongId.isNotEmpty && toSongId.isNotEmpty)
+          ? await DjTransitionMemory.pairStrategyBias(fromSongId, toSongId, plan.strategy)
+          : 0.0;
+  plan = plan.copyWith(
+    strategyBias: stratBias,
+    // Pair+strategy evidence is deliberately not folded into pairBias:
+    // a pair can dislike one transition style while liking another.
+  );
 
   // Soft: energy jump → drop beat seek (tempo lock only) + slightly longer bridge.
   if ((plan.strategy == 'beat_tempo' ||
@@ -407,13 +415,16 @@ Future<DjTransitionPlan> planDjTransitionLearned({
   // Need clearer negative history before demoting (fewer "skips" from learning).
   final hostilePair = pair < -0.50;
   final hostileStrat = stratBias < -0.55;
+  final hostilePairStrategy = pairStrategyBias < -0.55;
 
   final aggressive = plan.strategy == 'beat_tempo' ||
       plan.strategy == 'phrase_align' ||
       plan.strategy == 'outro_intro';
 
-  if (aggressive && (hostilePair || hostileStrat)) {
-    if (plan.stretch != null && !hostilePair) {
+  // Prefer the most specific evidence. A bad phrase blend for this exact pair
+  // should not punish every other strategy between the same tracks.
+  if (aggressive && (hostilePairStrategy || hostilePair || hostileStrat)) {
+    if (plan.stretch != null && !hostilePair && !hostilePairStrategy) {
       return plan.copyWith(
         strategy: 'tempo_match',
         attemptBeatAlign: false,
