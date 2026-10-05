@@ -204,7 +204,40 @@ class DjSfxRack {
     }
   }
 
-  /// Schedule an actual-track SFX without blocking transition playback.\n  Future<void> engageDelayed({\n    required Duration delay,\n    required double energyScore,\n    DjSfxPreset? preset,\n    AndroidEqualizer? equalizerA,\n    AndroidEqualizer? equalizerB,\n    AudioPlayer? outgoing,\n    String? outgoingUri,\n    List<int> beatMs = const <int>[],\n    List<DjSection> sections = const <DjSection>[],\n    DjTransitionKind? transitionKind,\n  }) async {\n    final gen = ++_delayedSfxGen;\n    try {\n      await Future<void>.delayed(delay);\n      if (gen != _delayedSfxGen || !engaged) return;\n      await engage(\n        energyScore: energyScore,\n        preset: preset,\n        equalizerA: equalizerA,\n        equalizerB: equalizerB,\n        outgoing: outgoing,\n        outgoingUri: outgoingUri,\n        beatMs: beatMs,\n        sections: sections,\n        transitionKind: transitionKind,\n      );\n    } catch (e) {\n      debugPrint('DjSfxRack.engageDelayed: $e');\n    }\n  }\n\n  Future<void> _playOneshot(DjSfxPreset preset, double score) async {
+  /// Schedule an actual-track SFX without blocking transition playback.\n  Future<void> engageDelayed({
+    required Duration delay,
+    required double energyScore,
+    DjSfxPreset? preset,
+    AndroidEqualizer? equalizerA,
+    AndroidEqualizer? equalizerB,
+    AudioPlayer? outgoing,
+    String? outgoingUri,
+    List<int> beatMs = const <int>[],
+    List<DjSection> sections = const <DjSection>[],
+    DjTransitionKind? transitionKind,
+  }) async {
+    final gen = ++_delayedSfxGen;
+    engaged = true;
+    try {
+      await Future<void>.delayed(delay);
+      if (gen != _delayedSfxGen || !engaged) return;
+      await engage(
+        energyScore: energyScore,
+        preset: preset,
+        equalizerA: equalizerA,
+        equalizerB: equalizerB,
+        outgoing: outgoing,
+        outgoingUri: outgoingUri,
+        beatMs: beatMs,
+        sections: sections,
+        transitionKind: transitionKind,
+      );
+    } catch (e) {
+      debugPrint('DjSfxRack.engageDelayed: $e');
+    }
+  }
+
+  Future<void> _playOneshot(DjSfxPreset preset, double score) async {
     final asset = sampleAssets[preset];
     if (asset == null) return;
     final gen = ++_oneshotGen;
