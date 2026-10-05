@@ -287,7 +287,7 @@ class DjPcmProfileAnalyzer {
     int durationMs,
     List<_FeatureSample> samples,
   ) {
-    final sections = <DjSection>[];
+    final raw = <DjSection>[];
     for (final sample in samples) {
       final type = _mapSection(sample.features.sectionHint);
       if (type == DjSectionType.unknown) continue;
@@ -299,18 +299,55 @@ class DjPcmProfileAnalyzer {
         math.min(durationMs - start, frames * 1000 ~/ sample.window.sampleRate),
       );
       final end = (start + length).clamp(start, durationMs);
-      final energy = _featureEnergy(sample.features);
-      sections.add(DjSection(
+      raw.add(DjSection(
         type: type,
         startMs: start,
         endMs: end,
-        confidence:
-            math.max(sample.features.keyConfidence, 0.45).clamp(0.0, 0.90).toDouble(),
-        energy: energy,
+        confidence: sample.features.keyConfidence > 0
+            ? sample.features.keyConfidence.clamp(0.0, 0.90).toDouble()
+            : 0.55,
+        energy: _featureEnergy(sample.features),
       ));
     }
-    sections.sort((a, b) => a.startMs.compareTo(b.startMs));
-    return sections;
+
+    raw.sort((a, b) => a.startMs.compareTo(b.startMs));
+    if (raw.isEmpty) return const [];
+
+    // Windows overlap. Merge compatible evidence instead of exposing a list of
+    // overlapping 12–15 s "sections" to the transition brain.
+    final merged = <DjSection>[];
+    for (final section in raw) {
+      if (merged.isEmpty) {
+        merged.add(section);
+        continue;
+      }
+      final previous = merged.last;
+      final sameType = previous.type == section.type;
+      final touches = section.startMs <= previous.endMs + 2500;
+      if (sameType && touches) {
+        final weightA = math.max(0.05, previous.confidence);
+        final weightB = math.max(0.05, section.confidence);
+        final confidence = ((previous.confidence * weightA +
+                    section.confidence * weightB) /
+                (weightA + weightB))
+            .clamp(0.0, 0.95)
+            .toDouble();
+        final energy = ((previous.energy * weightA + section.energy * weightB) /
+                (weightA + weightB))
+            .clamp(0.0, 1.0)
+            .toDouble();
+        merged[merged.length - 1] = DjSection(
+          type: previous.type,
+          startMs: math.min(previous.startMs, section.startMs),
+          endMs: math.max(previous.endMs, section.endMs),
+          confidence: confidence,
+          energy: energy,
+        );
+      } else {
+        merged.add(section);
+      }
+    }
+    return merged;
   }
 
   DjTransitionMarkers _buildMarkers(
@@ -320,32 +357,70 @@ class DjPcmProfileAnalyzer {
   ) {
     int? intro;
     int? outroStart;
+    final safeIns = <DjTimePoint>[];
+    final safeOuts = <DjTimePoint>[];
+    final risky = <DjTimePoint>[];
 
     for (final sample in samples) {
       final f = sample.features;
-      if (sample.window.role == 'start' && f.introHintMs != null) {
-        intro = math.max(intro ?? 0, f.introHintMs!);
+      final base = sample.window.startMs.clamp(0, durationMs);
+
+      if (sample.window.role == 'start') {
+        if (f.introHintMs != null) {
+          final point = (base + f.introHintMs!).clamp(0, durationMs);
+          intro = intro == null ? point : math.min(intro, point);
+          safeIns.add(DjTimePoint(point, confidence: 0.72));
+        }
       }
+
       if (sample.window.role == 'end' && f.outroHintMs != null) {
         outroStart = (durationMs - f.outroHintMs!).clamp(0, durationMs);
+        safeOuts.add(DjTimePoint(outroStart, confidence: 0.78));
+      }
+
+      // A detected local drop/peak is a musical boundary, but it is usually a
+      // risky place to inject another full-energy track.
+      if (f.dropHintMs != null) {
+        final point = (base + f.dropHintMs!).clamp(0, durationMs);
+        risky.add(DjTimePoint(point, confidence: 0.68));
       }
     }
+
+    // Structural boundaries are useful candidate anchors. Breakdown/build
+    // entries are generally safer mix-ins than drops/choruses.
+    for (final section in sections) {
+      final point = DjTimePoint(
+        section.startMs,
+        confidence: section.confidence.clamp(0.0, 0.95).toDouble(),
+      );
+      switch (section.type) {
+        case DjSectionType.intro:
+        case DjSectionType.build:
+        case DjSectionType.breakdown:
+          safeIns.add(point);
+          break;
+        case DjSectionType.outro:
+          safeOuts.add(point);
+          break;
+        case DjSectionType.drop:
+        case DjSectionType.chorus:
+          risky.add(point);
+          break;
+        default:
+          break;
+      }
+    }
+
+    safeIns.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    safeOuts.sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    risky.sort((a, b) => a.timeMs.compareTo(b.timeMs));
 
     return DjTransitionMarkers(
       bestIntroMs: intro,
       bestOutroMs: outroStart,
-      safeMixIns: [
-        if (intro != null) DjTimePoint(intro!, confidence: 0.55),
-      ],
-      safeMixOuts: [
-        if (outroStart != null) DjTimePoint(outroStart, confidence: 0.60),
-      ],
-      riskyPoints: [
-        for (final section in sections)
-          if (section.type == DjSectionType.drop ||
-              section.type == DjSectionType.chorus)
-            DjTimePoint(section.startMs, confidence: section.confidence),
-      ],
+      safeMixIns: safeIns,
+      safeMixOuts: safeOuts,
+      riskyPoints: risky,
     );
   }
 
