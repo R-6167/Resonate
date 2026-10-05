@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../core/dj_types.dart';
 import '../../models/dj_analysis.dart';
+import 'dj_beat_grid_builder.dart';
 
 /// Builds a useful V2 profile from the existing analysis row. Updated analysis bridge.
 ///
