@@ -1,5 +1,6 @@
 export 'core/dj_types.dart';
 export 'intelligence/dj_transition_brain.dart';
+export 'intelligence/dj_beat_drift_corrector.dart';
 export 'intelligence/dj_risk_engine.dart';
 export 'execution/dj_execution_planner.dart';
 export 'adapters/dj_analysis_bridge.dart';
