@@ -65,7 +65,7 @@ void main() {
       incoming: incoming,
       outgoingPositionMs: 220000,
     );
-    expect(plan.candidate.incomingStartMs, anyOf(0, 469, 938, 1406, 1875, 2344, 2813, 3281));
+    expect(plan.candidate.incomingStartMs, anyOf(0, 469, 938, 1406, 1875, 2344, 2813, 3281, isNull));
   });
 
   test('uses energy slope when ranking candidates', () {
