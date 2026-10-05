@@ -90,6 +90,7 @@ class DjSfxRack {
     AndroidEqualizer? equalizerA,
     AndroidEqualizer? equalizerB,
     AudioPlayer? outgoing,
+    String? outgoingUri,
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
@@ -119,6 +120,9 @@ class DjSfxRack {
       }
       if (_usesTrackManipulation(activePreset!)) {
         unawaited(_runTrackManipulation(activePreset!));
+      }
+      if (activePreset == DjSfxPreset.echo || activePreset == DjSfxPreset.dryEcho) {
+        unawaited(_playTrackEcho(outgoingUri, score));
       }
     } catch (e) {
       debugPrint('DjSfxRack.engage: $e');
@@ -209,6 +213,52 @@ class DjSfxRack {
       });
     } catch (e) {
       debugPrint('DjSfxRack oneshot $preset: $e');
+    }
+  }
+
+  Future<void> _playTrackEcho(String? uri, double score) async {
+    if (uri == null || uri.trim().isEmpty) return;
+    final out = _outgoing;
+    if (out == null) return;
+    final gen = ++_oneshotGen;
+    try {
+      final startMs = out.position.inMilliseconds;
+      if (startMs < 0) return;
+      final durationMs = out.duration?.inMilliseconds;
+      final endMs = math.min(
+        durationMs ?? (startMs + 900),
+        startMs + 850,
+      );
+      if (endMs <= startMs + 80) return;
+
+      await _stopOneshot();
+      final player = AudioPlayer();
+      _oneshot = player;
+      final volume = score >= 0.85 ? 0.14 : (score >= 0.7 ? 0.17 : 0.20);
+      await player.setVolume(volume.clamp(0.10, 0.24));
+      final sourceUri = uri.startsWith('content://') ||
+              uri.startsWith('file://') ||
+              uri.startsWith('http://') ||
+              uri.startsWith('https://')
+          ? Uri.parse(uri)
+          : Uri.file(uri);
+      await player.setAudioSource(
+        ClippingAudioSource(
+          child: AudioSource.uri(sourceUri),
+          start: Duration(milliseconds: startMs),
+          end: Duration(milliseconds: endMs),
+        ),
+      );
+      if (gen != _oneshotGen || !engaged) return;
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      if (gen != _oneshotGen || !engaged) return;
+      await player.play();
+      Future<void>.delayed(const Duration(milliseconds: 1100), () async {
+        if (gen != _oneshotGen) return;
+        await _stopOneshot();
+      });
+    } catch (e) {
+      debugPrint('DjSfxRack track echo: $e');
     }
   }
 
