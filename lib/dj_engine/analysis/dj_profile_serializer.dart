@@ -107,7 +107,7 @@ class DjProfileSerializer {
     );
   }
 
-  List<Map<String, dynamic>> _encodePoints(List<DjTimePoint> values) => (values ?? [])
+  List<Map<String, dynamic>> _encodePoints(List<DjTimePoint> values) => values
       .map((p) => {
             'timeMs': p.timeMs,
             'confidence': p.confidence,
