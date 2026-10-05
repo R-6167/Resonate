@@ -313,23 +313,24 @@ class DjPcmFeatureAnalyzer {
     var frames = 0;
     var previous = List<double>.filled(frame ~/ 2, 0.0);
     for (var start = 0; start + frame <= mono.length; start += hop) {
-      final magnitudes = List<double>.filled(frame ~/ 2, 0.0);
+      final real = Float64List(frame);
+      final imag = Float64List(frame);
+      for (var n = 0; n < frame; n++) {
+        final w = 0.5 - 0.5 * math.cos(2 * math.pi * n / (frame - 1));
+        real[n] = mono[start + n] * w;
+      }
+      _fft(real, imag);
+
       var total = 0.0, weighted = 0.0;
+      final magnitudes = List<double>.filled(frame ~/ 2, 0.0);
       for (var k = 1; k < frame ~/ 2; k++) {
-        var re = 0.0, im = 0.0;
-        for (var n = 0; n < frame; n++) {
-          final w = 0.5 - 0.5 * math.cos(2 * math.pi * n / (frame - 1));
-          final a = 2 * math.pi * k * n / frame;
-          final s = mono[start + n] * w;
-          re += s * math.cos(a);
-          im -= s * math.sin(a);
-        }
-        final mag = math.sqrt(re * re + im * im);
+        final mag = math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
         magnitudes[k] = mag;
         total += mag;
         weighted += mag * k;
       }
       if (total <= 1e-9) continue;
+
       var bass = 0.0, mids = 0.0, highs = 0.0, flux = 0.0;
       for (var k = 1; k < frame ~/ 2; k++) {
         final freq = k * rate / frame;
@@ -359,6 +360,43 @@ class DjPcmFeatureAnalyzer {
       flux: (fluxSum / frames).clamp(0.0, 1.0).toDouble(),
       bassDensity: (bass / math.max(1e-9, bass + mids + highs)).clamp(0.0, 1.0).toDouble(),
     );
+  }
+
+  void _fft(Float64List real, Float64List imag) {
+    final n = real.length;
+    var j = 0;
+    for (var i = 1; i < n; i++) {
+      var bit = n >> 1;
+      while ((j & bit) != 0) {
+        j ^= bit;
+        bit >>= 1;
+      }
+      j ^= bit;
+      if (i < j) {
+        final tr = real[i]; real[i] = real[j]; real[j] = tr;
+        final ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
+      }
+    }
+    for (var len = 2; len <= n; len <<= 1) {
+      final angle = -2 * math.pi / len;
+      final wLenR = math.cos(angle), wLenI = math.sin(angle);
+      for (var i = 0; i < n; i += len) {
+        var wr = 1.0, wi = 0.0;
+        final half = len >> 1;
+        for (var k = 0; k < half; k++) {
+          final uR = real[i + k], uI = imag[i + k];
+          final vR = real[i + k + half] * wr - imag[i + k + half] * wi;
+          final vI = real[i + k + half] * wi + imag[i + k + half] * wr;
+          real[i + k] = uR + vR;
+          imag[i + k] = uI + vI;
+          real[i + k + half] = uR - vR;
+          imag[i + k + half] = uI - vI;
+          final nextWr = wr * wLenR - wi * wLenI;
+          wi = wr * wLenI + wi * wLenR;
+          wr = nextWr;
+        }
+      }
+    }
   }
 
   /// Chroma key with harmonic stack + Krumhansl–Schmuckler profiles.
