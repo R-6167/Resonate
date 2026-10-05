@@ -127,6 +127,9 @@ class MusicProvider extends ChangeNotifier {
   List<int> _lastDjIncomingBeatMs = const <int>[];
   double? _lastDjIncomingBpm;
   int _djBeatCorrectionAttempts = 0;
+  double _djRuntimeCorrectionBaseSpeed = 1.0;
+  DateTime? _djRuntimeCorrectionUntil;
+  final DjBeatDriftCorrector _djBeatDriftCorrector = const DjBeatDriftCorrector();
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -3242,9 +3245,14 @@ class MusicProvider extends ChangeNotifier {
               }
             } else if (incoming.playing) {
               final incomingPos = incoming.position.inMilliseconds;
-              // Conservative beat-phase correction: only correct small drift
-              // against a credible track-wide beat grid. Never invent beats and
-              // never seek repeatedly; playback remains valid if analysis is absent.
+              // Continuous beat-phase correction: use a tiny temporary speed
+              // change instead of seeking. This preserves audio continuity and
+              // lets the incoming engine converge toward the detected beat grid.
+              final now = DateTime.now();
+              if (_djRuntimeCorrectionUntil != null && now.isAfter(_djRuntimeCorrectionUntil!)) {
+                try { await incoming.setSpeed(_djRuntimeCorrectionBaseSpeed); } catch (_) {}
+                _djRuntimeCorrectionUntil = null;
+              }
               if (runtimeBeatMs.length >= 4 &&
                   _djBeatCorrectionAttempts < 2 &&
                   (runtimeBpm ?? 0) >= 40 &&
@@ -3261,22 +3269,26 @@ class MusicProvider extends ChangeNotifier {
                   }
                   if (beat > incomingPos + 250) break;
                 }
-                // Scale tolerance with tempo, capped so ordinary decoder jitter
-                // is not mistaken for musical drift.
-                final periodMs = 60000.0 / (runtimeBpm ?? 120.0);
-                final toleranceMs = periodMs.clamp(55.0, 90.0).toInt();
-                if (distance > 18 && distance <= toleranceMs) {
+                final driftMs = incomingPos - nearest;
+                final decision = _djBeatDriftCorrector.decide(
+                  driftMs: driftMs,
+                  bpm: runtimeBpm!,
+                  baseSpeed: _djRuntimeCorrectionBaseSpeed,
+                );
+                if (decision != null) {
                   _djBeatCorrectionAttempts++;
                   try {
-                    await incoming.seek(Duration(milliseconds: nearest));
-                    lastIncomingPositionMs = nearest;
-                    lastIncomingProgressAt = DateTime.now();
+                    await incoming.setSpeed(decision.speed);
+                    _djRuntimeCorrectionUntil = now.add(Duration(milliseconds: decision.holdMs));
                     await ResonateDiagnostics.record('dj_runtime_monitor', {
-                      'event': 'beat_phase_corrected',
+                      'event': 'beat_phase_speed_corrected',
                       'attempt': _djBeatCorrectionAttempts,
                       'fromPositionMs': incomingPos,
-                      'toBeatMs': nearest,
-                      'driftMs': incomingPos - nearest,
+                      'targetBeatMs': nearest,
+                      'driftMs': decision.driftMs,
+                      'speed': decision.speed,
+                      'baseSpeed': _djRuntimeCorrectionBaseSpeed,
+                      'holdMs': decision.holdMs,
                       'linear': linear,
                       'songId': nextSong.id,
                     });
