@@ -42,19 +42,50 @@ class DjAnalysisService {
     return null;
   }
 
+  /// Returns a persisted V2 profile only when it is still compatible with
+  /// the current analysis pipeline and the cached song identity.
+  ///
+  /// A stale profile is treated as missing rather than being allowed to drive
+  /// an advanced transition. Playback can then use legacy analysis/fallback.
   Future<DjTrackProfile?> getProfile(String songId) async {
     final cached = _profileMemory[songId];
-    if (cached != null) return cached;
+    if (cached != null && _profileIsValid(cached, await getAnalysis(songId))) {
+      return cached;
+    }
+    _profileMemory.remove(songId);
+
     try {
       final raw = await _db.getDjProfileJson(songId);
       if (raw == null || raw.isEmpty) return null;
       final profile = _profileSerializer.decode(raw);
+      final analysis = await getAnalysis(songId);
+      if (!_profileIsValid(profile, analysis)) {
+        await _db.deleteDjProfile(songId);
+        return null;
+      }
       _profileMemory[songId] = profile;
       return profile;
     } catch (e) {
       debugPrint('DjAnalysisService.getProfile: $e');
       return null;
     }
+  }
+
+  bool _profileIsValid(DjTrackProfile profile, DjAnalysis? analysis) {
+    if (profile.analysisVersion < DjAnalysis.currentVersion) return false;
+    if (analysis != null) {
+      if (analysis.analysisVersion < DjAnalysis.currentVersion) return false;
+      final profileDuration = profile.durationMs;
+      final analysisDuration = analysis.durationMs;
+      if (profileDuration != null &&
+          analysisDuration != null &&
+          profileDuration > 0 &&
+          analysisDuration > 0 &&
+          (profileDuration - analysisDuration).abs() > 1500) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<void> saveProfile(DjTrackProfile profile) async {
