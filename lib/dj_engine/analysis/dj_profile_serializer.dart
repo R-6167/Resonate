@@ -17,6 +17,10 @@ class DjProfileSerializer {
           'confidence': profile.beatGrid.confidence,
           'firstBeatMs': profile.beatGrid.firstBeatMs,
           'beatMs': profile.beatGrid.beatMs,
+          'downbeatMs': profile.beatGrid.downbeatMs,
+          'downbeatConfidence': profile.beatGrid.downbeatConfidence,
+          'barConfidence': profile.beatGrid.barConfidence,
+          'phraseConfidence': profile.beatGrid.phraseConfidence,
           'beatsPerBar': profile.beatGrid.beatsPerBar,
           'beatsPerPhrase': profile.beatGrid.beatsPerPhrase,
         },
@@ -43,6 +47,7 @@ class DjProfileSerializer {
                   'bass': p.bass,
                   'mids': p.mids,
                   'highs': p.highs,
+                  'slope': p.slope,
                 })
             .toList(),
         'spectrum': {
@@ -81,6 +86,10 @@ class DjProfileSerializer {
         beatMs: _ints(beat['beatMs']),
         beatsPerBar: (beat['beatsPerBar'] as num?)?.toInt() ?? 4,
         beatsPerPhrase: (beat['beatsPerPhrase'] as num?)?.toInt() ?? 16,
+        downbeatMs: _ints(beat['downbeatMs']),
+        downbeatConfidence: (beat['downbeatConfidence'] as num?)?.toDouble() ?? 0,
+        barConfidence: (beat['barConfidence'] as num?)?.toDouble() ?? 0,
+        phraseConfidence: (beat['phraseConfidence'] as num?)?.toDouble() ?? 0,
       ),
       keyRoot: (map['keyRoot'] as num?)?.toInt(),
       keyMode: map['keyMode'] as String?,
@@ -147,6 +156,7 @@ class DjProfileSerializer {
           bass: (p['bass'] as num?)?.toDouble() ?? 0.5,
           mids: (p['mids'] as num?)?.toDouble() ?? 0.5,
           highs: (p['highs'] as num?)?.toDouble() ?? 0.5,
+          slope: (p['slope'] as num?)?.toDouble() ?? 0.0,
         );
       }).toList();
 
