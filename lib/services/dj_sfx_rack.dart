@@ -40,6 +40,7 @@ class DjSfxRack {
   int _oneshotGen = 0;
   int _trackFxGen = 0;
   bool _trackActionRunning = false;
+  List<int> _beatMs = const <int>[];
 
   static const presets = DjSfxPreset.values;
 
@@ -91,6 +92,7 @@ class DjSfxRack {
     AndroidEqualizer? equalizerB,
     AudioPlayer? outgoing,
     String? outgoingUri,
+    List<int> beatMs = const <int>[],
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
@@ -98,6 +100,7 @@ class DjSfxRack {
     engaged = true;
     _eqTouched = false;
     _outgoing = outgoing;
+    _beatMs = List<int>.from(beatMs)..sort();
     _savedOutgoingSpeed = 1.0;
     try {
       if (outgoing != null) {
@@ -188,6 +191,7 @@ class DjSfxRack {
       _savedEqGains = null;
       _outgoing = null;
       _savedOutgoingSpeed = 1.0;
+      _beatMs = const <int>[];
     }
   }
 
@@ -291,11 +295,12 @@ class DjSfxRack {
       if (current < 120) return;
 
       if (preset == DjSfxPreset.repeat || preset == DjSfxPreset.repeatRestart) {
-        const sliceMs = 700;
-        final anchor = math.max(0, current - sliceMs);
+        final anchor = _musicalAnchor(current);
+        final sliceMs = _musicalSliceMs(anchor);
+        final repeatAnchor = math.max(0, anchor - sliceMs);
         for (var i = 0; i < 3; i++) {
           if (gen != _trackFxGen || !engaged) return;
-          await out.seek(Duration(milliseconds: anchor));
+          await out.seek(Duration(milliseconds: repeatAnchor));
           await out.setSpeed(originalSpeed);
           await Future<void>.delayed(const Duration(milliseconds: 680));
         }
@@ -308,8 +313,8 @@ class DjSfxRack {
         return;
       }
 
-      const strokes = <int>[180, -140, 220, -190, 110];
-      final center = current;
+      final center = _musicalAnchor(current);
+      const strokes = <int>[120, -100, 150, -130, 80];
       for (final delta in strokes) {
         if (gen != _trackFxGen || !engaged) return;
         final target = math.max(0, center + delta);
@@ -325,6 +330,24 @@ class DjSfxRack {
     } finally {
       if (gen == _trackFxGen) _trackActionRunning = false;
     }
+  }
+
+  int _musicalAnchor(int currentMs) {
+    if (_beatMs.isEmpty) return math.max(0, currentMs - 350);
+    var best = _beatMs.first;
+    var distance = (best - currentMs).abs();
+    for (final beat in _beatMs) {
+      if (beat > currentMs + 900) break;
+      final d = (beat - currentMs).abs();
+      if (d < distance) { best = beat; distance = d; }
+    }
+    return math.max(0, best);
+  }
+
+  int _musicalSliceMs(int anchorMs) {
+    final i = _beatMs.indexOf(anchorMs);
+    if (i < 0 || i + 1 >= _beatMs.length) return 700;
+    return (_beatMs[i + 1] - _beatMs[i]).clamp(250, 1400);
   }
 
   bool _usesEq(DjSfxPreset p) =>
