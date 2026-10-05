@@ -2607,6 +2607,7 @@ class MusicProvider extends ChangeNotifier {
         equalizerA: _equalizerA,
         equalizerB: _equalizerB,
         outgoing: audioPlayer,
+        outgoingUri: currentSong?.filePath,
       );
       _djSfxEngaged = true;
       await ResonateDiagnostics.record('dj_transition_sfx', {
