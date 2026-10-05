@@ -163,24 +163,81 @@ class DjPcmProfileAnalyzer {
     List<_FeatureSample> featureSamples,
     int durationMs,
   ) {
-    final points = <int>[];
+    final observations = <_BeatObservation>[];
     for (final sample in featureSamples) {
-      for (final local in sample.features.beatMs) {
-        final absolute = sample.window.startMs + local;
-        if (absolute >= 0 && absolute < durationMs) points.add(absolute);
+      final confidence = sample.features.beatConfidence;
+      if (confidence <= 0 || sample.features.beatMs.isEmpty) continue;
+      final local = sample.features.beatMs;
+      final diffs = <double>[];
+      for (var i = 1; i < local.length; i++) {
+        final d = (local[i] - local[i - 1]).toDouble();
+        if (d > 200 && d < 1500) diffs.add(d);
+      }
+      if (diffs.length < 3) continue;
+      diffs.sort();
+      final period = diffs[diffs.length ~/ 2];
+      final first = sample.window.startMs + local.first;
+      observations.add(_BeatObservation(first, period, confidence));
+    }
+    if (observations.isEmpty) return const [];
+
+    // Prefer the period supported by the most confident windows. This avoids
+    // concatenating incompatible local beat trains from overlapping windows.
+    var best = observations.first;
+    var bestSupport = -1.0;
+    for (final candidate in observations) {
+      var support = 0.0;
+      for (final other in observations) {
+        final periodDelta = (candidate.periodMs - other.periodMs).abs();
+        final phase = _phaseDistance(candidate.firstMs, other.firstMs, candidate.periodMs);
+        if (periodDelta <= candidate.periodMs * 0.045 ||
+            periodDelta <= 18.0) {
+          support += other.confidence * (1.0 - (phase / candidate.periodMs).clamp(0.0, 1.0));
+        }
+      }
+      if (support > bestSupport) {
+        bestSupport = support;
+        best = candidate;
       }
     }
-    if (points.length >= 4) {
-      points.sort();
-      final unique = <int>[];
-      for (final p in points) {
-        if (unique.isEmpty || p - unique.last > 35) unique.add(p);
-      }
-      return unique;
+
+    final period = best.periodMs;
+    final phaseSamples = observations
+        .where((o) => (o.periodMs - period).abs() <= math.max(18.0, period * 0.045))
+        .toList();
+    if (phaseSamples.isEmpty) return const [];
+
+    // Circular weighted phase average, referenced to the track timeline.
+    var sinSum = 0.0;
+    var cosSum = 0.0;
+    for (final sample in phaseSamples) {
+      final phase = (sample.firstMs % period) / period * 2 * math.pi;
+      sinSum += math.sin(phase) * sample.confidence;
+      cosSum += math.cos(phase) * sample.confidence;
     }
-    // Do not invent a beat grid when PCM evidence is absent. The legacy BPM
-    // phase remains available through firstBeatMs, while beatMs stays empty.
-    return const [];
+    final phaseAngle = math.atan2(sinSum, cosSum);
+    final normalizedPhase = phaseAngle < 0 ? phaseAngle + 2 * math.pi : phaseAngle;
+    final phaseMs = normalizedPhase / (2 * math.pi) * period;
+    var firstBeat = phaseMs.round();
+    while (firstBeat > 0) firstBeat -= period.round();
+    firstBeat %= math.max(1, period.round());
+
+    // Generate one continuous grid. It is intentionally bounded to the track;
+    // this gives phrase alignment a stable global index instead of per-window
+    // indices that can restart at every PCM sample.
+    final positions = <int>[];
+    var beat = firstBeat;
+    while (beat < durationMs) {
+      if (beat >= 0) positions.add(beat);
+      beat += period.round();
+    }
+    return positions.length >= 4 ? positions : const [];
+  }
+
+  double _phaseDistance(int a, int b, double period) {
+    if (period <= 0) return 1.0;
+    final raw = ((a - b) % period).abs();
+    return math.min(raw, period - raw);
   }
 
   _TempoAggregate _aggregateTempo(List<_BpmSample> samples) {
@@ -538,4 +595,11 @@ class _KeyAggregate {
     this.mode,
     this.confidence = 0,
   });
+}
+
+class _BeatObservation {
+  final int firstMs;
+  final double periodMs;
+  final double confidence;
+  const _BeatObservation(this.firstMs, this.periodMs, this.confidence);
 }
