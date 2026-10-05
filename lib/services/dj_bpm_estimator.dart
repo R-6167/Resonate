@@ -269,6 +269,37 @@ class DjBpmEstimator {
     return null;
   }
 
+  /// Extract a decoded PCM window for the V2 profile analyzer.
+  /// The source codec is intentionally irrelevant at this boundary.
+  Future<({Uint8List pcm, int sampleRate, int channels})?> extractDecodedPcmWindow(
+    String uri, {
+    double maxSeconds = 15.0,
+    int startMs = 0,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
+        'uri': uri,
+        'maxSeconds': maxSeconds,
+        'startMs': startMs,
+      });
+      if (raw is! Map) return null;
+      final sampleRate = (raw['sampleRate'] as num?)?.toInt();
+      final channels = (raw['channels'] as num?)?.toInt() ?? 2;
+      if (sampleRate == null || sampleRate < 8000 || channels < 1) return null;
+      final value = raw['pcm'];
+      final pcm = value is Uint8List
+          ? value
+          : value is List<int>
+              ? Uint8List.fromList(value)
+              : null;
+      if (pcm == null || pcm.length < sampleRate) return null;
+      return (pcm: pcm, sampleRate: sampleRate, channels: channels);
+    } catch (e) {
+      debugPrint('DjBpmEstimator.extractDecodedPcmWindow: $e');
+      return null;
+    }
+  }
+
   Future<DjBpmEstimate?> _estimateFromNativePcm(String uri, {double maxSeconds = 15.0, int startMs = 0, String windowRole = 'start'}) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('extractPcmWindow', {
