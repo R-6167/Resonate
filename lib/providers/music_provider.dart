@@ -2611,12 +2611,11 @@ class MusicProvider extends ChangeNotifier {
     double energyScore = 0.5,
     DjTransitionKind? transitionKind,
     Duration delay = Duration.zero,
+    DjTrackProfile? outgoingProfile,
   }) async {
     if (!_djSfxActive) return;
     try {
-      final profile = currentSong == null
-          ? null
-          : await _djAnalysis?.getProfile(currentSong!.id);
+      final profile = outgoingProfile;
       if (delay > Duration.zero) {
         unawaited(_djSfxRack.engageDelayed(
           delay: delay,
@@ -2718,7 +2717,15 @@ class MusicProvider extends ChangeNotifier {
           maxDurationMs: 6500,
         );
         if (!v2.fallback) {
-          await _applyV2DjHandoff(outgoing: outgoing, incoming: incoming, outgoingSong: outgoingSong, incomingSong: incomingSong, plan: v2);
+          await _applyV2DjHandoff(
+            outgoing: outgoing,
+            incoming: incoming,
+            outgoingSong: outgoingSong,
+            incomingSong: incomingSong,
+            profileA: profileA,
+            profileB: profileB,
+            plan: v2,
+          );
           return;
         }
         await ResonateDiagnostics.recordDj(stage: 'v2_brain', outcome: 'fallback', reason: v2.reason, songId: incomingSong.id, extra: {'kind': v2.candidate.kind.name, 'score': v2.candidate.score});
@@ -2931,6 +2938,8 @@ class MusicProvider extends ChangeNotifier {
     required AudioPlayer incoming,
     required Song outgoingSong,
     required Song incomingSong,
+    required DjTrackProfile profileA,
+    required DjTrackProfile profileB,
     required DjExecutionPlan plan,
   }) async {
     final candidate = plan.candidate;
@@ -2977,15 +2986,15 @@ class MusicProvider extends ChangeNotifier {
     );
 
     var tempoApplied = false;
-    final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
-    final profileB = await _djAnalysis!.getProfile(incomingSong.id);
-    _lastDjIncomingBeatMs = profileB?.beatGrid.beatMs ?? const <int>[];
-    _lastDjIncomingBpm = profileB?.beatGrid.bpm;
+    _lastDjIncomingBeatMs = profileB.beatGrid.beatMs;
+    _lastDjIncomingBpm = profileB.beatGrid.bpm;
     _djBeatCorrectionAttempts = 0;
-    if (_djTempoMatchActive && profileA?.beatGrid.bpm != null && profileB?.beatGrid.bpm != null) {
+    if (_djTempoMatchActive &&
+        profileA.beatGrid.bpm != null &&
+        profileB.beatGrid.bpm != null) {
       final stretch = computeTempoStretch(
-        bpmA: profileA!.beatGrid.bpm!,
-        bpmB: profileB!.beatGrid.bpm!,
+        bpmA: profileA.beatGrid.bpm!,
+        bpmB: profileB.beatGrid.bpm!,
         maxStretchPercent: _djMaxStretchPercent,
       );
       if (stretch != null) {
