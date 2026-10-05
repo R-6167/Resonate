@@ -65,7 +65,7 @@ class DjPcmProfileAnalyzer {
         window.pcm,
         window.sampleRate,
         window.channels,
-        windowRole: window.role == 'end' ? 'end' : 'start',
+        windowRole: window.role,
       );
       if (features.keyConfidence > 0 ||
           features.headEnergy != null ||
