@@ -3113,6 +3113,10 @@ class MusicProvider extends ChangeNotifier {
       final stepMs = gentle ? 36 : 24;
       final fadeStartedAt = DateTime.now();
       var lastOut = base;
+      var lastIncomingPositionMs = incoming.position.inMilliseconds;
+      var lastIncomingProgressAt = fadeStartedAt;
+      var incomingRecoveryAttempts = 0;
+      var monitorTick = 0;
       while (true) {
         if (_authority.isStale(generation) || !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
@@ -3152,6 +3156,57 @@ class MusicProvider extends ChangeNotifier {
             incoming.setVolume(inVol),
           ]);
         } catch (_) {}
+
+        // Runtime DJ monitor: the transition must adapt to the actual A/B
+        // engines, not merely the planned timeline. A transient start delay is
+        // recovered; a persistent stall falls back to ordinary playback.
+        monitorTick++;
+        if (monitorTick % 5 == 0) {
+          try {
+            if (!incoming.playing && linear < 0.92) {
+              incomingRecoveryAttempts++;
+              await ResonateDiagnostics.record('dj_runtime_monitor', {
+                'event': 'incoming_not_playing',
+                'attempt': incomingRecoveryAttempts,
+                'linear': linear,
+                'positionMs': incoming.position.inMilliseconds,
+                'songId': nextSong.id,
+              });
+              if (incomingRecoveryAttempts <= 2) {
+                incoming.play();
+              } else {
+                throw StateError('DJ incoming engine stalled during transition');
+              }
+            } else if (incoming.playing) {
+              final incomingPos = incoming.position.inMilliseconds;
+              if (incomingPos > lastIncomingPositionMs + 20) {
+                lastIncomingPositionMs = incomingPos;
+                lastIncomingProgressAt = DateTime.now();
+                incomingRecoveryAttempts = 0;
+              } else if (DateTime.now().difference(lastIncomingProgressAt).inMilliseconds > 900 &&
+                  linear < 0.92) {
+                incomingRecoveryAttempts++;
+                await ResonateDiagnostics.record('dj_runtime_monitor', {
+                  'event': 'incoming_position_stalled',
+                  'attempt': incomingRecoveryAttempts,
+                  'linear': linear,
+                  'positionMs': incomingPos,
+                  'songId': nextSong.id,
+                });
+                if (incomingRecoveryAttempts <= 2) {
+                  incoming.play();
+                  lastIncomingProgressAt = DateTime.now();
+                } else {
+                  throw StateError('DJ incoming position stalled during transition');
+                }
+              }
+            }
+          } catch (e) {
+            if (e is StateError) rethrow;
+            // Monitoring itself must never become a playback failure.
+          }
+        }
+
         // Club-style filter-sweep feel alongside the volume curve.
         if (_djSfxEngaged && (linear * 20).round() % 2 == 0) {
           unawaited(_tickDjClubFxSweep(linear));
