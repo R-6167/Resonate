@@ -10,6 +10,8 @@ import 'dj_beat_grid_builder.dart';
 class DjProfileBuilder {
   const DjProfileBuilder();
 
+  static const _beatGridBuilder = DjBeatGridBuilder();
+
   DjTrackProfile fromAnalysis(DjAnalysis a) {
     final duration = a.durationMs;
     final intro = a.introHintMs;
