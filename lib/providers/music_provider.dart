@@ -3467,6 +3467,35 @@ class MusicProvider extends ChangeNotifier {
         }
       } catch (_) {}
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
+      // Hard execution failures are stronger negative learning than a later
+      // manual skip. User cancellation/preemption exits before this catch.
+      if ((_djBeatAlignActive || _djTempoMatchActive || _djSfxActive) &&
+          outgoingSong != null &&
+          _lastDjStrategy != null) {
+        unawaited(DjTransitionMemory.recordOutcome(
+          fromId: outgoingSong.id,
+          toId: nextSong.id,
+          strategy: _lastDjStrategy!,
+          successful: false,
+          weight: (_lastDjRecoveryAttempts + 1).clamp(1, 3),
+          score: _lastDjTransitionScore,
+          confidence: _lastDjTransitionConfidence,
+          risks: _lastDjTransitionRisks,
+          transitionDurationMs: _lastDjTransitionDurationMs,
+          recoveryAttempts: _lastDjRecoveryAttempts,
+        ));
+        unawaited(ResonateDiagnostics.recordDj(
+          stage: 'learn',
+          outcome: 'execution_failure',
+          reason: _lastDjStrategy!,
+          songId: nextSong.id,
+          extra: {
+            'fromId': outgoingSong.id,
+            'error': e.toString(),
+            'recoveryAttempts': _lastDjRecoveryAttempts,
+          },
+        ));
+      }
       try {
         await ResonateDiagnostics.recordDj(
           stage: 'crossfade',
