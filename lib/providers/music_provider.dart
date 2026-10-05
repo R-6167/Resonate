@@ -3124,9 +3124,14 @@ class MusicProvider extends ChangeNotifier {
           'songId': nextSong.id,
         }));
       }
+      final sfxStep = plan.steps.cast<DjExecutionStep?>().firstWhere(
+        (step) => step?.action == 'trigger_sfx',
+        orElse: () => null,
+      );
       await _engageDjTransitionSfx(
         energyScore: _lastDjEnergyScore,
         transitionKind: _djTransitionKindFromName(_lastDjStrategy),
+        delay: Duration(milliseconds: sfxStep?.atMs ?? 0),
       );
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
