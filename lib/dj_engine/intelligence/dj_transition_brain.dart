@@ -1,10 +1,5 @@
 import '../core/dj_types.dart';
 
-/// Pure decision layer. It evaluates several musical ways of joining two tracks
-/// instead of selecting one fixed transition strategy.
-///
-/// It does not touch the player. The caller may execute the returned plan through
-/// either Resonate audio engine.
 class DjTransitionBrain {
   const DjTransitionBrain();
 
@@ -22,8 +17,7 @@ class DjTransitionBrain {
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
     );
-
-    if (candidates.isEmpty) return _fallback(outgoing, incoming, preferredDurationMs);
+    if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs);
     final sorted = [...candidates]..sort((a, b) => b.score.compareTo(a.score));
     return sorted.first;
   }
@@ -37,7 +31,7 @@ class DjTransitionBrain {
   }) {
     final result = <DjTransitionCandidate>[];
     final outRemaining = (outgoing.durationMs ?? 0) - outgoingPositionMs;
-    final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs);
+    final baseDuration = preferredDurationMs.clamp(2000, maxDurationMs).toInt();
 
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
       final risk = _risks(outgoing, incoming, outgoingPositionMs, inMs);
@@ -47,7 +41,7 @@ class DjTransitionBrain {
         kind: kind,
         outgoingStartMs: outgoingPositionMs,
         incomingStartMs: inMs,
-        durationMs: duration.clamp(2000, maxDurationMs),
+        durationMs: duration.clamp(2000, maxDurationMs).toInt(),
         score: score.clamp(0.0, 1.0).toDouble(),
         confidence: confidence,
         scores: scores,
@@ -79,7 +73,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.phraseBlend,
         phrase,
-        (baseDuration * 1.15).round().clamp(3000, maxDurationMs),
+        (baseDuration * 1.15).round().clamp(3000, maxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingPositionMs, phrase, 0.92, 0.88),
       );
     }
@@ -90,7 +84,7 @@ class DjTransitionBrain {
       add(
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
-        (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs),
+        (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs).toInt(),
         _scorePair(outgoing, incoming, outgoingPositionMs, breakdown.startMs, 0.88, 0.95),
       );
     }
@@ -113,12 +107,8 @@ class DjTransitionBrain {
   }
 
   Map<String, double> _scorePair(
-    DjTrackProfile a,
-    DjTrackProfile b,
-    int outPos,
-    int inPos,
-    double phraseWeight,
-    double structureWeight,
+    DjTrackProfile a, DjTrackProfile b, int outPos, int inPos,
+    double phraseWeight, double structureWeight,
   ) {
     final tempo = _tempoScore(a, b);
     final harmonic = _harmonicScore(a, b);
@@ -138,17 +128,14 @@ class DjTransitionBrain {
   }
 
   double _weightedScore(Map<String, double> s) {
-    final tempo = s['tempo'] ?? 0.5;
-    final harmonic = s['harmonic'] ?? 0.5;
-    final energy = s['energy'] ?? 0.5;
-    final spectrum = s['spectrum'] ?? 0.5;
-    final phrase = s['phrase'] ?? 0.5;
-    final structure = s['structure'] ?? 0.5;
-    final confidence = s['confidence'] ?? 0.5;
-    return (tempo * 0.18 + harmonic * 0.18 + energy * 0.16 + spectrum * 0.10 +
-            phrase * 0.16 + structure * 0.14 + confidence * 0.08)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final value = (s['tempo'] ?? 0.5) * 0.18 +
+        (s['harmonic'] ?? 0.5) * 0.18 +
+        (s['energy'] ?? 0.5) * 0.16 +
+        (s['spectrum'] ?? 0.5) * 0.10 +
+        (s['phrase'] ?? 0.5) * 0.16 +
+        (s['structure'] ?? 0.5) * 0.14 +
+        (s['confidence'] ?? 0.5) * 0.08;
+    return value.clamp(0.0, 1.0).toDouble();
   }
 
   double _tempoScore(DjTrackProfile a, DjTrackProfile b) {
@@ -162,7 +149,7 @@ class DjTransitionBrain {
 
   double _harmonicScore(DjTrackProfile a, DjTrackProfile b) {
     if (!a.hasKey || !b.hasKey) return 0.5;
-    final rootDistance = ((a.keyRoot! - b.keyRoot!).abs()).clamp(0, 12);
+    final rootDistance = (a.keyRoot! - b.keyRoot!).abs();
     final chromatic = rootDistance > 6 ? 12 - rootDistance : rootDistance;
     final mode = a.keyMode == b.keyMode;
     if (chromatic == 0 && mode) return 1.0;
@@ -181,10 +168,8 @@ class DjTransitionBrain {
   }
 
   double _phraseScore(DjTrackProfile a, DjTrackProfile b) {
-    final ab = a.beatGrid.beatsPerPhrase;
-    final bb = b.beatGrid.beatsPerPhrase;
     if (!a.beatGrid.usable || !b.beatGrid.usable) return 0.5;
-    return ab == bb ? 1.0 : 0.65;
+    return a.beatGrid.beatsPerPhrase == b.beatGrid.beatsPerPhrase ? 1.0 : 0.65;
   }
 
   double _structureScore(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
@@ -207,16 +192,10 @@ class DjTransitionBrain {
 
   List<DjRiskType> _risks(DjTrackProfile a, DjTrackProfile b, int outPos, int inPos) {
     final risks = <DjRiskType>[];
-    if ((a.spectrum.bassDensity - b.spectrum.bassDensity).abs() > 0.45) {
-      risks.add(DjRiskType.bassCollision);
-    }
-    if ((a.energyAt(outPos) - b.energyAt(inPos)).abs() > 0.45) {
-      risks.add(DjRiskType.energyShock);
-    }
+    if ((a.spectrum.bassDensity - b.spectrum.bassDensity).abs() > 0.45) risks.add(DjRiskType.bassCollision);
+    if ((a.energyAt(outPos) - b.energyAt(inPos)).abs() > 0.45) risks.add(DjRiskType.energyShock);
     if (_harmonicScore(a, b) < 0.3) risks.add(DjRiskType.harmonicConflict);
-    final aSection = a.sectionAt(outPos)?.type;
-    final bSection = b.sectionAt(inPos)?.type;
-    if (aSection == DjSectionType.drop && bSection == DjSectionType.drop) {
+    if (a.sectionAt(outPos)?.type == DjSectionType.drop && b.sectionAt(inPos)?.type == DjSectionType.drop) {
       risks.add(DjRiskType.structureCollision);
     }
     if (!a.beatGrid.usable || !b.beatGrid.usable) risks.add(DjRiskType.lowConfidence);
@@ -235,7 +214,7 @@ class DjTransitionBrain {
         DjRiskType.lowConfidence => 0.04,
       };
     }
-    return penalty.clamp(0.0, 0.55);
+    return penalty.clamp(0.0, 0.55).toDouble();
   }
 
   int _nextBeat(DjTrackProfile profile, int ms) {
@@ -268,12 +247,12 @@ class DjTransitionBrain {
     return null;
   }
 
-  DjTransitionCandidate _fallback(DjTrackProfile a, DjTrackProfile b, int duration) {
+  DjTransitionCandidate _fallback(DjTrackProfile b, int duration) {
     return DjTransitionCandidate(
       kind: DjTransitionKind.safeCrossfade,
       outgoingStartMs: 0,
       incomingStartMs: b.transitions.bestIntroMs ?? 0,
-      durationMs: duration.clamp(2000, 16000),
+      durationMs: duration.clamp(2000, 16000).toInt(),
       score: 0.5,
       confidence: 0.5,
     );
