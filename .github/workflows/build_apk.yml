@@ -6,6 +6,7 @@ on:
     branches:
       - Companion_Features_Diagnostics
       - Resonate_Remake
+      - dj_engine_v2
 
 permissions:
   contents: write
