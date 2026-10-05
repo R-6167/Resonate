@@ -74,12 +74,14 @@ class DjPcmProfileAnalyzer {
           features.introHintMs != null ||
           features.outroHintMs != null ||
           features.spectralCentroid > 0 ||
-          features.bassEnergy > 0) {
+          features.bassEnergy > 0 ||
+          features.beatMs.isNotEmpty) {
         featureSamples.add(_FeatureSample(window, features));
       }
     }
 
     final tempo = _aggregateTempo(bpmSamples);
+    final beatPositions = _aggregateBeats(bpmSamples, featureSamples, durationMs);
     final key = _aggregateKey(featureSamples);
     final energy = _buildEnergyCurve(durationMs, bpmSamples, featureSamples);
     final sections = _buildSections(durationMs, featureSamples);
@@ -109,7 +111,8 @@ class DjPcmProfileAnalyzer {
       beatGrid: DjBeatGrid(
         bpm: tempo.bpm,
         confidence: tempo.confidence,
-        firstBeatMs: tempo.beatOffsetMs,
+        firstBeatMs: beatPositions.isEmpty ? tempo.beatOffsetMs : beatPositions.first,
+        beatMs: beatPositions,
         beatsPerBar: 4,
         beatsPerPhrase: 16,
       ),
@@ -123,6 +126,31 @@ class DjPcmProfileAnalyzer {
       analysisConfidence: confidence,
       analysisVersion: analysisVersion,
     );
+  }
+
+  List<int> _aggregateBeats(
+    List<_BpmSample> bpmSamples,
+    List<_FeatureSample> featureSamples,
+    int durationMs,
+  ) {
+    final points = <int>[];
+    for (final sample in featureSamples) {
+      for (final local in sample.features.beatMs) {
+        final absolute = sample.window.startMs + local;
+        if (absolute >= 0 && absolute < durationMs) points.add(absolute);
+      }
+    }
+    if (points.length >= 4) {
+      points.sort();
+      final unique = <int>[];
+      for (final p in points) {
+        if (unique.isEmpty || p - unique.last > 35) unique.add(p);
+      }
+      return unique;
+    }
+    // Do not invent a beat grid when PCM evidence is absent. The legacy BPM
+    // phase remains available through firstBeatMs, while beatMs stays empty.
+    return const [];
   }
 
   _TempoAggregate _aggregateTempo(List<_BpmSample> samples) {
