@@ -61,6 +61,8 @@ class DjPcmFeatures {
 /// Key: chroma with harmonic weighting + Krumhansl–Schmuckler profiles.
 /// Structure: multi-segment energy envelope (intro/build/drop/chorus/outro).
 class DjPcmFeatureAnalyzer {
+  const DjPcmFeatureAnalyzer();
+
   /// [windowRole] is `start` (default) or `end` (near-track-end extract).
   DjPcmFeatures analyze(
     Uint8List pcm,
