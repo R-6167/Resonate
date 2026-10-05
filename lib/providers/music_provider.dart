@@ -3433,6 +3433,8 @@ class MusicProvider extends ChangeNotifier {
         _lastDjIncomingBeatMs = const <int>[];
         _lastDjIncomingBpm = null;
         _djBeatCorrectionAttempts = 0;
+        _djRuntimeCorrectionBaseSpeed = 1.0;
+        _djRuntimeCorrectionUntil = null;
       } else if (!_crossfadeInProgress && bassDuckOriginal.isNotEmpty) {
         // No newer transition took ownership, so the cancelled transition
         // still needs to restore its own captured EQ state.
