@@ -7,6 +7,8 @@ import '../models/song.dart';
 import 'database_helper.dart';
 import 'dj_bpm_estimator.dart';
 import '../dj_engine/analysis/dj_pcm_profile_analyzer.dart';
+import '../dj_engine/analysis/dj_profile_serializer.dart';
+import '../dj_engine/core/dj_types.dart';
 
 /// Loads and computes BPM / key hints for library tracks (DJ Mode).
 ///
@@ -20,6 +22,8 @@ class DjAnalysisService {
   final DatabaseHelper _db;
   final DjBpmEstimator _estimator;
   final DjPcmProfileAnalyzer _profileAnalyzer = const DjPcmProfileAnalyzer();
+  final DjProfileSerializer _profileSerializer = const DjProfileSerializer();
+  final Map<String, DjTrackProfile> _profileMemory = {};
   final Map<String, DjAnalysis> _memory = {};
   final Set<String> _inFlight = {};
 
@@ -36,6 +40,37 @@ class DjAnalysisService {
       debugPrint('DjAnalysisService.getAnalysis: $e');
     }
     return null;
+  }
+
+  Future<DjTrackProfile?> getProfile(String songId) async {
+    final cached = _profileMemory[songId];
+    if (cached != null) return cached;
+    try {
+      final raw = await _db.getDjProfileJson(songId);
+      if (raw == null || raw.isEmpty) return null;
+      final profile = _profileSerializer.decode(raw);
+      _profileMemory[songId] = profile;
+      return profile;
+    } catch (e) {
+      debugPrint('DjAnalysisService.getProfile: $e');
+      return null;
+    }
+  }
+
+  Future<void> saveProfile(DjTrackProfile profile) async {
+    try {
+      _profileMemory[profile.songId] = profile;
+      await _db.upsertDjProfileJson(
+        songId: profile.songId,
+        fingerprint: profile.fingerprint,
+        durationMs: profile.durationMs,
+        analyzedAt: DateTime.now(),
+        analysisVersion: profile.analysisVersion,
+        profileJson: _profileSerializer.encode(profile),
+      );
+    } catch (e) {
+      debugPrint('DjAnalysisService.saveProfile: $e');
+    }
   }
 
   Future<void> saveAnalysis(DjAnalysis analysis) async {
@@ -212,6 +247,7 @@ class DjAnalysisService {
       windows: windows,
       analysisVersion: DjAnalysis.currentVersion,
     );
+    await saveProfile(profile);
 
     final bpm = profile.hasTempo ? profile.beatGrid!.bpm : legacy?.bpm ?? 0;
     final bpmConfidence = profile.hasTempo
@@ -276,7 +312,13 @@ class DjAnalysisService {
     analyzeSong(song);
   }
 
-  void forget(String songId) => _memory.remove(songId);
+  void forget(String songId) {
+    _memory.remove(songId);
+    _profileMemory.remove(songId);
+  }
 
-  void clearMemory() => _memory.clear();
+  void clearMemory() {
+    _memory.clear();
+    _profileMemory.clear();
+  }
 }
