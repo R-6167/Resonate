@@ -84,6 +84,11 @@ class DjTransitionMemory {
     required String strategy,
     required bool successful,
     int weight = 1,
+    double? score,
+    double? confidence,
+    List<String> risks = const <String>[],
+    int? transitionDurationMs,
+    int? recoveryAttempts,
   }) async {
     if (fromId.isEmpty || toId.isEmpty || strategy.isEmpty) return;
     final w = weight.clamp(1, 5);
@@ -104,6 +109,18 @@ class DjTransitionMemory {
         strategyRow['bad'] = _count(strategyRow['bad']) + w;
       }
       strategyRow['updatedAt'] = DateTime.now().toIso8601String();
+      strategyRow['lastOutcome'] = successful ? 'success' : 'failure';
+      if (score != null) strategyRow['lastScore'] = score.clamp(0.0, 1.0);
+      if (confidence != null) strategyRow['lastConfidence'] = confidence.clamp(0.0, 1.0);
+      if (transitionDurationMs != null && transitionDurationMs >= 0) {
+        strategyRow['lastTransitionDurationMs'] = transitionDurationMs;
+      }
+      if (recoveryAttempts != null && recoveryAttempts >= 0) {
+        strategyRow['lastRecoveryAttempts'] = recoveryAttempts;
+      }
+      if (risks.isNotEmpty) {
+        strategyRow['lastRisks'] = risks.take(12).toList();
+      }
       strategies[strategy] = strategyRow;
 
       // Keep pair-level totals for compact aggregate learning/diagnostics.
