@@ -300,17 +300,28 @@ class DjAnalysisService {
       keyMode: keyMode,
       keyConfidence: keyConfidence,
       energy: profile.energyCurve.isNotEmpty
-          ? profile.energyCurve.first.value
+          ? profile.energyCurve.fold<double>(
+                0.0,
+                (sum, point) => sum + point.value,
+              ) /
+              profile.energyCurve.length
           : legacy?.energy,
       loudness: profile.energyCurve.isNotEmpty
-          ? profile.energyCurve.first.loudness
+          ? profile.energyCurve.fold<double>(
+                0.0,
+                (sum, point) => sum + point.loudness,
+              ) /
+              profile.energyCurve.length
           : legacy?.loudness,
       introHintMs: profile.transitions.bestIntroMs ?? legacy?.introHintMs,
-      outroHintMs: profile.transitions.bestOutroMs != null
-          ? durationMs - profile.transitions.bestOutroMs!
-          : legacy?.outroHintMs,
+      outroHintMs: profile.transitions.bestOutroMs ?? legacy?.outroHintMs,
       sectionHint: profile.sections.isNotEmpty
-          ? profile.sections.first.type.name
+          ? (profile.sections
+                .toList()
+                ..sort((a, b) => b.confidence.compareTo(a.confidence)))
+              .first
+              .type
+              .name
           : legacy?.sectionHint,
     );
   }
