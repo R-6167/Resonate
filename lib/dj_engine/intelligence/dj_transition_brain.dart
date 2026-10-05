@@ -10,6 +10,12 @@ class DjTransitionBrain {
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
   }) {
+    // Do not invent an "intelligent" transition when both profiles are
+    // effectively unknown. Playback must still continue through the safe path.
+    if (outgoing.analysisConfidence < 0.25 && incoming.analysisConfidence < 0.25) {
+      return _fallback(incoming, preferredDurationMs);
+    }
+
     final candidates = generate(
       outgoing: outgoing,
       incoming: incoming,
