@@ -87,7 +87,7 @@ class DjPcmProfileAnalyzer {
     final harmonicChanges = _detectHarmonicChanges(featureSamples);
     final energy = _buildEnergyCurve(durationMs, bpmSamples, featureSamples);
     final sections = _buildSections(durationMs, featureSamples);
-    final markers = _buildMarkers(durationMs, featureSamples, sections);
+    final markers = _buildMarkers(durationMs, featureSamples, sections, beatPositions);
 
     final energyConfidence = energy.isEmpty ? 0.0 : 0.65;
     final structureConfidence = featureSamples.isEmpty ? 0.0 : 0.65;
@@ -475,6 +475,7 @@ class DjPcmProfileAnalyzer {
     int durationMs,
     List<_FeatureSample> samples,
     List<DjSection> sections,
+    List<int> beatPositions,
   ) {
     int? intro;
     int? outroStart;
@@ -488,21 +489,21 @@ class DjPcmProfileAnalyzer {
 
       if (sample.window.role == 'start') {
         if (f.introHintMs != null) {
-          final point = (base + f.introHintMs!).clamp(0, durationMs);
+          final point = _snapToBeat((base + f.introHintMs!).clamp(0, durationMs), beatPositions, toleranceMs: 500);
           intro = intro == null ? point : math.min(intro, point);
           safeIns.add(DjTimePoint(point, confidence: 0.72));
         }
       }
 
       if (sample.window.role == 'end' && f.outroHintMs != null) {
-        outroStart = (durationMs - f.outroHintMs!).clamp(0, durationMs);
+        outroStart = _snapToBeat((durationMs - f.outroHintMs!).clamp(0, durationMs), beatPositions, toleranceMs: 500);
         safeOuts.add(DjTimePoint(outroStart, confidence: 0.78));
       }
 
       // A detected local drop/peak is a musical boundary, but it is usually a
       // risky place to inject another full-energy track.
       if (f.dropHintMs != null) {
-        final point = (base + f.dropHintMs!).clamp(0, durationMs);
+        final point = _snapToBeat((base + f.dropHintMs!).clamp(0, durationMs), beatPositions, toleranceMs: 350);
         risky.add(DjTimePoint(point, confidence: 0.68));
       }
     }
@@ -543,6 +544,18 @@ class DjPcmProfileAnalyzer {
       safeMixOuts: safeOuts,
       riskyPoints: risky,
     );
+  }
+
+  int _snapToBeat(int target, List<int> beats, {required int toleranceMs}) {
+    if (beats.isEmpty) return target;
+    var best = target;
+    var bestDistance = toleranceMs + 1;
+    for (final beat in beats) {
+      final distance = (beat - target).abs();
+      if (distance < bestDistance) { bestDistance = distance; best = beat; }
+      if (beat > target + toleranceMs) break;
+    }
+    return bestDistance <= toleranceMs ? best : target;
   }
 
   double _featureEnergy(DjPcmFeatures f) {
