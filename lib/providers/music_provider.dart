@@ -123,6 +123,10 @@ class MusicProvider extends ChangeNotifier {
   int _lastDjCrossfadeBiasMs = 0;
   double _lastDjEnergyScore = 0.5;
   bool _lastDjBassDuckNeeded = false;
+  /// Track-wide beat grid used only for conservative runtime phase correction.
+  List<int> _lastDjIncomingBeatMs = const <int>[];
+  double? _lastDjIncomingBpm;
+  int _djBeatCorrectionAttempts = 0;
 
   int? _androidSdkInt;
   int _gaplessWindowStart = 0;
@@ -2939,6 +2943,9 @@ class MusicProvider extends ChangeNotifier {
     var tempoApplied = false;
     final profileA = await _djAnalysis!.getProfile(outgoingSong.id);
     final profileB = await _djAnalysis!.getProfile(incomingSong.id);
+    _lastDjIncomingBeatMs = profileB?.beatGrid.beatMs ?? const <int>[];
+    _lastDjIncomingBpm = profileB?.beatGrid.bpm;
+    _djBeatCorrectionAttempts = 0;
     if (_djTempoMatchActive && profileA?.beatGrid.bpm != null && profileB?.beatGrid.bpm != null) {
       final stretch = computeTempoStretch(
         bpmA: profileA!.beatGrid.bpm!,
@@ -3231,6 +3238,48 @@ class MusicProvider extends ChangeNotifier {
               }
             } else if (incoming.playing) {
               final incomingPos = incoming.position.inMilliseconds;
+              // Conservative beat-phase correction: only correct small drift
+              // against a credible track-wide beat grid. Never invent beats and
+              // never seek repeatedly; playback remains valid if analysis is absent.
+              if (_lastDjIncomingBeatMs.length >= 4 &&
+                  _djBeatCorrectionAttempts < 2 &&
+                  (_lastDjIncomingBpm ?? 0) >= 40 &&
+                  (_lastDjIncomingBpm ?? 0) <= 240 &&
+                  linear > 0.08 &&
+                  linear < 0.92) {
+                var nearest = _lastDjIncomingBeatMs.first;
+                var distance = (incomingPos - nearest).abs();
+                for (final beat in _lastDjIncomingBeatMs) {
+                  final d = (incomingPos - beat).abs();
+                  if (d < distance) {
+                    distance = d;
+                    nearest = beat;
+                  }
+                  if (beat > incomingPos + 250) break;
+                }
+                // Scale tolerance with tempo, capped so ordinary decoder jitter
+                // is not mistaken for musical drift.
+                final periodMs = 60000.0 / (_lastDjIncomingBpm ?? 120.0);
+                final toleranceMs = periodMs.clamp(55.0, 90.0).toInt();
+                if (distance > 18 && distance <= toleranceMs) {
+                  _djBeatCorrectionAttempts++;
+                  try {
+                    await incoming.seek(Duration(milliseconds: nearest));
+                    lastIncomingPositionMs = nearest;
+                    lastIncomingProgressAt = DateTime.now();
+                    await ResonateDiagnostics.record('dj_runtime_monitor', {
+                      'event': 'beat_phase_corrected',
+                      'attempt': _djBeatCorrectionAttempts,
+                      'fromPositionMs': incomingPos,
+                      'toBeatMs': nearest,
+                      'driftMs': incomingPos - nearest,
+                      'linear': linear,
+                      'songId': nextSong.id,
+                    });
+                  } catch (_) {}
+                }
+              }
+              if (incomingPos > lastIncomingPositionMs + 20) {
               if (incomingPos > lastIncomingPositionMs + 20) {
                 lastIncomingPositionMs = incomingPos;
                 lastIncomingProgressAt = DateTime.now();
@@ -3366,6 +3415,9 @@ class MusicProvider extends ChangeNotifier {
           await _restoreDjTransitionSfx();
         } catch (_) {}
         _lastDjBassDuckNeeded = false;
+        _lastDjIncomingBeatMs = const <int>[];
+        _lastDjIncomingBpm = null;
+        _djBeatCorrectionAttempts = 0;
       } else if (!_crossfadeInProgress && bassDuckOriginal.isNotEmpty) {
         // No newer transition took ownership, so the cancelled transition
         // still needs to restore its own captured EQ state.
