@@ -68,7 +68,11 @@ void main() {
       greaterThan(gaps.length * 0.8),
     );
     final lastBeatMs = profile.beatGrid.beatMs.last;
-    expect(lastBeatMs < profile.durationMs, isTrue);
+    final durationMs = profile.durationMs;
+    if (durationMs == null) {
+      throw StateError('Test profile must have a duration');
+    }
+    expect(lastBeatMs < durationMs, isTrue);
   });
 
   test('an incompatible local tempo does not create a mixed beat grid', () {
