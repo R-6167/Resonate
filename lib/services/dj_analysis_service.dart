@@ -258,16 +258,24 @@ class DjAnalysisService {
       );
     }
 
-    await addWindow(0, 'start', 15.0);
-    if (durationMs > 60000) {
-      await addWindow(durationMs ~/ 2, 'mid', 15.0);
+    // Sample the full track rather than trusting only start/middle/end.
+    // Windows are intentionally short to keep idle analysis affordable.
+    final sampleSeconds = durationMs >= 180000 ? 12.0 : 15.0;
+    final windowMs = (sampleSeconds * 1000).round();
+    final positions = <int>{0};
+    if (durationMs > windowMs) {
+      for (final fraction in const <double>[0.20, 0.40, 0.60, 0.80]) {
+        positions.add((durationMs * fraction).round());
+      }
+      positions.add((durationMs - windowMs).clamp(0, durationMs - 1000));
     }
-    if (durationMs > 45000) {
-      await addWindow(
-        (durationMs - 15000).clamp(0, durationMs - 1000),
-        'end',
-        15.0,
-      );
+
+    final ordered = positions.toList()..sort();
+    for (final startMs in ordered) {
+      final role = startMs == 0
+          ? 'start'
+          : (startMs >= durationMs - windowMs - 1000 ? 'end' : 'mid');
+      await addWindow(startMs, role, sampleSeconds);
     }
 
     if (windows.isEmpty) return legacy;
