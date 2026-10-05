@@ -82,7 +82,7 @@ class DjPcmProfileAnalyzer {
 
     final tempo = _aggregateTempo(bpmSamples);
     final beatEvidence = _aggregateBeatEvidence(featureSamples);
-    final beatPositions = _aggregateBeats(featureSamples, durationMs);
+    final beatPositions = _aggregateBeats(bpmSamples, featureSamples, durationMs);
     final key = _aggregateKey(featureSamples);
     final harmonicChanges = _detectHarmonicChanges(featureSamples);
     final energy = _buildEnergyCurve(durationMs, bpmSamples, featureSamples);
@@ -167,77 +167,119 @@ class DjPcmProfileAnalyzer {
   }
 
   List<int> _aggregateBeats(
+    List<_BpmSample> bpmSamples,
     List<_FeatureSample> featureSamples,
     int durationMs,
   ) {
+    // Build local beat observations from decoded feature windows first. The
+    // feature detector is intentionally conservative, so a perfectly valid
+    // BPM estimate must also be allowed to supply the global grid when the
+    // onset detector does not expose enough individual beats.
     final observations = <_BeatObservation>[];
+
     for (final sample in featureSamples) {
       final confidence = sample.features.beatConfidence;
-      if (confidence <= 0 || sample.features.beatMs.isEmpty) continue;
       final local = sample.features.beatMs;
+      if (confidence <= 0 || local.length < 4) continue;
+
       final diffs = <double>[];
       for (var i = 1; i < local.length; i++) {
         final d = (local[i] - local[i - 1]).toDouble();
         if (d > 200 && d < 1500) diffs.add(d);
       }
       if (diffs.length < 3) continue;
+
       diffs.sort();
       final period = diffs[diffs.length ~/ 2];
-      final first = sample.window.startMs + local.first;
-      observations.add(_BeatObservation(first, period, confidence));
+      observations.add(_BeatObservation(
+        sample.window.startMs + local.first,
+        period,
+        confidence,
+      ));
     }
+
+    // Fallback: use the independently estimated local BPMs. This is important
+    // for codec-agnostic PCM analysis because BPM can be reliable even when
+    // the onset/phase detector is too conservative for a particular window.
+    //
+    // Do NOT use the median BPM here: when a track contains incompatible local
+    // tempos (e.g. 120 BPM + 80 BPM), the median creates a fabricated 100 BPM
+    // grid. Instead, choose the strongest compatible tempo cluster.
+    if (observations.isEmpty) {
+      for (final sample in bpmSamples) {
+        final bpm = sample.estimate.bpm;
+        if (!bpm.isFinite || bpm <= 40 || bpm >= 240) continue;
+        final period = 60000.0 / bpm;
+        if (period <= 200 || period >= 1500) continue;
+        observations.add(_BeatObservation(
+          sample.window.startMs + sample.estimate.beatOffsetMs,
+          period,
+          sample.estimate.confidence.clamp(0.0, 0.95).toDouble(),
+        ));
+      }
+    }
+
     if (observations.isEmpty) return const [];
 
-    // Prefer the period supported by the most confident windows. This avoids
-    // concatenating incompatible local beat trains from overlapping windows.
+    // Pick the local period with the strongest actual support. Only genuinely
+    // compatible periods are clustered; half/double tempo is deliberately not
+    // treated as compatibility here because doing so can manufacture a mixed
+    // beat grid from different sections.
     var best = observations.first;
     var bestSupport = -1.0;
     for (final candidate in observations) {
       var support = 0.0;
       for (final other in observations) {
-        final periodDelta = (candidate.periodMs - other.periodMs).abs();
-        final phase = _phaseDistance(candidate.firstMs, other.firstMs, candidate.periodMs);
-        if (periodDelta <= candidate.periodMs * 0.045 ||
-            periodDelta <= 18.0) {
-          support += other.confidence * (1.0 - (phase / candidate.periodMs).clamp(0.0, 1.0));
+        final tolerance = math.max(18.0, candidate.periodMs * 0.045);
+        if ((candidate.periodMs - other.periodMs).abs() <= tolerance) {
+          support += other.confidence;
         }
       }
-      if (support > bestSupport) {
+      if (support > bestSupport ||
+          (support == bestSupport && candidate.confidence > best.confidence)) {
         bestSupport = support;
         best = candidate;
       }
     }
 
     final period = best.periodMs;
-    final phaseSamples = observations
-        .where((o) => (o.periodMs - period).abs() <= math.max(18.0, period * 0.045))
-        .toList();
+    final phaseSamples = observations.where((o) {
+      final tolerance = math.max(18.0, period * 0.045);
+      return (o.periodMs - period).abs() <= tolerance;
+    }).toList();
     if (phaseSamples.isEmpty) return const [];
 
-    // Circular weighted phase average, referenced to the track timeline.
+    // Circular weighted phase average across only the selected tempo cluster.
     var sinSum = 0.0;
     var cosSum = 0.0;
+    var weightSum = 0.0;
     for (final sample in phaseSamples) {
       final phase = (sample.firstMs % period) / period * 2 * math.pi;
-      sinSum += math.sin(phase) * sample.confidence;
-      cosSum += math.cos(phase) * sample.confidence;
+      final weight = math.max(0.01, sample.confidence);
+      sinSum += math.sin(phase) * weight;
+      cosSum += math.cos(phase) * weight;
+      weightSum += weight;
     }
-    final phaseAngle = math.atan2(sinSum, cosSum);
-    final normalizedPhase = phaseAngle < 0 ? phaseAngle + 2 * math.pi : phaseAngle;
-    final phaseMs = normalizedPhase / (2 * math.pi) * period;
-    var firstBeat = phaseMs.round();
-    while (firstBeat > 0) firstBeat -= period.round();
-    firstBeat %= math.max(1, period.round());
+    if (weightSum <= 0) return const [];
 
-    // Generate one continuous grid. It is intentionally bounded to the track;
-    // this gives phrase alignment a stable global index instead of per-window
-    // indices that can restart at every PCM sample.
+    final phaseAngle = math.atan2(sinSum, cosSum);
+    final normalizedPhase =
+        phaseAngle < 0 ? phaseAngle + 2 * math.pi : phaseAngle;
+    final phaseMs = normalizedPhase / (2 * math.pi) * period;
+
+    var firstBeat = phaseMs.round();
+    final periodInt = math.max(1, period.round());
+    firstBeat %= periodInt;
+
     final positions = <int>[];
     var beat = firstBeat;
     while (beat < durationMs) {
       if (beat >= 0) positions.add(beat);
-      beat += period.round();
+      beat += periodInt;
     }
+
+    // Require enough evidence for a useful track-wide grid. A four-beat grid
+    // is the minimum needed by phrase/bar alignment.
     return positions.length >= 4 ? positions : const [];
   }
 
