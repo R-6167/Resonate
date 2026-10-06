@@ -76,6 +76,12 @@ class RunningMotionDecisionEngine {
     return RunningMotionDecision.maintain;
   }
 
+  Duration _stationaryDuration(DateTime now) {
+    final lastMoving = _lastMovingAt;
+    if (lastMoving != null) return now.difference(lastMoving);
+    return now.difference(_stateSince ?? now);
+  }
+
   bool _isDecisionAllowed(DateTime now) {
     final last = _lastDecisionAt;
     return last == null || now.difference(last) >= policy.decisionCooldown;
