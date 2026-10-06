@@ -11,6 +11,8 @@ import '../services/companion_decision_log.dart';
 import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
+import '../modes/providers/mode_provider.dart';
+import '../modes/models/mode_media_item.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
@@ -19,6 +21,7 @@ import 'music_provider.dart';
 class AutopilotController extends ChangeNotifier {
   final MusicProvider music;
   final IntelligenceProvider intelligence;
+  final ModeProvider? modes;
   final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   bool _queueDecisionInFlight = false;
@@ -32,7 +35,11 @@ class AutopilotController extends ChangeNotifier {
   DateTime? _lastEvaluation;
   bool _evaluationScheduled = false;
 
-  AutopilotController({required this.music, required this.intelligence}) {
+  AutopilotController({
+    required this.music,
+    required this.intelligence,
+    this.modes,
+  }) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
     _authority.addListener(_onAuthorityEvent);
@@ -266,6 +273,33 @@ class AutopilotController extends ChangeNotifier {
     }
   }
 
+
+  ModeMediaItem _asModeItem(Song song) => ModeMediaItem(
+        id: song.id,
+        filePath: song.filePath,
+        title: song.title,
+        album: song.album,
+        artist: song.artist,
+      );
+
+  /// Soft mode bias: drop disallowed types, prefer preferred types. Never forces play.
+  List<Song> _applyModeBias(List<Song> songs) {
+    final m = modes;
+    if (m == null || songs.isEmpty) return songs;
+    final allowed = <Song>[];
+    for (final s in songs) {
+      final item = _asModeItem(s);
+      if (m.isAcceptableForAutopilot(item)) allowed.add(s);
+    }
+    if (allowed.isEmpty) return songs; // fail open so Autopilot is not starved
+    allowed.sort((a, b) {
+      final sb = m.contentBiasScore(_asModeItem(b));
+      final sa = m.contentBiasScore(_asModeItem(a));
+      return sb.compareTo(sa);
+    });
+    return allowed;
+  }
+
   Future<void> _ensurePredictedQueue(double threshold) async {
     // Phase 5: queue mutation is a playback API — require consent + autopilot.
     if (!_consentGranted || !intelligence.isEnabled || !intelligence.isAutopilot) return;
@@ -284,11 +318,12 @@ class AutopilotController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         count: 2,
       );
-      if (candidates.isNotEmpty) {
-        final added = await music.enqueueSongs(candidates);
+      final biased = _applyModeBias(candidates);
+      if (biased.isNotEmpty) {
+        final added = await music.enqueueSongs(biased);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
-          'candidates': candidates.map((song) => song.id).toList(),
+          'candidates': biased.map((song) => song.id).toList(),
           'added': added,
           'queueLength': music.queue.length,
           'queueIndex': music.queueIndex,
@@ -298,7 +333,7 @@ class AutopilotController extends ChangeNotifier {
             source: 'autopilot',
             action: 'enqueue',
             detail: 'Queued predicted track(s) under your consent.',
-            songId: candidates.first.id,
+            songId: biased.first.id,
           ));
         }
       }

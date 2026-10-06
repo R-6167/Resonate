@@ -282,10 +282,24 @@ class ResonateApp extends StatelessWidget {
           create: (context) => AutopilotController(
             music: context.read<MusicProvider>(),
             intelligence: context.read<IntelligenceProvider>(),
+            modes: context.read<ModeProvider>(),
           ),
         ),
         // Bluetooth before Equalizer so EQ can bind device profiles.
         ChangeNotifierProvider(create: (_) => BluetoothProvider()),
+        // Modes: policy only. Ports never force play or reclaim focus.
+        ChangeNotifierProvider(
+          create: (context) {
+            final modes = ModeProvider();
+            modes.attachPlayback(
+              ResonateModePlaybackPort(context.read<MusicProvider>()),
+            );
+            modes.attachContext(
+              ResonateModeContextPort(context.read<BluetoothProvider>()),
+            );
+            return modes;
+          },
+        ),
         ChangeNotifierProvider(
           create: (context) => EqualizerProvider(
             equalizer: context.read<MusicProvider>().equalizer,
@@ -307,19 +321,6 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               DjModeProvider(music: context.read<MusicProvider>()),
-        ),
-        // Modes: policy only. Ports never force play or reclaim focus.
-        ChangeNotifierProvider(
-          create: (context) {
-            final modes = ModeProvider();
-            modes.attachPlayback(
-              ResonateModePlaybackPort(context.read<MusicProvider>()),
-            );
-            modes.attachContext(
-              ResonateModeContextPort(context.read<BluetoothProvider>()),
-            );
-            return modes;
-          },
         ),
         ChangeNotifierProvider(
           create: (context) =>
