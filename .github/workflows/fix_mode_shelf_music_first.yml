@@ -1,0 +1,24 @@
+name: Fix music-first mode shelf
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_mode_shelf_music_first.py"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+      - run: python3 tools/fix_mode_shelf_music_first.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "fix: Running/Driving/Work shelf uses recent library tracks"
+          git push origin modes_on_dj_v2
