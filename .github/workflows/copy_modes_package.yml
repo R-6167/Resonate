@@ -1,0 +1,35 @@
+name: Copy modes package onto modes_on_dj_v2
+on:
+  workflow_dispatch:
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Import modes package from modes_lab
+        run: |
+          git fetch origin modes_lab:refs/remotes/origin/modes_lab
+          git checkout origin/modes_lab -- lib/modes test/modes .github/workflows/modes_tests.yml || true
+          # Ensure directories exist even if sparse
+          mkdir -p lib/modes test/modes
+          git status --short
+
+      - name: Commit and push
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A lib/modes test/modes .github/workflows/modes_tests.yml
+          if git diff --staged --quiet; then
+            echo "Package already present"
+            exit 0
+          fi
+          git commit -m "feat(modes): copy clean modes package from modes_lab"
+          git push origin modes_on_dj_v2
