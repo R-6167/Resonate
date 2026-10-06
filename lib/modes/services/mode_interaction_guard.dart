@@ -7,6 +7,8 @@ class ModeInteractionGuard {
 
   const ModeInteractionGuard(this.policy);
 
+  /// Running's safe tap path: playback actions require two fingers;
+  /// configuration/navigation remains available with one finger.
   bool allowTap({
     required ModeAction action,
     required int pointerCount,
