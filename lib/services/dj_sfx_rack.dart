@@ -226,10 +226,10 @@ class DjSfxRack {
     DjTransitionKind? transitionKind,
   }) async {
     final gen = ++_delayedSfxGen;
-    engaged = true;
     try {
       await Future<void>.delayed(delay);
-      if (gen != _delayedSfxGen || !engaged) return;
+      // Cancelled by restore() (gen bump) or a newer schedule — do not engage.
+      if (gen != _delayedSfxGen) return;
       await engage(
         energyScore: energyScore,
         preset: preset,
