@@ -1,4 +1,3 @@
-import '../models/motion_state.dart';
 import '../models/running_session_state.dart';
 
 /// Deterministic Running Mode session lifecycle.
@@ -62,6 +61,8 @@ class RunningSessionController {
     if (_state == RunningSessionState.active) _accumulateActive(now);
     _state = RunningSessionState.idle;
     _endedAt = now;
+    _startedAt = null;
+    _accumulatedActive = Duration.zero;
     _activeSince = null;
   }
 
