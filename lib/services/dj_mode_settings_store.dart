@@ -1,9 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Persisted DJ Mode preferences.
-///
-/// Defaults keep **normal playback unchanged**: master switch is off, and
-/// advanced sub-features stay off until later steps land.
+import '../dj_engine/core/dj_policy.dart';
+
+/// Persistence for optional DJ Mode preferences (defaults keep normal player).
 class DjModeSettingsStore {
   static const _enabledKey = 'dj_mode_enabled';
   static const _beatAlignKey = 'dj_mode_beat_align';
@@ -12,6 +11,8 @@ class DjModeSettingsStore {
   static const _maxStretchKey = 'dj_mode_max_stretch_percent';
   static const _analyzeIdleKey = 'dj_mode_analyze_idle';
   static const _transitionSfxKey = 'dj_mode_transition_sfx';
+  static const _aggressivenessKey = 'dj_mode_aggressiveness';
+  static const _minConfidenceKey = 'dj_mode_min_confidence';
 
   static Future<bool> enabled() async {
     final p = await SharedPreferences.getInstance();
@@ -23,7 +24,6 @@ class DjModeSettingsStore {
     await p.setBool(_enabledKey, value);
   }
 
-  /// Step 2: start next track on a beat boundary when BPMs are close.
   static Future<bool> beatAlign() async {
     final p = await SharedPreferences.getInstance();
     return p.getBool(_beatAlignKey) ?? true;
@@ -34,7 +34,6 @@ class DjModeSettingsStore {
     await p.setBool(_beatAlignKey, value);
   }
 
-  /// Step 3: time-stretch during crossfade (off until stretch lands).
   static Future<bool> tempoMatch() async {
     final p = await SharedPreferences.getInstance();
     return p.getBool(_tempoMatchKey) ?? false;
@@ -45,7 +44,6 @@ class DjModeSettingsStore {
     await p.setBool(_tempoMatchKey, value);
   }
 
-  /// Step 4: harmonic queue bias / key-aware selection.
   static Future<bool> harmonicMix() async {
     final p = await SharedPreferences.getInstance();
     return p.getBool(_harmonicMixKey) ?? false;
@@ -56,7 +54,6 @@ class DjModeSettingsStore {
     await p.setBool(_harmonicMixKey, value);
   }
 
-  /// Max |stretch − 1| as percent (e.g. 12 → ratio 0.88–1.12).
   static Future<int> maxStretchPercent() async {
     final p = await SharedPreferences.getInstance();
     return (p.getInt(_maxStretchKey) ?? 12).clamp(3, 20);
@@ -67,7 +64,6 @@ class DjModeSettingsStore {
     await p.setInt(_maxStretchKey, value.clamp(3, 20));
   }
 
-  /// When true, idle analysis may run later (never blocks play).
   static Future<bool> analyzeIdle() async {
     final p = await SharedPreferences.getInstance();
     return p.getBool(_analyzeIdleKey) ?? false;
@@ -78,7 +74,6 @@ class DjModeSettingsStore {
     await p.setBool(_analyzeIdleKey, value);
   }
 
-  /// Soft reverb glue during DJ crossfade (restored after).
   static Future<bool> transitionSfx() async {
     final p = await SharedPreferences.getInstance();
     return p.getBool(_transitionSfxKey) ?? true;
@@ -87,5 +82,28 @@ class DjModeSettingsStore {
   static Future<void> setTransitionSfx(bool value) async {
     final p = await SharedPreferences.getInstance();
     await p.setBool(_transitionSfxKey, value);
+  }
+
+  static Future<DjAggressiveness> aggressiveness() async {
+    final p = await SharedPreferences.getInstance();
+    return DjAggressivenessX.fromId(p.getString(_aggressivenessKey));
+  }
+
+  static Future<void> setAggressiveness(DjAggressiveness value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_aggressivenessKey, value.id);
+  }
+
+  /// Stored as 0–100 (percent). Default 40.
+  static Future<double> minConfidence() async {
+    final p = await SharedPreferences.getInstance();
+    final pct = p.getInt(_minConfidenceKey) ?? 40;
+    return (pct.clamp(20, 80) / 100.0).toDouble();
+  }
+
+  static Future<void> setMinConfidence(double value) async {
+    final p = await SharedPreferences.getInstance();
+    final pct = (value.clamp(0.20, 0.80) * 100).round();
+    await p.setInt(_minConfidenceKey, pct);
   }
 }
