@@ -86,3 +86,23 @@ Integration flow:
 `sensor adapter → RunningCoordinator → RunningIntent stream → host playback/session decision`
 
 This is the boundary that the eventual Resonate integration should consume.
+
+## Driving Mode
+
+Driving Mode is the second concrete safety-oriented behavior in the Modes lab.
+
+- Uses a **minimal UI** with large controls and no horizontal swipe navigation.
+- Hides advanced settings from the primary driving surface.
+- Keeps music-first playback policy while allowing long listening sessions.
+- Car context is supplied by the host through `ModeContextPort`; Modes does not access Bluetooth, location, or vehicle APIs directly.
+- Car detection can produce a `suggestDriving` intent; the host decides whether to accept it.
+- Entering/leaving Driving is a mode decision, not a second playback engine.
+- Repeated identical context samples produce no duplicate intents.
+- Losing car context while already in Driving emits a clean `drivingInactive` boundary.
+- The Driving coordinator never controls playback or changes the active mode itself.
+
+Integration flow:
+
+`host context adapter → DrivingCoordinator → DrivingIntent → ModeProvider/UI/playback integration`
+
+The eventual Resonate app remains responsible for the actual car-context adapter, mode switch, playback behavior, and platform-specific safety handling.
