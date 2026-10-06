@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -43,7 +44,7 @@ class ModeShelfCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.shelves, color: scheme.tertiary),
+                    Icon(Icons.playlist_play_rounded, color: scheme.tertiary),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -130,13 +131,15 @@ class ModeShelfCard extends StatelessWidget {
                           onTap: () {
                             final music = context.read<MusicProvider>();
                             final idx = tracks.indexWhere((x) => x.id == s.id);
-                            PlaybackAuthority.instance.userPlay(
-                              () => music.playSong(
-                                s,
-                                queue: tracks,
-                                startIndex: idx < 0 ? 0 : idx,
-                              ),
+                            PlaybackAuthority.instance.markExternalUserCommand(
+                              'mode_shelf',
+                              'play_track',
                             );
+                            unawaited(music.playSong(
+                              s,
+                              queue: tracks,
+                              startIndex: idx < 0 ? 0 : idx,
+                            ));
                           },
                         ),
                       ),
@@ -153,13 +156,15 @@ class ModeShelfCard extends StatelessWidget {
                       FilledButton.tonalIcon(
                         onPressed: () {
                           final music = context.read<MusicProvider>();
-                          PlaybackAuthority.instance.userPlay(
-                            () => music.playSong(
-                              tracks.first,
-                              queue: tracks,
-                              startIndex: 0,
-                            ),
+                          PlaybackAuthority.instance.markExternalUserCommand(
+                            'mode_shelf',
+                            'play_shelf',
                           );
+                          unawaited(music.playSong(
+                            tracks.first,
+                            queue: tracks,
+                            startIndex: 0,
+                          ));
                         },
                         icon: const Icon(Icons.play_arrow_rounded),
                         label: const Text('Play shelf'),
