@@ -100,7 +100,7 @@ class ModesScreen extends StatelessWidget {
             subtitle: Text(
               folders.isEmpty
                   ? 'No folder selected'
-                  : '\${folders.length} folder\${folders.length == 1 ? '' : 's'} selected',
+                  : '${folders.length} folder${folders.length == 1 ? '' : 's'} selected',
             ),
             trailing: folderPicker == null
                 ? null
