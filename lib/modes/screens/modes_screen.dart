@@ -31,7 +31,7 @@ class ModesScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),
-              Text('Active: \${active.emoji} \${active.label}'),
+              Text('Active: ${active.emoji} ${active.label}'),
               const SizedBox(height: 16),
               SwitchListTile.adaptive(
                 title: const Text('Auto-enter Driving in the car'),
