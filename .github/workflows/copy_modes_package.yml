@@ -1,0 +1,44 @@
+name: Copy modes package from modes_lab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/copy_modes_package.yml"
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+
+      - name: Fetch modes_lab package trees
+        run: |
+          git fetch origin modes_lab:modes_lab
+          # Materialize only the modes package + tests + modes CI
+          git checkout modes_lab -- \
+            lib/modes \
+            test/modes \
+            .github/workflows/modes_tests.yml
+
+      - name: Commit if changed
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add lib/modes test/modes .github/workflows/modes_tests.yml
+          if git diff --staged --quiet; then
+            echo "No changes — package already present"
+            exit 0
+          fi
+          git status --short
+          git commit -m "$(cat <<'EOF'
+feat(modes): copy clean modes package from modes_lab onto dj_engine_v2 tip
+
+Additive only — no app wiring yet. Integration branch: modes_on_dj_v2.
+EOF
+)"
+          git push origin modes_on_dj_v2
