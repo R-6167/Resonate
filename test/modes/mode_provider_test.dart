@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:resonate_modes_lab/modes/integration/mode_context_port.dart';
-import 'package:resonate_modes_lab/modes/integration/mode_playback_port.dart';
-import 'package:resonate_modes_lab/modes/models/mode_action.dart';
-import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
-import 'package:resonate_modes_lab/modes/providers/mode_provider.dart';
+import 'package:resonate/modes/integration/mode_context_port.dart';
+import 'package:resonate/modes/integration/mode_playback_port.dart';
+import 'package:resonate/modes/models/mode_action.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
+import 'package:resonate/modes/providers/mode_provider.dart';
 
 class FakePlayback implements ModePlaybackPort {
   bool? crossfade;

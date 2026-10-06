@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/media_type.dart';
-import 'package:resonate_modes_lab/modes/models/motivation_intent.dart';
-import 'package:resonate_modes_lab/modes/services/motivation_coordinator.dart';
+import 'package:resonate/modes/models/media_type.dart';
+import 'package:resonate/modes/models/motivation_intent.dart';
+import 'package:resonate/modes/services/motivation_coordinator.dart';
 
 void main() {
   final t0 = DateTime(2026, 10, 6, 10);

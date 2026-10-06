@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/integration/mode_context_port.dart';
-import 'package:resonate_modes_lab/modes/models/driving_intent.dart';
-import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
-import 'package:resonate_modes_lab/modes/services/driving_coordinator.dart';
+import 'package:resonate/modes/integration/mode_context_port.dart';
+import 'package:resonate/modes/models/driving_intent.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
+import 'package:resonate/modes/services/driving_coordinator.dart';
 
 void main() {
   final t0 = DateTime(2026, 1, 1, 12);

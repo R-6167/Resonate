@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/media_type.dart';
-import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
-import 'package:resonate_modes_lab/modes/services/mode_policy_catalog.dart';
+import 'package:resonate/modes/models/media_type.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
+import 'package:resonate/modes/services/mode_policy_catalog.dart';
 
 void main() {
   test('speech modes disable music-style transitions', () {

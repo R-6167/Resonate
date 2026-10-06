@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:resonate_modes_lab/modes/providers/mode_provider.dart';
-import 'package:resonate_modes_lab/modes/screens/modes_screen.dart';
+import 'package:resonate/modes/providers/mode_provider.dart';
+import 'package:resonate/modes/screens/modes_screen.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));

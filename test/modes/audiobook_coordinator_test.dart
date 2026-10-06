@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/audiobook_intent.dart';
-import 'package:resonate_modes_lab/modes/services/audiobook_coordinator.dart';
+import 'package:resonate/modes/models/audiobook_intent.dart';
+import 'package:resonate/modes/services/audiobook_coordinator.dart';
 
 void main() {
   final t0 = DateTime(2026, 10, 6, 10);

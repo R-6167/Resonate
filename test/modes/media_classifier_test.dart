@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/media_type.dart';
-import 'package:resonate_modes_lab/modes/models/mode_media_item.dart';
-import 'package:resonate_modes_lab/modes/services/media_classifier.dart';
+import 'package:resonate/modes/models/media_type.dart';
+import 'package:resonate/modes/models/mode_media_item.dart';
+import 'package:resonate/modes/services/media_classifier.dart';
 
 void main() {
   test('does not classify a long music mix as audiobook by duration', () {

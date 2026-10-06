@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/mode_media_item.dart';
+import 'package:resonate/modes/models/mode_media_item.dart';
 
 void main() {
   test('mode media item keeps only integration-neutral metadata', () {

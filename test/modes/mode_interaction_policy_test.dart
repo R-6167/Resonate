@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/mode_action.dart';
-import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
-import 'package:resonate_modes_lab/modes/services/mode_interaction_catalog.dart';
-import 'package:resonate_modes_lab/modes/services/mode_interaction_guard.dart';
+import 'package:resonate/modes/models/mode_action.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
+import 'package:resonate/modes/services/mode_interaction_catalog.dart';
+import 'package:resonate/modes/services/mode_interaction_guard.dart';
 
 void main() {
   test('Running requires two fingers for every actionable tap', () {

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/running_session_state.dart';
-import 'package:resonate_modes_lab/modes/services/running_session_controller.dart';
+import 'package:resonate/modes/models/running_session_state.dart';
+import 'package:resonate/modes/services/running_session_controller.dart';
 
 void main() {
   final t0 = DateTime(2026, 1, 1, 12);

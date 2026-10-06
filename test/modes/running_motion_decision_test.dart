@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:resonate_modes_lab/modes/models/motion_state.dart';
-import 'package:resonate_modes_lab/modes/models/running_automation_policy.dart';
-import 'package:resonate_modes_lab/modes/services/running_motion_decision.dart';
+import 'package:resonate/modes/models/motion_state.dart';
+import 'package:resonate/modes/models/running_automation_policy.dart';
+import 'package:resonate/modes/services/running_motion_decision.dart';
 
 void main() {
   final t0 = DateTime(2026, 1, 1, 12);
