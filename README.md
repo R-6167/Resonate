@@ -40,3 +40,17 @@ Running Mode is the first concrete interaction behavior in the Modes lab.
 - The interaction guard only approves/blocks actions; it never performs playback itself.
 
 The host Resonate UI will consume `InteractionPolicy` and `ModeInteractionGuard` when Modes is integrated.
+## Running Mode — movement-aware behavior
+
+Running Mode now has a pure movement decision layer. It is intentionally sensor-agnostic: the host Resonate app will supply coarse movement states through an adapter.
+
+- Movement states: unknown, stationary, stopped, moving.
+- A brief stop does **not** pause playback.
+- Sustained stationary/stopped state (15 seconds by default) emits a pause suggestion.
+- Movement must remain stable (5 seconds by default) before an automation resume suggestion.
+- A cooldown prevents rapid pause/resume oscillation.
+- An explicit user pause blocks automatic resume.
+- Unknown movement never triggers automation.
+- The decision engine emits intents only; it never calls the playback engine.
+
+This keeps Running Mode safe and deterministic while leaving sensors and playback ownership to the main Resonate app.
