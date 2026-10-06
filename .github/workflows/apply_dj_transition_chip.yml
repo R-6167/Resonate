@@ -1,0 +1,25 @@
+name: Apply DJ transition reason chip
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/apply_dj_transition_chip.py"
+      - "lib/widgets/dj_mode_status_chip.dart"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dj_engine_v2
+          fetch-depth: 0
+      - run: python3 tools/apply_dj_transition_chip.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(dj): mount transition reason chip on Now Playing"
+          git push origin dj_engine_v2
