@@ -1,7 +1,7 @@
 /**
- * Vendored DSP ENGINE — true-peak limiter (look-ahead + 4× oversampling).
+ * Vendored DSP ENGINE — bass-aware true-peak limiter.
  *
- * Chain: EQ → speaker/bass → auto headroom → DVC → true-peak limiter → soft-clip
+ * Chain: EQ → speaker/bass → partial headroom → DVC → bass-aware true-peak → soft-clip
  * All buffers owned by the handle; process path never allocates.
  */
 #include "dsp_engine.h"
@@ -92,12 +92,15 @@ struct Biquad {
 };
 
 struct TruePeakLimiter {
-    float ceiling = 0.8912509f;
+    float ceiling = 0.9440609f;
     float attack_coeff = 0.f;
     float release_coeff = 0.f;
     float envelope = 0.f;
     float gain = 1.f;
     float prev_in = 0.f;
+    float sc_x1 = 0.f;
+    float sc_y1 = 0.f;
+    float sc_a = 0.f;
     float delay[kMaxLookahead]{};
     int delay_len = 64;
     int delay_pos = 0;
@@ -110,8 +113,14 @@ struct TruePeakLimiter {
         attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
         release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
         ceiling = std::pow(10.0f, ceiling_db / 20.0f);
-        if (ceiling > 0.99f) ceiling = 0.99f;
+        if (ceiling > 0.995f) ceiling = 0.995f;
         if (ceiling < 0.1f) ceiling = 0.1f;
+
+        const float fc = 90.0f;
+        const float rc = 1.0f / (2.0f * (float)M_PI * fc);
+        const float dt = 1.0f / (float)sample_rate;
+        sc_a = rc / (rc + dt);
+        sc_x1 = sc_y1 = 0.f;
 
         int la = (int)std::lround(lookahead_ms * 0.001f * (float)sample_rate);
         if (la < 8) la = 8;
@@ -142,7 +151,13 @@ struct TruePeakLimiter {
 
     float process(float x) {
         x = sanitize(x);
-        const float tp = truePeakAbs(x);
+
+        const float sc = sc_a * (sc_y1 + x - sc_x1);
+        sc_x1 = x;
+        sc_y1 = sc;
+        const float tp_full = truePeakAbs(x);
+        const float tp_sc = truePeakAbs(sc);
+        const float tp = 0.55f * tp_sc + 0.45f * tp_full;
         prev_in = x;
 
         if (tp > envelope) {
@@ -155,7 +170,7 @@ struct TruePeakLimiter {
         float target = 1.f;
         if (envelope > ceiling && envelope > 1e-8f)
             target = ceiling / envelope;
-        if (target < 0.05f) target = 0.05f;
+        if (target < 0.08f) target = 0.08f;
 
         if (target < gain)
             gain = attack_coeff * gain + (1.0f - attack_coeff) * target;
@@ -246,12 +261,13 @@ struct Engine {
             for (int c = 0; c < channels; ++c)
                 bands[i][c].setPeaking(sample_rate, centers[i], gains[i], q);
         }
-        if (eq_enabled && max_pos > 0.25) {
-            headroom_gain = (float)std::pow(10.0, -(max_pos * 0.92) / 20.0);
+        if (eq_enabled && max_pos > 0.5) {
+            const double comp = max_pos * 0.48;
+            headroom_gain = (float)std::pow(10.0, -comp / 20.0);
         } else {
             headroom_gain = 1.0f;
         }
-        if (speaker_mode) headroom_gain *= 0.841395f;
+        if (speaker_mode) headroom_gain *= 0.92f;
     }
 
     void rebuildSpeakerFilters() {
@@ -263,10 +279,10 @@ struct Engine {
     }
 
     void rebuildLimiter() {
-        const float atk = speaker_mode ? 0.5f : 1.0f;
-        const float rel = speaker_mode ? 60.0f : 100.0f;
-        const float ceil_db = speaker_mode ? -1.5f : -1.0f;
-        const float la_ms = 3.0f;
+        const float atk = speaker_mode ? 1.2f : 2.0f;
+        const float rel = speaker_mode ? 140.0f : 200.0f;
+        const float ceil_db = speaker_mode ? -1.0f : -0.5f;
+        const float la_ms = 4.0f;
         for (int c = 0; c < channels; ++c)
             limiter[c].configure(sample_rate, atk, rel, ceil_db, la_ms);
     }
@@ -401,7 +417,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     const bool eq = e->eq_enabled;
     const bool speaker = e->speaker_mode;
     const float vb = static_cast<float>(e->virtual_bass);
-    const float knee = speaker ? 0.80f : 0.88f;
+    const float knee = speaker ? 0.86f : 0.93f;
 
     for (int i = 0; i < frames; ++i) {
         for (int c = 0; c < ch; ++c) {
@@ -417,9 +433,9 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                 s = e->hpf[c].process(s);
                 if (vb > 0.01f) {
                     float h = deep;
-                    h = h - 0.35f * h * h * h;
+                    h = h - 0.18f * h * h * h;
                     h = e->bass_bp[c].process(h);
-                    s += h * (0.35f * vb);
+                    s += h * (0.42f * vb);
                 }
             }
 
