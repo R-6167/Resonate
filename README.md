@@ -66,3 +66,23 @@ Running Mode also defines a session boundary independent of playback:
 - Leaving Running Mode ends the current session without falsely marking it completed.
 - Paused time is excluded from active running duration.
 - The lifecycle controller is deterministic and does not access sensors or playback.
+
+### Running Mode — integration intent stream
+
+`RunningCoordinator` combines the session lifecycle and movement layers into one host-facing contract.
+
+- Lifecycle methods emit: `sessionStarted`, `sessionPaused`, `sessionResumed`, `sessionCompleted`, and `sessionExited`.
+- Sensor adapters feed coarse `MotionState` values into `ingestMotion()`.
+- Every accepted motion sample produces a `motionChanged` intent.
+- Sustained stationary/stopped movement can additionally produce `suggestPause`.
+- Stable movement after an automation pause can additionally produce `suggestResume`.
+- Suggestions do **not** change session state or call playback automatically; the host explicitly accepts them.
+- Explicit user playback pause is tracked separately so movement automation cannot unexpectedly resume user-paused playback.
+- Idle/completed sessions reject stale movement callbacks, preventing old sensor events from affecting playback.
+- The coordinator is integration-neutral: sensors, playback, notifications, and UI remain owned by the main Resonate app.
+
+Integration flow:
+
+`sensor adapter → RunningCoordinator → RunningIntent stream → host playback/session decision`
+
+This is the boundary that the eventual Resonate integration should consume.
