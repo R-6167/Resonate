@@ -85,7 +85,7 @@ class MediaFolderStore {
   }
 
   Map<MediaType, List<String>> _empty() => {
-        for (final type in supportedTypes) type: <String>[],
+        for (final type in MediaType.values) type: <String>[],
       };
 
   static String _normalize(String path) {
