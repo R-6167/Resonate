@@ -1,7 +1,7 @@
 /**
- * Vendored DSP ENGINE — bass-aware true-peak limiter.
+ * Vendored DSP ENGINE — stereo-linked bass-aware true-peak limiter.
  *
- * Chain: EQ → speaker/bass → partial headroom → DVC → bass-aware true-peak → soft-clip
+ * Chain: EQ → speaker/bass → partial headroom → DVC → stereo-linked true-peak → soft-clip
  * All buffers owned by the handle; process path never allocates.
  */
 #include "dsp_engine.h"
@@ -91,12 +91,7 @@ struct Biquad {
     }
 };
 
-struct TruePeakLimiter {
-    float ceiling = 0.9440609f;
-    float attack_coeff = 0.f;
-    float release_coeff = 0.f;
-    float envelope = 0.f;
-    float gain = 1.f;
+struct LookaheadDetector {
     float prev_in = 0.f;
     float sc_x1 = 0.f;
     float sc_y1 = 0.f;
@@ -105,22 +100,14 @@ struct TruePeakLimiter {
     int delay_len = 64;
     int delay_pos = 0;
 
-    void configure(int sample_rate, float attack_ms, float release_ms,
-                   float ceiling_db, float lookahead_ms) {
+    void configure(int sample_rate, float lookahead_ms) {
         if (sample_rate < 8000) sample_rate = 44100;
-        const float atk = std::max(0.05f, attack_ms) * 0.001f;
-        const float rel = std::max(1.0f, release_ms) * 0.001f;
-        attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
-        release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
-        ceiling = std::pow(10.0f, ceiling_db / 20.0f);
-        if (ceiling > 0.995f) ceiling = 0.995f;
-        if (ceiling < 0.1f) ceiling = 0.1f;
-
         const float fc = 90.0f;
         const float rc = 1.0f / (2.0f * (float)M_PI * fc);
         const float dt = 1.0f / (float)sample_rate;
         sc_a = rc / (rc + dt);
         sc_x1 = sc_y1 = 0.f;
+        prev_in = 0.f;
 
         int la = (int)std::lround(lookahead_ms * 0.001f * (float)sample_rate);
         if (la < 8) la = 8;
@@ -128,9 +115,6 @@ struct TruePeakLimiter {
         delay_len = la;
         delay_pos = 0;
         std::memset(delay, 0, sizeof(delay));
-        envelope = 0.f;
-        gain = 1.f;
-        prev_in = 0.f;
     }
 
     float truePeakAbs(float x) const {
@@ -149,22 +133,50 @@ struct TruePeakLimiter {
         return peak;
     }
 
-    float process(float x) {
+    float feed(float x, float* peak_out) {
         x = sanitize(x);
-
         const float sc = sc_a * (sc_y1 + x - sc_x1);
         sc_x1 = x;
         sc_y1 = sc;
         const float tp_full = truePeakAbs(x);
         const float tp_sc = truePeakAbs(sc);
-        const float tp = 0.55f * tp_sc + 0.45f * tp_full;
+        *peak_out = 0.55f * tp_sc + 0.45f * tp_full;
         prev_in = x;
 
-        if (tp > envelope) {
-            envelope = attack_coeff * envelope + (1.0f - attack_coeff) * tp;
-            if (tp > envelope) envelope = tp;
+        const float delayed = delay[delay_pos];
+        delay[delay_pos] = x;
+        delay_pos++;
+        if (delay_pos >= delay_len) delay_pos = 0;
+        return delayed;
+    }
+};
+
+struct LinkedLimiter {
+    float ceiling = 0.9440609f;
+    float attack_coeff = 0.f;
+    float release_coeff = 0.f;
+    float envelope = 0.f;
+    float gain = 1.f;
+
+    void configure(int sample_rate, float attack_ms, float release_ms, float ceiling_db) {
+        if (sample_rate < 8000) sample_rate = 44100;
+        const float atk = std::max(0.05f, attack_ms) * 0.001f;
+        const float rel = std::max(1.0f, release_ms) * 0.001f;
+        attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
+        release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
+        ceiling = std::pow(10.0f, ceiling_db / 20.0f);
+        if (ceiling > 0.995f) ceiling = 0.995f;
+        if (ceiling < 0.1f) ceiling = 0.1f;
+        envelope = 0.f;
+        gain = 1.f;
+    }
+
+    float update(float linked_peak) {
+        if (linked_peak > envelope) {
+            envelope = attack_coeff * envelope + (1.0f - attack_coeff) * linked_peak;
+            if (linked_peak > envelope) envelope = linked_peak;
         } else {
-            envelope = release_coeff * envelope + (1.0f - release_coeff) * tp;
+            envelope = release_coeff * envelope + (1.0f - release_coeff) * linked_peak;
         }
 
         float target = 1.f;
@@ -177,12 +189,7 @@ struct TruePeakLimiter {
         else
             gain = release_coeff * gain + (1.0f - release_coeff) * target;
 
-        const float delayed = delay[delay_pos];
-        delay[delay_pos] = x;
-        delay_pos++;
-        if (delay_pos >= delay_len) delay_pos = 0;
-
-        return sanitize(delayed * gain);
+        return gain;
     }
 };
 
@@ -211,7 +218,8 @@ struct Engine {
     Biquad hpf[kMaxCh];
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
-    TruePeakLimiter limiter[kMaxCh];
+    LookaheadDetector detector[kMaxCh];
+    LinkedLimiter linked_lim;
 
     float* scratch_in = nullptr;
     float* scratch_out = nullptr;
@@ -283,8 +291,9 @@ struct Engine {
         const float rel = speaker_mode ? 140.0f : 200.0f;
         const float ceil_db = speaker_mode ? -1.0f : -0.5f;
         const float la_ms = 4.0f;
+        linked_lim.configure(sample_rate, atk, rel, ceil_db);
         for (int c = 0; c < channels; ++c)
-            limiter[c].configure(sample_rate, atk, rel, ceil_db, la_ms);
+            detector[c].configure(sample_rate, la_ms);
     }
 };
 
@@ -420,6 +429,9 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     const float knee = speaker ? 0.86f : 0.93f;
 
     for (int i = 0; i < frames; ++i) {
+        float delayed[kMaxCh];
+        float peaks[kMaxCh];
+
         for (int c = 0; c < ch; ++c) {
             float s = sanitize(in[i * ch + c]);
 
@@ -440,9 +452,18 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
             }
 
             s = sanitize(s * hr * vol);
-            s = e->limiter[c].process(s);
-            s = soft_clip(s, knee);
+            delayed[c] = e->detector[c].feed(s, &peaks[c]);
+        }
 
+        float linked = peaks[0];
+        for (int c = 1; c < ch; ++c) {
+            if (peaks[c] > linked) linked = peaks[c];
+        }
+        const float gr = e->linked_lim.update(linked);
+
+        for (int c = 0; c < ch; ++c) {
+            float s = sanitize(delayed[c] * gr);
+            s = soft_clip(s, knee);
             if (s > 1.0f) s = 1.0f;
             if (s < -1.0f) s = -1.0f;
             out[i * ch + c] = s;
