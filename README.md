@@ -106,3 +106,24 @@ Integration flow:
 `host context adapter → DrivingCoordinator → DrivingIntent → ModeProvider/UI/playback integration`
 
 The eventual Resonate app remains responsible for the actual car-context adapter, mode switch, playback behavior, and platform-specific safety handling.
+
+
+## Work Mode
+
+Work Mode is the third concrete Modes behavior. It is intentionally lighter than Running and Driving: it coordinates a work-session boundary without taking control of playback.
+
+- Keeps a reduced UI while preserving normal listening controls.
+- Allows long listening sessions and auto-next.
+- Allows shuffle, but does not prefer crossfade; the host playback engine decides transitions.
+- Prefers music while leaving other media types playable when explicitly selected.
+- Does not use movement, Bluetooth, location, or other sensors.
+- A work session can be started, paused, resumed, completed, or exited.
+- Pausing a work session does not imply pausing playback; the host decides whether playback should also pause.
+- Exiting Work Mode produces an explicit boundary rather than falsely reporting completion.
+- Repeated invalid lifecycle operations are ignored, keeping the contract deterministic.
+
+Integration flow:
+
+`host UI/session action → WorkCoordinator → WorkIntent → host playback/session integration`
+
+The coordinator owns only the Work Mode session contract. It never starts playback, changes queues, controls timers, or accesses platform services.
