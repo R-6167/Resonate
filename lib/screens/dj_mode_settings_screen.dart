@@ -69,7 +69,8 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Beat-aware handoff',
-                subtitle: 'Start the next track on a beat of the current one when BPMs are close.',
+                subtitle:
+                    'Start the next track on a beat of the current one when BPMs are close.',
                 value: dj.beatAlign,
                 onChanged: on ? dj.setBeatAlign : null,
               ),
@@ -77,7 +78,8 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Tempo match',
-                subtitle: 'Time-stretch during crossfade so tempos lock when BPMs differ (within max stretch).',
+                subtitle:
+                    'Time-stretch during crossfade so tempos lock when BPMs differ (within max stretch).',
                 value: dj.tempoMatch,
                 onChanged: on ? dj.setTempoMatch : null,
               ),
@@ -85,7 +87,8 @@ class DjModeSettingsScreen extends StatelessWidget {
                 context,
                 enabled: on,
                 title: 'Harmonic mix',
-                subtitle: 'Soft Camelot-key bias when Intelligence picks the next track (never a hard filter).',
+                subtitle:
+                    'Soft Camelot-key bias when Intelligence picks the next track (never a hard filter).',
                 value: dj.harmonicMix,
                 onChanged: on ? dj.setHarmonicMix : null,
               ),
@@ -138,9 +141,9 @@ class DjModeSettingsScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'With Harmonic mix on, Intelligence may gently prefer Camelot-compatible '
-                    'keys. Soft bias only — your taste still wins, missing keys stay neutral. '
-                    'DJ Mode is optional and independent of Intelligence. Early skips teach the '
+                    'Safe keeps crossfades gentle. Musical leans into phrase and energy '
+                    'blends when analysis is strong. Min confidence skips fancy plans '
+                    'below the threshold — playback never stops. Early skips teach the '
                     'planner which transitions to avoid next time.',
                     style: text.bodySmall,
                   ),
@@ -149,6 +152,104 @@ class DjModeSettingsScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _aggressivenessCard(
+    BuildContext context,
+    DjModeProvider dj,
+    bool on,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    return ResonateGlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Aggressiveness',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            dj.aggressiveness.subtitle,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          IgnorePointer(
+            ignoring: !on,
+            child: Opacity(
+              opacity: on ? 1 : 0.45,
+              child: SegmentedButton<DjAggressiveness>(
+                segments: [
+                  for (final a in DjAggressiveness.values)
+                    ButtonSegment(
+                      value: a,
+                      label: Text(a.label),
+                    ),
+                ],
+                selected: {dj.aggressiveness},
+                onSelectionChanged: (s) {
+                  if (s.isNotEmpty) dj.setAggressiveness(s.first);
+                },
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return scheme.onPrimary;
+                    }
+                    return null;
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _minConfidenceCard(
+    BuildContext context,
+    DjModeProvider dj,
+    bool on,
+  ) {
+    final pct = (dj.minConfidence * 100).round();
+    return ResonateGlassCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Min confidence',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              'Skip fancy transitions below $pct%. Safe crossfade still works.',
+            ),
+            trailing: Text(
+              '$pct%',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+          Slider(
+            value: dj.minConfidence.clamp(0.20, 0.80),
+            min: 0.20,
+            max: 0.80,
+            divisions: 12,
+            label: '$pct%',
+            onChanged: on ? (v) => dj.setMinConfidence(v) : null,
+          ),
+        ],
       ),
     );
   }
