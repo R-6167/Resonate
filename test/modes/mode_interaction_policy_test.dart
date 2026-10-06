@@ -13,9 +13,11 @@ void main() {
     expect(policy.largeControls, isTrue);
     expect(policy.reducedControlCount, isTrue);
 
-    for (final action in ModeAction.values) {
+    for (final action in ModeAction.values.where((a) => a.isPlaybackAction)) {
       expect(policy.requiresTwoFingerTap(action), isTrue);
     }
+    expect(policy.requiresTwoFingerTap(ModeAction.settings), isFalse);
+    expect(policy.requiresTwoFingerTap(ModeAction.modeChange), isFalse);
   });
 
   test('Running rejects a single-finger accidental tap', () {
@@ -78,3 +80,19 @@ void main() {
     );
   });
 }
+
+
+  test('Running does not accidentally lock non-playback navigation/settings', () {
+    final guard = ModeInteractionGuard(
+      ModeInteractionCatalog.policyFor(ResonateMode.running),
+    );
+
+    expect(
+      guard.allowTap(
+        action: ModeAction.settings,
+        pointerCount: 1,
+        duration: const Duration(milliseconds: 150),
+      ),
+      isTrue,
+    );
+  });
