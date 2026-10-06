@@ -31,7 +31,11 @@ class RunningMotionDecisionEngine {
     if (paused) _automationPausedPlayback = false;
   }
 
-  RunningMotionDecision ingest(MotionState state, DateTime now) {
+  RunningMotionDecision ingest(
+    MotionState state,
+    DateTime now, {
+    required bool isPlaying,
+  }) {
     if (_state != state) {
       _state = state;
       _stateSince = now;
@@ -46,6 +50,7 @@ class RunningMotionDecisionEngine {
     if (policy.suggestPauseAfterStationary &&
         (state == MotionState.stationary || state == MotionState.stopped) &&
         stableFor >= policy.stationaryGracePeriod &&
+        isPlaying &&
         !_userPausedPlayback &&
         !_automationPausedPlayback) {
       _automationPausedPlayback = true;
@@ -56,6 +61,7 @@ class RunningMotionDecisionEngine {
     if (policy.suggestResumeAfterMoving &&
         state == MotionState.moving &&
         stableFor >= policy.movingGracePeriod &&
+        !isPlaying &&
         _automationPausedPlayback &&
         !_userPausedPlayback) {
       _automationPausedPlayback = false;
