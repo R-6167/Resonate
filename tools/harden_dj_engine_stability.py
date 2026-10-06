@@ -6,36 +6,36 @@ ROOT = Path(__file__).resolve().parents[1]
 path = ROOT / "lib/providers/music_provider.dart"
 t = path.read_text()
 
-if "_lastUserPauseAt" in t and "_forceClearStuckTransition" in t:
+if "_forceClearStuckTransition" in t and "_lastUserPauseAt" in t:
     print("already hardened")
     raise SystemExit(0)
 
-# --- 1) Fields for pause cooldown + stuck transition watchdog ---
-old_fields = "  DateTime? _lastSilentRecoverAt;\n"
-new_fields = """  DateTime? _lastSilentRecoverAt;
-  /// After user pause, suppress auto play-kicks briefly (stream / ensureAudible).
-  DateTime? _lastUserPauseAt;
-  /// When an automatic/true crossfade was armed — detect stuck flags.
-  DateTime? _transitionArmedAt;
-"""
-if old_fields not in t:
-    raise SystemExit("silent recover field miss")
-t = t.replace(old_fields, new_fields, 1)
+# 1) Fields
+needle = "  DateTime? _lastSilentRecoverAt;\n"
+if needle not in t:
+    raise SystemExit("field anchor miss")
+t = t.replace(
+    needle,
+    "  DateTime? _lastSilentRecoverAt;\n"
+    "  DateTime? _lastUserPauseAt;\n"
+    "  DateTime? _transitionArmedAt;\n",
+    1,
+)
 
-# --- 2) Helper methods after _cancelAutomaticPlaybackWork ---
-old_cancel_end = """    _endOfTrackWatchdog?.cancel();
-    _endOfTrackWatchdog = null;
-  }
+# 2) Expand cancel + helpers
+old_cancel_tail = (
+    "    _endOfTrackWatchdog?.cancel();\n"
+    "    _endOfTrackWatchdog = null;\n"
+    "  }\n\n"
+    "  /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.\n"
+)
+if old_cancel_tail not in t:
+    raise SystemExit("cancel tail miss")
 
-  /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
-"""
-
-new_cancel_block = """    _endOfTrackWatchdog?.cancel();
+helpers = r'''    _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
     _transitionArmedAt = null;
-    // Drop transition SFX so reverb/EQ cannot linger after user transport.
     unawaited(_restoreDjTransitionSfx());
-    // Silence whichever engine is idle (A or B), not only B.
     unawaited(() async {
       try {
         final idle = inactivePlayer;
@@ -45,14 +45,12 @@ new_cancel_block = """    _endOfTrackWatchdog?.cancel();
     }());
   }
 
-  /// True for a short window after the user explicitly paused.
   bool get _recentlyUserPaused {
     final at = _lastUserPauseAt;
     if (at == null) return false;
     return DateTime.now().difference(at) < const Duration(seconds: 2);
   }
 
-  /// If crossfade flags stay true too long, force a safe reset so pause/next work.
   void _forceClearStuckTransition({String reason = 'watchdog'}) {
     if (!_crossfadeInProgress && !_automaticCrossfadeInFlight) {
       _transitionArmedAt = null;
@@ -91,151 +89,156 @@ new_cancel_block = """    _endOfTrackWatchdog?.cancel();
   }
 
   /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
-"""
+'''
+t = t.replace(old_cancel_tail, helpers, 1)
 
-if old_cancel_end not in t:
-    raise SystemExit("cancel end miss")
-t = t.replace(old_cancel_end, new_cancel_block, 1)
-
-# --- 3) Arm transition timestamp when flags go true ---
+# 3) Arm timestamps
 t = t.replace(
     "      _repeatSelfHandoffInFlight = true;\n      _automaticCrossfadeInFlight = true;\n",
-    "      _repeatSelfHandoffInFlight = true;\n      _automaticCrossfadeInFlight = true;\n      _transitionArmedAt = DateTime.now();\n",
+    "      _repeatSelfHandoffInFlight = true;\n"
+    "      _automaticCrossfadeInFlight = true;\n"
+    "      _transitionArmedAt = DateTime.now();\n",
     1,
 )
-# second arm for normal auto xf
-# only the line that is alone before unawaited(_runAutomaticCrossfade)
-old_arm = """    if (remaining < const Duration(milliseconds: 1200)) return;
-    _automaticCrossfadeInFlight = true;
-    unawaited(_runAutomaticCrossfade());
-"""
-new_arm = """    if (remaining < const Duration(milliseconds: 1200)) return;
-    _automaticCrossfadeInFlight = true;
-    _transitionArmedAt = DateTime.now();
-    unawaited(_runAutomaticCrossfade());
-"""
-if old_arm in t:
-    t = t.replace(old_arm, new_arm, 1)
+t = t.replace(
+    "    if (remaining < const Duration(milliseconds: 1200)) return;\n"
+    "    _automaticCrossfadeInFlight = true;\n"
+    "    unawaited(_runAutomaticCrossfade());\n",
+    "    if (remaining < const Duration(milliseconds: 1200)) return;\n"
+    "    _automaticCrossfadeInFlight = true;\n"
+    "    _transitionArmedAt = DateTime.now();\n"
+    "    unawaited(_runAutomaticCrossfade());\n",
+    1,
+)
+t = t.replace(
+    "_crossfadeInProgress = true; final outgoing = audioPlayer;",
+    "_crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer;",
+    1,
+)
 
-# true crossfade start
-old_true = "_crossfadeInProgress = true; final outgoing = audioPlayer;"
-if old_true in t and "_transitionArmedAt = DateTime.now(); final outgoing" not in t:
-    t = t.replace(
-        old_true,
-        "_crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer;",
-        1,
-    )
-
-# --- 4) Clear armed + automatic flag in true-crossfade finally ownsTransition ---
-old_fin = """      if (ownsTransition) {
-        _crossfadeInProgress = false;
-        try {
-          await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
-"""
-new_fin = """      if (ownsTransition) {
-        _crossfadeInProgress = false;
-        _automaticCrossfadeInFlight = false;
-        _transitionArmedAt = null;
-        try {
-          await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
-"""
+# 4) True-crossfade finally
+old_fin = (
+    "      if (ownsTransition) {\n"
+    "        _crossfadeInProgress = false;\n"
+    "        try {\n"
+    "          await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);\n"
+)
+new_fin = (
+    "      if (ownsTransition) {\n"
+    "        _crossfadeInProgress = false;\n"
+    "        _automaticCrossfadeInFlight = false;\n"
+    "        _transitionArmedAt = null;\n"
+    "        try {\n"
+    "          await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);\n"
+)
 if old_fin in t:
     t = t.replace(old_fin, new_fin, 1)
-    print("crossfade finally hardened")
+    print("finally ok")
+else:
+    print("WARNING finally miss")
 
-# --- 5) Silent recover guards ---
-old_silent = """  void _maybeRecoverSilentPlayback() {
-    if (_crossfadeInProgress ||
-        _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight ||
-        _transportInFlight ||
-        _loadingSource) {
-      return;
-    }
-    if (!_userWantsPlaying) return;
-"""
-new_silent = """  void _maybeRecoverSilentPlayback() {
-    _forceClearStuckTransition(reason: 'silent_recover_probe');
-    if (_crossfadeInProgress ||
-        _automaticCrossfadeInFlight ||
-        _repeatSelfHandoffInFlight ||
-        _transportInFlight ||
-        _loadingSource ||
-        _djSfxEngaged ||
-        _isDucked ||
-        _recentlyUserPaused) {
-      return;
-    }
-    if (!_userWantsPlaying) return;
-"""
-if old_silent in t:
-    t = t.replace(old_silent, new_silent, 1)
-    print("silent recover guarded")
+# 5) Silent recover
+old_s = (
+    "  void _maybeRecoverSilentPlayback() {\n"
+    "    if (_crossfadeInProgress ||\n"
+    "        _automaticCrossfadeInFlight ||\n"
+    "        _repeatSelfHandoffInFlight ||\n"
+    "        _transportInFlight ||\n"
+    "        _loadingSource) {\n"
+    "      return;\n"
+    "    }\n"
+    "    if (!_userWantsPlaying) return;\n"
+)
+new_s = (
+    "  void _maybeRecoverSilentPlayback() {\n"
+    "    _forceClearStuckTransition(reason: 'silent_recover_probe');\n"
+    "    if (_crossfadeInProgress ||\n"
+    "        _automaticCrossfadeInFlight ||\n"
+    "        _repeatSelfHandoffInFlight ||\n"
+    "        _transportInFlight ||\n"
+    "        _loadingSource ||\n"
+    "        _djSfxEngaged ||\n"
+    "        _isDucked ||\n"
+    "        _recentlyUserPaused) {\n"
+    "      return;\n"
+    "    }\n"
+    "    if (!_userWantsPlaying) return;\n"
+)
+if old_s in t:
+    t = t.replace(old_s, new_s, 1)
+    print("silent ok")
+else:
+    print("WARNING silent miss")
 
-# --- 6) ensureAudible respects recent pause ---
-old_ens = """  Future<void> ensureAudiblePlayback() async {
-    try {
-      if (!_userWantsPlaying && !audioPlayer.playing) return;
-"""
-new_ens = """  Future<void> ensureAudiblePlayback() async {
-    try {
-      if (_recentlyUserPaused) return;
-      if (!_userWantsPlaying && !audioPlayer.playing) return;
-      if (!_userWantsPlaying) return;
-"""
-if old_ens in t:
-    t = t.replace(old_ens, new_ens, 1)
-    print("ensureAudible guarded")
+# 6) ensureAudible
+old_e = (
+    "  Future<void> ensureAudiblePlayback() async {\n"
+    "    try {\n"
+    "      if (!_userWantsPlaying && !audioPlayer.playing) return;\n"
+)
+new_e = (
+    "  Future<void> ensureAudiblePlayback() async {\n"
+    "    try {\n"
+    "      if (_recentlyUserPaused) return;\n"
+    "      if (!_userWantsPlaying) return;\n"
+)
+if old_e in t:
+    t = t.replace(old_e, new_e, 1)
+    print("ensure ok")
+else:
+    print("WARNING ensure miss")
 
-# --- 7) Stream auto-kick respects recent pause ---
-old_kick = """      } else if (!loading &&
-          !state.playing &&
-          _userWantsPlaying &&
-          !_loadingSource &&
-          player.audioSource != null) {
-"""
-new_kick = """      } else if (!loading &&
-          !state.playing &&
-          _userWantsPlaying &&
-          !_recentlyUserPaused &&
-          !_loadingSource &&
-          player.audioSource != null) {
-"""
-if old_kick in t:
-    t = t.replace(old_kick, new_kick, 1)
-    print("stream kick guarded")
+# 7) Stream kick
+old_k = (
+    "      } else if (!loading &&\n"
+    "          !state.playing &&\n"
+    "          _userWantsPlaying &&\n"
+    "          !_loadingSource &&\n"
+    "          player.audioSource != null) {\n"
+)
+new_k = (
+    "      } else if (!loading &&\n"
+    "          !state.playing &&\n"
+    "          _userWantsPlaying &&\n"
+    "          !_recentlyUserPaused &&\n"
+    "          !_loadingSource &&\n"
+    "          player.audioSource != null) {\n"
+)
+if old_k in t:
+    t = t.replace(old_k, new_k, 1)
+    print("kick ok")
+else:
+    print("WARNING kick miss")
 
-# --- 8) Stamp pause time in hard pause path ---
-if "_lastUserPauseAt = DateTime.now()" not in t:
+# 8) Pause stamp
+old_p = (
+    "    if (!fromSystemFocus) {\n"
+    "      _userWantsPlaying = false;\n"
+    "      isPlaying = false;\n"
+    "      _volumeFadeGen++;\n"
+)
+new_p = (
+    "    if (!fromSystemFocus) {\n"
+    "      _userWantsPlaying = false;\n"
+    "      isPlaying = false;\n"
+    "      _lastUserPauseAt = DateTime.now();\n"
+    "      _volumeFadeGen++;\n"
+)
+if old_p in t:
+    t = t.replace(old_p, new_p, 1)
+    print("pause stamp ok")
+else:
+    print("WARNING pause stamp miss")
+
+# 9) Position probe (first occurrence only)
+if "_forceClearStuckTransition(reason: 'position_tick')" not in t:
     t = t.replace(
-        """    if (!fromSystemFocus) {
-      _userWantsPlaying = false;
-      isPlaying = false;
-      _volumeFadeGen++;
-""",
-        """    if (!fromSystemFocus) {
-      _userWantsPlaying = false;
-      isPlaying = false;
-      _lastUserPauseAt = DateTime.now();
-      _volumeFadeGen++;
-",
-        1,
-    )
-    print("pause stamp added")
-
-# --- 9) Position stream / periodic: probe stuck transitions when updating position ---
-# Hook near notifyListeners after position update if pattern exists
-old_pos = None
-# Find a common position update block
-marker = "currentPosition = position;"
-if marker in t and "_forceClearStuckTransition(reason: 'position_tick')" not in t:
-    t = t.replace(
-        marker,
+        "currentPosition = position;",
         "currentPosition = position;\n"
-        "      _forceClearStuckTransition(reason: 'position_tick');\n",
+        "      _forceClearStuckTransition(reason: 'position_tick');",
         1,
     )
-    print("position tick stuck probe")
+    print("position probe ok")
 
 path.write_text(t)
 print("stability harden complete")
