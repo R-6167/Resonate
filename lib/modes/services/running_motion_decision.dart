@@ -41,6 +41,9 @@ class RunningMotionDecisionEngine {
       _state = state;
       _stateSince = now;
     }
+    if (state == MotionState.moving) {
+      _lastMovingAt = now;
+    }
 
     if (_stateSince == null || !_isDecisionAllowed(now)) {
       return RunningMotionDecision.maintain;
