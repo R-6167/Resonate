@@ -19,7 +19,7 @@ class FakePlayback implements ModePlaybackPort {
   }) {
     crossfade = crossfadeAllowed;
     shuffle = shuffleAllowed;
-    preciseResume = preciseResume;
+    this.preciseResume = preciseResume;
   }
 }
 
