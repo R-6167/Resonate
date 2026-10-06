@@ -1,0 +1,21 @@
+name: Modes package tests
+on:
+  push:
+    paths:
+      - "lib/modes/**"
+      - "test/modes/**"
+  pull_request:
+    paths:
+      - "lib/modes/**"
+      - "test/modes/**"
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter test test/modes/
