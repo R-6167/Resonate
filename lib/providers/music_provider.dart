@@ -148,6 +148,8 @@ class MusicProvider extends ChangeNotifier {
   bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
   DateTime? _lastSilentRecoverAt;
+  DateTime? _lastUserPauseAt;
+  DateTime? _transitionArmedAt;
   int _resumePositionMs = 0;
   String? _resumeSongId;
   DateTime? _lastResumePersist;
@@ -437,11 +439,15 @@ class MusicProvider extends ChangeNotifier {
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
+    _forceClearStuckTransition(reason: 'silent_recover_probe');
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight ||
         _transportInFlight ||
-        _loadingSource) {
+        _loadingSource ||
+        _djSfxEngaged ||
+        _isDucked ||
+        _recentlyUserPaused) {
       return;
     }
     if (!_userWantsPlaying) return;
@@ -560,7 +566,8 @@ class MusicProvider extends ChangeNotifier {
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
     try {
-      if (!_userWantsPlaying && !audioPlayer.playing) return;
+      if (_recentlyUserPaused) return;
+      if (!_userWantsPlaying) return;
       await _claimAudioFocus(reason: 'ensure_audible');
       final vol = volume.clamp(0.05, 1.0);
       if (audioPlayer.volume < vol * 0.85) {
@@ -936,6 +943,7 @@ class MusicProvider extends ChangeNotifier {
       } else if (!loading &&
           !state.playing &&
           _userWantsPlaying &&
+          !_recentlyUserPaused &&
           !_loadingSource &&
           player.audioSource != null) {
         // Kick play when a source is loaded and we still want audio.
@@ -1026,6 +1034,7 @@ class MusicProvider extends ChangeNotifier {
     _positionSubscription = player.positionStream.listen((position) {
       if (currentPosition != position) {
         currentPosition = position;
+      _forceClearStuckTransition(reason: 'position_tick');
       _maybeRecoverSilentPlayback();
         if (_activeHistoryEvent != null) {
           _activeHistoryPositionMs = position.inMilliseconds;
@@ -1146,6 +1155,7 @@ class MusicProvider extends ChangeNotifier {
       if (remaining < const Duration(milliseconds: 400)) return;
       _repeatSelfHandoffInFlight = true;
       _automaticCrossfadeInFlight = true;
+      _transitionArmedAt = DateTime.now();
       unawaited(_runRepeatSelfDualOrSoft(loopMs: loopMs));
       return;
     }
@@ -1168,6 +1178,7 @@ class MusicProvider extends ChangeNotifier {
     if (remaining > Duration(milliseconds: triggerMs)) return;
     if (remaining < const Duration(milliseconds: 1200)) return;
     _automaticCrossfadeInFlight = true;
+    _transitionArmedAt = DateTime.now();
     unawaited(_runAutomaticCrossfade());
   }
 
@@ -3145,7 +3156,7 @@ class MusicProvider extends ChangeNotifier {
     final nextIndex = _crossfadeTargetIndex;
     final nextSong = _crossfadeTargetSong;
     if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true; final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale.clamp(0.05, 1.0);
+    _crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale.clamp(0.05, 1.0);
     try {
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       await outgoing.setLoopMode(LoopMode.off);
@@ -3610,6 +3621,8 @@ class MusicProvider extends ChangeNotifier {
       final ownsTransition = _automaticTransitionGeneration == transitionGeneration;
       if (ownsTransition) {
         _crossfadeInProgress = false;
+        _automaticCrossfadeInFlight = false;
+        _transitionArmedAt = null;
         try {
           await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
         } catch (_) {}
@@ -3717,6 +3730,58 @@ class MusicProvider extends ChangeNotifier {
     // Keep gapless window; transport may seek inside it.
     _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
+    _transitionArmedAt = null;
+    unawaited(_restoreDjTransitionSfx());
+    unawaited(() async {
+      try {
+        final idle = inactivePlayer;
+        await idle.pause();
+        await idle.setVolume(0.0);
+      } catch (_) {}
+    }());
+  }
+
+  bool get _recentlyUserPaused {
+    final at = _lastUserPauseAt;
+    if (at == null) return false;
+    return DateTime.now().difference(at) < const Duration(seconds: 2);
+  }
+
+  void _forceClearStuckTransition({String reason = 'watchdog'}) {
+    if (!_crossfadeInProgress && !_automaticCrossfadeInFlight) {
+      _transitionArmedAt = null;
+      return;
+    }
+    final armed = _transitionArmedAt;
+    if (armed != null &&
+        DateTime.now().difference(armed) < const Duration(seconds: 22)) {
+      return;
+    }
+    unawaited(ResonateDiagnostics.record('stuck_transition_cleared', {
+      'reason': reason,
+      'crossfadeInProgress': _crossfadeInProgress,
+      'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
+      'armedMs': armed == null
+          ? null
+          : DateTime.now().difference(armed).inMilliseconds,
+      'songId': currentSong?.id,
+    }));
+    _crossfadeInProgress = false;
+    _automaticCrossfadeInFlight = false;
+    _repeatSelfHandoffInFlight = false;
+    _transitionArmedAt = null;
+    unawaited(_restoreDjTransitionSfx());
+    unawaited(() async {
+      try {
+        await inactivePlayer.pause();
+      } catch (_) {}
+      try {
+        await inactivePlayer.setVolume(0.0);
+      } catch (_) {}
+      try {
+        await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+      } catch (_) {}
+    }());
   }
 
   /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
@@ -3815,6 +3880,7 @@ class MusicProvider extends ChangeNotifier {
     if (!fromSystemFocus) {
       _userWantsPlaying = false;
       isPlaying = false;
+      _lastUserPauseAt = DateTime.now();
       _volumeFadeGen++;
       _cancelAutomaticPlaybackWork();
       _crossfadeInProgress = false;
