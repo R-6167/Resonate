@@ -3,10 +3,16 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-path = ROOT / "lib/providers/music_provider.dart"
-t = path.read_text()
 
-old = """  Future<void> _engageDjTransitionSfx({
+
+def patch_music() -> None:
+    path = ROOT / "lib/providers/music_provider.dart"
+    t = path.read_text()
+    if "engage_after_delay" in t:
+        print("music already patched")
+        return
+
+    old = """  Future<void> _engageDjTransitionSfx({
     double energyScore = 0.5,
     DjTransitionKind? transitionKind,
     Duration delay = Duration.zero,
@@ -51,7 +57,7 @@ old = """  Future<void> _engageDjTransitionSfx({
   }
 """
 
-new = """  Future<void> _engageDjTransitionSfx({
+    new = """  Future<void> _engageDjTransitionSfx({
     double energyScore = 0.5,
     DjTransitionKind? transitionKind,
     Duration delay = Duration.zero,
@@ -63,10 +69,10 @@ new = """  Future<void> _engageDjTransitionSfx({
       final beatMs = profile?.beatGrid.beatMs ?? const <int>[];
       final sections = profile?.sections ?? const <DjSection>[];
       if (delay > Duration.zero) {
-        // Schedule without blocking the crossfade start. Mark engaged only
-        // after the rack actually applies FX so envelope ticks (_tickDjClubFxSweep)
-        // run for the remainder of the fade. Cancel via restore still bumps the
-        // delayed generation and prevents a late engage from sticking.
+        // Schedule without blocking crossfade start. Set _djSfxEngaged only
+        // after the rack actually applies FX so _tickDjClubFxSweep runs for
+        // the remainder of the fade. restore() bumps delayed generation so a
+        // cancelled schedule cannot engage late.
         unawaited(() async {
           try {
             await _djSfxRack.engageDelayed(
@@ -123,37 +129,44 @@ new = """  Future<void> _engageDjTransitionSfx({
   }
 """
 
-if old not in t:
-    if "engage_after_delay" in t:
-        print("already patched")
-    else:
+    if old not in t:
         raise SystemExit("engage method not found")
-else:
     path.write_text(t.replace(old, new, 1))
     print("music_provider engage flag fixed")
 
-# Harden engageDelayed: do not claim engaged until FX is applied (after delay).
-rack = ROOT / "lib/services/dj_sfx_rack.dart"
-r = rack.read_text()
-old_d = """    final gen = ++_delayedSfxGen;
+
+def patch_rack() -> None:
+    path = ROOT / "lib/services/dj_sfx_rack.dart"
+    r = path.read_text()
+    if "Cancelled by restore" in r:
+        print("engageDelayed already hardened")
+        return
+
+    old_d = """    final gen = ++_delayedSfxGen;
     engaged = true;
     try {
       await Future<void>.delayed(delay);
       if (gen != _delayedSfxGen || !engaged) return;
       await engage(
 """
-new_d = """    final gen = ++_delayedSfxGen;
+    new_d = """    final gen = ++_delayedSfxGen;
     try {
       await Future<void>.delayed(delay);
       // Cancelled by restore() (gen bump) or a newer schedule — do not engage.
       if (gen != _delayedSfxGen) return;
       await engage(
 """
-if old_d in r:
-    rack.write_text(r.replace(old_d, new_d, 1))
+    if old_d not in r:
+        raise SystemExit("engageDelayed pattern miss")
+    path.write_text(r.replace(old_d, new_d, 1))
     print("engageDelayed hardened")
-elif "Cancelled by restore" in r:
-    print("engageDelayed already hardened")
-else:
-    print("WARNING: engageDelayed pattern miss")
-"""
+
+
+def main() -> None:
+    patch_music()
+    patch_rack()
+    print("sfx engaged flag fix complete")
+
+
+if __name__ == "__main__":
+    main()
