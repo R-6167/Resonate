@@ -2679,6 +2679,35 @@ class MusicProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Snap planned SFX delay onto a nearby outgoing beat during the fade window.
+  Duration _snapSfxDelayToPhrase({
+    required Duration planned,
+    required int fadeMs,
+    DjTrackProfile? outgoingProfile,
+  }) {
+    final ideal = planned.inMilliseconds.clamp(0, fadeMs);
+    final beats = outgoingProfile?.beatGrid.beatMs ?? const <int>[];
+    if (beats.length < 4 || fadeMs < 400) {
+      return Duration(milliseconds: ideal);
+    }
+    int posMs = 0;
+    try {
+      posMs = audioPlayer.position.inMilliseconds;
+    } catch (_) {}
+    var best = ideal;
+    var bestDist = 1 << 30;
+    for (final b in beats) {
+      final rel = b - posMs;
+      if (rel < 120 || rel > fadeMs - 80) continue;
+      final d = (rel - ideal).abs();
+      if (d < bestDist) {
+        bestDist = d;
+        best = rel;
+      }
+    }
+    return Duration(milliseconds: best.clamp(100, fadeMs - 60));
+  }
+
   Future<void> _engageDjTransitionSfx({
     double energyScore = 0.5,
     DjTransitionKind? transitionKind,
@@ -3253,10 +3282,24 @@ class MusicProvider extends ChangeNotifier {
         (step) => step?.action == 'trigger_sfx',
         orElse: () => null,
       );
+      final plannedSfxMs = sfxStep?.atMs ?? 0;
+      final fadeWindowMs = milliseconds.clamp(500, 12000);
+      DjTrackProfile? outProfile;
+      try {
+        final path = outgoingSong?.filePath;
+        if (path != null && _djAnalysis != null) {
+          outProfile = await _djAnalysis!.profileFor(path);
+        }
+      } catch (_) {}
       await _engageDjTransitionSfx(
         energyScore: _lastDjEnergyScore,
         transitionKind: _djTransitionKindFromName(_lastDjStrategy),
-        delay: Duration(milliseconds: sfxStep?.atMs ?? 0),
+        delay: _snapSfxDelayToPhrase(
+          planned: Duration(milliseconds: plannedSfxMs),
+          fadeMs: fadeWindowMs,
+          outgoingProfile: outProfile,
+        ),
+        outgoingProfile: outProfile,
       );
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {

@@ -477,9 +477,10 @@ class EqualizerProvider extends ChangeNotifier {
           }
         }
       }
-      // Digital preamp only at startup (player volume scale). Hardware EQ
-      // bind waits until playback has been running for a moment.
+      // Digital preamp + live DSP curve so settings survive process death
+      // even before hardware EQ binds on first play.
       await _applyPreamp();
+      _pushLiveDspCurve();
       notifyListeners();
     } catch (e) {
       debugPrint('Equalizer initialization failed: $e');
@@ -501,6 +502,8 @@ class EqualizerProvider extends ChangeNotifier {
       }
       await _pushToHardware();
       await _applyPreamp();
+      _pushLiveDspCurve();
+      debugPrint('EQ re-applied after hardware bind preset=$preset preamp=$preamp');
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('equalizer_enabled', isEnabled);
@@ -681,6 +684,28 @@ class EqualizerProvider extends ChangeNotifier {
       final g = i < expanded.length ? expanded[i] : 0.0;
       studioBands[i].gainDb = g.clamp(studioMinDb, studioMaxDb);
       bands[studioBands[i].label] = studioBands[i].gainDb;
+    }
+  }
+
+
+  void _pushLiveDspCurve() {
+    try {
+      final centers = studioBands.map((b) => b.frequencyHz).toList();
+      final gains = studioBands.map((b) => b.gainDb).toList();
+      syncStudioBandsToNativeEq(
+        centersHz: centers,
+        gainsDb: gains,
+        enabled: isEnabled,
+      );
+      syncPreampToDvc(preamp, enabled: isEnabled);
+      final route = AudioOutputRouteService.instance;
+      syncSpeakerPolicy(
+        needsSpeakerProtection: route.needsSpeakerProtection,
+        virtualBassAmount: route.suggestedVirtualBass,
+        route: route.route,
+      );
+    } catch (e) {
+      debugPrint('pushLiveDspCurve failed: $e');
     }
   }
 

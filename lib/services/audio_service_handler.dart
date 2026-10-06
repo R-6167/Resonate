@@ -168,7 +168,8 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     final callback = _onPlay;
     if (callback == null) return;
     PlaybackAuthority.instance.markExternalUserCommand('audio_service', 'play');
-    publishPositionTick(playing: true, position: playbackState.value.position, force: true);
+    // Do not publish playing:true optimistically — MusicProvider publishes
+    // after native play succeeds so pause/focus state stays honest.
     await callback();
   }
 

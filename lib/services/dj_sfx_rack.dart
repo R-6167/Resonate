@@ -44,6 +44,7 @@ class DjSfxRack {
   AudioPlayer? _outgoing;
   AudioPlayer? _oneshot;
   int _oneshotGen = 0;
+  double _oneshotBaseVolume = 0.0;
   int _delayedSfxGen = 0;
   int _trackFxGen = 0;
   bool _trackActionRunning = false;
@@ -206,6 +207,17 @@ class DjSfxRack {
         await _applyEqAt(equalizerB, t);
         _eqTouched = true;
       }
+      // Duck oneshot under the incoming rise so samples fade with the blend.
+      final shot = _oneshot;
+      if (shot != null && _oneshotBaseVolume > 0) {
+        final progress = t.clamp(0.0, 1.6);
+        final duck = progress <= 1.0
+            ? (1.0 - progress * 0.85)
+            : (0.15 * (1.6 - progress) / 0.6).clamp(0.0, 0.15);
+        try {
+          await shot.setVolume((_oneshotBaseVolume * duck).clamp(0.0, 0.14));
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 
@@ -333,8 +345,10 @@ class DjSfxRack {
       await _stopOneshot();
       final player = AudioPlayer();
       _oneshot = player;
-      final volume = score >= 0.85 ? 0.14 : (score >= 0.7 ? 0.17 : 0.20);
-      await player.setVolume(volume.clamp(0.10, 0.24));
+      // Keep samples under the music so they colour the fade, not dominate it.
+      final volume = score >= 0.85 ? 0.08 : (score >= 0.7 ? 0.10 : 0.12);
+      _oneshotBaseVolume = volume.clamp(0.05, 0.14);
+      await player.setVolume(_oneshotBaseVolume);
       final sourceUri = uri.startsWith('content://') ||
               uri.startsWith('file://') ||
               uri.startsWith('http://') ||
