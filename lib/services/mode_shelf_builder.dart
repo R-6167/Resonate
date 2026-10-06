@@ -103,11 +103,21 @@ class ModeShelfBuilder {
       );
 
       if (!modes.isAcceptableForAutopilot(item)) continue;
-      if (preferred.isEmpty) continue; // music-first modes without prefs: folders only
+
+      if (preferred.isEmpty) {
+        // Music-first modes (Running / Driving / Work): soft shelf from library.
+        fromClassifier.add(song);
+        continue;
+      }
 
       if (modes.isPreferredContent(item)) {
         fromClassifier.add(song);
       }
+    }
+
+    // Prefer newer library items for music-first soft shelves.
+    if (preferred.isEmpty && fromClassifier.isNotEmpty) {
+      fromClassifier.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
     }
 
     // Cap each bucket so the shelf stays snappy
