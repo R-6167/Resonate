@@ -1,5 +1,6 @@
 import '../../services/dj_transition_memory.dart';
 import '../core/dj_types.dart';
+import '../core/dj_policy.dart';
 import 'dj_transition_brain.dart';
 
 /// Local autonomous transition selector.
@@ -18,6 +19,7 @@ class DjAutopilotPlanner {
     required int outgoingPositionMs,
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
+    DjPolicy policy = DjPolicy.balanced,
   }) async {
     final candidates = brain.generate(
       outgoing: outgoing,
@@ -25,6 +27,7 @@ class DjAutopilotPlanner {
       outgoingPositionMs: outgoingPositionMs,
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
+      policy: policy,
     );
     if (candidates.isEmpty) {
       return brain.choose(
@@ -33,6 +36,7 @@ class DjAutopilotPlanner {
         outgoingPositionMs: outgoingPositionMs,
         preferredDurationMs: preferredDurationMs,
         maxDurationMs: maxDurationMs,
+        policy: policy,
       );
     }
 
@@ -55,12 +59,25 @@ class DjAutopilotPlanner {
       final learning = pairSignal * (0.24 * pairEvidence.clamp(0.0, 1.0)) +
           globalSignal * (0.08 * globalEvidence.clamp(0.0, 1.0));
       // Never let learning overpower the musical/risk score.
-      final adjusted = candidate.score + learning.clamp(-0.24, 0.24);
+      final adjusted = candidate.score +
+          policy.kindBias(candidate.kind) +
+          learning.clamp(-policy.learningClamp, policy.learningClamp);
       if (adjusted > bestScore) {
         bestScore = adjusted;
         best = candidate;
       }
     }
+    if (!policy.acceptsCandidate(best)) {
+      return brain.choose(
+        outgoing: outgoing,
+        incoming: incoming,
+        outgoingPositionMs: outgoingPositionMs,
+        preferredDurationMs: preferredDurationMs,
+        maxDurationMs: maxDurationMs,
+        policy: policy,
+      );
+    }
     return best;
   }
 }
+

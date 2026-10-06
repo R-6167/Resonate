@@ -9,6 +9,7 @@ export 'analysis/dj_profile_builder.dart';
 export 'analysis/dj_pcm_profile_analyzer.dart';
 
 import 'core/dj_types.dart';
+import 'core/dj_policy.dart';
 import 'intelligence/dj_transition_brain.dart';
 import 'execution/dj_execution_planner.dart';
 
@@ -28,6 +29,7 @@ class DjEngine {
     required int outgoingPositionMs,
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
+    DjPolicy policy = DjPolicy.balanced,
   }) {
     final candidate = brain.choose(
       outgoing: outgoing,
@@ -35,11 +37,13 @@ class DjEngine {
       outgoingPositionMs: outgoingPositionMs,
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
+      policy: policy,
     );
     return execution.plan(
       outgoing: outgoing,
       incoming: incoming,
       candidate: candidate,
+      policy: policy,
     );
   }
 }

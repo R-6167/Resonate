@@ -19,6 +19,7 @@ import '../services/dj_bpm_estimator.dart';
 import '../services/dj_transition_planner.dart';
 import '../services/dj_transition_memory.dart';
 import '../dj_engine/dj_engine.dart';
+import '../dj_engine/core/dj_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
 import '../services/playback_intent_gate.dart';
@@ -108,6 +109,7 @@ class MusicProvider extends ChangeNotifier {
   bool _djTempoMatchActive = false;
   int _djMaxStretchPercent = 14;
   bool _djSfxActive = false;
+  DjPolicy _djPolicy = DjPolicy.balanced;
   bool _djSfxEngaged = false;
   final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
@@ -403,7 +405,9 @@ class MusicProvider extends ChangeNotifier {
     int maxStretchPercent = 12,
     bool sfxActive = false,
     DjAnalysisService? analysis,
+    DjPolicy policy = DjPolicy.balanced,
   }) {
+    _djPolicy = policy;
     final wasActive = _djBeatAlignActive || _djTempoMatchActive;
     _djBeatAlignActive = beatAlignActive;
     _djTempoMatchActive = tempoMatchActive;
@@ -2758,11 +2762,13 @@ class MusicProvider extends ChangeNotifier {
           outgoingPositionMs: outgoing.position.inMilliseconds,
           preferredDurationMs: _crossfadeDurationMs,
           maxDurationMs: 6500,
+          policy: _djPolicy,
         );
         final v2 = _djEngine.execution.plan(
           outgoing: profileA,
           incoming: profileB,
           candidate: learnedCandidate,
+          policy: _djPolicy,
         );
         if (!v2.fallback) {
           await _applyV2DjHandoff(

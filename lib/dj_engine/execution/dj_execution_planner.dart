@@ -1,4 +1,5 @@
 import '../core/dj_types.dart';
+import '../core/dj_policy.dart';
 import '../intelligence/dj_risk_engine.dart';
 
 /// Converts a musical decision into an engine-neutral timeline.
@@ -14,6 +15,7 @@ class DjExecutionPlanner {
     required DjTrackProfile outgoing,
     required DjTrackProfile incoming,
     required DjTransitionCandidate candidate,
+    DjPolicy policy = DjPolicy.balanced,
   }) {
     final risks = riskEngine.evaluate(
       outgoing: outgoing,
@@ -22,7 +24,7 @@ class DjExecutionPlanner {
     );
     final severity = riskEngine.severity(risks);
 
-    if (severity >= 0.92) {
+    if (severity >= policy.riskSeverityLimit) {
       return DjExecutionPlan(
         candidate: candidate,
         fallback: true,

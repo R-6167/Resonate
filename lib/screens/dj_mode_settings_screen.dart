@@ -3,6 +3,7 @@ import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/dj_mode_provider.dart';
+import '../dj_engine/core/dj_policy.dart';
 
 /// Settings surface for optional DJ Mode (Intelligence-style master switch).
 class DjModeSettingsScreen extends StatelessWidget {
@@ -60,6 +61,10 @@ class DjModeSettingsScreen extends StatelessWidget {
                 style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
+              _aggressivenessCard(context, dj, on),
+              const SizedBox(height: 12),
+              _minConfidenceCard(context, dj, on),
+              const SizedBox(height: 16),
               _prefTile(
                 context,
                 enabled: on,

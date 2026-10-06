@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../services/dj_analysis_service.dart';
 import '../services/dj_idle_analysis_service.dart';
 import '../services/dj_mode_settings_store.dart';
+import '../dj_engine/core/dj_policy.dart';
 import '../services/resonate_diagnostics.dart';
 import 'music_provider.dart';
 
@@ -30,6 +31,8 @@ class DjModeProvider extends ChangeNotifier {
   int _maxStretchPercent = 12;
   bool _analyzeIdle = false;
   bool _transitionSfx = true;
+  DjAggressiveness _aggressiveness = DjAggressiveness.balanced;
+  double _minConfidence = 0.40;
   bool _loaded = false;
 
   bool get isLoaded => _loaded;
@@ -40,6 +43,12 @@ class DjModeProvider extends ChangeNotifier {
   bool get tempoMatchActive => _enabled && _tempoMatch;
   bool get harmonicMixActive => _enabled && _harmonicMix;
   bool get transitionSfx => _transitionSfx;
+  DjAggressiveness get aggressiveness => _aggressiveness;
+  double get minConfidence => _minConfidence;
+  DjPolicy get policy => DjPolicy(
+        aggressiveness: _aggressiveness,
+        minConfidence: _minConfidence,
+      );
   bool get analyzeIdleActive => _enabled && _analyzeIdle;
 
   bool get beatAlign => _beatAlign;
@@ -59,6 +68,8 @@ class DjModeProvider extends ChangeNotifier {
       _maxStretchPercent = await DjModeSettingsStore.maxStretchPercent();
       _analyzeIdle = await DjModeSettingsStore.analyzeIdle();
       _transitionSfx = await DjModeSettingsStore.transitionSfx();
+      _aggressiveness = await DjModeSettingsStore.aggressiveness();
+      _minConfidence = await DjModeSettingsStore.minConfidence();
     } catch (e) {
       debugPrint('DjModeProvider load failed: $e');
     }
@@ -76,6 +87,7 @@ class DjModeProvider extends ChangeNotifier {
         maxStretchPercent: _maxStretchPercent,
         sfxActive: _enabled && _transitionSfx,
         analysis: _analysis,
+        policy: policy,
       );
     } catch (e) {
       debugPrint('DjMode sync to music failed: $e');
@@ -130,6 +142,21 @@ class DjModeProvider extends ChangeNotifier {
     notifyListeners();
     await DjModeSettingsStore.setTransitionSfx(value);
     _syncToMusic();
+  }
+
+
+  Future<void> setAggressiveness(DjAggressiveness value) async {
+    _aggressiveness = value;
+    _syncToMusic();
+    notifyListeners();
+    await DjModeSettingsStore.setAggressiveness(value);
+  }
+
+  Future<void> setMinConfidence(double value) async {
+    _minConfidence = value.clamp(0.20, 0.80);
+    _syncToMusic();
+    notifyListeners();
+    await DjModeSettingsStore.setMinConfidence(_minConfidence);
   }
 
   Future<void> setAnalyzeIdle(bool value) async {

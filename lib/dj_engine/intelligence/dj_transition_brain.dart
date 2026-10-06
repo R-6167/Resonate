@@ -1,4 +1,5 @@
 import '../core/dj_types.dart';
+import '../core/dj_policy.dart';
 
 class DjTransitionBrain {
   const DjTransitionBrain();
@@ -9,10 +10,12 @@ class DjTransitionBrain {
     required int outgoingPositionMs,
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
+    DjPolicy policy = DjPolicy.balanced,
   }) {
-    // Do not invent an "intelligent" transition when both profiles are
-    // effectively unknown. Playback must still continue through the safe path.
-    if (outgoing.analysisConfidence < 0.25 && incoming.analysisConfidence < 0.25) {
+    // Do not invent an "intelligent" transition when profiles are too weak
+    // for the active policy floor. Playback continues through the safe path.
+    final floor = policy.analysisFloor;
+    if (outgoing.analysisConfidence < floor && incoming.analysisConfidence < floor) {
       return _fallback(incoming, preferredDurationMs);
     }
 
@@ -22,15 +25,21 @@ class DjTransitionBrain {
       outgoingPositionMs: outgoingPositionMs,
       preferredDurationMs: preferredDurationMs,
       maxDurationMs: maxDurationMs,
+      policy: policy,
     );
     if (candidates.isEmpty) return _fallback(incoming, preferredDurationMs);
     final sorted = [...candidates]..sort((a, b) => b.score.compareTo(a.score));
-    return sorted.first;
+    final best = sorted.first;
+    if (!policy.acceptsCandidate(best)) {
+      return _fallback(incoming, preferredDurationMs);
+    }
+    return best;
   }
 
   List<DjTransitionCandidate> generate({
     required DjTrackProfile outgoing,
     required DjTrackProfile incoming,
+    DjPolicy policy = DjPolicy.balanced,
     required int outgoingPositionMs,
     int preferredDurationMs = 8000,
     int maxDurationMs = 16000,
@@ -43,13 +52,17 @@ class DjTransitionBrain {
     void add(DjTransitionKind kind, int inMs, int duration, Map<String, double> scores) {
       final risk = _risks(outgoing, incoming, outgoingPositionMs, inMs);
       final confidence = _confidence(outgoing, incoming, scores);
-      final score = _weightedScore(scores) - _riskPenalty(risk);
+      final score = (_weightedScore(scores, policy: policy)
+              - _riskPenalty(risk) * policy.riskPenaltyScale
+              + policy.kindBias(kind))
+          .clamp(0.0, 1.0)
+          .toDouble();
       result.add(DjTransitionCandidate(
         kind: kind,
         outgoingStartMs: outgoingPositionMs,
         incomingStartMs: inMs,
         durationMs: duration.clamp(2000, maxDurationMs).toInt(),
-        score: score.clamp(0.0, 1.0).toDouble(),
+        score: score,
         confidence: confidence,
         scores: scores,
         risks: risk,
@@ -134,16 +147,17 @@ class DjTransitionBrain {
     };
   }
 
-  double _weightedScore(Map<String, double> s) {
-    final value = (s['tempo'] ?? 0.5) * 0.18 +
-        (s['harmonic'] ?? 0.5) * 0.18 +
+  double _weightedScore(Map<String, double> s, {DjPolicy policy = DjPolicy.balanced}) {
+    final phraseBoost = policy.phraseWeightBoost;
+    return (s['tempo'] ?? 0.5) * 0.22 +
+        (s['harmony'] ?? 0.5) * 0.18 +
         (s['energy'] ?? 0.5) * 0.16 +
         (s['spectrum'] ?? 0.5) * 0.10 +
-        (s['phrase'] ?? 0.5) * 0.16 +
-        (s['structure'] ?? 0.5) * 0.14 +
+        (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
+        (s['structure'] ?? 0.5) * 0.12 +
         (s['confidence'] ?? 0.5) * 0.08;
-    return value.clamp(0.0, 1.0).toDouble();
   }
+
 
   double _tempoScore(DjTrackProfile a, DjTrackProfile b) {
     final x = a.beatGrid.bpm, y = b.beatGrid.bpm;
