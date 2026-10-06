@@ -79,8 +79,6 @@ void main() {
       isTrue,
     );
   });
-}
-
 
   test('Running does not accidentally lock non-playback navigation/settings', () {
     final guard = ModeInteractionGuard(
@@ -96,3 +94,4 @@ void main() {
       isTrue,
     );
   });
+}
