@@ -72,7 +72,7 @@ void main() {
     final engine = RunningMotionDecisionEngine(
       policy: const RunningAutomationPolicy(decisionCooldown: Duration(seconds: 10)),
     );
-    engine.ingest(MotionState.stationary, t0);
+    engine.ingest(MotionState.stationary, t0, isPlaying: true);
     expect(
       engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
