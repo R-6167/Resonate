@@ -35,6 +35,7 @@ class InteractionPolicy {
     required Duration duration,
   }) {
     if (duration > maximumTapDuration) return false;
+    if (!action.isPlaybackAction) return pointerCount >= 1;
     final minimum = requiresTwoFingerTap(action) ? 2 : minimumTapPointers;
     return pointerCount >= minimum;
   }
