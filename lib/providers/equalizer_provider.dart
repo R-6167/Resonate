@@ -171,7 +171,10 @@ class EqualizerProvider extends ChangeNotifier {
     // Reconnected: session events drive native DSP only when the user has
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
-      if (_nativeDspEnabled) unawaited(attachNativeSession(sessionId));
+      if (_nativeDspEnabled) {
+        unawaited(attachNativeSession(sessionId));
+        unawaited(AudioOutputRouteService.instance.refreshNow());
+      }
     };
   }
 
@@ -238,9 +241,12 @@ class EqualizerProvider extends ChangeNotifier {
 
   void _onOutputRouteChanged() {
     final route = AudioOutputRouteService.instance;
+    // Auto DSP posture: phone speaker → protection + virtual bass;
+    // headphones / BT → full DSP, light bass; car → full DSP, no virtual bass.
     syncSpeakerPolicy(
       needsSpeakerProtection: route.needsSpeakerProtection,
-      virtualBassAmount: 0.55,
+      virtualBassAmount: route.suggestedVirtualBass,
+      route: route.route,
     );
   }
 
