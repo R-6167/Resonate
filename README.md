@@ -5,8 +5,9 @@ This branch is intentionally **Modes-only**.
 It contains the independent Modes Engine for Resonate:
 - listening modes and mode policies
 - media-type classification
+- optional user-selected content folders
 - user media-type overrides
-- playback/context integration contracts
+- playback/context/folder-picker integration contracts
 - Modes UI
 - focused unit tests
 - a minimal Flutter package definition
@@ -27,6 +28,36 @@ Normal, Running, Driving, Work, Podcast, Motivation, Audiobook.
 
 Bake and test Modes independently. When complete, merge the Modes module into a working Resonate branch and connect the adapters there.
 
+## Content folders — optional user routing
+
+Podcast, Motivation, and Audiobook can each have **zero or more user-selected folders**.
+
+This is deliberately **not enabled by default**. If the user never selects a folder, the normal MediaClassifier continues to work exactly as before.
+
+When a user selects a folder:
+- files inside that folder are classified as the selected content type
+- the folder assignment is persisted locally
+- multiple folders can be assigned to the same type
+- folders can be removed independently
+- nested folders are included
+- the most specific matching selected folder wins if assignments overlap
+- a selected folder is a strong user signal, but an individual file override remains stronger
+
+Classification precedence is:
+
+`individual user override → selected content folder → automatic classifier → conservative fallback`
+
+Only Podcast, Motivation, and Audiobook are exposed as content-folder categories. Music remains automatic/general-purpose rather than requiring folder configuration.
+
+### Folder picker integration
+
+Modes does not depend on Android/iOS file-picker APIs. The host Resonate app supplies a `ModeFolderPickerPort` implementation:
+
+`host platform folder picker → selected path → ModeProvider.addMediaFolder() → persisted folder routing`
+
+The reference `ModesScreen` accepts an optional `ModeFolderPickerPort`. When supplied, the user gets an **Add folder** control for Podcast, Motivation, and Audiobook. When no picker is supplied, the Modes module remains platform-agnostic.
+
+The actual host application will decide which native/system folder-picker implementation to use.
 
 ## Running Mode
 
@@ -40,6 +71,7 @@ Running Mode is the first concrete interaction behavior in the Modes lab.
 - The interaction guard only approves/blocks actions; it never performs playback itself.
 
 The host Resonate UI will consume `InteractionPolicy` and `ModeInteractionGuard` when Modes is integrated.
+
 ## Running Mode — movement-aware behavior
 
 Running Mode now has a pure movement decision layer. It is intentionally sensor-agnostic: the host Resonate app will supply coarse movement states through an adapter.
@@ -107,7 +139,6 @@ Integration flow:
 
 The eventual Resonate app remains responsible for the actual car-context adapter, mode switch, playback behavior, and platform-specific safety handling.
 
-
 ## Work Mode
 
 Work Mode is the third concrete Modes behavior. It is intentionally lighter than Running and Driving: it coordinates a work-session boundary without taking control of playback.
@@ -128,7 +159,6 @@ Integration flow:
 
 The coordinator owns only the Work Mode session contract. It never starts playback, changes queues, controls timers, or accesses platform services.
 
-
 ## Podcast Mode
 
 Podcast Mode is the fourth concrete Modes behavior and is speech-first rather than duration-first.
@@ -141,15 +171,15 @@ Podcast Mode is the fourth concrete Modes behavior and is speech-first rather th
 - Pause/resume/complete/exit can carry the latest known position back to the host.
 - Position updates are state-only; the coordinator never writes to storage or seeks the playback engine.
 - Invalid or stale lifecycle operations are ignored.
-- Podcast Mode does not classify media itself. The existing MediaClassifier and user overrides decide whether an item is a podcast.
+- Podcast Mode does not classify media itself. The existing MediaClassifier, selected content folders, and individual user overrides decide whether an item is a podcast.
+- A selected Podcast folder is optional; without one, automatic classification remains active.
 - The coordinator does not assume that a long audio file is a podcast; duration is not used as the classification signal.
 
 Integration flow:
 
-`media classification + host resume store → PodcastCoordinator → PodcastIntent → host playback/resume integration`
+`folder/user classification + host resume store → PodcastCoordinator → PodcastIntent → host playback/resume integration`
 
 The host Resonate app remains responsible for actual seeking, position persistence, speed changes, sleep-timer execution, episode metadata, and playback.
-
 
 ## Motivation Mode
 
@@ -166,15 +196,13 @@ Motivation Mode is the fifth concrete Modes behavior. It is designed for **speec
 - Music itself does not trigger a speech transition.
 - The coordinator never reorders the queue or starts playback. The host decides which music item to play next.
 - Stale/inactive content events are ignored, preventing old playback callbacks from affecting a new session.
+- Selected Motivation folders are optional and can provide a strong user routing signal.
 
 Integration flow:
 
-`host media classification/playback callbacks → MotivationCoordinator → MotivationIntent → host queue/playback decision`
+`folder/user classification + host playback callbacks → MotivationCoordinator → MotivationIntent → host queue/playback decision`
 
 This creates the contract for future intelligent sequencing: **motivation speech can lead into music, while the existing Resonate playback engine remains the only playback owner.**
-
-The host Resonate app remains responsible for classification, queue selection/reordering, playback, position persistence, speed changes, and crossfade execution.
-
 
 ## Audiobook Mode
 
@@ -189,11 +217,12 @@ Audiobook Mode is the sixth concrete Modes behavior and is built around **chapte
 - A supplied resume position produces a `resumePositionRequired` intent when a session starts.
 - Invalid negative positions are ignored.
 - Stale lifecycle operations are ignored after completion or exit.
-- Audiobook Mode does not inspect duration itself. The MediaClassifier and user overrides determine whether content is an audiobook.
+- Audiobook Mode does not inspect duration itself. The MediaClassifier, selected content folders, and individual user overrides determine whether content is an audiobook.
+- Selected Audiobook folders are optional and can provide a strong user routing signal.
 - The coordinator never starts playback, seeks, changes chapters, manages the sleep timer, or stores progress.
 
 Integration flow:
 
-`media classification + host resume/chapter data → AudiobookCoordinator → AudiobookIntent → host playback/navigation integration`
+`folder/user classification + host resume/chapter data → AudiobookCoordinator → AudiobookIntent → host playback/navigation integration`
 
 The host Resonate app remains responsible for chapter metadata, actual chapter navigation, position persistence/seeking, speed changes, sleep-timer execution, and playback.
