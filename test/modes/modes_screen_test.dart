@@ -22,6 +22,12 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('Active:'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Content folders'),
+      500,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pump();
     expect(find.textContaining('Normal'), findsWidgets);
     expect(find.text('Content folders'), findsOneWidget);
     expect(find.text('Podcast'), findsOneWidget);
