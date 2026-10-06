@@ -524,32 +524,26 @@ class DjSfxRack {
       }
     }
 
-    late final DjSfxPreset chosen;
-    switch (transitionKind) {
-      case DjTransitionKind.breakdownDrop:
-        chosen = energyScore >= 0.72 ? DjSfxPreset.impact : DjSfxPreset.whoosh;
-      case DjTransitionKind.phraseBlend:
-        chosen = section?.type == DjSectionType.breakdown
-            ? DjSfxPreset.repeatRestart
-            : DjSfxPreset.repeat;
-      case DjTransitionKind.beatBlend:
-        chosen = energyScore >= 0.86
-            ? DjSfxPreset.stutter
-            : (energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat);
-      case DjTransitionKind.energyBridge:
-        chosen = energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo;
-      case DjTransitionKind.outroIntro:
-        chosen = energyScore >= 0.82
-            ? DjSfxPreset.brake
-            : (energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo);
-      case DjTransitionKind.safeCrossfade:
-        chosen = DjSfxPreset.dryEcho;
-      case null:
-        chosen = pickRandom(
+    DjSfxPreset chosen = switch (transitionKind) {
+      DjTransitionKind.breakdownDrop =>
+        energyScore >= 0.72 ? DjSfxPreset.impact : DjSfxPreset.whoosh,
+      DjTransitionKind.phraseBlend => section?.type == DjSectionType.breakdown
+          ? DjSfxPreset.repeatRestart
+          : DjSfxPreset.repeat,
+      DjTransitionKind.beatBlend => energyScore >= 0.86
+          ? DjSfxPreset.stutter
+          : (energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat),
+      DjTransitionKind.energyBridge =>
+        energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo,
+      DjTransitionKind.outroIntro => energyScore >= 0.82
+          ? DjSfxPreset.brake
+          : (energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo),
+      DjTransitionKind.safeCrossfade => DjSfxPreset.dryEcho,
+      null => pickRandom(
           energyScore: energyScore,
           aggressiveness: aggressiveness,
-        );
-    }
+        ),
+    };
 
     if (aggressiveness == DjAggressiveness.balanced) {
       const banned = {

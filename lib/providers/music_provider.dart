@@ -3286,9 +3286,9 @@ class MusicProvider extends ChangeNotifier {
       final fadeWindowMs = milliseconds.clamp(500, 12000);
       DjTrackProfile? outProfile;
       try {
-        final path = outgoingSong?.filePath;
-        if (path != null && _djAnalysis != null) {
-          outProfile = await _djAnalysis!.profileFor(path);
+        final id = outgoingSong?.id;
+        if (id != null && _djAnalysis != null) {
+          outProfile = await _djAnalysis!.getProfile(id);
         }
       } catch (_) {}
       await _engageDjTransitionSfx(
