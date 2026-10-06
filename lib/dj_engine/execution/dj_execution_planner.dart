@@ -21,7 +21,6 @@ class DjExecutionPlanner {
       outgoing: outgoing,
       incoming: incoming,
       candidate: candidate,
-      policy: policy,
     );
     final severity = riskEngine.severity(risks);
 
@@ -40,7 +39,7 @@ class DjExecutionPlanner {
       durationMs: candidate.durationMs,
       kind: candidate.kind,
       outgoing: outgoing,
-      outgoingExitMs: candidate.outgoingExitMs,
+      outgoingStartMs: candidate.outgoingStartMs,
     );
     final steps = <DjExecutionStep>[
       DjExecutionStep(action: 'prepare_incoming', atMs: 0, parameters: {
@@ -78,10 +77,9 @@ class DjExecutionPlanner {
     required int durationMs,
     required DjTransitionKind kind,
     required DjTrackProfile outgoing,
-    int? outgoingExitMs,
+    required int outgoingStartMs,
   }) {
     final dur = durationMs.clamp(500, 20000);
-    // Ideal fraction of the fade: earlier for glue, later for drop impact.
     final fraction = switch (kind) {
       DjTransitionKind.safeCrossfade => 0.22,
       DjTransitionKind.energyBridge => 0.28,
@@ -95,13 +93,8 @@ class DjExecutionPlanner {
     final beats = outgoing.beatGrid.beatMs;
     if (beats.length < 4) return ideal;
 
-    // Approximate where the outgoing track sits when the fade starts.
-    final exitHint = outgoingExitMs ??
-        (outgoing.durationMs > 0
-            ? (outgoing.durationMs - dur).clamp(0, outgoing.durationMs)
-            : 0);
-    final windowStart = exitHint;
-    final windowEnd = exitHint + dur;
+    final windowStart = outgoingStartMs;
+    final windowEnd = outgoingStartMs + dur;
 
     var bestRel = ideal;
     var bestDist = 1 << 30;
@@ -115,21 +108,14 @@ class DjExecutionPlanner {
       }
     }
 
-    // Prefer downbeats / 4-beat phrase starts when available.
     final downs = outgoing.beatGrid.downbeatMs;
-    if (downs.isNotEmpty) {
-      for (final b in downs) {
-        if (b < windowStart + 120 || b > windowEnd - 80) continue;
-        final rel = b - windowStart;
-        final d = (rel - ideal).abs();
-        // Prefer downbeat within 180ms of ideal over a plain beat.
-        if (d <= bestDist + 180 && d < bestDist + 40) {
-          bestDist = d;
-          bestRel = rel;
-        } else if (d < bestDist) {
-          bestDist = d;
-          bestRel = rel;
-        }
+    for (final b in downs) {
+      if (b < windowStart + 120 || b > windowEnd - 80) continue;
+      final rel = b - windowStart;
+      final d = (rel - ideal).abs();
+      if (d < bestDist || (d <= bestDist + 180 && d <= 200)) {
+        bestDist = d;
+        bestRel = rel;
       }
     }
 
