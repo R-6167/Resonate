@@ -30,9 +30,10 @@ class PodcastCoordinator {
         at: now,
         mode: _mode,
       ),
-      const PodcastIntent(
+      PodcastIntent(
         type: PodcastIntentType.speedControlsElevated,
-        at: _zero,
+        at: now,
+        mode: _mode,
       ),
     ];
     if (resumePosition != null) {
@@ -49,7 +50,9 @@ class PodcastCoordinator {
   List<PodcastIntent> pause(DateTime now, {Duration? position}) {
     if (!_active || _paused) return const [];
     _paused = true;
-    if (position != null) _lastKnownPosition = position;
+    if (position != null && position >= Duration.zero) {
+      _lastKnownPosition = position;
+    }
     return [
       PodcastIntent(
         type: PodcastIntentType.sessionPaused,
@@ -63,7 +66,9 @@ class PodcastCoordinator {
   List<PodcastIntent> resume(DateTime now, {Duration? position}) {
     if (!_active || !_paused) return const [];
     _paused = false;
-    if (position != null) _lastKnownPosition = position;
+    if (position != null && position >= Duration.zero) {
+      _lastKnownPosition = position;
+    }
     return [
       PodcastIntent(
         type: PodcastIntentType.sessionResumed,
@@ -75,15 +80,16 @@ class PodcastCoordinator {
   }
 
   List<PodcastIntent> updatePosition(Duration position) {
-    if (!_active) return const [];
-    if (position < Duration.zero) return const [];
+    if (!_active || position < Duration.zero) return const [];
     _lastKnownPosition = position;
     return const [];
   }
 
   List<PodcastIntent> complete(DateTime now, {Duration? position}) {
     if (!_active) return const [];
-    if (position != null) _lastKnownPosition = position;
+    if (position != null && position >= Duration.zero) {
+      _lastKnownPosition = position;
+    }
     _active = false;
     _paused = false;
     return [
@@ -98,7 +104,9 @@ class PodcastCoordinator {
 
   List<PodcastIntent> exit(DateTime now, {Duration? position}) {
     if (!_active && !_paused) return const [];
-    if (position != null) _lastKnownPosition = position;
+    if (position != null && position >= Duration.zero) {
+      _lastKnownPosition = position;
+    }
     _active = false;
     _paused = false;
     return [
@@ -116,6 +124,4 @@ class PodcastCoordinator {
     _paused = false;
     _lastKnownPosition = null;
   }
-
-  static final DateTime _zero = DateTime(1970);
 }
