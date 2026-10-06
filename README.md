@@ -54,3 +54,15 @@ Running Mode now has a pure movement decision layer. It is intentionally sensor-
 - The decision engine emits intents only; it never calls the playback engine.
 
 This keeps Running Mode safe and deterministic while leaving sensors and playback ownership to the main Resonate app.
+
+### Running session lifecycle
+
+Running Mode also defines a session boundary independent of playback:
+
+- **Idle** — no active run session.
+- **Active** — run session is in progress.
+- **Paused** — session remains open but active running time is frozen.
+- **Completed** — session is finished and cannot be resumed.
+- Leaving Running Mode ends the current session without falsely marking it completed.
+- Paused time is excluded from active running duration.
+- The lifecycle controller is deterministic and does not access sensors or playback.
