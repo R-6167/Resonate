@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'audio_effects_bridge.dart';
+import 'audio_output_route.dart';
 
 /// Keeps live DSP ENGINE Direct Volume Control aligned with EQ preamp.
 ///
@@ -34,24 +35,46 @@ void syncStudioBandsToNativeEq({
   }).catchError((_) {});
 }
 
-/// Apply speaker-protection policy from [AudioOutputRouteService].
+/// Apply speaker-protection + virtual-bass policy from output route.
+///
+/// [needsSpeakerProtection] enables the live engine speaker-safe path (limiting
+/// LF boost that tears phone transducers). Virtual bass is route-dependent:
+/// strong on phone speaker, light on headphones, off in car.
 void syncSpeakerPolicy({
   required bool needsSpeakerProtection,
-  double virtualBassAmount = 0.55,
+  double? virtualBassAmount,
+  AudioOutputRoute? route,
 }) {
+  final resolvedRoute = route ?? AudioOutputRouteService.instance.route;
+  final amount = (virtualBassAmount ??
+          AudioOutputRouteService.instance.suggestedVirtualBass)
+      .clamp(0.0, 1.0)
+      .toDouble();
+
+  // Speaker-safe mode only when playing through the built-in speaker (or unknown).
   AudioEffectsBridge.setLiveDspSpeakerMode(needsSpeakerProtection)
       .then((r) {
     if (r != null) {
       debugPrint(
-        'live speakerMode=$needsSpeakerProtection active=${r['active']}',
+        'live speakerMode=$needsSpeakerProtection '
+        'route=${resolvedRoute.name} active=${r['active']}',
       );
     }
-  }).catchError((_) {});
+  }).catchError((e) {
+    debugPrint('syncSpeakerPolicy speakerMode failed: $e');
+  });
 
-  final amount = needsSpeakerProtection ? virtualBassAmount.clamp(0.0, 1.0) : 0.0;
-  AudioEffectsBridge.setLiveDspVirtualBass(amount).then((r) {
+  // Virtual bass: keep amount 0 when policy says no protection *and* route is car,
+  // otherwise use the provided/suggested amount (headphones get a light lift).
+  final bass = needsSpeakerProtection
+      ? amount
+      : (resolvedRoute == AudioOutputRoute.car ? 0.0 : amount);
+
+  AudioEffectsBridge.setLiveDspVirtualBass(bass).then((r) {
     if (r != null) {
-      debugPrint('live virtualBass=$amount');
+      debugPrint('live virtualBass=$bass route=${resolvedRoute.name}');
     }
-  }).catchError((_) {});
+  }).catchError((e) {
+    debugPrint('syncSpeakerPolicy virtualBass failed: $e');
+  });
 }
