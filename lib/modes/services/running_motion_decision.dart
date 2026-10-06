@@ -53,7 +53,7 @@ class RunningMotionDecisionEngine {
 
     if (policy.suggestPauseAfterStationary &&
         (state == MotionState.stationary || state == MotionState.stopped) &&
-        stableFor >= policy.stationaryGracePeriod &&
+        _stationaryDuration(now) >= policy.stationaryGracePeriod &&
         isPlaying &&
         !_userPausedPlayback &&
         !_automationPausedPlayback) {
