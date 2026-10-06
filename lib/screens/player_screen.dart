@@ -17,6 +17,7 @@ import '../services/audio_file_service.dart';
 import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
+import '../widgets/resonate_mode_chip.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
@@ -82,6 +83,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     return ResonateGlassScaffold(
       title: const Text('Now Playing'),
       actions: [
+          const ResonateModeChip(dense: true),
           const DjModeStatusChip(dense: true),
           Consumer<MusicProvider>(
             builder: (_, music, __) {
@@ -187,6 +189,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              const ResonateModeChip(dense: true),
+              const SizedBox(height: 6),
               const DjTransitionReasonChip(),
               const SizedBox(height: 10),
               const SizedBox(height: 8),

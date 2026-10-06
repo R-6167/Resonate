@@ -13,6 +13,7 @@ import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/dj_mode_status_chip.dart';
+import '../widgets/resonate_mode_chip.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -176,7 +177,14 @@ class _HomeDashboard extends StatelessWidget {
             children: [
               Text(music.currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 4),
-              const DjModeStatusChip(dense: true),
+              const Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  ResonateModeChip(dense: true),
+                  DjModeStatusChip(dense: true),
+                ],
+              ),
             ],
           ),
           isThreeLine: true,
@@ -196,6 +204,7 @@ class _HomeDashboard extends StatelessWidget {
 
     return ResonateGlassScaffold(
       title: const ResonateLogo(size: 48),
+      actions: const [ResonateModeChip(dense: true)],
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,
         child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 34), children: children),

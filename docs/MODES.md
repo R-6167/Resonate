@@ -46,6 +46,7 @@ not call `play()` directly.
 | `ResonateModePlaybackPort` → soft gates on `MusicProvider` | Present |
 | `ResonateModeFolderPickerPort` (FilePicker directories) | Present |
 | Settings → Playback → Modes screen | Present |
+| Mode chip on Now Playing + Home | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
 | Autopilot content bias (`isAcceptableForAutopilot`, bias score) | Present |
 | Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
@@ -74,8 +75,7 @@ rest of Resonate.
 - [ ] **Driving suggestion UI** — `ModeProvider` already tracks
   suggest/dismiss/accept and auto-enter-on-car; **no home/player banner or
   chip** consumes it yet.
-- [ ] **Active mode chip on Now Playing / home** — users cannot see the current
-  mode without opening Settings → Modes (contrast: DJ transition reason chip).
+- [x] **Active mode chip on Now Playing / home** — `ResonateModeChip`; tap opens Modes.
 - [ ] **`uiDensity` enforcement** — `PlaybackPolicy.uiDensity` and
   `InteractionPolicy` are not applied to player transport, lists, or settings
   density (Driving/Running large targets, reduced chrome).
