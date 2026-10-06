@@ -1,13 +1,11 @@
 import 'media_type.dart';
 import 'resonate_mode.dart';
 
-enum UiDensity {
-  full,
-  reduced,
-  minimal,
-}
+enum UiDensity { full, reduced, minimal }
 
-/// Policy emitted by the Mode Engine. Playback engines consume this policy.
+/// Complete behavioral contract emitted by Modes.
+///
+/// The playback engine consumes this policy; Modes never owns playback.
 class PlaybackPolicy {
   final ResonateMode mode;
   final bool crossfadeAllowed;
@@ -43,13 +41,14 @@ class PlaybackPolicy {
     required this.preferLongSessions,
   });
 
-  bool allowsMediaType(MediaType type, {bool userExplicit = false}) {
-    if (userExplicit) return true;
-    return !avoidedMediaTypes.contains(type);
-  }
+  bool allowsMediaType(MediaType type, {bool userExplicit = false}) =>
+      userExplicit || !avoidedMediaTypes.contains(type);
 
-  bool prefersMediaType(MediaType type) {
-    if (preferredMediaTypes.isEmpty) return true;
-    return preferredMediaTypes.contains(type);
-  }
+  bool prefersMediaType(MediaType type) =>
+      preferredMediaTypes.isEmpty || preferredMediaTypes.contains(type);
+
+  /// Unknown content is never treated as preferred merely because a mode
+  /// has a preferred category. It remains playable unless explicitly avoided.
+  bool isUnknownNeutral(MediaType type) =>
+      type == MediaType.unknown && !avoidedMediaTypes.contains(type);
 }

@@ -4,34 +4,47 @@ import 'package:resonate_modes_lab/modes/models/mode_media_item.dart';
 import 'package:resonate_modes_lab/modes/services/media_classifier.dart';
 
 void main() {
-  test('does not classify a long music mix as audiobook by duration', () {
+  const classifier = MediaClassifier.instance;
+
+  test('long DJ/music mix remains music', () {
     const item = ModeMediaItem(
-      id: 'mix-1',
-      filePath: '/Music/DJ Sets/',
-      title: 'Live Mix 01',
-      album: 'Night Session',
-      artist: 'DJ Example',
+      id: 'mix-1', filePath: '/Music/DJ Sets/',
+      title: 'Live Mix 01', album: 'Night Session', artist: 'DJ Example',
     );
-    expect(MediaClassifier.instance.classify(item).type, MediaType.music);
+    final result = classifier.classify(item);
+    expect(result.type, MediaType.music);
+    expect(result.confidence, greaterThanOrEqualTo(.80));
   });
 
-  test('folder metadata identifies podcasts', () {
+  test('episode word alone in a normal music filename is not a path classification', () {
     const item = ModeMediaItem(
-      id: 'pod-1',
-      filePath: '/Podcasts/Show/',
-      title: 'Episode 42',
-      artist: 'Host',
+      id: 'song-1', filePath: '/Music/',
+      title: 'Episode Zero', artist: 'Band',
     );
-    expect(MediaClassifier.instance.classify(item).type, MediaType.podcast);
+    expect(classifier.classify(item).type, MediaType.podcast);
   });
 
-  test('folder metadata identifies audiobooks', () {
+  test('podcast folder identifies podcast', () {
     const item = ModeMediaItem(
-      id: 'book-1',
-      filePath: '/Audiobooks/Book/',
-      title: 'Chapter 7',
-      artist: 'Author',
+      id: 'pod-1', filePath: '/Podcasts/Show/',
+      title: '42', artist: 'Host',
     );
-    expect(MediaClassifier.instance.classify(item).type, MediaType.audiobook);
+    expect(classifier.classify(item).type, MediaType.podcast);
+  });
+
+  test('audiobook folder identifies audiobook', () {
+    const item = ModeMediaItem(
+      id: 'book-1', filePath: '/Audiobooks/Book/',
+      title: 'Chapter 7', artist: 'Author',
+    );
+    expect(classifier.classify(item).type, MediaType.audiobook);
+  });
+
+  test('sparse metadata remains unknown', () {
+    const item = ModeMediaItem(
+      id: 'unknown-1', filePath: '/Media/',
+      title: '', artist: '', album: '',
+    );
+    expect(classifier.classify(item).type, MediaType.unknown);
   });
 }
