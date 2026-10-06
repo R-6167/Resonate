@@ -47,6 +47,7 @@ not call `play()` directly.
 | `ResonateModeFolderPickerPort` (FilePicker directories) | Present |
 | Settings → Playback → Modes screen | Present |
 | Mode chip on Now Playing + Home | Present |
+| Mode shelf (virtual playlist on Home) | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
 | Autopilot content bias (`isAcceptableForAutopilot`, bias score) | Present |
 | Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
