@@ -127,3 +127,25 @@ Integration flow:
 `host UI/session action → WorkCoordinator → WorkIntent → host playback/session integration`
 
 The coordinator owns only the Work Mode session contract. It never starts playback, changes queues, controls timers, or accesses platform services.
+
+
+## Podcast Mode
+
+Podcast Mode is the fourth concrete Modes behavior and is speech-first rather than duration-first.
+
+- Disables crossfade and shuffle so spoken episodes keep natural boundaries.
+- Enables precise resume and emphasizes playback-speed controls.
+- Suggests a sleep timer through the playback policy.
+- A podcast session has explicit start, pause, resume, complete, and exit boundaries.
+- The coordinator can carry a known resume position into a new session.
+- Pause/resume/complete/exit can carry the latest known position back to the host.
+- Position updates are state-only; the coordinator never writes to storage or seeks the playback engine.
+- Invalid or stale lifecycle operations are ignored.
+- Podcast Mode does not classify media itself. The existing MediaClassifier and user overrides decide whether an item is a podcast.
+- The coordinator does not assume that a long audio file is a podcast; duration is not used as the classification signal.
+
+Integration flow:
+
+`media classification + host resume store → PodcastCoordinator → PodcastIntent → host playback/resume integration`
+
+The host Resonate app remains responsible for actual seeking, position persistence, speed changes, sleep-timer execution, episode metadata, and playback.
