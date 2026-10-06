@@ -16,7 +16,9 @@ class ModeInteractionCatalog {
           reducedControlCount: true,
           accidentalTapProtection: true,
           allowHorizontalSwipeNavigation: false,
-          twoFingerOnlyActions: ModeAction.values.toSet(),
+          twoFingerOnlyActions: ModeAction.values
+              .where((action) => action.isPlaybackAction)
+              .toSet(),
         );
       case ResonateMode.driving:
         return InteractionPolicy(
