@@ -919,9 +919,11 @@ class MusicProvider extends ChangeNotifier {
         // Clearing it races with _playSongInternal and causes "loaded but needs resume".
         // Advance / queue-exhaust paths own the final isPlaying value.
       } else if (state.playing) {
-        if (!isPlaying) {
+        // Reflect native play in UI only when the user still wants playback.
+        // Never re-assert _userWantsPlaying here — that made pause feel broken
+        // when a second engine or late stream event flipped intent back on.
+        if (_userWantsPlaying && !isPlaying) {
           isPlaying = true;
-          _userWantsPlaying = true;
           notifyListeners();
           _publishServiceState();
         }
@@ -2694,6 +2696,7 @@ class MusicProvider extends ChangeNotifier {
               beatMs: beatMs,
               sections: sections,
               transitionKind: transitionKind,
+              aggressiveness: _djPolicy.aggressiveness,
             );
             if (_djSfxRack.engaged && _djSfxActive) {
               _djSfxEngaged = true;
@@ -2723,6 +2726,7 @@ class MusicProvider extends ChangeNotifier {
           beatMs: beatMs,
           sections: sections,
           transitionKind: transitionKind,
+          aggressiveness: _djPolicy.aggressiveness,
         );
         _djSfxEngaged = true;
         await ResonateDiagnostics.record('dj_transition_sfx', {
@@ -3792,44 +3796,58 @@ class MusicProvider extends ChangeNotifier {
     }, command: 'play', source: source, userInitiated: source != 'system', intentToken: intentToken);
   }
 
-    Future<void> togglePlayPause({String source = 'normal_player'}) {
-    // Route through pause/resume so transport fades always apply.
-    // Native playing state decides the branch (not optimistic isPlaying).
-    if (audioPlayer.playing) {
+  Future<void> togglePlayPause({String source = 'normal_player'}) {
+    // Prefer optimistic isPlaying when native lags; user pause must win.
+    final wantPause = isPlaying || audioPlayer.playing || _userWantsPlaying;
+    if (wantPause) {
       return pause(source: source);
     }
     return resumePlayback(source: source);
   }
 
-Future<void> pause({String source = 'normal_player'}) {
+
+  Future<void> pause({String source = 'normal_player'}) {
     final intentToken = _playbackIntentGate.issue();
-    // System audio-focus pause must preserve intent so we can resume when focus returns.
     final fromSystemFocus = source == 'system';
     final fromNoisy = source == 'becoming_noisy';
+    // Clear user intent immediately (before async lane) so stream listeners and
+    // ensureAudiblePlayback cannot race a late play() back in.
     if (!fromSystemFocus) {
+      _userWantsPlaying = false;
+      isPlaying = false;
+      _volumeFadeGen++;
       _cancelAutomaticPlaybackWork();
+      _crossfadeInProgress = false;
+      _automaticCrossfadeInFlight = false;
+      _repeatSelfHandoffInFlight = false;
+      notifyListeners();
+      _publishServiceState();
     }
     return _serializePlayback(() async {
       try {
         if (!fromSystemFocus) {
           _userWantsPlaying = false;
         }
-        // Only skip fade during a *real* volume ramp (not a stuck automatic flag).
         final midTransition =
             _crossfadeInProgress || _repeatSelfHandoffInFlight;
-        if (!midTransition && audioPlayer.playing) {
-          final from = audioPlayer.volume;
-          final fadeMs = fromSystemFocus ? 120 : _transportFadeMs;
-          await _fadePlayerVolume(audioPlayer, from, 0.0, durationMs: fadeMs);
-        }
-        await audioPlayer.pause();
+        try {
+          await audioPlayer.pause();
+        } catch (_) {}
         try {
           await inactivePlayer.pause();
         } catch (_) {}
-        // Restore internal gain so the next play/resume fade-in starts clean.
+        try {
+          await _playerA.pause();
+        } catch (_) {}
+        try {
+          await _playerB.pause();
+        } catch (_) {}
         if (!midTransition) {
           try {
             await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+          } catch (_) {}
+          try {
+            await inactivePlayer.setVolume(0.0);
           } catch (_) {}
         }
         isPlaying = false;
@@ -3841,7 +3859,7 @@ Future<void> pause({String source = 'normal_player'}) {
           'source': source,
           'userWantsPlaying': _userWantsPlaying,
           'preservedIntent': fromSystemFocus,
-          'faded': !midTransition,
+          'hardStop': true,
           'noisy': fromNoisy,
         });
       } catch (_) {}

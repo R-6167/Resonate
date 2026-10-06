@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_effects_bridge.dart';
 import '../dj_engine/core/dj_types.dart';
+import '../dj_engine/core/dj_policy.dart';
 
 /// Transition SFX — engine FX + optional one-shot sample packs.
 enum DjSfxPreset {
@@ -63,37 +64,70 @@ class DjSfxRack {
 
   bool _isSample(DjSfxPreset p) => sampleAssets.containsKey(p);
 
-  DjSfxPreset pickRandom({double energyScore = 0.5}) {
-    final high = energyScore >= 0.75;
-    // Mix character FX + samples; avoid stacking loudness.
-    final weights = <DjSfxPreset, int>{
-      DjSfxPreset.echo: 2,
-      DjSfxPreset.vinylStop: high ? 2 : 2,
-      DjSfxPreset.rewind: 2,
-      DjSfxPreset.filterOpen: high ? 2 : 2,
-      DjSfxPreset.filterClose: 2,
-      DjSfxPreset.tightGlue: 2,
-      DjSfxPreset.dryEcho: 1,
-      DjSfxPreset.airHorn: high ? 3 : 2,
-      DjSfxPreset.gunshot: high ? 2 : 1,
-      DjSfxPreset.vinylScratch: 2,
-      DjSfxPreset.repeat: 2,
-      DjSfxPreset.repeatRestart: high ? 2 : 1,
-      DjSfxPreset.scratch: 2,
-      DjSfxPreset.stutter: high ? 2 : 1,
-      DjSfxPreset.beatRepeat: high ? 2 : 1,
-      DjSfxPreset.retrigger: 2,
-      DjSfxPreset.brake: 2,
-      DjSfxPreset.whoosh: 2,
-      DjSfxPreset.impact: high ? 2 : 1,
+  static const _safePresets = <DjSfxPreset>[
+    DjSfxPreset.tightGlue,
+    DjSfxPreset.dryEcho,
+    DjSfxPreset.echo,
+    DjSfxPreset.filterOpen,
+    DjSfxPreset.filterClose,
+  ];
+
+  static const _balancedPresets = <DjSfxPreset>[
+    DjSfxPreset.tightGlue,
+    DjSfxPreset.dryEcho,
+    DjSfxPreset.echo,
+    DjSfxPreset.filterOpen,
+    DjSfxPreset.filterClose,
+    DjSfxPreset.whoosh,
+    DjSfxPreset.rewind,
+    DjSfxPreset.vinylStop,
+  ];
+
+  static const _musicalPresets = <DjSfxPreset>[
+    DjSfxPreset.tightGlue,
+    DjSfxPreset.echo,
+    DjSfxPreset.whoosh,
+    DjSfxPreset.impact,
+    DjSfxPreset.vinylScratch,
+    DjSfxPreset.scratch,
+    DjSfxPreset.stutter,
+    DjSfxPreset.brake,
+    DjSfxPreset.repeat,
+    DjSfxPreset.airHorn,
+    DjSfxPreset.gunshot,
+    DjSfxPreset.beatRepeat,
+  ];
+
+  List<DjSfxPreset> _bagFor(DjAggressiveness aggressiveness) {
+    return switch (aggressiveness) {
+      DjAggressiveness.safe => _safePresets,
+      DjAggressiveness.balanced => _balancedPresets,
+      DjAggressiveness.musical => _musicalPresets,
     };
+  }
+
+  DjSfxPreset pickRandom({
+    double energyScore = 0.5,
+    DjAggressiveness aggressiveness = DjAggressiveness.balanced,
+  }) {
+    final bag = _bagFor(aggressiveness);
+    final high = energyScore >= 0.75;
+    final weights = <DjSfxPreset, int>{};
+    for (final p in bag) {
+      var w = 2;
+      if (p == DjSfxPreset.tightGlue || p == DjSfxPreset.dryEcho) w = 4;
+      if (p == DjSfxPreset.airHorn || p == DjSfxPreset.gunshot) w = high ? 1 : 0;
+      if (p == DjSfxPreset.stutter || p == DjSfxPreset.beatRepeat) w = high ? 2 : 1;
+      if (w > 0) weights[p] = w;
+    }
+    if (weights.isEmpty) return DjSfxPreset.tightGlue;
     final total = weights.values.fold<int>(0, (a, b) => a + b);
     var r = _rng.nextInt(total);
     for (final e in weights.entries) {
       r -= e.value;
       if (r < 0) return e.key;
     }
-    return DjSfxPreset.echo;
+    return DjSfxPreset.tightGlue;
   }
 
   Future<void> engage({
@@ -106,10 +140,18 @@ class DjSfxRack {
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
+    DjAggressiveness aggressiveness = DjAggressiveness.balanced,
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    activePreset = preset ?? _pickPhraseAwarePreset(energyScore: score, transitionKind: transitionKind, sections: sections, positionMs: outgoing?.position.inMilliseconds ?? 0);
+    activePreset = preset ??
+        _pickPhraseAwarePreset(
+          energyScore: score,
+          transitionKind: transitionKind,
+          sections: sections,
+          positionMs: outgoing?.position.inMilliseconds ?? 0,
+          aggressiveness: aggressiveness,
+        );
     engaged = true;
     _eqTouched = false;
     _outgoing = outgoing;
@@ -224,6 +266,7 @@ class DjSfxRack {
     List<int> beatMs = const <int>[],
     List<DjSection> sections = const <DjSection>[],
     DjTransitionKind? transitionKind,
+    DjAggressiveness aggressiveness = DjAggressiveness.balanced,
   }) async {
     final gen = ++_delayedSfxGen;
     try {
@@ -240,6 +283,7 @@ class DjSfxRack {
         beatMs: beatMs,
         sections: sections,
         transitionKind: transitionKind,
+        aggressiveness: aggressiveness,
       );
     } catch (e) {
       debugPrint('DjSfxRack.engageDelayed: $e');
@@ -444,10 +488,80 @@ class DjSfxRack {
 
   DjSfxPreset _pickPhraseAwarePreset({
     required double energyScore,
-    required DjTransitionKind? transitionKind,
-    required List<DjSection> sections,
-    required int positionMs,
+    DjTransitionKind? transitionKind,
+    List<DjSection> sections = const <DjSection>[],
+    int positionMs = 0,
+    DjAggressiveness aggressiveness = DjAggressiveness.balanced,
   }) {
+    if (aggressiveness == DjAggressiveness.safe) {
+      return switch (transitionKind) {
+        DjTransitionKind.safeCrossfade => DjSfxPreset.dryEcho,
+        DjTransitionKind.outroIntro => DjSfxPreset.filterClose,
+        DjTransitionKind.energyBridge => DjSfxPreset.echo,
+        _ => DjSfxPreset.tightGlue,
+      };
+    }
+
+    DjSection? section;
+    for (final s in sections) {
+      if (positionMs >= s.startMs && positionMs < s.endMs) {
+        section = s;
+        break;
+      }
+    }
+
+    late final DjSfxPreset chosen;
+    switch (transitionKind) {
+      case DjTransitionKind.breakdownDrop:
+        chosen = energyScore >= 0.72 ? DjSfxPreset.impact : DjSfxPreset.whoosh;
+      case DjTransitionKind.phraseBlend:
+        chosen = section?.type == DjSectionType.breakdown
+            ? DjSfxPreset.repeatRestart
+            : DjSfxPreset.repeat;
+      case DjTransitionKind.beatBlend:
+        chosen = energyScore >= 0.86
+            ? DjSfxPreset.stutter
+            : (energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat);
+      case DjTransitionKind.energyBridge:
+        chosen = energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo;
+      case DjTransitionKind.outroIntro:
+        chosen = energyScore >= 0.82
+            ? DjSfxPreset.brake
+            : (energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo);
+      case DjTransitionKind.safeCrossfade:
+        chosen = DjSfxPreset.dryEcho;
+      case null:
+        chosen = pickRandom(
+          energyScore: energyScore,
+          aggressiveness: aggressiveness,
+        );
+    }
+
+    if (aggressiveness == DjAggressiveness.balanced) {
+      const banned = {
+        DjSfxPreset.airHorn,
+        DjSfxPreset.gunshot,
+        DjSfxPreset.stutter,
+        DjSfxPreset.beatRepeat,
+        DjSfxPreset.scratch,
+        DjSfxPreset.repeatRestart,
+        DjSfxPreset.brake,
+      };
+      if (banned.contains(chosen)) {
+        chosen = energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.tightGlue;
+      }
+    }
+
+    final bag = _bagFor(aggressiveness);
+    if (!bag.contains(chosen)) {
+      return pickRandom(
+        energyScore: energyScore,
+        aggressiveness: aggressiveness,
+      );
+    }
+    return chosen;
+  }
+) {
     DjSection? section;
     for (final s in sections) {
       if (positionMs >= s.startMs && positionMs < s.endMs) {
