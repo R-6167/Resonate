@@ -71,7 +71,8 @@ void main() {
     expect(intents.single.type, AudiobookIntentType.sessionCompleted);
     expect(intents.single.position, position);
     expect(coordinator.isActive, isFalse);
-    expect(coordinator.startContentIfStale(), isFalse);
+    expect(coordinator.pause(t1), isEmpty);
+    expect(coordinator.complete(t1), isEmpty);
   });
 
   test('exit is a boundary and stale lifecycle calls are ignored', () {
