@@ -81,6 +81,7 @@ class ResonateModeFolderPickerPort implements ModeFolderPickerPort {
         MediaType.podcast => 'Podcasts',
         MediaType.audiobook => 'Audiobooks',
         MediaType.music => 'Music',
+        MediaType.motivation => 'Motivation',
         MediaType.unknown => 'Media',
       };
       return await FilePicker.platform.getDirectoryPath(
