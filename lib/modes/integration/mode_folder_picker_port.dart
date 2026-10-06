@@ -1,5 +1,9 @@
-/// Lets Modes request a folder pick without depending on Flutter UI plugins.
+import '../models/media_type.dart';
+
+/// Host-provided folder picker boundary.
+///
+/// Modes does not depend on Android/iOS file-picker APIs. The main Resonate
+/// app supplies the picker and returns the selected folder path.
 abstract class ModeFolderPickerPort {
-  /// Returns a filesystem path the user selected, or null if cancelled.
-  Future<String?> pickFolder({String? title});
+  Future<String?> pickFolder(MediaType type);
 }

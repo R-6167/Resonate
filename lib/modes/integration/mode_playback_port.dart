@@ -1,5 +1,10 @@
-/// Playback surface Modes may influence. Host enforces focus/pause authority.
-abstract class ModePlaybackPort {
-  /// Apply a soft content / transition bias; must not force resume over user pause.
-  Future<void> applyPlaybackPolicy(Map<String, Object?> policy);
+/// Adapter implemented by Resonate's real playback engine.
+///
+/// Modes configure playback; they do not own playback.
+abstract interface class ModePlaybackPort {
+  void applyModePlaybackPolicy({
+    required bool crossfadeAllowed,
+    required bool shuffleAllowed,
+    required bool preciseResume,
+  });
 }

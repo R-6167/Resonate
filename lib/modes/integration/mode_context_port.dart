@@ -1,9 +1,11 @@
-/// App-facing context the Modes layer may observe (Bluetooth, motion, etc.).
-/// Implement on the host app; Modes never reads platform sensors directly.
-abstract class ModeContextPort {
-  /// Optional label for the active audio route / BT device.
-  String? get activeDeviceLabel;
+/// Context adapter implemented by the main app (Bluetooth/car detection, etc.).
+enum ModeAudioContext {
+  unknown,
+  car,
+}
 
-  /// True when the host believes the user is in a vehicle context.
-  bool get isCarContext;
+abstract interface class ModeContextPort {
+  ModeAudioContext get audioContext;
+  void addListener(void Function() listener);
+  void removeListener(void Function() listener);
 }
