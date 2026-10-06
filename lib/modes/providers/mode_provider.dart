@@ -8,6 +8,8 @@ import '../models/playback_policy.dart';
 import '../models/resonate_mode.dart';
 import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
+import '../services/media_folder_router.dart';
+import '../services/media_folder_store.dart';
 import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
 import '../models/interaction_policy.dart';
@@ -22,11 +24,13 @@ class ModeProvider extends ChangeNotifier {
 
   final MediaClassifier _classifier = MediaClassifier.instance;
   final MediaClassificationStore _store = MediaClassificationStore();
+  final MediaFolderStore _folderStore = MediaFolderStore();
 
   ModePlaybackPort? _playback;
   ModeContextPort? _context;
   ResonateMode _mode = ResonateMode.normal;
   Map<String, MediaClassification> _userOverrides = {};
+  Map<MediaType, List<String>> _mediaFolders = {};
   bool _ready = false;
   bool _drivingSuggestOpen = false;
   bool _drivingSuggestDismissed = false;
@@ -44,6 +48,33 @@ class ModeProvider extends ChangeNotifier {
       _drivingSuggestOpen && _mode != ResonateMode.driving && !_autoEnterDrivingOnCar;
   bool get autoEnterDrivingOnCar => _autoEnterDrivingOnCar;
   bool get crossfadeAllowed => policy.crossfadeAllowed;
+
+  List<String> foldersFor(MediaType type) =>
+      List.unmodifiable(_mediaFolders[type] ?? const <String>[]);
+
+  bool hasFolderFor(MediaType type, String path) =>
+      MediaFolderRouter(_mediaFolders).hasFolder(type, path);
+
+  Future<void> addMediaFolder(MediaType type, String path) async {
+    if (!MediaFolderStore.supportedTypes.contains(type)) return;
+    await _folderStore.addFolder(type, path);
+    _mediaFolders = await _folderStore.loadAll();
+    notifyListeners();
+  }
+
+  Future<void> removeMediaFolder(MediaType type, String path) async {
+    if (!MediaFolderStore.supportedTypes.contains(type)) return;
+    await _folderStore.removeFolder(type, path);
+    _mediaFolders = await _folderStore.loadAll();
+    notifyListeners();
+  }
+
+  Future<void> clearMediaFolders(MediaType type) async {
+    if (!MediaFolderStore.supportedTypes.contains(type)) return;
+    await _folderStore.clearFolders(type);
+    _mediaFolders = await _folderStore.loadAll();
+    notifyListeners();
+  }
 
   void attachPlayback(ModePlaybackPort playback) {
     _playback = playback;
@@ -123,6 +154,7 @@ class ModeProvider extends ChangeNotifier {
       _mode = ResonateModeX.fromId(prefs.getString(_modeKey));
       _autoEnterDrivingOnCar = prefs.getBool(_autoEnterDrivingKey) ?? false;
       _userOverrides = await _store.loadAll();
+      _mediaFolders = await _folderStore.loadAll();
     } catch (_) {}
     _ready = true;
     _pushPolicyToEngine();
@@ -144,8 +176,22 @@ class ModeProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  MediaClassification classificationFor(ModeMediaItem item) =>
-      _userOverrides[item.id] ?? _classifier.classify(item);
+  MediaClassification classificationFor(ModeMediaItem item) {
+    final override = _userOverrides[item.id];
+    if (override != null) return override;
+
+    final folderType = MediaFolderRouter(_mediaFolders).typeForPath(item.filePath);
+    if (folderType != null) {
+      return MediaClassification(
+        type: folderType,
+        confidence: 1.0,
+        source: ClassificationSource.user,
+        reason: 'User-selected content folder',
+      );
+    }
+
+    return _classifier.classify(item);
+  }
 
   MediaType mediaTypeFor(ModeMediaItem item) => classificationFor(item).type;
 
