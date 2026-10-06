@@ -8,9 +8,9 @@ void main() {
 
   test('transient stop does not request a pause', () {
     final engine = RunningMotionDecisionEngine();
-    expect(engine.ingest(MotionState.moving, t0), RunningMotionDecision.maintain);
+    expect(engine.ingest(MotionState.moving, t0, isPlaying: true), RunningMotionDecision.maintain);
     expect(
-      engine.ingest(MotionState.stopped, t0.add(const Duration(seconds: 10))),
+      engine.ingest(MotionState.stopped, t0.add(const Duration(seconds: 10)), isPlaying: true),
       RunningMotionDecision.maintain,
     );
   });
@@ -19,28 +19,28 @@ void main() {
     final engine = RunningMotionDecisionEngine();
     engine.ingest(MotionState.moving, t0);
     expect(
-      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15))),
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
     );
     expect(
-      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 20))),
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 20)), isPlaying: false),
       RunningMotionDecision.maintain,
     );
   });
 
   test('moving must be stable before automation resumes', () {
     final engine = RunningMotionDecisionEngine();
-    engine.ingest(MotionState.stationary, t0);
+    engine.ingest(MotionState.stationary, t0, isPlaying: true);
     expect(
-      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15))),
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
     );
     expect(
-      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 20))),
+      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 20)), isPlaying: false),
       RunningMotionDecision.maintain,
     );
     expect(
-      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 25))),
+      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 25)), isPlaying: false),
       RunningMotionDecision.suggestResume,
     );
   });
@@ -54,16 +54,16 @@ void main() {
     );
     engine.setUserPaused(true);
     expect(
-      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 30))),
+      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 30)), isPlaying: false),
       RunningMotionDecision.maintain,
     );
   });
 
   test('unknown movement never creates an automation decision', () {
     final engine = RunningMotionDecisionEngine();
-    expect(engine.ingest(MotionState.unknown, t0), RunningMotionDecision.maintain);
+    expect(engine.ingest(MotionState.unknown, t0, isPlaying: true), RunningMotionDecision.maintain);
     expect(
-      engine.ingest(MotionState.unknown, t0.add(const Duration(minutes: 5))),
+      engine.ingest(MotionState.unknown, t0.add(const Duration(minutes: 5)), isPlaying: true),
       RunningMotionDecision.maintain,
     );
   });
@@ -78,7 +78,7 @@ void main() {
       RunningMotionDecision.suggestPause,
     );
     expect(
-      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 20))),
+      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 20)), isPlaying: false),
       RunningMotionDecision.maintain,
     );
   });
