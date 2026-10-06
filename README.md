@@ -149,3 +149,28 @@ Integration flow:
 `media classification + host resume store → PodcastCoordinator → PodcastIntent → host playback/resume integration`
 
 The host Resonate app remains responsible for actual seeking, position persistence, speed changes, sleep-timer execution, episode metadata, and playback.
+
+
+## Motivation Mode
+
+Motivation Mode is the fifth concrete Modes behavior. It is designed for **speech-aware motivation followed by music**, without creating a separate playback engine.
+
+- Keeps auto-next and shuffle available.
+- Allows crossfade, but does not require it; the host playback engine owns transition execution.
+- Emphasizes speed controls and precise resume.
+- Prefers both classified motivation/speech content and music.
+- Does not use sensors or automatic movement/car behavior.
+- A motivation session has explicit start, pause, resume, complete, and exit boundaries.
+- Starting classified motivation content emits a `speechStarted` intent.
+- Completing motivation content emits `speechCompleted` followed by `musicFollowupSuggested`.
+- Music itself does not trigger a speech transition.
+- The coordinator never reorders the queue or starts playback. The host decides which music item to play next.
+- Stale/inactive content events are ignored, preventing old playback callbacks from affecting a new session.
+
+Integration flow:
+
+`host media classification/playback callbacks → MotivationCoordinator → MotivationIntent → host queue/playback decision`
+
+This creates the contract for future intelligent sequencing: **motivation speech can lead into music, while the existing Resonate playback engine remains the only playback owner.**
+
+The host Resonate app remains responsible for classification, queue selection/reordering, playback, position persistence, speed changes, and crossfade execution.
