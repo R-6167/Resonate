@@ -569,40 +569,6 @@ class DjSfxRack {
     }
     return chosen;
   }
-) {
-    DjSection? section;
-    for (final s in sections) {
-      if (positionMs >= s.startMs && positionMs < s.endMs) {
-        section = s;
-        break;
-      }
-    }
-    switch (transitionKind) {
-      case DjTransitionKind.breakdownDrop:
-        return energyScore >= 0.72 ? DjSfxPreset.impact : DjSfxPreset.whoosh;
-      case DjTransitionKind.phraseBlend:
-        return section?.type == DjSectionType.breakdown
-            ? DjSfxPreset.repeatRestart
-            : DjSfxPreset.repeat;
-      case DjTransitionKind.beatBlend:
-        return energyScore >= 0.86 ? DjSfxPreset.stutter : (energyScore >= 0.78 ? DjSfxPreset.scratch : DjSfxPreset.repeat);
-      case DjTransitionKind.energyBridge:
-        return energyScore >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo;
-      case DjTransitionKind.outroIntro:
-        return energyScore >= 0.82 ? DjSfxPreset.brake : (energyScore >= 0.75 ? DjSfxPreset.filterClose : DjSfxPreset.echo);
-      case DjTransitionKind.safeCrossfade:
-        return DjSfxPreset.dryEcho;
-      case null:
-        break;
-    }
-    if (section?.type == DjSectionType.build ||
-        section?.type == DjSectionType.chorus ||
-        section?.type == DjSectionType.drop) {
-      return energyScore >= 0.86 ? DjSfxPreset.stutter : (energyScore >= 0.8 ? DjSfxPreset.scratch : DjSfxPreset.echo);
-    }
-    return pickRandom(energyScore: energyScore);
-  }
-
   List<int> _buildPhraseAnchors(List<int> beats) {
     if (beats.length < 16) return const <int>[];
     final result = <int>[];
