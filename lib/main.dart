@@ -17,6 +17,8 @@ import 'providers/intelligence_mix_controller.dart';
 import 'providers/library_provider.dart';
 import 'providers/listening_history_provider.dart';
 import 'providers/music_provider.dart';
+import 'modes/providers/mode_provider.dart';
+import 'modes/integration/resonate_mode_ports.dart';
 import 'providers/playback_features_provider.dart';
 import 'providers/playlist_provider.dart';
 import 'providers/theme_provider.dart';
@@ -305,6 +307,19 @@ class ResonateApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (context) =>
               DjModeProvider(music: context.read<MusicProvider>()),
+        ),
+        // Modes: policy only. Ports never force play or reclaim focus.
+        ChangeNotifierProvider(
+          create: (context) {
+            final modes = ModeProvider();
+            modes.attachPlayback(
+              ResonateModePlaybackPort(context.read<MusicProvider>()),
+            );
+            modes.attachContext(
+              ResonateModeContextPort(context.read<BluetoothProvider>()),
+            );
+            return modes;
+          },
         ),
         ChangeNotifierProvider(
           create: (context) =>
