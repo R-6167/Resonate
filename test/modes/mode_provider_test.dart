@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate_modes_lab/modes/integration/mode_context_port.dart';
 import 'package:resonate_modes_lab/modes/integration/mode_playback_port.dart';
-import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
 import 'package:resonate_modes_lab/modes/models/mode_action.dart';
+import 'package:resonate_modes_lab/modes/models/resonate_mode.dart';
 import 'package:resonate_modes_lab/modes/providers/mode_provider.dart';
 
 class FakePlayback implements ModePlaybackPort {
@@ -21,20 +21,6 @@ class FakePlayback implements ModePlaybackPort {
     shuffle = shuffleAllowed;
     preciseResume = preciseResume;
   }
-
-  test('running mode exposes its two-finger interaction contract', () async {
-    final provider = ModeProvider();
-    await provider.ready;
-
-    await provider.setMode(ResonateMode.running);
-
-    expect(provider.interactionPolicy.minimumTapPointers, 2);
-    expect(
-      provider.interactionPolicy.requiresTwoFingerTap(ModeAction.playPause),
-      isTrue,
-    );
-    provider.dispose();
-  });
 }
 
 class FakeContext implements ModeContextPort {
@@ -85,6 +71,35 @@ void main() {
 
     expect(provider.hasDrivingSuggestion, isTrue);
     expect(provider.mode, ResonateMode.normal);
+    provider.dispose();
+  });
+
+  test('running mode exposes its two-finger interaction contract', () async {
+    final provider = ModeProvider();
+    await provider.ready;
+
+    await provider.setMode(ResonateMode.running);
+
+    expect(provider.interactionPolicy.minimumTapPointers, 2);
+    expect(
+      provider.interactionPolicy.requiresTwoFingerTap(ModeAction.playPause),
+      isTrue,
+    );
+    provider.dispose();
+  });
+
+  test('auto-enter Driving switches mode when car context appears', () async {
+    final provider = ModeProvider();
+    final context = FakeContext();
+    await provider.ready;
+    provider.attachContext(context);
+    await provider.setAutoEnterDrivingOnCar(true);
+
+    context.setContext(ModeAudioContext.car);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(provider.mode, ResonateMode.driving);
+    expect(provider.hasDrivingSuggestion, isFalse);
     provider.dispose();
   });
 }
