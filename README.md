@@ -174,3 +174,26 @@ Integration flow:
 This creates the contract for future intelligent sequencing: **motivation speech can lead into music, while the existing Resonate playback engine remains the only playback owner.**
 
 The host Resonate app remains responsible for classification, queue selection/reordering, playback, position persistence, speed changes, and crossfade execution.
+
+
+## Audiobook Mode
+
+Audiobook Mode is the sixth concrete Modes behavior and is built around **chapter continuity and precise resume**, not generic long-audio heuristics.
+
+- Disables crossfade and shuffle so chapters retain natural boundaries.
+- Enables precise resume and emphasizes playback speed.
+- Suggests a sleep timer for the host UI.
+- Exposes chapter-navigation availability as an integration signal.
+- Supports explicit start, pause, resume, complete, and exit session boundaries.
+- Carries the latest known position across lifecycle events without owning persistence or seeking.
+- A supplied resume position produces a `resumePositionRequired` intent when a session starts.
+- Invalid negative positions are ignored.
+- Stale lifecycle operations are ignored after completion or exit.
+- Audiobook Mode does not inspect duration itself. The MediaClassifier and user overrides determine whether content is an audiobook.
+- The coordinator never starts playback, seeks, changes chapters, manages the sleep timer, or stores progress.
+
+Integration flow:
+
+`media classification + host resume/chapter data → AudiobookCoordinator → AudiobookIntent → host playback/navigation integration`
+
+The host Resonate app remains responsible for chapter metadata, actual chapter navigation, position persistence/seeking, speed changes, sleep-timer execution, and playback.
