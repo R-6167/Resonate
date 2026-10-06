@@ -1,0 +1,19 @@
+name: modes-lab-tests
+
+on:
+  push:
+    branches: [modes_lab]
+  pull_request:
+    branches: [modes_lab]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+      - run: flutter pub get
+      - run: flutter test

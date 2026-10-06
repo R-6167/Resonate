@@ -1,9 +1,0 @@
-      await incoming.setVolume(0.0);
-      // Fire-and-poll play on B — await play() can hang and block auto-next forever.
----SPLIT---
-      await incoming.setVolume(0.0);
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
-      // Fire-and-poll play on B — await play() can hang and block auto-next forever.
