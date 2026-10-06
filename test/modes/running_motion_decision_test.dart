@@ -17,7 +17,7 @@ void main() {
 
   test('sustained stationary state requests one pause', () {
     final engine = RunningMotionDecisionEngine();
-    engine.ingest(MotionState.moving, t0);
+    engine.ingest(MotionState.moving, t0, isPlaying: true);
     expect(
       engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
@@ -47,9 +47,9 @@ void main() {
 
   test('explicit user pause blocks automatic resume', () {
     final engine = RunningMotionDecisionEngine();
-    engine.ingest(MotionState.stationary, t0);
+    engine.ingest(MotionState.stationary, t0, isPlaying: true);
     expect(
-      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15))),
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
     );
     engine.setUserPaused(true);
@@ -74,7 +74,7 @@ void main() {
     );
     engine.ingest(MotionState.stationary, t0);
     expect(
-      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15))),
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
       RunningMotionDecision.suggestPause,
     );
     expect(
