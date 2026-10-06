@@ -9,6 +9,8 @@ import '../models/resonate_mode.dart';
 import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
 import '../services/mode_policy_catalog.dart';
+import '../services/mode_interaction_catalog.dart';
+import '../models/interaction_policy.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
 
@@ -36,6 +38,7 @@ class ModeProvider extends ChangeNotifier {
   Future<void> get ready => _readyFuture;
   ResonateMode get mode => _mode;
   PlaybackPolicy get policy => ModePolicyCatalog.policyFor(_mode);
+  InteractionPolicy get interactionPolicy => ModeInteractionCatalog.policyFor(_mode);
   bool get isReady => _ready;
   bool get hasDrivingSuggestion =>
       _drivingSuggestOpen && _mode != ResonateMode.driving && !_autoEnterDrivingOnCar;
