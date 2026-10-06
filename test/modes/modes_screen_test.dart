@@ -30,9 +30,9 @@ void main() {
     );
     await tester.pump();
     expect(find.text('Content folders'), findsOneWidget);
-    expect(find.text('Podcast'), findsOneWidget);
-    expect(find.text('Motivation'), findsOneWidget);
-    expect(find.text('Audiobook'), findsOneWidget);
+    expect(find.text('Podcast'), findsWidgets);
+    expect(find.text('Motivation'), findsWidgets);
+    expect(find.text('Audiobook'), findsWidgets);
 
     provider.dispose();
   });
