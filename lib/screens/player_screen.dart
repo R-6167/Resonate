@@ -187,6 +187,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              const DjTransitionReasonChip(),
               const SizedBox(height: 10),
               const SizedBox(height: 8),
               _WaveSeekBar(

@@ -227,6 +227,21 @@ class MusicProvider extends ChangeNotifier {
   int get crossfadeDurationMs => _crossfadeDurationMs;
   String get crossfadeFadeType => _crossfadeFadeType;
   String get activeEngineLabel => _authority.engineLabel(this);
+
+  /// Last DJ handoff snapshot for Now Playing "why this transition" chip.
+  DateTime? get lastDjHandoffAt => _lastDjHandoffAt;
+  String? get lastDjStrategy => _lastDjStrategy;
+  double? get lastDjTransitionScore => _lastDjTransitionScore;
+  double? get lastDjTransitionConfidence => _lastDjTransitionConfidence;
+  List<String> get lastDjTransitionRisks =>
+      List<String>.unmodifiable(_lastDjTransitionRisks);
+
+  /// True for a short window after a DJ plan was applied (UI chip visibility).
+  bool get hasRecentDjTransition {
+    final at = _lastDjHandoffAt;
+    if (at == null || _lastDjStrategy == null) return false;
+    return DateTime.now().difference(at) <= const Duration(seconds: 50);
+  }
   bool get transitionInProgress => _crossfadeInProgress || _automaticCrossfadeInFlight;
 
   /// Phase 2: normal listening is always Engine A. Engine B is only for an
@@ -2976,6 +2991,7 @@ class MusicProvider extends ChangeNotifier {
       _lastDjTransitionRisks = const <String>[];
       _lastDjTransitionDurationMs = null;
       _lastDjRecoveryAttempts = 0;
+      notifyListeners(); // dj transition chip
     } catch (e) {
       debugPrint('DJ handoff prepare skipped: $e');
       try {
@@ -3070,6 +3086,7 @@ class MusicProvider extends ChangeNotifier {
     _lastDjTransitionRisks = candidate.risks.map((r) => r.name).toList();
     _lastDjTransitionDurationMs = candidate.durationMs;
     _lastDjRecoveryAttempts = 0;
+    notifyListeners(); // dj transition chip
     await ResonateDiagnostics.recordDj(
       stage: 'v2_handoff',
       outcome: 'applied',
