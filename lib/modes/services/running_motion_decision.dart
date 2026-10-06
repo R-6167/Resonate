@@ -15,6 +15,7 @@ class RunningMotionDecisionEngine {
   final RunningAutomationPolicy policy;
   MotionState _state = MotionState.unknown;
   DateTime? _stateSince;
+  DateTime? _lastMovingAt;
   DateTime? _lastDecisionAt;
   bool _automationPausedPlayback = false;
   bool _userPausedPlayback = false;
