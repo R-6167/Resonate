@@ -12,6 +12,8 @@ enum ModeAction {
   shuffle,
   modeChange,
   settings,
+  seekForward,
+  seekBackward,
 }
 
 extension ModeActionX on ModeAction {
@@ -20,7 +22,9 @@ extension ModeActionX on ModeAction {
         ModeAction.next ||
         ModeAction.previous ||
         ModeAction.seek ||
-        ModeAction.volume => true,
+        ModeAction.volume ||
+        ModeAction.seekForward ||
+        ModeAction.seekBackward => true,
         _ => false,
       };
 }
