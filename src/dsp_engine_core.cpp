@@ -2,13 +2,13 @@
  * DSP ENGINE — stereo-linked, crest-aware, 2-band, NEON-ready.
  *
  * Chain:
- *   DC-block → EQ → speaker/bass → headroom → DVC (smoothed)
+ *   DC-block → EQ → speaker/bass → headroom → preamp → DVC (smoothed)
  *   → LR4 crossover (~120 Hz)
  *   → low-band gentle + high-band crest-aware true-peak
  *   → sum → soft-clip
  *
  * Process path never allocates. Look-ahead ~4 ms.
- * Parameter ramps (~8 ms) avoid zipper on volume / headroom / VB.
+ * Parameter ramps (~8 ms) avoid zipper on volume / headroom / VB / preamp.
  */
 #include "dsp_engine.h"
 
@@ -43,7 +43,6 @@ inline float sanitize(float x) {
     return x;
 }
 
-/** One-pole DC blocker (~5-10 Hz). */
 struct DcBlocker {
     float x1 = 0.f;
     float y1 = 0.f;
@@ -68,7 +67,6 @@ struct DcBlocker {
     }
 };
 
-/** Exponential parameter smoother. */
 struct Smoothed {
     float current = 1.f;
     float target = 1.f;
@@ -350,6 +348,7 @@ struct Engine {
     int channels = 2;
     int buffer_frames = kMaxFrames;
     double volume = 1.0;
+    double preamp = 1.0;
     float headroom_gain = 1.0f;
     bool eq_enabled = true;
     bool speaker_mode = false;
@@ -358,6 +357,7 @@ struct Engine {
     Smoothed sm_vol;
     Smoothed sm_hr;
     Smoothed sm_vb;
+    Smoothed sm_pre;
     int band_count = 0;
     double centers[kMaxBands]{};
     double gains[kMaxBands]{};
@@ -464,9 +464,11 @@ struct Engine {
         sm_vol.configure(sample_rate, 8.0f);
         sm_hr.configure(sample_rate, 12.0f);
         sm_vb.configure(sample_rate, 15.0f);
+        sm_pre.configure(sample_rate, 8.0f);
         sm_vol.snap((float)volume);
         sm_hr.snap(headroom_gain);
         sm_vb.snap((float)virtual_bass);
+        sm_pre.snap((float)preamp);
     }
 };
 
@@ -529,6 +531,47 @@ void dsp_set_volume(void* handle, double linear_gain) {
     if (linear_gain > 4.0) linear_gain = 4.0;
     e->volume = linear_gain;
     e->sm_vol.set_target((float)linear_gain);
+}
+
+void dsp_set_preamp(void* handle, double linear_gain) {
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    if (linear_gain < 0.0) linear_gain = 0.0;
+    if (linear_gain > 4.0) linear_gain = 4.0;
+    e->preamp = linear_gain;
+    e->sm_pre.set_target((float)linear_gain);
+}
+
+int dsp_get_info(void* handle, DspInfo* out) {
+    if (!out) return -1;
+    out->version_major = DSP_ENGINE_VERSION_MAJOR;
+    out->version_minor = DSP_ENGINE_VERSION_MINOR;
+    out->version_patch = DSP_ENGINE_VERSION_PATCH;
+    out->sample_rate = 0;
+    out->channels = 0;
+    out->max_bands = kMaxBands;
+    out->max_frames = kMaxFrames;
+    uint32_t f = 0;
+    f |= DSP_FEATURE_EQ;
+    f |= DSP_FEATURE_DVC;
+    f |= DSP_FEATURE_TRUE_PEAK;
+    f |= DSP_FEATURE_STEREO_LINK;
+    f |= DSP_FEATURE_TWO_BAND;
+    f |= DSP_FEATURE_DC_BLOCK;
+    f |= DSP_FEATURE_PARAM_RAMP;
+    f |= DSP_FEATURE_CREST_RELEASE;
+    f |= DSP_FEATURE_SPEAKER_VB;
+    f |= DSP_FEATURE_PREAMP;
+#if DSP_NEON
+    f |= DSP_FEATURE_NEON;
+#endif
+    out->features = f;
+    if (handle) {
+        auto* e = static_cast<Engine*>(handle);
+        out->sample_rate = e->sample_rate;
+        out->channels = e->channels;
+    }
+    return 0;
 }
 
 void dsp_eq_set_enabled(void* handle, bool enabled) {
@@ -606,6 +649,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
         const float vol = e->sm_vol.next();
         const float hr = e->sm_hr.next();
         const float vb = e->sm_vb.next();
+        const float pre = e->sm_pre.next();
 
         float delayed_lo[kMaxCh] = {};
         float delayed_hi[kMaxCh] = {};
@@ -631,7 +675,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                 }
             }
 
-            s = sanitize(s * hr * vol);
+            s = sanitize(s * hr * pre * vol);
 
             float lo, hi;
             e->xover[c].process(s, &lo, &hi);
