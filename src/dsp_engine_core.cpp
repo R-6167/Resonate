@@ -1,8 +1,13 @@
 /**
- * DSP ENGINE — stereo-linked bass-aware true-peak limiter.
+ * DSP ENGINE — stereo-linked, crest-aware, 2-band, NEON-ready.
  *
- * Chain: EQ → speaker/bass → partial headroom → DVC → stereo-linked true-peak → soft-clip
- * All buffers owned by the handle; process path never allocates.
+ * Chain:
+ *   EQ → speaker/bass → partial headroom → DVC
+ *   → LR4 crossover (~120 Hz)
+ *   → low-band gentle dynamics + high-band stereo-linked true-peak
+ *   → sum → soft-clip
+ *
+ * Process path never allocates. Look-ahead ~4 ms.
  */
 #include "dsp_engine.h"
 
@@ -13,6 +18,13 @@
 #include <cstdlib>
 #include <time.h>
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#include <arm_neon.h>
+#define DSP_NEON 1
+#else
+#define DSP_NEON 0
+#endif
+
 namespace {
 
 constexpr int kMaxBands = 31;
@@ -21,6 +33,7 @@ constexpr int kMaxFrames = 4096;
 constexpr size_t kAlign = 64;
 constexpr int kOsFactor = 4;
 constexpr int kMaxLookahead = 512;
+constexpr float kXoverHz = 120.0f;
 
 inline float sanitize(float x) {
     if (!std::isfinite(x)) return 0.f;
@@ -33,6 +46,7 @@ struct Biquad {
     double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
     double z1 = 0, z2 = 0;
     void reset() { z1 = z2 = 0; }
+
     float process(float x) {
         x = sanitize(x);
         const double y = b0 * x + z1;
@@ -40,6 +54,7 @@ struct Biquad {
         z2 = b2 * x - a2 * y;
         return sanitize(static_cast<float>(y));
     }
+
     void setPeaking(double sr, double freq, double gainDb, double q) {
         if (freq < 20.0) freq = 20.0;
         if (freq > sr * 0.49) freq = sr * 0.49;
@@ -59,6 +74,7 @@ struct Biquad {
         b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
         a1 = a1n / a0n; a2 = a2n / a0n;
     }
+
     void setHighPass(double sr, double freq) {
         if (freq < 10.0) freq = 10.0;
         const double w0 = 2.0 * M_PI * freq / sr;
@@ -74,6 +90,7 @@ struct Biquad {
         b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
         a1 = a1n / a0n; a2 = a2n / a0n;
     }
+
     void setLowPass(double sr, double freq) {
         if (freq < 20.0) freq = 20.0;
         const double w0 = 2.0 * M_PI * freq / sr;
@@ -88,6 +105,60 @@ struct Biquad {
         const double a2n = 1.0 - alpha;
         b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
         a1 = a1n / a0n; a2 = a2n / a0n;
+    }
+
+    void setButterLP(double sr, double freq, double q) {
+        if (freq < 20.0) freq = 20.0;
+        if (q < 0.1) q = 0.707;
+        const double w0 = 2.0 * M_PI * freq / sr;
+        const double cosw = std::cos(w0);
+        const double sinw = std::sin(w0);
+        const double alpha = sinw / (2.0 * q);
+        const double b0n = (1.0 - cosw) / 2.0;
+        const double b1n = 1.0 - cosw;
+        const double b2n = (1.0 - cosw) / 2.0;
+        const double a0n = 1.0 + alpha;
+        const double a1n = -2.0 * cosw;
+        const double a2n = 1.0 - alpha;
+        b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
+        a1 = a1n / a0n; a2 = a2n / a0n;
+    }
+
+    void setButterHP(double sr, double freq, double q) {
+        if (freq < 10.0) freq = 10.0;
+        if (q < 0.1) q = 0.707;
+        const double w0 = 2.0 * M_PI * freq / sr;
+        const double cosw = std::cos(w0);
+        const double sinw = std::sin(w0);
+        const double alpha = sinw / (2.0 * q);
+        const double b0n = (1.0 + cosw) / 2.0;
+        const double b1n = -(1.0 + cosw);
+        const double b2n = (1.0 + cosw) / 2.0;
+        const double a0n = 1.0 + alpha;
+        const double a1n = -2.0 * cosw;
+        const double a2n = 1.0 - alpha;
+        b0 = b0n / a0n; b1 = b1n / a0n; b2 = b2n / a0n;
+        a1 = a1n / a0n; a2 = a2n / a0n;
+    }
+};
+
+struct LR4Crossover {
+    Biquad lp1, lp2, hp1, hp2;
+
+    void configure(double sr, double freq) {
+        const double q = 0.7071067811865476;
+        lp1.setButterLP(sr, freq, q);
+        lp2.setButterLP(sr, freq, q);
+        hp1.setButterHP(sr, freq, q);
+        hp2.setButterHP(sr, freq, q);
+        lp1.reset(); lp2.reset(); hp1.reset(); hp2.reset();
+    }
+
+    void process(float x, float* low_out, float* high_out) {
+        float lo = lp2.process(lp1.process(x));
+        float hi = hp2.process(hp1.process(x));
+        *low_out = lo;
+        *high_out = -hi;
     }
 };
 
@@ -152,8 +223,11 @@ struct LookaheadDetector {
 struct LinkedLimiter {
     float ceiling = 0.9440609f;
     float attack_coeff = 0.f;
-    float release_coeff = 0.f;
+    float release_fast = 0.f;
+    float release_slow = 0.f;
     float envelope = 0.f;
+    float avg = 0.f;
+    float avg_coeff = 0.f;
     float gain = 1.f;
 
     void configure(int sample_rate, float attack_ms, float release_ms, float ceiling_db) {
@@ -161,29 +235,42 @@ struct LinkedLimiter {
         const float atk = std::max(0.05f, attack_ms) * 0.001f;
         const float rel = std::max(1.0f, release_ms) * 0.001f;
         attack_coeff = std::exp(-1.0f / (atk * (float)sample_rate));
-        release_coeff = std::exp(-1.0f / (rel * (float)sample_rate));
+        release_fast = std::exp(-1.0f / (rel * (float)sample_rate));
+        release_slow = std::exp(-1.0f / (rel * 2.5f * (float)sample_rate));
+        avg_coeff = std::exp(-1.0f / (0.050f * (float)sample_rate));
         ceiling = std::pow(10.0f, ceiling_db / 20.0f);
         if (ceiling > 0.995f) ceiling = 0.995f;
         if (ceiling < 0.1f) ceiling = 0.1f;
         envelope = 0.f;
+        avg = 0.f;
         gain = 1.f;
     }
 
     float update(float linked_peak) {
+        avg = avg_coeff * avg + (1.0f - avg_coeff) * linked_peak;
+        const float crest = linked_peak / (avg + 1e-6f);
+        float rel_blend = (crest - 1.0f) * 0.5f;
+        if (rel_blend < 0.f) rel_blend = 0.f;
+        if (rel_blend > 1.f) rel_blend = 1.f;
+        const float release_coeff = release_slow + (release_fast - release_slow) * rel_blend;
+
         if (linked_peak > envelope) {
             envelope = attack_coeff * envelope + (1.0f - attack_coeff) * linked_peak;
             if (linked_peak > envelope) envelope = linked_peak;
         } else {
             envelope = release_coeff * envelope + (1.0f - release_coeff) * linked_peak;
         }
+
         float target = 1.f;
         if (envelope > ceiling && envelope > 1e-8f)
             target = ceiling / envelope;
         if (target < 0.08f) target = 0.08f;
+
         if (target < gain)
             gain = attack_coeff * gain + (1.0f - attack_coeff) * target;
         else
             gain = release_coeff * gain + (1.0f - release_coeff) * target;
+
         return gain;
     }
 };
@@ -196,6 +283,20 @@ inline float soft_clip(float x, float knee_start) {
     const float y = knee_start + over / (1.0f + over * 3.5f);
     return s * (y > 0.985f ? 0.985f : y);
 }
+
+#if DSP_NEON
+inline void soft_clip_stereo(float s0, float s1, float knee, float* o0, float* o1) {
+    float32x2_t v = {s0, s1};
+    float tmp[2];
+    vst1_f32(tmp, v);
+    *o0 = soft_clip(sanitize(tmp[0]), knee);
+    *o1 = soft_clip(sanitize(tmp[1]), knee);
+    if (*o0 > 1.f) *o0 = 1.f;
+    if (*o0 < -1.f) *o0 = -1.f;
+    if (*o1 > 1.f) *o1 = 1.f;
+    if (*o1 < -1.f) *o1 = -1.f;
+}
+#endif
 
 struct Engine {
     int sample_rate = 44100;
@@ -213,11 +314,16 @@ struct Engine {
     Biquad hpf[kMaxCh];
     Biquad bass_lp[kMaxCh];
     Biquad bass_bp[kMaxCh];
-    LookaheadDetector detector[kMaxCh];
-    LinkedLimiter linked_lim;
+    LR4Crossover xover[kMaxCh];
+    LookaheadDetector det_low[kMaxCh];
+    LookaheadDetector det_high[kMaxCh];
+    LinkedLimiter lim_low;
+    LinkedLimiter lim_high;
+
     float* scratch_in = nullptr;
     float* scratch_out = nullptr;
     size_t scratch_floats = 0;
+
     int64_t process_calls = 0;
     int64_t total_ns = 0;
     int64_t max_ns = 0;
@@ -279,14 +385,25 @@ struct Engine {
         }
     }
 
-    void rebuildLimiter() {
-        const float atk = speaker_mode ? 1.2f : 2.0f;
-        const float rel = speaker_mode ? 140.0f : 200.0f;
-        const float ceil_db = speaker_mode ? -1.0f : -0.5f;
-        const float la_ms = 4.0f;
-        linked_lim.configure(sample_rate, atk, rel, ceil_db);
+    void rebuildXover() {
         for (int c = 0; c < channels; ++c)
-            detector[c].configure(sample_rate, la_ms);
+            xover[c].configure((double)sample_rate, kXoverHz);
+    }
+
+    void rebuildLimiter() {
+        const float atk_h = speaker_mode ? 1.2f : 2.0f;
+        const float rel_h = speaker_mode ? 140.0f : 200.0f;
+        const float ceil_h = speaker_mode ? -1.0f : -0.5f;
+        const float atk_l = speaker_mode ? 2.0f : 3.0f;
+        const float rel_l = speaker_mode ? 220.0f : 320.0f;
+        const float ceil_l = speaker_mode ? -0.5f : -0.2f;
+        const float la_ms = 4.0f;
+        lim_high.configure(sample_rate, atk_h, rel_h, ceil_h);
+        lim_low.configure(sample_rate, atk_l, rel_l, ceil_l);
+        for (int c = 0; c < channels; ++c) {
+            det_high[c].configure(sample_rate, la_ms);
+            det_low[c].configure(sample_rate, la_ms);
+        }
     }
 };
 
@@ -317,6 +434,7 @@ void* dsp_create(const DspConfig* config) {
     }
     e->rebuildEq();
     e->rebuildSpeakerFilters();
+    e->rebuildXover();
     e->rebuildLimiter();
     return e;
 }
@@ -422,15 +540,19 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     const float knee = speaker ? 0.86f : 0.93f;
 
     for (int i = 0; i < frames; ++i) {
-        float delayed[kMaxCh];
-        float peaks[kMaxCh];
+        float delayed_lo[kMaxCh];
+        float delayed_hi[kMaxCh];
+        float peaks_lo[kMaxCh];
+        float peaks_hi[kMaxCh];
 
         for (int c = 0; c < ch; ++c) {
             float s = sanitize(in[i * ch + c]);
+
             if (eq) {
                 for (int b = 0; b < e->band_count; ++b)
                     s = e->bands[b][c].process(s);
             }
+
             if (speaker) {
                 const float deep = e->bass_lp[c].process(s);
                 s = e->hpf[c].process(s);
@@ -441,22 +563,49 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                     s += h * (0.42f * vb);
                 }
             }
+
             s = sanitize(s * hr * vol);
-            delayed[c] = e->detector[c].feed(s, &peaks[c]);
+
+            float lo, hi;
+            e->xover[c].process(s, &lo, &hi);
+            delayed_lo[c] = e->det_low[c].feed(lo, &peaks_lo[c]);
+            delayed_hi[c] = e->det_high[c].feed(hi, &peaks_hi[c]);
         }
 
-        float linked = peaks[0];
+        float link_lo = peaks_lo[0];
+        float link_hi = peaks_hi[0];
         for (int c = 1; c < ch; ++c) {
-            if (peaks[c] > linked) linked = peaks[c];
+            if (peaks_lo[c] > link_lo) link_lo = peaks_lo[c];
+            if (peaks_hi[c] > link_hi) link_hi = peaks_hi[c];
         }
-        const float gr = e->linked_lim.update(linked);
+        const float gr_lo = e->lim_low.update(link_lo);
+        const float gr_hi = e->lim_high.update(link_hi);
 
-        for (int c = 0; c < ch; ++c) {
-            float s = sanitize(delayed[c] * gr);
-            s = soft_clip(s, knee);
-            if (s > 1.0f) s = 1.0f;
-            if (s < -1.0f) s = -1.0f;
-            out[i * ch + c] = s;
+        if (ch == 2) {
+#if DSP_NEON
+            const float sum0 = delayed_lo[0] * gr_lo + delayed_hi[0] * gr_hi;
+            const float sum1 = delayed_lo[1] * gr_lo + delayed_hi[1] * gr_hi;
+            float o0, o1;
+            soft_clip_stereo(sum0, sum1, knee, &o0, &o1);
+            out[i * 2] = o0;
+            out[i * 2 + 1] = o1;
+#else
+            for (int c = 0; c < 2; ++c) {
+                float s = sanitize(delayed_lo[c] * gr_lo + delayed_hi[c] * gr_hi);
+                s = soft_clip(s, knee);
+                if (s > 1.0f) s = 1.0f;
+                if (s < -1.0f) s = -1.0f;
+                out[i * 2 + c] = s;
+            }
+#endif
+        } else {
+            for (int c = 0; c < ch; ++c) {
+                float s = sanitize(delayed_lo[c] * gr_lo + delayed_hi[c] * gr_hi);
+                s = soft_clip(s, knee);
+                if (s > 1.0f) s = 1.0f;
+                if (s < -1.0f) s = -1.0f;
+                out[i * ch + c] = s;
+            }
         }
     }
 
