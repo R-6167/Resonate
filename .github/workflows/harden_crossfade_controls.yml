@@ -1,0 +1,24 @@
+name: Harden crossfade controls
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/harden_crossfade_controls.py"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+      - run: python3 tools/harden_crossfade_controls.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "fix: crossfade cancel idle-only, gates, seek aborts fade"
+          git push origin modes_on_dj_v2
