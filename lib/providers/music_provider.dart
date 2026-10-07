@@ -29,6 +29,10 @@ import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/playback_coordinator.dart';
+import '../modes/models/media_type.dart';
+import '../modes/models/mode_media_item.dart';
+import '../modes/providers/mode_provider.dart';
+import '../modes/services/podcast_session_bridge.dart';
 
 /// Resonate playback core — public contract (Phase 0)
 ///
@@ -52,6 +56,8 @@ class MusicProvider extends ChangeNotifier {
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
   final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
+  final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
+  ModeProvider? _modes;
   late final AudioEffectsController _audioEffectsController;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
   late final AudioPlayer _playerA;
@@ -195,6 +201,21 @@ class MusicProvider extends ChangeNotifier {
   bool get modeCrossfadeAllowed => _modeCrossfadeAllowed;
   bool get modeShuffleAllowed => _modeShuffleAllowed;
   bool get modePreciseResume => _modePreciseResume;
+
+  void attachModes(ModeProvider modes) {
+    _modes?.removeListener(_onModesChangedForSessions);
+    _modes = modes;
+    modes.addListener(_onModesChangedForSessions);
+    _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
+  }
+
+  void _onModesChangedForSessions() {
+    final modes = _modes;
+    if (modes == null) return;
+    _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
+  }
+
+  bool get podcastSessionActive => _podcastSession.isActive;
   /// User setting AND mode policy both allow crossfade.
   bool get effectiveCrossfadeEnabled =>
       _crossfadeEnabled && _modeCrossfadeAllowed;
@@ -2072,6 +2093,7 @@ class MusicProvider extends ChangeNotifier {
       'repeatMode': _repeatMode.name,
     });
     try {
+      _podcastSession.onCompleted(currentPosition);
       await _finishHistoryEvent(completed: true);
       if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
         // Only defer while soft-loop is *actually* running (not stuck flags).
@@ -2397,6 +2419,11 @@ class MusicProvider extends ChangeNotifier {
 
       // Pin UI to the song we intend to play before any native load races.
       currentSong = selectedSong;
+      _podcastSession.onSongStarted(
+        modes: _modes,
+        song: selectedSong,
+        resumePosition: resume ? Duration(milliseconds: _resumePositionMs) : null,
+      );
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentDuration = selectedSong.duration;
@@ -3960,6 +3987,7 @@ class MusicProvider extends ChangeNotifier {
   /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
   /// Never toggles; never pauses.
   Future<void> resumePlayback({String source = 'normal_player'}) {
+    _podcastSession.onResumed(currentPosition);
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
@@ -4092,6 +4120,7 @@ class MusicProvider extends ChangeNotifier {
         isPlaying = false;
         _isDucked = false;
         _persistResumePosition(force: true);
+        _podcastSession.onPaused(currentPosition);
         _publishServiceState();
         notifyListeners();
         await ResonateDiagnostics.record('audio_focus_pause', {
@@ -4111,6 +4140,7 @@ class MusicProvider extends ChangeNotifier {
     return _serializePlayback(() async {
       if (!_playbackIntentGate.isCurrent(intentToken)) return;
       _userWantsPlaying = false;
+      _podcastSession.onStopped(currentPosition);
       await _finishHistoryEvent();
       await _stopBoth();
       isPlaying = false;
@@ -4418,6 +4448,7 @@ class MusicProvider extends ChangeNotifier {
   void dispose() {
     _systemVolumePollTimer?.cancel();
     _endOfTrackWatchdog?.cancel();
+    _modes?.removeListener(_onModesChangedForSessions);
     _playerStateSubscription?.cancel();
     _positionSubscription?.cancel();
     _durationSubscription?.cancel();

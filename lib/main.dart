@@ -290,6 +290,7 @@ class ResonateApp extends StatelessWidget {
             modes.attachContext(
               ResonateModeContextPort(context.read<BluetoothProvider>()),
             );
+            context.read<MusicProvider>().attachModes(modes);
             context.read<IntelligenceProvider>().attachModes(modes);
             return modes;
           },
