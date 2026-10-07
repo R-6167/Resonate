@@ -1,28 +1,19 @@
 # DSP ENGINE
 
-Standalone ultra-low-latency 64-bit audio processing engine with a C ABI.
+Ultra-low-latency 64-bit audio processing engine (C ABI).
+
+> Branch `Wire_dsp_engine` is **DSP ENGINE only**.
 
 ## Features
 
-- Multi-band peaking EQ (RBJ biquads)
-- Direct volume control
-- Automatic headroom management
-- Bass-aware true-peak limiting with 4× inter-sample detection and look-ahead
-- Stereo-linked gain reduction
-- Speaker mode and psychoacoustic virtual bass
+- Multi-band peaking EQ (RBJ) + DVC
+- Partial auto-headroom (preserves loud bass)
+- **Crest-aware** stereo-linked true-peak limiters
+- **2-band LR4** dynamics (~120 Hz split)
+- **NEON** path on ARM
+- Speaker mode + virtual bass
 - Offline bass stress harness
-- No heap allocation on the audio processing path
-
-## Layout
-
-```
-include/dsp_engine.h       Public C ABI
-src/dsp_engine_core.cpp    Engine core
-src/dsp_stress.cpp         Offline stress suite
-tools/stress_main.cpp      CLI stress runner
-docs/                      Engine design and validation notes
-CMakeLists.txt             Standalone build
-```
+- No heap allocation on the process path
 
 ## Build
 
@@ -32,23 +23,14 @@ cmake --build build -j
 ./build/dsp_stress_runner
 ```
 
-## Processing chain
+## Chain
 
 ```
-EQ → speaker/bass → partial headroom → DVC → stereo-linked true-peak → soft-clip
+EQ → speaker/bass → headroom → DVC
+  → LR4 @ 120 Hz
+  → low (gentle) + high (tight) crest-aware limiters
+  → sum → soft-clip
 ```
-
-## C API
-
-Include `dsp_engine.h` and use `dsp_create()`, `dsp_start()`, `dsp_process()`, and `dsp_destroy()`.
-
-The engine supports both floating-point interleaved audio and an in-place PCM16 processing path.
-
-## Validation
-
-The built-in stress suite checks finite output, peak containment, bass-heavy cases, speaker mode, virtual bass, and transient handling.
-
-See `docs/` for the detailed DSP notes.
 
 ## License
 
