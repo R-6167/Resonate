@@ -29,8 +29,7 @@ import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/playback_coordinator.dart';
-import '../modes/models/media_type.dart';
-import '../modes/models/mode_media_item.dart';
+import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
 
@@ -57,6 +56,7 @@ class MusicProvider extends ChangeNotifier {
   final PlaybackIntentGate _playbackIntentGate = PlaybackIntentGate();
   final PlaybackCoordinator _playbackCoordinator = PlaybackCoordinator();
   final PodcastSessionBridge _podcastSession = PodcastSessionBridge();
+  final AudiobookSessionBridge _audiobookSession = AudiobookSessionBridge();
   ModeProvider? _modes;
   late final AudioEffectsController _audioEffectsController;
   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
@@ -207,6 +207,7 @@ class MusicProvider extends ChangeNotifier {
     _modes = modes;
     modes.addListener(_onModesChangedForSessions);
     _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
+    _audiobookSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
   }
 
   void _onModesChangedForSessions() {
@@ -216,6 +217,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   bool get podcastSessionActive => _podcastSession.isActive;
+  bool get audiobookSessionActive => _audiobookSession.isActive;
   /// User setting AND mode policy both allow crossfade.
   bool get effectiveCrossfadeEnabled =>
       _crossfadeEnabled && _modeCrossfadeAllowed;
@@ -2094,6 +2096,7 @@ class MusicProvider extends ChangeNotifier {
     });
     try {
       _podcastSession.onCompleted(currentPosition);
+    _audiobookSession.onCompleted(currentPosition);
       await _finishHistoryEvent(completed: true);
       if (_repeatMode == PlaybackRepeatMode.one && currentSong != null) {
         // Only defer while soft-loop is *actually* running (not stuck flags).
@@ -3988,6 +3991,7 @@ class MusicProvider extends ChangeNotifier {
   /// Never toggles; never pauses.
   Future<void> resumePlayback({String source = 'normal_player'}) {
     _podcastSession.onResumed(currentPosition);
+    _audiobookSession.onResumed(currentPosition);
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
@@ -4121,6 +4125,7 @@ class MusicProvider extends ChangeNotifier {
         _isDucked = false;
         _persistResumePosition(force: true);
         _podcastSession.onPaused(currentPosition);
+    _audiobookSession.onPaused(currentPosition);
         _publishServiceState();
         notifyListeners();
         await ResonateDiagnostics.record('audio_focus_pause', {
@@ -4141,6 +4146,7 @@ class MusicProvider extends ChangeNotifier {
       if (!_playbackIntentGate.isCurrent(intentToken)) return;
       _userWantsPlaying = false;
       _podcastSession.onStopped(currentPosition);
+    _audiobookSession.onStopped(currentPosition);
       await _finishHistoryEvent();
       await _stopBoth();
       isPlaying = false;
