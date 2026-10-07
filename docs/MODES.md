@@ -97,9 +97,12 @@ rest of Resonate.
 - [x] **`ModeInteractionGuard` in real UI** (Running two-finger transport) — Running’s two-finger / no
   long-press / no horizontal swipe contract is not enforced on player gestures.
 - [x] **Classifier for mode-generated content** — folder routing and overrides
-  feed mode shelves/playlist generation and Autopilot bias. The canonical
-  Library deliberately remains outside this gate; direct library playback
-  keeps normal user-owned access.
+  feed mode shelves/playlist generation and Autopilot. `ModeContentResolver`
+  is now the strict boundary for generated content: disallowed media types are
+  removed, preferred types are ranked first, and an empty match stays empty
+  rather than falling back to a disallowed item. The canonical Library
+  deliberately remains outside this gate; direct library playback keeps
+  normal user-owned access.
 
 ### P1 — Session coordinators (package exists, host does not call them)
 
@@ -132,9 +135,11 @@ or mode enter/exit today:
 
 ### P2 — Intelligence and automation
 
-- [ ] **Autopilot + Modes authority audit** — bias is fail-open; Modes must not
-  regain the ability to force play after user pause or external focus loss
-  (keep ports soft-only).
+- [x] **Autopilot + Modes authority audit (Stage 1)** — generated Autopilot
+  candidates now pass through the strict ModeContentResolver. An active Mode
+  can remove disallowed generated candidates without gaining authority over
+  the canonical Library or user-owned explicit queue items. Consent and the
+  existing PlaybackAuthority gates remain unchanged.
 - [ ] **DJ + Modes interaction rules** — document when DJ handoffs yield to
   Podcast/Audiobook no-crossfade policy and when DJ aggressiveness is clamped
   in Driving/Work.
@@ -171,4 +176,4 @@ or mode enter/exit today:
 | Date | Note |
 |------|------|
 | 2026-10-06 | Package copied onto `modes_on_dj_v2`; ports + ModeProvider + Autopilot bias; missing-features section added. |
-| 2026-10-07 | Stage 0 hardening: fixed DJ handoff gate recursion, wired Harmonic Mix, made CrossfadeProvider the persisted preference authority, and clarified that Modes never owns/filters the canonical Library. |
+| 2026-10-07 | Stage 0 hardening: fixed DJ handoff gate recursion, wired Harmonic Mix, made CrossfadeProvider the persisted preference authority, and clarified that Modes never owns/filters the canonical Library. |\n| 2026-10-07 | Stage 1: added `ModeContentResolver`, connected Intelligence recommendations and Autopilot-generated candidates to strict mode content selection, and kept canonical Library/direct user queues outside the Mode filter. |
