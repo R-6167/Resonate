@@ -18,6 +18,7 @@ Song _book() => Song(
       album: 'Book',
       filePath: '/media/audiobooks/book-1.m4b',
       duration: const Duration(hours: 1),
+      dateAdded: DateTime(2026, 10, 1),
     );
 
 void main() {
