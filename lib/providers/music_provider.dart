@@ -214,6 +214,7 @@ class MusicProvider extends ChangeNotifier {
     final modes = _modes;
     if (modes == null) return;
     _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
+    _audiobookSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
   }
 
   bool get podcastSessionActive => _podcastSession.isActive;
@@ -2423,6 +2424,11 @@ class MusicProvider extends ChangeNotifier {
       // Pin UI to the song we intend to play before any native load races.
       currentSong = selectedSong;
       _podcastSession.onSongStarted(
+        modes: _modes,
+        song: selectedSong,
+        resumePosition: resume ? Duration(milliseconds: _resumePositionMs) : null,
+      );
+      _audiobookSession.onSongStarted(
         modes: _modes,
         song: selectedSong,
         resumePosition: resume ? Duration(milliseconds: _resumePositionMs) : null,
