@@ -43,6 +43,12 @@ android {
         jvmTarget = "17"
     }
 
+    // JVM unit tests exercise Android-facing DSP classes without a device. Android framework
+    // stubs such as android.util.Log otherwise throw "Method ... not mocked" at runtime.
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
     buildTypes {
         release {
             minifyEnabled false
