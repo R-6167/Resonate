@@ -13,6 +13,7 @@ import 'intelligence_provider.dart';
 import 'music_provider.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/models/mode_media_item.dart';
+import '../modes/services/mode_content_resolver.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
@@ -23,6 +24,7 @@ class AutopilotController extends ChangeNotifier {
   final IntelligenceProvider intelligence;
   final ModeProvider? modes;
   final IntelligenceDecisionEngine _decisionEngine = const IntelligenceDecisionEngine();
+  final ModeContentResolver _modeContentResolver = const ModeContentResolver();
   final PlaybackAuthority _authority = PlaybackAuthority.instance;
   bool _queueDecisionInFlight = false;
   bool _transitionInFlight = false;
@@ -282,22 +284,17 @@ class AutopilotController extends ChangeNotifier {
         artist: song.artist,
       );
 
-  /// Soft mode bias: drop disallowed types, prefer preferred types. Never forces play.
+  /// Resolves generated Autopilot candidates against the active Mode.
+  /// An active Mode is strict for generated content: if nothing matches, we
+  /// return an empty set rather than leaking an avoided media type.
   List<Song> _applyModeBias(List<Song> songs) {
     final m = modes;
     if (m == null || songs.isEmpty) return songs;
-    final allowed = <Song>[];
-    for (final s in songs) {
-      final item = _asModeItem(s);
-      if (m.isAcceptableForAutopilot(item)) allowed.add(s);
-    }
-    if (allowed.isEmpty) return songs; // fail open so Autopilot is not starved
-    allowed.sort((a, b) {
-      final sb = m.contentBiasScore(_asModeItem(b));
-      final sa = m.contentBiasScore(_asModeItem(a));
-      return sb.compareTo(sa);
-    });
-    return allowed;
+    return _modeContentResolver.resolve(
+      modes: m,
+      songs: songs,
+      preferPreferredContent: true,
+    );
   }
 
   Future<void> _ensurePredictedQueue(double threshold) async {
