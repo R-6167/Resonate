@@ -376,13 +376,14 @@ struct ControlQueue {
     static constexpr uint32_t kCapacity = 128;
     ControlCommand commands[kCapacity];
     std::atomic<uint32_t> head{0};
-    uint32_t tail = 0;
+    std::atomic<uint32_t> tail{0};
     std::mutex producer_mutex;
 
     bool push(const ControlCommand& command) {
         std::lock_guard<std::mutex> lock(producer_mutex);
         const uint32_t h = head.load(std::memory_order_relaxed);
-        if (h - tail >= kCapacity) return false;
+        const uint32_t t = tail.load(std::memory_order_acquire);
+        if (h - t >= kCapacity) return false;
         commands[h % kCapacity] = command;
         head.store(h + 1, std::memory_order_release);
         return true;
@@ -514,9 +515,10 @@ struct Engine {
 
     void applyControlCommands() {
         const uint32_t head = control_queue.head.load(std::memory_order_acquire);
-        while (control_queue.tail != head) {
+        uint32_t tail = control_queue.tail.load(std::memory_order_relaxed);
+        while (tail != head) {
             const ControlCommand& cmd =
-                control_queue.commands[control_queue.tail % ControlQueue::kCapacity];
+                control_queue.commands[tail % ControlQueue::kCapacity];
             switch (cmd.type) {
                 case ControlType::Volume:
                     volume = cmd.value0;
@@ -569,7 +571,8 @@ struct Engine {
                     rebuildXover();
                     break;
             }
-            ++control_queue.tail;
+            ++tail;
+            control_queue.tail.store(tail, std::memory_order_release);
         }
     }
 
