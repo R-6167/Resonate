@@ -1,0 +1,43 @@
+name: Fix MainActivity DSP preamp channel
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_main_preamp_channel.py"
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+      - run: python3 tools/fix_main_preamp_channel.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo none; exit 0; fi
+          git commit -m "fix(dsp): preamp channel uses applyPreampAll + limiter/crossover"
+          git push origin HEAD:modes_on_dj_v2
+      - name: Trigger APK build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflows = await github.rest.actions.listRepoWorkflows({ owner: context.repo.owner, repo: context.repo.repo, per_page: 100 });
+            const apk = workflows.data.workflows.find(w => w.path.includes('android-apk') || w.name === 'Android APK');
+            if (!apk) { console.log('no apk workflow'); return; }
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: apk.id,
+                ref: 'modes_on_dj_v2',
+              });
+              console.log('dispatched', apk.path);
+            } catch (e) {
+              console.log('dispatch failed', e.message);
+              // fallback: push empty commit won't work; leave note
+            }
