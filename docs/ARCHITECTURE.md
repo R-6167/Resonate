@@ -2,39 +2,30 @@
 
 ## Goals
 
-- Ultra-low latency (small buffers, fixed state, no RT alloc)
-- Loud bass without hard clipping or stereo image shift
+- Ultra-low latency (fixed state, no RT alloc)
+- Loud bass without hard clipping or image shift
 - Portable C ABI
 
 ## Processing chain
 
 ```
-EQ → speaker/bass → partial headroom → DVC
+DC-block (~8 Hz)
+  → EQ → speaker/bass → partial headroom → DVC (smoothed)
   → LR4 crossover (~120 Hz)
   → low-band: gentle crest-aware stereo-linked limiter
   → high-band: tighter crest-aware stereo-linked true-peak
   → sum → soft-clip
 ```
 
-## 1. Crest-aware release
+## Polish
 
-- Tracks slow average of detector peak (~50 ms)
-- Crest = peak / avg
-- High crest (transient) → faster release
-- Low crest (sustained bass) → slower release (less pumping)
-
-## 2. NEON path
-
-- Enabled when `__ARM_NEON` is defined (Android arm64, etc.)
-- Stereo soft-clip / final stage uses NEON loads
-- Scalar fallback on x86/desktop
-
-## 3. 2-band dynamics (LR4 @ 120 Hz)
-
-- Linkwitz-Riley 4th-order split (two Butterworth 2nd-order stages)
-- **Low band**: open ceiling (−0.2 / −0.5 dB), slower release → bass can be loud
-- **High band**: tighter ceiling (−0.5 / −1.0 dB) → mids/highs stay clean
-- Each band stereo-linked independently
+| Feature | Detail |
+|---------|--------|
+| **DC blocker** | 1-pole HPF ~8 Hz per channel, first in chain |
+| **Parameter ramps** | Exp smooth: volume 8 ms, headroom 12 ms, virtual bass 15 ms |
+| **Crest-aware release** | Transient = faster release; sustained = slower |
+| **NEON** | ARM stereo soft-clip path; scalar fallback |
+| **2-band LR4** | Low open ceiling; high tighter |
 
 ## Real-time rules
 

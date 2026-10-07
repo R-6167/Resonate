@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(dsp_engine VERSION 0.3.0 LANGUAGES CXX)
+project(dsp_engine VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,8 @@ target_compile_options(dsp_engine PRIVATE
     -O3
     -fno-exceptions
     -fno-rtti
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra>
+    -Wall
+    -Wextra
 )
 
 add_executable(dsp_stress_runner tools/stress_main.cpp)
