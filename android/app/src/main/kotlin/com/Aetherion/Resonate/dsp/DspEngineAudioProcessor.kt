@@ -29,13 +29,6 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         private const val TAG = "DspEngineAudioProcessor"
 
         private val jniApi = object : NativeDspApi {
-            fun create(sampleRate: Double, channels: Int): Long
-            fun destroy(handle: Long)
-            fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
-            fun setEnabled(handle: Long, enabled: Boolean)
-        }
-
-        private val jniApi = object : NativeDspApi {
             override fun create(sampleRate: Double, channels: Int): Long =
                 DspEngineJni.nativeCreate(sampleRate, channels)
             override fun destroy(handle: Long) = DspEngineJni.nativeDestroy(handle)
