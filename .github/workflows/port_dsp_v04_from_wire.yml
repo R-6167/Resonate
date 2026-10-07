@@ -16,41 +16,30 @@ jobs:
           ref: modes_on_dj_v2
           fetch-depth: 0
 
-      - name: Fetch Wire_dsp_engine tree
-        run: |
-          git fetch origin Wire_dsp_engine:wire_dsp --depth=1
-          rm -rf /tmp/wire_dsp
-          git archive wire_dsp | tar -x -C /tmp -f - 2>/dev/null || true
-          # archive extracts to cwd files - use worktree instead
-          git worktree add /tmp/wire_dsp wire_dsp
-
-      - name: Copy package + native sources
+      - name: Import v0.4 tree from Wire_dsp_engine
         run: |
           set -e
-          WIRE=/tmp/wire_dsp
-          # Flutter package
-          mkdir -p packages
-          rm -rf packages/dsp_engine
-          cp -a "$WIRE/packages/dsp_engine" packages/
-          # Root include/src for package CMake (package looks 6 levels up)
-          mkdir -p include src
-          cp -f "$WIRE/include/dsp_engine.h" include/
-          cp -f "$WIRE/src/dsp_engine_core.cpp" src/
-          cp -f "$WIRE/src/dsp_stress.cpp" src/ 2>/dev/null || true
-          # App live path (just_audio AudioProcessor / JNI)
-          cp -f "$WIRE/include/dsp_engine.h" android/app/src/main/cpp/dsp_engine.h
-          cp -f "$WIRE/src/dsp_engine_core.cpp" android/app/src/main/cpp/dsp_engine_core.cpp
-          if [ -f "$WIRE/src/dsp_stress.cpp" ]; then
-            cp -f "$WIRE/src/dsp_stress.cpp" android/app/src/main/cpp/dsp_stress.cpp
-          fi
-          # Docs
-          mkdir -p docs
-          for f in DSP_STABILIZATION.md DSP_TRUE_PEAK.md DSP_BASS_STRESS.md; do
-            [ -f "$WIRE/docs/$f" ] && cp -f "$WIRE/docs/$f" docs/
-          done
-          echo "Copied v0.4 sources"
+          git fetch origin Wire_dsp_engine --depth=1
+          # Package + root native sources as shipped on Wire
+          git checkout origin/Wire_dsp_engine -- \
+            packages/dsp_engine \
+            include/dsp_engine.h \
+            src/dsp_engine_core.cpp \
+            src/dsp_stress.cpp \
+            docs/DSP_STABILIZATION.md \
+            docs/DSP_TRUE_PEAK.md \
+            docs/DSP_BASS_STRESS.md || true
+          # Ensure paths exist after partial checkout
+          test -f include/dsp_engine.h
+          test -f src/dsp_engine_core.cpp
+          test -d packages/dsp_engine
+          # Live app process path (AudioProcessor / JNI)
+          cp -f include/dsp_engine.h android/app/src/main/cpp/dsp_engine.h
+          cp -f src/dsp_engine_core.cpp android/app/src/main/cpp/dsp_engine_core.cpp
+          cp -f src/dsp_stress.cpp android/app/src/main/cpp/dsp_stress.cpp
+          echo "Imported DSP ENGINE v0.4 sources"
 
-      - name: Patch pubspec + JNI + bridge
+      - name: Patch pubspec JNI bridge
         run: bash tools/port_dsp_v04_from_wire.sh
 
       - name: Commit
@@ -59,5 +48,5 @@ jobs:
           git config user.email "bot@resonate.local"
           git add -A
           if git diff --staged --quiet; then echo No changes; exit 0; fi
-          git commit -m "feat(dsp): port ENGINE v0.4 from Wire_dsp_engine (package + live path)"
+          git commit -m "feat(dsp): ENGINE v0.4 process path from Wire_dsp_engine"
           git push origin modes_on_dj_v2
