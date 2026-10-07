@@ -245,8 +245,10 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             engineHandle = 0L
             DspEngineRegistry.unregister(processorId)
             try {
-                DspEngineJni.nativeDestroy(h)
-            } catch (_: Throwable) { }
+                nativeApi.destroy(h)
+            } catch (t: Throwable) {
+                Log.w(TAG, "id=$processorId nativeDestroy failed", t)
+            }
         }
     }
 }
