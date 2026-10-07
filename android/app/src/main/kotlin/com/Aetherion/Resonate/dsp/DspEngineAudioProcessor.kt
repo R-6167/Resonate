@@ -148,7 +148,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         } catch (t: Throwable) {
             Log.e(TAG, "id=$processorId process exception — pass-through buffer intact", t)
             consecutiveProcessErrors++
-            if (consecutiveProcessErrors >= DspSessionGate.MAX_PROCESS_ERRORS) {
+            if (consecutiveProcessErrors >= MAX_PROCESS_ERRORS) {
                 demoteToPassThrough("process_exception")
             }
         }
