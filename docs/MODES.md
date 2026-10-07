@@ -82,7 +82,7 @@ rest of Resonate.
 - [x] **`uiDensity` enforcement** (player transport + chrome) — `PlaybackPolicy.uiDensity` and
   `InteractionPolicy` are not applied to player transport, lists, or settings
   density (Driving/Running large targets, reduced chrome).
-- [ ] **`ModeInteractionGuard` in real UI** — Running’s two-finger / no
+- [x] **`ModeInteractionGuard` in real UI** (Running two-finger transport) — Running’s two-finger / no
   long-press / no horizontal swipe contract is not enforced on player gestures.
 - [ ] **Classifier on the play path** — folder routing and overrides are stored,
   but library play / next / Autopilot do not consistently resolve

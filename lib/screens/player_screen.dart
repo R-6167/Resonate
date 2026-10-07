@@ -19,6 +19,8 @@ import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
+import '../widgets/mode_guarded_action.dart';
+import '../modes/models/mode_action.dart';
 import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
@@ -214,6 +216,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               _WaveSeekBar(
                 value: position,
                 max: max,
+                hitHeight: density.seekHitHeight,
+                strokeScale: density.seekStrokeScale,
                 onStart: (value) {
                   setState(() => _dragPosition = value);
                 },
@@ -254,63 +258,122 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      IconButton(
-                        iconSize: density.transportIconSize,
-                        icon: const Icon(Icons.skip_previous_rounded),
-                        onPressed: () {
-                          PlaybackAuthority.instance.userPrevious(music);
-                        },
-                      ),
-                      IconButton(
-                        iconSize: density.largeControls ? density.transportIconSize - 6 : 30,
-                        icon: const Icon(Icons.replay_10_rounded),
-                        onPressed: () => PlaybackAuthority.instance.userSeek(
-                          music,
-                          Duration(milliseconds: math.max(0, currentMs - 10000)),
+                      ModeGuardedAction(
+                        action: ModeAction.previous,
+                        onAllowed: () =>
+                            PlaybackAuthority.instance.userPrevious(music),
+                        child: SizedBox(
+                          width: density.transportIconSize + 28,
+                          height: density.transportIconSize + 28,
+                          child: Icon(
+                            Icons.skip_previous_rounded,
+                            size: density.transportIconSize,
+                          ),
                         ),
                       ),
-                      FilledButton(
-                        onPressed: () {
+                      ModeGuardedAction(
+                        action: ModeAction.seekBackward,
+                        onAllowed: () => PlaybackAuthority.instance.userSeek(
+                          music,
+                          Duration(
+                            milliseconds: math.max(0, currentMs - 10000),
+                          ),
+                        ),
+                        child: SizedBox(
+                          width: density.transportIconSize + 20,
+                          height: density.transportIconSize + 20,
+                          child: Icon(
+                            Icons.replay_10_rounded,
+                            size: density.largeControls
+                                ? density.transportIconSize - 6
+                                : 30,
+                          ),
+                        ),
+                      ),
+                      ModeGuardedAction(
+                        action: ModeAction.playPause,
+                        onAllowed: () {
                           music.togglePlayPause();
                         },
-                        style: FilledButton.styleFrom(
-                          minimumSize: Size(
-                            density.playButtonSize,
-                            density.playButtonSize,
+                        child: SizedBox(
+                          width: density.playButtonSize,
+                          height: density.playButtonSize,
+                          child: FilledButton(
+                            onPressed: null,
+                            style: FilledButton.styleFrom(
+                              minimumSize: Size(
+                                density.playButtonSize,
+                                density.playButtonSize,
+                              ),
+                              maximumSize: Size(
+                                density.playButtonSize,
+                                density.playButtonSize,
+                              ),
+                              padding: EdgeInsets.zero,
+                              shape: const CircleBorder(),
+                              disabledBackgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .primary,
+                              disabledForegroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimary,
+                            ),
+                            child: Icon(
+                              playing
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: density.playIconSize,
+                            ),
                           ),
-                          maximumSize: Size(
-                            density.playButtonSize,
-                            density.playButtonSize,
-                          ),
-                          padding: EdgeInsets.zero,
-                          shape: const CircleBorder(),
-                        ),
-                        child: Icon(
-                          playing
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: density.playIconSize,
                         ),
                       ),
-                      IconButton(
-                        iconSize: density.largeControls ? density.transportIconSize - 6 : 30,
-                        icon: const Icon(Icons.forward_10_rounded),
-                        onPressed: () => PlaybackAuthority.instance.userSeek(
+                      ModeGuardedAction(
+                        action: ModeAction.seekForward,
+                        onAllowed: () => PlaybackAuthority.instance.userSeek(
                           music,
-                          Duration(milliseconds: math.min(max.toInt(), currentMs + 10000)),
+                          Duration(
+                            milliseconds:
+                                math.min(max.toInt(), currentMs + 10000),
+                          ),
+                        ),
+                        child: SizedBox(
+                          width: density.transportIconSize + 20,
+                          height: density.transportIconSize + 20,
+                          child: Icon(
+                            Icons.forward_10_rounded,
+                            size: density.largeControls
+                                ? density.transportIconSize - 6
+                                : 30,
+                          ),
                         ),
                       ),
-                      IconButton(
-                        iconSize: density.transportIconSize,
-                        icon: const Icon(Icons.skip_next_rounded),
-                        onPressed: () {
-                          music.nextSong();
-                        },
+                      ModeGuardedAction(
+                        action: ModeAction.next,
+                        onAllowed: () => music.nextSong(),
+                        child: SizedBox(
+                          width: density.transportIconSize + 28,
+                          height: density.transportIconSize + 28,
+                          child: Icon(
+                            Icons.skip_next_rounded,
+                            size: density.transportIconSize,
+                          ),
+                        ),
                       ),
-                    ],
+                                        ],
                   );
                 },
               ),
+              if (density.requiresTwoFingerPlayback)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    'Two-finger taps for play / skip / seek',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.tertiary,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               if (density.showSecondaryRow)
               ResonateGlassCard(
@@ -620,25 +683,91 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 }
 
 class _WaveSeekBar extends StatefulWidget {
-  final double value; final double max; final ValueChanged<double> onStart; final ValueChanged<double> onUpdate; final ValueChanged<double> onEnd;
-  const _WaveSeekBar({required this.value, required this.max, required this.onStart, required this.onUpdate, required this.onEnd});
-  @override State<_WaveSeekBar> createState() => _WaveSeekBarState();
+  final double value;
+  final double max;
+  final ValueChanged<double> onStart;
+  final ValueChanged<double> onUpdate;
+  final ValueChanged<double> onEnd;
+  final double hitHeight;
+  final double strokeScale;
+  const _WaveSeekBar({
+    required this.value,
+    required this.max,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    this.hitHeight = 64,
+    this.strokeScale = 1.0,
+  });
+  @override
+  State<_WaveSeekBar> createState() => _WaveSeekBarState();
 }
+
 class _WaveSeekBarState extends State<_WaveSeekBar> {
   double? _interactionValue;
-  double _valueFor(Offset local, double width) => width <= 0 ? 0 : (local.dx / width).clamp(0.0,1.0) * widget.max;
-  @override Widget build(BuildContext context) => LayoutBuilder(builder:(context,constraints){ final display=_interactionValue ?? widget.value; return GestureDetector(behavior:HitTestBehavior.opaque, onHorizontalDragStart:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onStart(v);}, onHorizontalDragUpdate:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onUpdate(v);}, onHorizontalDragEnd:(_){final v=_interactionValue ?? widget.value;setState(()=>_interactionValue=null);widget.onEnd(v);}, onTapDown:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=v);widget.onStart(v);}, onTapUp:(d){final v=_valueFor(d.localPosition,constraints.maxWidth);setState(()=>_interactionValue=null);widget.onEnd(v);}, child:SizedBox(height:64,child:CustomPaint(painter:_WaveSeekPainter(progress:widget.max<=0?0:display/widget.max,color:Theme.of(context).colorScheme.primary,muted:Theme.of(context).colorScheme.outlineVariant)))); });
+  double _valueFor(Offset local, double width) =>
+      width <= 0 ? 0 : (local.dx / width).clamp(0.0, 1.0) * widget.max;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final display = _interactionValue ?? widget.value;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: (d) {
+            final v = _valueFor(d.localPosition, constraints.maxWidth);
+            setState(() => _interactionValue = v);
+            widget.onStart(v);
+          },
+          onHorizontalDragUpdate: (d) {
+            final v = _valueFor(d.localPosition, constraints.maxWidth);
+            setState(() => _interactionValue = v);
+            widget.onUpdate(v);
+          },
+          onHorizontalDragEnd: (_) {
+            final v = _interactionValue ?? widget.value;
+            setState(() => _interactionValue = null);
+            widget.onEnd(v);
+          },
+          onTapDown: (d) {
+            final v = _valueFor(d.localPosition, constraints.maxWidth);
+            setState(() => _interactionValue = v);
+            widget.onStart(v);
+          },
+          onTapUp: (d) {
+            final v = _valueFor(d.localPosition, constraints.maxWidth);
+            setState(() => _interactionValue = null);
+            widget.onEnd(v);
+          },
+          child: SizedBox(
+            height: widget.hitHeight,
+            child: CustomPaint(
+              painter: _WaveSeekPainter(
+                progress: widget.max <= 0 ? 0 : display / widget.max,
+                color: Theme.of(context).colorScheme.primary,
+                muted: Theme.of(context).colorScheme.outlineVariant,
+                strokeScale: widget.strokeScale,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _WaveSeekPainter extends CustomPainter {
   final double progress;
   final Color color;
   final Color muted;
+  final double strokeScale;
 
   _WaveSeekPainter({
     required this.progress,
     required this.color,
     required this.muted,
+    this.strokeScale = 1.0,
   });
 
   @override
@@ -648,11 +777,11 @@ class _WaveSeekPainter extends CustomPainter {
     final active = Paint()
       ..color = color
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = math.max(2, step * 0.46);
+      ..strokeWidth = math.max(2, step * 0.46) * strokeScale;
     final inactive = Paint()
       ..color = muted.withOpacity(0.55)
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = math.max(2, step * 0.42);
+      ..strokeWidth = math.max(2, step * 0.42) * strokeScale;
 
     for (var i = 0; i < count; i++) {
       final x = step * (i + 0.5);

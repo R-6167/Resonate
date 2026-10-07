@@ -14,6 +14,8 @@ import '../widgets/ask_resonate_sheet.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
+import '../widgets/mode_player_density.dart';
+import '../modes/providers/mode_provider.dart';
 import '../widgets/mode_shelf_card.dart';
 import '../widgets/driving_suggestion_banner.dart';
 import 'library_screen.dart';
@@ -119,6 +121,8 @@ class _HomeDashboard extends StatelessWidget {
     final library = context.watch<LibraryProvider>();
     final music = context.watch<MusicProvider>();
     final intelligence = context.watch<IntelligenceProvider>();
+    final modes = context.watch<ModeProvider>();
+    final density = ModePlayerDensity.fromMode(modes);
     final songs = library.allSongs;
     final recommendationQueue = intelligence.recommendations.map((item) => item.song).toList();
     final children = <Widget>[
@@ -192,7 +196,21 @@ class _HomeDashboard extends StatelessWidget {
             ],
           ),
           isThreeLine: true,
-          trailing: FilledButton.tonalIcon(onPressed: () => PlaybackAuthority.instance.userToggle(music), icon: Icon(music.isPlaying ? Icons.pause : Icons.play_arrow), label: Text(music.isPlaying ? 'Pause' : 'Play')),
+          trailing: FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
+              padding: EdgeInsets.symmetric(
+                horizontal: density.largeControls ? 18 : 12,
+                vertical: density.largeControls ? 12 : 8,
+              ),
+            ),
+            onPressed: () => PlaybackAuthority.instance.userToggle(music),
+            icon: Icon(
+              music.isPlaying ? Icons.pause : Icons.play_arrow,
+              size: density.largeControls ? 28 : 22,
+            ),
+            label: Text(music.isPlaying ? 'Pause' : 'Play'),
+          ),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())),
         )),
       ]);
