@@ -2,9 +2,9 @@ name: Android APK
 
 on:
   push:
-    branches: [dj_Mode, Wire_dsp_engine, main]
+    branches: [dj_Mode, Wire_dsp_engine, modes_on_dj_v2, main]
   pull_request:
-    branches: [dj_Mode, Wire_dsp_engine, main]
+    branches: [dj_Mode, Wire_dsp_engine, modes_on_dj_v2, main]
   workflow_dispatch:
 
 concurrency:
