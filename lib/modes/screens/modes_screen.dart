@@ -71,25 +71,24 @@ class ModesScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.playlist_play_rounded),
-            title: const Text('Mode shelf'),
-            subtitle: const Text(
-              'Virtual playlist from folders and mode matches — does not hide your library',
-            ),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ModeShelfScreen(),
-                ),
-              );
-            },
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.playlist_play_rounded),
+          title: const Text('Mode shelf'),
+          subtitle: const Text(
+            'Virtual playlist from folders and mode matches — does not hide your library',
           ),
-          const SizedBox(height: 12),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ModeShelfScreen(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        Text(
           'Content folders',
           style: Theme.of(context).textTheme.titleMedium,
         ),
