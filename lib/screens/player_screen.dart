@@ -18,6 +18,8 @@ import '../services/playback_authority.dart';
 import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
+import '../widgets/mode_player_density.dart';
+import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
@@ -105,12 +107,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           ),
         ],
 
-      body: Consumer<MusicProvider>(
-        builder: (context, music, _) {
+      body: Consumer2<MusicProvider, ModeProvider>(
+        builder: (context, music, modes, _) {
           final song = music.currentSong;
           if (song == null) {
             return _PlayerEmptyState();
           }
+
+          final density = ModePlayerDensity.fromMode(modes);
 
           final duration = music.currentDuration ?? song.duration;
           final max = duration.inMilliseconds > 0
@@ -130,18 +134,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
               GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  final v = details.primaryVelocity ?? 0;
-                  if (v < -400) {
-                    music.nextSong(source: 'player_swipe');
-                  } else if (v > 400) {
-                    music.previousSong(source: 'player_swipe');
-                  }
-                },
+                onHorizontalDragEnd: density.allowHorizontalSwipe
+                    ? (details) {
+                        final v = details.primaryVelocity ?? 0;
+                        if (v < -400) {
+                          music.nextSong(source: 'player_swipe');
+                        } else if (v > 400) {
+                          music.previousSong(source: 'player_swipe');
+                        }
+                      }
+                    : null,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(26),
                   child: SizedBox(
-                    height: 250,
+                    height: density.artworkHeight,
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -192,6 +198,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               const ResonateModeChip(dense: true),
               const SizedBox(height: 6),
               const DjTransitionReasonChip(),
+              if (density.hintLabel != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  density.hintLabel!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.tertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               const SizedBox(height: 8),
               _WaveSeekBar(
@@ -238,14 +255,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        iconSize: 36,
+                        iconSize: density.transportIconSize,
                         icon: const Icon(Icons.skip_previous_rounded),
                         onPressed: () {
                           PlaybackAuthority.instance.userPrevious(music);
                         },
                       ),
                       IconButton(
-                        iconSize: 30,
+                        iconSize: density.largeControls ? density.transportIconSize - 6 : 30,
                         icon: const Icon(Icons.replay_10_rounded),
                         onPressed: () => PlaybackAuthority.instance.userSeek(
                           music,
@@ -256,14 +273,27 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         onPressed: () {
                           music.togglePlayPause();
                         },
+                        style: FilledButton.styleFrom(
+                          minimumSize: Size(
+                            density.playButtonSize,
+                            density.playButtonSize,
+                          ),
+                          maximumSize: Size(
+                            density.playButtonSize,
+                            density.playButtonSize,
+                          ),
+                          padding: EdgeInsets.zero,
+                          shape: const CircleBorder(),
+                        ),
                         child: Icon(
                           playing
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
+                          size: density.playIconSize,
                         ),
                       ),
                       IconButton(
-                        iconSize: 30,
+                        iconSize: density.largeControls ? density.transportIconSize - 6 : 30,
                         icon: const Icon(Icons.forward_10_rounded),
                         onPressed: () => PlaybackAuthority.instance.userSeek(
                           music,
@@ -271,7 +301,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         ),
                       ),
                       IconButton(
-                        iconSize: 36,
+                        iconSize: density.transportIconSize,
                         icon: const Icon(Icons.skip_next_rounded),
                         onPressed: () {
                           music.nextSong();
@@ -282,6 +312,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 },
               ),
               const SizedBox(height: 8),
+              if (density.showSecondaryRow)
               ResonateGlassCard(
                 padding: EdgeInsets.zero,
                 child: Padding(
@@ -347,6 +378,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
               const SizedBox(height: 14),
+              if (density.showIntelligenceCards)
               Consumer<IntelligenceProvider>(
                 builder: (context, intelligence, _) {
                   final item = intelligence.anticipatedNext;

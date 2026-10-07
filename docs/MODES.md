@@ -49,6 +49,7 @@ not call `play()` directly.
 | Mode chip on Now Playing + Home | Present |
 | Mode shelf (virtual playlist on Home) | Present |
 | Driving suggestion banner on Home | Present |
+| Mode-aware player density | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
 | Autopilot content bias (`isAcceptableForAutopilot`, bias score) | Present |
 | Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
@@ -78,7 +79,7 @@ rest of Resonate.
   suggest/dismiss/accept and auto-enter-on-car; **no home/player banner or
   chip** consumes it yet.
 - [x] **Active mode chip on Now Playing / home** — `ResonateModeChip`; tap opens Modes.
-- [ ] **`uiDensity` enforcement** — `PlaybackPolicy.uiDensity` and
+- [x] **`uiDensity` enforcement** (player transport + chrome) — `PlaybackPolicy.uiDensity` and
   `InteractionPolicy` are not applied to player transport, lists, or settings
   density (Driving/Running large targets, reduced chrome).
 - [ ] **`ModeInteractionGuard` in real UI** — Running’s two-finger / no
