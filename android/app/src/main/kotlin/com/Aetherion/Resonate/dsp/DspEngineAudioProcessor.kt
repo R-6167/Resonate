@@ -53,6 +53,8 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         nativeApi = jniApi
     }
 
+    internal fun nativeProcessEnabledForTest(): Boolean = nativeProcessEnabled
+
     @Volatile
     private var nativeProcessEnabled = false
 
