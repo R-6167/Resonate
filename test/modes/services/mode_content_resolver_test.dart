@@ -47,6 +47,13 @@ void main() {
     );
 
     expect(resolved.map((s) => s.id), ['music']);
+
+    final noMatch = const ModeContentResolver().resolve(
+      modes: modes,
+      songs: [_song('podcast')],
+      preferPreferredContent: false,
+    );
+    expect(noMatch, isEmpty);
   });
 
   test('resolver caps results without changing source list', () async {
