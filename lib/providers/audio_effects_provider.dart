@@ -30,9 +30,15 @@ class AudioEffectsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Legacy bass control retained for settings compatibility.
+  ///
+  /// BassBoost is intentionally not applied to the audio session anymore:
+  /// the mature Resonate DSP owns bass shaping, speaker protection and
+  /// virtual-bass processing. Keeping this value prevents old preferences/UI
+  /// state from breaking while avoiding a second bass processor.
   Future<void> setBassBoost(double value) async {
     bassBoost = value.clamp(0.0, 1.0).toDouble();
-    await _applyNative();
+    await _disableLegacyBassBoost();
     await _save();
     notifyListeners();
   }
@@ -65,7 +71,9 @@ class AudioEffectsProvider extends ChangeNotifier {
     final enabled = effectsEnabled;
     try {
       await AudioEffectsBridge.attachToSession(sessionId);
-      await AudioEffectsBridge.setBassBoost(enabled ? bassBoost : 0.0);
+      // BassBoost is retired from the active path. Mature DSP owns all bass
+      // processing; applying Android BassBoost here would stack another EQ.
+      await AudioEffectsBridge.setBassBoost(0.0);
       await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
       await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
     } catch (e) {
@@ -81,6 +89,12 @@ class AudioEffectsProvider extends ChangeNotifier {
         debugPrint('Loudness disable failed: $e');
       }
     }
+  }
+
+  Future<void> _disableLegacyBassBoost() async {
+    try {
+      await AudioEffectsBridge.setBassBoost(0.0);
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -105,6 +119,7 @@ class AudioEffectsProvider extends ChangeNotifier {
     bassBoost = 0.0;
     virtualizer = 0.0;
     loudness = 0.0;
+    await _disableLegacyBassBoost();
     await _applyNative();
     await _save();
     notifyListeners();
