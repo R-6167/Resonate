@@ -95,6 +95,11 @@ void  dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_d
 void  dsp_set_speaker_mode(void* handle, bool enabled);
 void  dsp_set_virtual_bass(void* handle, double amount);
 
+/** True-peak ceilings in dBFS for high / low bands. Safe range [-6, -0.1]. */
+void  dsp_set_limiter_ceiling(void* handle, float ceiling_db_high, float ceiling_db_low);
+/** LR4 crossover frequency Hz. Safe range [80, 200]. */
+void  dsp_set_crossover_hz(void* handle, float freq_hz);
+
 void  dsp_get_stats(void* handle, DspStats* out);
 void  dsp_reset_stats(void* handle);
 int   dsp_get_info(void* handle, DspInfo* out);
