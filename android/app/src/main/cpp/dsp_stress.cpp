@@ -1,25 +1,21 @@
 /**
- * Offline bass stress harness — not on the audio thread.
+ * Offline bass stress harness — peak safety + latency vs budget.
  */
 #include "dsp_engine.h"
 
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <time.h>
 
 extern "C" int dsp_run_bass_stress(DspStressResult* out) {
     if (out) {
-        out->cases_run = 0;
-        out->cases_passed = 0;
-        out->max_abs_peak = 0.f;
-        out->peak_failures = 0;
-        out->nan_failures = 0;
-        out->speaker_cases_ok = 0;
+        std::memset(out, 0, sizeof(*out));
     }
 
     const int sr = 48000;
     const int ch = 2;
-    const int frames = 2048;
+    const int frames = 256;
 
     DspConfig cfg{};
     cfg.sample_rate = sr;
@@ -74,11 +70,14 @@ extern "C" int dsp_run_bass_stress(DspStressResult* out) {
     int run = 0, passed = 0, peak_fail = 0, nan_fail = 0, speaker_ok = 0;
     float max_peak = 0.f;
 
+    dsp_reset_stats(h);
+
     for (int ci = 0; ci < nCases; ++ci) {
         const Case& cs = kCases[ci];
         dsp_eq_set_bands(h, kHz, cs.gains, 10);
         dsp_eq_set_enabled(h, true);
         dsp_set_volume(h, cs.volume);
+        dsp_set_preamp(h, 1.0);
         dsp_set_speaker_mode(h, cs.speaker);
         dsp_set_virtual_bass(h, cs.vb);
 
@@ -95,8 +94,8 @@ extern "C" int dsp_run_bass_stress(DspStressResult* out) {
             }
         }
 
-        dsp_process(h, inbuf, outbuf, frames);
-        dsp_process(h, inbuf, outbuf, frames);
+        for (int rep = 0; rep < 8; ++rep)
+            dsp_process(h, inbuf, outbuf, frames);
 
         bool ok = true;
         float local_peak = 0.f;
@@ -123,6 +122,17 @@ extern "C" int dsp_run_bass_stress(DspStressResult* out) {
         }
     }
 
+    DspStats st{};
+    dsp_get_stats(h, &st);
+    const int64_t budget_ns =
+        (int64_t)frames * 1000000000LL / (int64_t)sr;
+    int64_t avg_ns = 0;
+    if (st.process_calls > 0)
+        avg_ns = st.total_ns / st.process_calls;
+    double cpu_pct = 0.0;
+    if (budget_ns > 0)
+        cpu_pct = 100.0 * (double)avg_ns / (double)budget_ns;
+
     std::free(inbuf);
     std::free(outbuf);
     dsp_destroy(h);
@@ -134,6 +144,11 @@ extern "C" int dsp_run_bass_stress(DspStressResult* out) {
         out->peak_failures = peak_fail;
         out->nan_failures = nan_fail;
         out->speaker_cases_ok = speaker_ok;
+        out->avg_ns_per_call = avg_ns;
+        out->max_ns_per_call = st.max_ns;
+        out->budget_ns = budget_ns;
+        out->cpu_pct_of_budget = cpu_pct;
+        out->overrun_calls = (int32_t)st.overrun_count;
     }
     return (passed == run && run > 0) ? 0 : 1;
 }
