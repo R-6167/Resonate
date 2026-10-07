@@ -130,7 +130,8 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         }
 
         val output = replaceOutputBuffer(remaining)
-        output.put(inputBuffer)
+        val source = inputBuffer.duplicate()
+        output.put(source)
         output.flip()
 
         val frames = remaining / (configuredChannels * 2)
@@ -146,6 +147,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             )
 
             if (rc != 0) {
+                restorePassThrough(output, source)
                 consecutiveProcessErrors++
                 if (consecutiveProcessErrors == 1 || consecutiveProcessErrors % 4 == 0) {
                     Log.w(TAG, "id=$processorId process rc=$rc errs=$consecutiveProcessErrors")
@@ -157,12 +159,19 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
                 consecutiveProcessErrors = 0
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "id=$processorId process exception — pass-through buffer intact", t)
+            restorePassThrough(output, source)
+            Log.e(TAG, "id=$processorId process exception — restored original PCM", t)
             consecutiveProcessErrors++
             if (consecutiveProcessErrors >= MAX_PROCESS_ERRORS) {
                 demoteToPassThrough("process_exception")
             }
         }
+    }
+
+    private fun restorePassThrough(output: ByteBuffer, source: ByteBuffer) {
+        output.clear()
+        output.put(source)
+        output.flip()
     }
 
     /**
