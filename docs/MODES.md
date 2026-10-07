@@ -49,6 +49,7 @@ not call `play()` directly.
 | Mode chip on Now Playing + Home | Present |
 | Mode shelf (virtual playlist on Home) | Present |
 | Mode shelf full screen (See all) | Present |
+| Mode shelf full screen (See all) | Present |
 | Driving suggestion banner on Home | Present |
 | Mode-aware player density | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
