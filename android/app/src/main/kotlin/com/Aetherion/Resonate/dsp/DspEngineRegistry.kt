@@ -31,12 +31,17 @@ object DspEngineRegistry {
 
     @Volatile
     private var stickyVirtualBass: Double = 0.55
+    @Volatile
     private var stickyPreamp: Double = 1.0
+    @Volatile
     private var stickyLimiterHigh: Float = -0.5f
+    @Volatile
     private var stickyLimiterLow: Float = -0.2f
+    @Volatile
     private var stickyCrossoverHz: Float = 120f
 
     @JvmStatic
+    @Synchronized
     fun register(processorId: Int, handle: Long): Boolean {
         if (handle == 0L) return false
 
@@ -55,6 +60,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun unregister(processorId: Int) {
         val h = handles.remove(processorId)
         Log.i(TAG, "unregister id=$processorId handle=$h active=${handles.size}")
@@ -68,6 +74,7 @@ object DspEngineRegistry {
 
     /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
     @JvmStatic
+    @Synchronized
     fun applySpeakerModeAll(enabled: Boolean) {
         stickySpeakerMode = enabled
         val list = snapshotHandles()
@@ -83,6 +90,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyVirtualBassAll(amount: Double) {
         stickyVirtualBass = amount.coerceIn(0.0, 1.0)
         if (!stickySpeakerMode) return
@@ -151,6 +159,7 @@ object DspEngineRegistry {
 
     /** True preamp (v0.4) — separate from DVC/volume. */
     @JvmStatic
+    @Synchronized
     fun applyPreampAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyPreamp = g
@@ -166,6 +175,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyLimiterCeilingAll(highDb: Float, lowDb: Float) {
         stickyLimiterHigh = highDb.coerceIn(-6f, -0.1f)
         stickyLimiterLow = lowDb.coerceIn(-6f, -0.1f)
@@ -180,6 +190,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyCrossoverHzAll(hz: Float) {
         stickyCrossoverHz = hz.coerceIn(80f, 200f)
         val list = snapshotHandles()
@@ -194,6 +205,7 @@ object DspEngineRegistry {
 
     /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
+    @Synchronized
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyLinearGain = g
@@ -210,6 +222,7 @@ object DspEngineRegistry {
 
     /** Studio curve → all live engines. */
     @JvmStatic
+    @Synchronized
     fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
         stickyEqEnabled = enabled
         stickyCentersHz = centersHz?.copyOf()
