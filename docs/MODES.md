@@ -20,9 +20,17 @@ Host ports (playback / context / folder picker)
 MusicProvider / Autopilot / UI (consume policy only)
 ```
 
-Modes emits **policy**. The host **enforces** it at a single gate (crossfade,
-shuffle, resume, content bias). Coordinators describe session intent; they do
-not call `play()` directly.
+Modes emits **policy**. The host **enforces** it at a small number of explicit
+playback/automation gates (crossfade, shuffle, resume, content bias). Modes
+does **not** become the authority over the canonical library.
+
+Content folders and media classification are an **input to mode-specific
+playlist generation, shelves, Autopilot ranking, and session selection**. They
+must not hide, remove, or globally filter the user's Library when the active
+mode changes. Switching from Audiobook/Podcast/Running/etc. must never make
+existing library items disappear.
+
+Coordinators describe session intent; they do not call `play()` directly.
 
 ## Modes
 
@@ -53,7 +61,9 @@ not call `play()` directly.
 | Driving suggestion banner on Home | Present |
 | Mode-aware player density | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
-| Autopilot content bias (`isAcceptableForAutopilot`, bias score) | Present |
+| Autopilot + mode content bias (`isAcceptableForAutopilot`, bias score) | Present |
+| Mode-aware playlist/shelf generation from classifier + folders | Present |
+| Canonical Library remains mode-independent | Present |
 | Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
 | DJ engine, EQ, glass UI, library, queue | Present (from DJ base) |
 
@@ -71,9 +81,9 @@ rest of Resonate.
 - [x] **Mode vs Crossfade UI honesty** — when policy sets `crossfadeAllowed:
   false` (Podcast / Audiobook), the Crossfade screen can still look “on” while
   the engine refuses transitions. Surface “blocked by Mode” in UI.
-- [ ] **Single source of truth for crossfade prefs** — `CrossfadeProvider` and
-  `MusicProvider` both persist the same keys; keep them strictly synced and
-  document which layer is authoritative for reads.
+- [x] **Single source of truth for crossfade prefs** — `CrossfadeProvider`
+  owns persisted UI preferences; `MusicProvider` owns runtime playback
+  enforcement and no longer persists a second copy.
 
 ### P1 — Modes as a product surface
 
@@ -86,10 +96,10 @@ rest of Resonate.
   density (Driving/Running large targets, reduced chrome).
 - [x] **`ModeInteractionGuard` in real UI** (Running two-finger transport) — Running’s two-finger / no
   long-press / no horizontal swipe contract is not enforced on player gestures.
-- [ ] **Classifier on the play path** — folder routing and overrides are stored,
-  but library play / next / Autopilot do not consistently resolve
-  `ModeMediaItem` + classifier before queue decisions (beyond soft Autopilot
-  bias).
+- [x] **Classifier for mode-generated content** — folder routing and overrides
+  feed mode shelves/playlist generation and Autopilot bias. The canonical
+  Library deliberately remains outside this gate; direct library playback
+  keeps normal user-owned access.
 
 ### P1 — Session coordinators (package exists, host does not call them)
 
@@ -128,6 +138,9 @@ or mode enter/exit today:
 - [ ] **DJ + Modes interaction rules** — document when DJ handoffs yield to
   Podcast/Audiobook no-crossfade policy and when DJ aggressiveness is clamped
   in Driving/Work.
+- [x] **DJ Harmonic Mix setting is wired** — the setting now reaches the DJ
+  policy and the transition brain; when disabled, harmonic scoring remains
+  neutral so existing DJ behavior is preserved.
 - [ ] **Sleep timer / speed controls emphasis** — policy flags
   (`sleepTimerSuggested`, `speedControlsEmphasized`) are not reflected in
   player chrome per mode.
@@ -158,3 +171,4 @@ or mode enter/exit today:
 | Date | Note |
 |------|------|
 | 2026-10-06 | Package copied onto `modes_on_dj_v2`; ports + ModeProvider + Autopilot bias; missing-features section added. |
+| 2026-10-07 | Stage 0 hardening: fixed DJ handoff gate recursion, wired Harmonic Mix, made CrossfadeProvider the persisted preference authority, and clarified that Modes never owns/filters the canonical Library. |
