@@ -203,6 +203,7 @@ class MusicProvider extends ChangeNotifier {
 
   PlaybackRepeatMode get repeatMode => _repeatMode;
   bool get canCrossfadeNext {
+    if (!effectiveCrossfadeEnabled) return false;
     if (_crossfadeInProgress || _queue.isEmpty || _queueIndex < 0) return false;
     if (_repeatMode == PlaybackRepeatMode.one) return false;
     if (_queueIndex < _queue.length - 1) return true;
@@ -3858,16 +3859,28 @@ class MusicProvider extends ChangeNotifier {
     _completionObservedDuringCrossfade = false;
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
-    // Hard-silence the idle engine so a dying crossfade cannot keep audible B.
+    // Silence the *idle* engine only. Hardcoding Engine B used to mute playback
+    // after a committed A→B handoff when the user paused/skipped (active was B).
     unawaited(() async {
       try {
-        await _playerB.pause();
-      } catch (_) {}
-      try {
-        await _playerB.setVolume(0.0);
-      } catch (_) {}
-      try {
-        await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+        final idle = inactivePlayer;
+        final active = audioPlayer;
+        final master = _eqPreampScale.clamp(0.05, 1.0);
+        try {
+          await idle.pause();
+        } catch (_) {}
+        try {
+          await idle.setVolume(0.0);
+        } catch (_) {}
+        try {
+          await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
+        } catch (_) {}
+        // Keep the active engine audible at master if the user still wants play.
+        try {
+          if (_userWantsPlaying && active.volume < master * 0.5) {
+            await active.setVolume(master);
+          }
+        } catch (_) {}
       } catch (_) {}
     }());
     if (_repeatSelfHandoffArmed || _repeatSelfHandoffInFlight) {
