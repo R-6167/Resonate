@@ -16,6 +16,8 @@
 #include <cstring>
 #include <algorithm>
 #include <cstdlib>
+#include <atomic>
+#include <mutex>
 #include <time.h>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -342,6 +344,51 @@ inline void soft_clip_stereo(float s0, float s1, float knee, float* o0, float* o
 }
 #endif
 
+enum class ControlType : uint8_t {
+    Volume,
+    Preamp,
+    EqEnabled,
+    EqBands,
+    EqBand,
+    SpeakerMode,
+    VirtualBass,
+    LimiterCeiling,
+    CrossoverHz,
+};
+
+struct ControlCommand {
+    ControlType type = ControlType::Volume;
+    double value0 = 0.0;
+    double value1 = 0.0;
+    double value2 = 0.0;
+    float float0 = 0.0f;
+    float float1 = 0.0f;
+    int32_t index = 0;
+    int32_t count = 0;
+    bool enabled = false;
+    double centers[kMaxBands]{};
+    double gains[kMaxBands]{};
+};
+
+// Control threads publish commands; the audio thread is the only code that
+// mutates filter/stateful DSP objects. No mutex is ever taken from process().
+struct ControlQueue {
+    static constexpr uint32_t kCapacity = 128;
+    ControlCommand commands[kCapacity];
+    std::atomic<uint32_t> head{0};
+    uint32_t tail = 0;
+    std::mutex producer_mutex;
+
+    bool push(const ControlCommand& command) {
+        std::lock_guard<std::mutex> lock(producer_mutex);
+        const uint32_t h = head.load(std::memory_order_relaxed);
+        if (h - tail >= kCapacity) return false;
+        commands[h % kCapacity] = command;
+        head.store(h + 1, std::memory_order_release);
+        return true;
+    }
+};
+
 struct Engine {
     int sample_rate = 44100;
     int channels = 2;
@@ -377,12 +424,13 @@ struct Engine {
     float* scratch_out = nullptr;
     size_t scratch_floats = 0;
 
-    int64_t process_calls = 0;
-    int64_t total_ns = 0;
-    int64_t max_ns = 0;
-    int64_t overrun_count = 0;
-    int32_t last_frames = 0;
-    bool running = false;
+    std::atomic<int64_t> process_calls{0};
+    std::atomic<int64_t> total_ns{0};
+    std::atomic<int64_t> max_ns{0};
+    std::atomic<int64_t> overrun_count{0};
+    std::atomic<int32_t> last_frames{0};
+    std::atomic<bool> running{false};
+    ControlQueue control_queue;
 
     bool allocScratch() {
         scratch_floats = (size_t)kMaxFrames * (size_t)kMaxCh;
@@ -464,6 +512,67 @@ struct Engine {
         }
     }
 
+    void applyControlCommands() {
+        const uint32_t head = control_queue.head.load(std::memory_order_acquire);
+        while (control_queue.tail != head) {
+            const ControlCommand& cmd =
+                control_queue.commands[control_queue.tail % ControlQueue::kCapacity];
+            switch (cmd.type) {
+                case ControlType::Volume:
+                    volume = cmd.value0;
+                    sm_vol.set_target((float)cmd.value0);
+                    break;
+                case ControlType::Preamp:
+                    preamp = cmd.value0;
+                    sm_pre.set_target((float)cmd.value0);
+                    break;
+                case ControlType::EqEnabled:
+                    eq_enabled = cmd.enabled;
+                    rebuildEq();
+                    break;
+                case ControlType::EqBands:
+                    band_count = cmd.count;
+                    for (int i = 0; i < band_count; ++i) {
+                        centers[i] = cmd.centers[i];
+                        gains[i] = cmd.gains[i];
+                    }
+                    rebuildEq();
+                    break;
+                case ControlType::EqBand:
+                    if (cmd.index >= 0 && cmd.index < kMaxBands) {
+                        if (cmd.index >= band_count) band_count = cmd.index + 1;
+                        centers[cmd.index] = cmd.value0;
+                        gains[cmd.index] = cmd.value1;
+                        for (int c = 0; c < channels; ++c)
+                            bands[cmd.index][c].setPeaking(sample_rate, cmd.value0,
+                                                           cmd.value1, cmd.value2);
+                        rebuildEq();
+                    }
+                    break;
+                case ControlType::SpeakerMode:
+                    speaker_mode = cmd.enabled;
+                    rebuildSpeakerFilters();
+                    rebuildEq();
+                    rebuildLimiter();
+                    break;
+                case ControlType::VirtualBass:
+                    virtual_bass = cmd.value0;
+                    sm_vb.set_target((float)cmd.value0);
+                    break;
+                case ControlType::LimiterCeiling:
+                    ceiling_db_high = cmd.float0;
+                    ceiling_db_low = cmd.float1;
+                    rebuildLimiter();
+                    break;
+                case ControlType::CrossoverHz:
+                    xover_hz = cmd.float0;
+                    rebuildXover();
+                    break;
+            }
+            ++control_queue.tail;
+        }
+    }
+
     void configureSmoothersAndDc() {
         for (int c = 0; c < channels; ++c)
             dc[c].configure(sample_rate, 8.0f);
@@ -532,20 +641,22 @@ int dsp_stop(void* handle) {
 
 void dsp_set_volume(void* handle, double linear_gain) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
     if (linear_gain < 0.0) linear_gain = 0.0;
     if (linear_gain > 4.0) linear_gain = 4.0;
-    e->volume = linear_gain;
-    e->sm_vol.set_target((float)linear_gain);
+    ControlCommand cmd;
+    cmd.type = ControlType::Volume;
+    cmd.value0 = linear_gain;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_set_preamp(void* handle, double linear_gain) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
     if (linear_gain < 0.0) linear_gain = 0.0;
     if (linear_gain > 4.0) linear_gain = 4.0;
-    e->preamp = linear_gain;
-    e->sm_pre.set_target((float)linear_gain);
+    ControlCommand cmd;
+    cmd.type = ControlType::Preamp;
+    cmd.value0 = linear_gain;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 int dsp_get_info(void* handle, DspInfo* out) {
@@ -582,82 +693,85 @@ int dsp_get_info(void* handle, DspInfo* out) {
 
 void dsp_set_limiter_ceiling(void* handle, float ceiling_db_high, float ceiling_db_low) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
     auto clamp_db = [](float v) {
         if (v < -6.0f) v = -6.0f;
         if (v > -0.1f) v = -0.1f;
         return v;
     };
-    e->ceiling_db_high = clamp_db(ceiling_db_high);
-    e->ceiling_db_low  = clamp_db(ceiling_db_low);
-    e->rebuildLimiter();
+    ControlCommand cmd;
+    cmd.type = ControlType::LimiterCeiling;
+    cmd.float0 = clamp_db(ceiling_db_high);
+    cmd.float1 = clamp_db(ceiling_db_low);
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_set_crossover_hz(void* handle, float freq_hz) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
     if (freq_hz < 80.0f) freq_hz = 80.0f;
     if (freq_hz > 200.0f) freq_hz = 200.0f;
-    e->xover_hz = freq_hz;
-    e->rebuildXover();
+    ControlCommand cmd;
+    cmd.type = ControlType::CrossoverHz;
+    cmd.float0 = freq_hz;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_eq_set_enabled(void* handle, bool enabled) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
-    e->eq_enabled = enabled;
-    e->rebuildEq();
+    ControlCommand cmd;
+    cmd.type = ControlType::EqEnabled;
+    cmd.enabled = enabled;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_eq_set_bands(void* handle, const double* centers_hz,
                       const double* gains_db, int32_t count) {
     if (!handle || !gains_db || count <= 0) return;
-    auto* e = static_cast<Engine*>(handle);
     if (count > kMaxBands) count = kMaxBands;
-    e->band_count = count;
+    ControlCommand cmd;
+    cmd.type = ControlType::EqBands;
+    cmd.count = count;
     for (int i = 0; i < count; ++i) {
         double g = gains_db[i];
         if (g > 24.0) g = 24.0;
         if (g < -24.0) g = -24.0;
-        e->gains[i] = g;
-        if (centers_hz) e->centers[i] = centers_hz[i];
-        else if (e->centers[i] <= 0.0)
-            e->centers[i] = 20.0 * std::pow(1000.0, i / (double)std::max(count - 1, 1));
+        cmd.gains[i] = g;
+        if (centers_hz) cmd.centers[i] = centers_hz[i];
+        else cmd.centers[i] = 20.0 * std::pow(1000.0, i / (double)std::max(count - 1, 1));
     }
-    e->rebuildEq();
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_eq_set_band(void* handle, int32_t index, double freq_hz,
                      double gain_db, double q) {
     if (!handle || index < 0 || index >= kMaxBands) return;
-    auto* e = static_cast<Engine*>(handle);
-    if (index >= e->band_count) e->band_count = index + 1;
-    e->centers[index] = freq_hz;
     if (gain_db > 24.0) gain_db = 24.0;
     if (gain_db < -24.0) gain_db = -24.0;
-    e->gains[index] = gain_db;
     if (q <= 0.0) q = 1.0;
-    for (int c = 0; c < e->channels; ++c)
-        e->bands[index][c].setPeaking(e->sample_rate, freq_hz, gain_db, q);
-    e->rebuildEq();
+    ControlCommand cmd;
+    cmd.type = ControlType::EqBand;
+    cmd.index = index;
+    cmd.value0 = freq_hz;
+    cmd.value1 = gain_db;
+    cmd.value2 = q;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_set_speaker_mode(void* handle, bool enabled) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
-    e->speaker_mode = enabled;
-    e->rebuildSpeakerFilters();
-    e->rebuildEq();
-    e->rebuildLimiter();
+    ControlCommand cmd;
+    cmd.type = ControlType::SpeakerMode;
+    cmd.enabled = enabled;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_set_virtual_bass(void* handle, double amount) {
     if (!handle) return;
-    auto* e = static_cast<Engine*>(handle);
     if (amount < 0.0) amount = 0.0;
     if (amount > 1.0) amount = 1.0;
-    e->virtual_bass = amount;
-    e->sm_vb.set_target((float)amount);
+    ControlCommand cmd;
+    cmd.type = ControlType::VirtualBass;
+    cmd.value0 = amount;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
 void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
@@ -667,6 +781,10 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
 
     struct timespec t0{}, t1{};
     clock_gettime(CLOCK_MONOTONIC, &t0);
+
+    // Apply all pending controls at the buffer boundary. The audio thread
+    // owns filter coefficients and state; setters never touch them directly.
+    e->applyControlCommands();
 
     const int ch = e->channels;
     const bool eq = e->eq_enabled;
@@ -751,14 +869,18 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
     const int64_t ns = (int64_t)(t1.tv_sec - t0.tv_sec) * 1000000000LL
                      + (int64_t)(t1.tv_nsec - t0.tv_nsec);
-    e->process_calls += 1;
-    e->total_ns += ns;
-    if (ns > e->max_ns) e->max_ns = ns;
-    e->last_frames = frames;
+    e->process_calls.fetch_add(1, std::memory_order_relaxed);
+    e->total_ns.fetch_add(ns, std::memory_order_relaxed);
+    int64_t observed_max = e->max_ns.load(std::memory_order_relaxed);
+    while (ns > observed_max &&
+           !e->max_ns.compare_exchange_weak(observed_max, ns,
+                                            std::memory_order_relaxed,
+                                            std::memory_order_relaxed)) {}
+    e->last_frames.store(frames, std::memory_order_relaxed);
     if (e->sample_rate > 0 && frames > 0) {
         const int64_t budget_ns =
             (int64_t)frames * 1000000000LL / (int64_t)e->sample_rate;
-        if (ns > budget_ns) e->overrun_count += 1;
+        if (ns > budget_ns) e->overrun_count.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -792,11 +914,11 @@ void dsp_get_stats(void* handle, DspStats* out) {
     out->channels = 0;
     if (!handle) return;
     auto* e = static_cast<Engine*>(handle);
-    out->process_calls = e->process_calls;
-    out->total_ns = e->total_ns;
-    out->max_ns = e->max_ns;
-    out->overrun_count = e->overrun_count;
-    out->last_frames = e->last_frames;
+    out->process_calls = e->process_calls.load(std::memory_order_relaxed);
+    out->total_ns = e->total_ns.load(std::memory_order_relaxed);
+    out->max_ns = e->max_ns.load(std::memory_order_relaxed);
+    out->overrun_count = e->overrun_count.load(std::memory_order_relaxed);
+    out->last_frames = e->last_frames.load(std::memory_order_relaxed);
     out->sample_rate = e->sample_rate;
     out->channels = e->channels;
 }
@@ -804,11 +926,11 @@ void dsp_get_stats(void* handle, DspStats* out) {
 void dsp_reset_stats(void* handle) {
     if (!handle) return;
     auto* e = static_cast<Engine*>(handle);
-    e->process_calls = 0;
-    e->total_ns = 0;
-    e->max_ns = 0;
-    e->overrun_count = 0;
-    e->last_frames = 0;
+    e->process_calls.store(0, std::memory_order_relaxed);
+    e->total_ns.store(0, std::memory_order_relaxed);
+    e->max_ns.store(0, std::memory_order_relaxed);
+    e->overrun_count.store(0, std::memory_order_relaxed);
+    e->last_frames.store(0, std::memory_order_relaxed);
 }
 
 } // extern "C"
