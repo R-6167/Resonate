@@ -152,3 +152,137 @@ extern "C" int dsp_run_bass_stress(DspStressResult* out) {
     }
     return (passed == run && run > 0) ? 0 : 1;
 }
+
+extern "C" int dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t* overrun_calls) {
+    if (failures) *failures = 0;
+    if (overrun_calls) *overrun_calls = 0;
+    if (iterations <= 0) return -1;
+
+    const int sr = 48000;
+    const int ch = 2;
+    const int frames = 256;
+    const int64_t max_abs_limit = 1.001;
+
+    DspConfig cfg{};
+    cfg.sample_rate = sr;
+    cfg.channels = ch;
+    cfg.buffer_frames = frames;
+    cfg.exclusive_mode = false;
+    cfg.bit_perfect = true;
+    cfg.realtime_priority = 0;
+
+    void* a = dsp_create(&cfg);
+    void* b = dsp_create(&cfg);
+    if (!a || !b) {
+        if (a) dsp_destroy(a);
+        if (b) dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+    if (dsp_start(a) != 0 || dsp_start(b) != 0) {
+        dsp_stop(a);
+        dsp_stop(b);
+        dsp_destroy(a);
+        dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+
+    float* inbuf = (float*)std::malloc(sizeof(float) * (size_t)frames * (size_t)ch);
+    float* out_a = (float*)std::malloc(sizeof(float) * (size_t)frames * (size_t)ch);
+    float* out_b = (float*)std::malloc(sizeof(float) * (size_t)frames * (size_t)ch);
+    if (!inbuf || !out_a || !out_b) {
+        std::free(inbuf);
+        std::free(out_a);
+        std::free(out_b);
+        dsp_stop(a);
+        dsp_stop(b);
+        dsp_destroy(a);
+        dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+
+    static const double kHz[10] = {31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+    int32_t fail_count = 0;
+    float phase = 0.f;
+
+    dsp_reset_stats(a);
+    dsp_reset_stats(b);
+
+    for (int32_t i = 0; i < iterations; ++i) {
+        const double t = (double)i;
+        const double tone_a = 30.0 + (double)(i % 8) * 7.5;
+        const double tone_b = 45.0 + (double)(i % 11) * 9.0;
+        const double gain_a = (double)((i % 13) - 6) * 1.5;
+        const double gain_b = (double)((i % 17) - 8) * 1.25;
+        const double gains_a[10] = {gain_a, gain_a * 0.8, gain_a * 0.5, 2.0, 0.0, -1.0, 0.0, 1.0, -0.5, 0.0};
+        const double gains_b[10] = {gain_b, gain_b * 0.75, gain_b * 0.45, 1.5, 0.0, -0.5, 0.0, 0.5, -0.25, 0.0};
+
+        dsp_eq_set_bands(a, kHz, gains_a, 10);
+        dsp_eq_set_bands(b, kHz, gains_b, 10);
+        dsp_eq_set_enabled(a, (i % 19) != 0);
+        dsp_eq_set_enabled(b, (i % 23) != 0);
+        dsp_set_volume(a, 0.75 + (double)(i % 7) * 0.25);
+        dsp_set_volume(b, 0.70 + (double)(i % 9) * 0.22);
+        dsp_set_preamp(a, 0.85 + (double)(i % 5) * 0.18);
+        dsp_set_preamp(b, 0.80 + (double)(i % 6) * 0.16);
+        dsp_set_speaker_mode(a, (i % 3) == 0);
+        dsp_set_speaker_mode(b, (i % 4) == 0);
+        dsp_set_virtual_bass(a, (double)(i % 11) / 10.0);
+        dsp_set_virtual_bass(b, (double)(i % 13) / 12.0);
+        dsp_set_limiter_ceiling(a, -0.5f + (float)(i % 3) * -0.25f, -0.2f + (float)(i % 3) * -0.2f);
+        dsp_set_limiter_ceiling(b, -0.5f + (float)(i % 4) * -0.2f, -0.2f + (float)(i % 4) * -0.15f);
+        dsp_set_crossover_hz(a, 90.0f + (float)(i % 12) * 8.0f);
+        dsp_set_crossover_hz(b, 95.0f + (float)(i % 10) * 9.0f);
+
+        const float wa = (float)(2.0 * M_PI * tone_a / (double)sr);
+        const float wb = (float)(2.0 * M_PI * tone_b / (double)sr);
+        for (int f = 0; f < frames; ++f) {
+            const float s1 = 0.92f * std::sin(phase + wa * (float)f);
+            const float s2 = 0.88f * std::sin(phase * 0.7f + wb * (float)f);
+            const float s = 0.55f * s1 + 0.45f * s2;
+            inbuf[f * ch] = s;
+            inbuf[f * ch + 1] = s;
+        }
+        phase += wa * (float)frames;
+        if (phase > (float)(2.0 * M_PI)) phase = std::fmod(phase, (float)(2.0 * M_PI));
+
+        // Alternate the active engine first to exercise both A/B paths symmetrically.
+        if ((i & 1) == 0) {
+            dsp_process(a, inbuf, out_a, frames);
+            dsp_process(b, inbuf, out_b, frames);
+        } else {
+            dsp_process(b, inbuf, out_b, frames);
+            dsp_process(a, inbuf, out_a, frames);
+        }
+
+        for (int j = 0; j < frames * ch; ++j) {
+            const float xa = out_a[j];
+            const float xb = out_b[j];
+            if (!std::isfinite(xa) || !std::isfinite(xb) ||
+                std::fabs((double)xa) > max_abs_limit ||
+                std::fabs((double)xb) > max_abs_limit) {
+                ++fail_count;
+                break;
+            }
+        }
+    }
+
+    DspStats sa{}, sb{};
+    dsp_get_stats(a, &sa);
+    dsp_get_stats(b, &sb);
+    const int64_t overruns = sa.overrun_count + sb.overrun_count;
+
+    std::free(inbuf);
+    std::free(out_a);
+    std::free(out_b);
+    dsp_stop(a);
+    dsp_stop(b);
+    dsp_destroy(a);
+    dsp_destroy(b);
+
+    if (failures) *failures = fail_count;
+    if (overrun_calls) *overrun_calls = overruns;
+    return fail_count == 0 ? 0 : 1;
+}
