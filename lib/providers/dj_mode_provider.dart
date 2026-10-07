@@ -48,6 +48,7 @@ class DjModeProvider extends ChangeNotifier {
   DjPolicy get policy => DjPolicy(
         aggressiveness: _aggressiveness,
         minConfidence: _minConfidence,
+        harmonicMix: harmonicMixActive,
       );
   bool get analyzeIdleActive => _enabled && _analyzeIdle;
 
@@ -126,6 +127,7 @@ class DjModeProvider extends ChangeNotifier {
 
   Future<void> setHarmonicMix(bool value) async {
     _harmonicMix = value;
+    _syncToMusic();
     notifyListeners();
     await DjModeSettingsStore.setHarmonicMix(value);
   }
