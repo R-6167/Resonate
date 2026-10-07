@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../screens/mode_shelf_screen.dart';
 import 'package:provider/provider.dart';
 
 import '../integration/mode_folder_picker_port.dart';
@@ -71,6 +72,24 @@ class ModesScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
+
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.playlist_play_rounded),
+            title: const Text('Mode shelf'),
+            subtitle: const Text(
+              'Virtual playlist from folders and mode matches — does not hide your library',
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ModeShelfScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
           'Content folders',
           style: Theme.of(context).textTheme.titleMedium,
         ),

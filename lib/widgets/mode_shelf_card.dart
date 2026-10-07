@@ -9,6 +9,7 @@ import '../modes/screens/modes_screen.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/mode_shelf_builder.dart';
+import '../screens/mode_shelf_screen.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
 
@@ -188,6 +189,18 @@ class ModeShelfCard extends StatelessWidget {
                         },
                         icon: const Icon(Icons.queue_music_rounded),
                         label: const Text('Queue all'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<
+                                void>(
+                              builder: (_) => const ModeShelfScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('See all'),
                       ),
                     ],
                   ),

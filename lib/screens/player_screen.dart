@@ -19,6 +19,7 @@ import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
+import 'mode_shelf_screen.dart';
 import '../widgets/mode_guarded_action.dart';
 import '../modes/models/mode_action.dart';
 import '../modes/providers/mode_provider.dart';
@@ -211,6 +212,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
               ],
+              if (modes.mode.name != 'normal')
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ModeShelfScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.playlist_play_rounded, size: 18),
+                  label: const Text('Mode shelf'),
+                ),
               const SizedBox(height: 10),
               const SizedBox(height: 8),
               _WaveSeekBar(
