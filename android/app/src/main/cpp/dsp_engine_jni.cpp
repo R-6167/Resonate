@@ -162,6 +162,30 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
 }
 
 extern "C" JNIEXPORT jdoubleArray JNICALL
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetPreamp(
+        JNIEnv*, jclass, jlong handle, jdouble linearGain) {
+    if (!handle) return;
+    if (linearGain < 0.0) linearGain = 0.0;
+    if (linearGain > 4.0) linearGain = 4.0;
+    dsp_set_preamp(reinterpret_cast<void*>(handle), linearGain);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetLimiterCeiling(
+        JNIEnv*, jclass, jlong handle, jfloat highDb, jfloat lowDb) {
+    if (!handle) return;
+    dsp_set_limiter_ceiling(reinterpret_cast<void*>(handle), highDb, lowDb);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetCrossoverHz(
+        JNIEnv*, jclass, jlong handle, jfloat freqHz) {
+    if (!handle) return;
+    dsp_set_crossover_hz(reinterpret_cast<void*>(handle), freqHz);
+}
+
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeRunBassStress(JNIEnv* env, jclass) {
     DspStressResult st{};
     const int rc = dsp_run_bass_stress(&st);

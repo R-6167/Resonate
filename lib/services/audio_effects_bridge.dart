@@ -110,4 +110,32 @@ class AudioEffectsBridge {
       await _channel.invokeMethod('release');
     } catch (_) {}
   }
+
+  static Future<Map<String, dynamic>?> setLiveDspLimiterCeiling({
+    required double highDb,
+    required double lowDb,
+  }) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
+        'highDb': highDb,
+        'lowDb': lowDb,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspLimiterCeiling failed: $e');
+    }
+    return null;
+  }
+
+  static Future<Map<String, dynamic>?> setLiveDspCrossoverHz(double hz) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspCrossoverHz', {
+        'hz': hz,
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspCrossoverHz failed: $e');
+    }
+    return null;
+  }
 }

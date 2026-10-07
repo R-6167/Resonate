@@ -31,6 +31,10 @@ object DspEngineRegistry {
 
     @Volatile
     private var stickyVirtualBass: Double = 0.55
+    private var stickyPreamp: Double = 1.0
+    private var stickyLimiterHigh: Float = -0.5f
+    private var stickyLimiterLow: Float = -0.2f
+    private var stickyCrossoverHz: Float = 120f
 
     @JvmStatic
     fun register(processorId: Int, handle: Long) {
@@ -134,6 +138,50 @@ object DspEngineRegistry {
         return base
     }
 
+
+    /** True preamp (v0.4) — separate from DVC/volume. */
+    @JvmStatic
+    fun applyPreampAll(linearGain: Double) {
+        val g = linearGain.coerceIn(0.0, 4.0)
+        stickyPreamp = g
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetPreamp(h, g)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setPreamp failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applyPreampAll gain=$g targets=${list.size}")
+    }
+
+    @JvmStatic
+    fun applyLimiterCeilingAll(highDb: Float, lowDb: Float) {
+        stickyLimiterHigh = highDb.coerceIn(-6f, -0.1f)
+        stickyLimiterLow = lowDb.coerceIn(-6f, -0.1f)
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetLimiterCeiling(h, stickyLimiterHigh, stickyLimiterLow)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setLimiter failed handle=$h", t)
+            }
+        }
+    }
+
+    @JvmStatic
+    fun applyCrossoverHzAll(hz: Float) {
+        stickyCrossoverHz = hz.coerceIn(80f, 200f)
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                DspEngineJni.nativeSetCrossoverHz(h, stickyCrossoverHz)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setCrossover failed handle=$h", t)
+            }
+        }
+    }
+
     /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
     fun applyVolumeAll(linearGain: Double) {
@@ -178,6 +226,9 @@ object DspEngineRegistry {
             }
             DspEngineJni.nativeSetSpeakerMode(handle, stickySpeakerMode)
             DspEngineJni.nativeSetVirtualBass(handle, stickyVirtualBass)
+            DspEngineJni.nativeSetPreamp(handle, stickyPreamp)
+            DspEngineJni.nativeSetLimiterCeiling(handle, stickyLimiterHigh, stickyLimiterLow)
+            DspEngineJni.nativeSetCrossoverHz(handle, stickyCrossoverHz)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed", t)
         }

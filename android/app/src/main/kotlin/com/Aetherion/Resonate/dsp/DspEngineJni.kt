@@ -31,6 +31,9 @@ object DspEngineJni {
     )
     external fun nativeSetSpeakerMode(handle: Long, enabled: Boolean)
     external fun nativeSetVirtualBass(handle: Long, amount: Double)
+    external fun nativeSetPreamp(handle: Long, linearGain: Double)
+    external fun nativeSetLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)
+    external fun nativeSetCrossoverHz(handle: Long, freqHz: Float)
 
     /** [processCalls, avgUs, maxUs, overruns, lastFrames, sampleRate] */
     external fun nativeGetStats(handle: Long): DoubleArray?

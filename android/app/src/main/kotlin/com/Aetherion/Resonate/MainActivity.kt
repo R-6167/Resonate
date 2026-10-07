@@ -130,8 +130,20 @@ class MainActivity : AudioServiceActivity() {
                     "setLiveDspPreampDb" -> {
                         val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
                         val linear = if (db <= -120.0) 0.0 else Math.pow(10.0, db / 20.0)
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyVolumeAll(linear)
+                        // v0.4: preamp is independent of DVC/volume
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyPreampAll(linear)
                         result.success(mapOf("ok" to true, "linear" to linear, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
+                    }
+                    "setLiveDspLimiterCeiling" -> {
+                        val high = (call.argument<Number>("highDb") ?: -0.5).toFloat()
+                        val low = (call.argument<Number>("lowDb") ?: -0.2).toFloat()
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyLimiterCeilingAll(high, low)
+                        result.success(mapOf("ok" to true, "highDb" to high, "lowDb" to low))
+                    }
+                    "setLiveDspCrossoverHz" -> {
+                        val hz = (call.argument<Number>("hz") ?: 120.0).toFloat()
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyCrossoverHzAll(hz)
+                        result.success(mapOf("ok" to true, "hz" to hz))
                     }
                     "setLiveDspEqBands" -> {
                         val centers = (call.argument<List<Double>>("centersHz") ?: emptyList()).toDoubleArray()
