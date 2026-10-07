@@ -89,6 +89,10 @@ jobs:
           g++ -std=c++17 -O3 -I. /tmp/dsp_ab_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_ab_stress
           /tmp/dsp_ab_stress
 
+      - name: Android DSP unit tests
+        working-directory: android
+        run: ./gradlew app:testDebugUnitTest --no-daemon
+
       - name: Build release APK
         run: flutter build apk --release --no-shrink
 
