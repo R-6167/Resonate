@@ -199,10 +199,11 @@ class MusicProvider extends ChangeNotifier {
   bool get effectiveCrossfadeEnabled =>
       _crossfadeEnabled && _modeCrossfadeAllowed;
 
-  /// DJ handoffs only when mode still allows crossfade.
+  /// DJ handoffs are live only when DJ has an active transition feature
+  /// and the current Mode still permits crossfade-style handoffs.
   bool get _djHandoffsLive =>
       _modeCrossfadeAllowed &&
-      _djHandoffsLive;
+      (_djBeatAlignActive || _djTempoMatchActive || _djSfxActive);
   bool get effectiveShuffleEnabled =>
       _shuffleEnabled && _modeShuffleAllowed;
 
@@ -397,9 +398,9 @@ class MusicProvider extends ChangeNotifier {
       _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
-      _crossfadeEnabled = prefs.getBool(_crossfadeEnabledKey) ?? false;
-      _crossfadeDurationMs = ((prefs.getDouble(_crossfadeDurationKey) ?? 3000).round().clamp(500, 12000)).toInt();
-      _crossfadeFadeType = prefs.getString(_crossfadeFadeTypeKey) ?? 'linear';
+      // Crossfade preferences are owned and restored by CrossfadeProvider.
+      // MusicProvider remains the playback authority but does not persist a
+      // second copy of these UI preferences.
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? 0;
       _resumeSongId = prefs.getString(_resumeSongIdKey);
       await _loadResumeMap(prefs);
@@ -581,17 +582,22 @@ class MusicProvider extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  Future<void> setCrossfadeEnabled(bool enabled) async { _crossfadeEnabled = enabled; if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000; await _persistCrossfadeSettings(); notifyListeners(); }
-  Future<void> setCrossfadeDuration(int milliseconds) async { _crossfadeDurationMs = milliseconds.clamp(500, 12000).toInt(); _crossfadeEnabled = true; await _persistCrossfadeSettings(); notifyListeners(); }
-  Future<void> setCrossfadeFadeType(String value) async { if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(value)) return; _crossfadeFadeType = value; await _persistCrossfadeSettings(); notifyListeners(); }
+  Future<void> setCrossfadeEnabled(bool enabled) async {
+    _crossfadeEnabled = enabled;
+    if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000;
+    notifyListeners();
+  }
 
-  Future<void> _persistCrossfadeSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_crossfadeEnabledKey, _crossfadeEnabled);
-      await prefs.setDouble(_crossfadeDurationKey, _crossfadeDurationMs.toDouble());
-      await prefs.setString(_crossfadeFadeTypeKey, _crossfadeFadeType);
-    } catch (e) { debugPrint('Playback crossfade save failed: $e'); }
+  Future<void> setCrossfadeDuration(int milliseconds) async {
+    _crossfadeDurationMs = milliseconds.clamp(500, 12000).toInt();
+    _crossfadeEnabled = true;
+    notifyListeners();
+  }
+
+  Future<void> setCrossfadeFadeType(String value) async {
+    if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(value)) return;
+    _crossfadeFadeType = value;
+    notifyListeners();
   }
 
   Future<void> syncSavedAudioEffects() async {
