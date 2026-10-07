@@ -49,9 +49,14 @@ class DjPolicy {
   /// Minimum candidate confidence (0.20–0.80) before a non-safe plan is used.
   final double minConfidence;
 
+  /// When enabled, harmonic compatibility participates in transition scoring.
+  /// Disabled by default to preserve the pre-setting DJ behavior.
+  final bool harmonicMix;
+
   const DjPolicy({
     this.aggressiveness = DjAggressiveness.balanced,
     this.minConfidence = 0.40,
+    this.harmonicMix = false,
   });
 
   static const balanced = DjPolicy();
