@@ -27,24 +27,31 @@ class ModeGuardedAction extends StatefulWidget {
 
 class _ModeGuardedActionState extends State<ModeGuardedAction> {
   final Set<int> _pointers = <int>{};
+  int _peakPointers = 0;
   DateTime? _downAt;
+
+  void _onDown(PointerDownEvent e) {
+    if (_pointers.isEmpty) {
+      _peakPointers = 0;
+      _downAt = DateTime.now();
+    }
+    _pointers.add(e.pointer);
+    if (_pointers.length > _peakPointers) {
+      _peakPointers = _pointers.length;
+    }
+  }
+
+  void _onUp(int pointer) {
+    _pointers.remove(pointer);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (e) {
-        _pointers.add(e.pointer);
-        _downAt ??= DateTime.now();
-      },
-      onPointerUp: (e) {
-        _pointers.remove(e.pointer);
-        if (_pointers.isEmpty) _downAt = null;
-      },
-      onPointerCancel: (e) {
-        _pointers.remove(e.pointer);
-        if (_pointers.isEmpty) _downAt = null;
-      },
+      onPointerDown: _onDown,
+      onPointerUp: (e) => _onUp(e.pointer),
+      onPointerCancel: (e) => _onUp(e.pointer),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _tryAllow(context),
@@ -59,27 +66,33 @@ class _ModeGuardedActionState extends State<ModeGuardedAction> {
     final duration = _downAt == null
         ? Duration.zero
         : DateTime.now().difference(_downAt!);
-    // Use peak concurrent pointers during this gesture (count at tap includes
-    // any still down). Clamp to at least 1 for a normal single tap.
-    final count = _pointers.isEmpty ? 1 : _pointers.length;
+    // Peak concurrent pointers during the gesture (onTap often fires after
+    // the last pointer is already up).
+    final count = _peakPointers <= 0 ? 1 : _peakPointers;
 
     final allowed = guard.allowTap(
       action: widget.action,
       pointerCount: count,
       duration: duration,
     );
+
+    _peakPointers = 0;
+    _downAt = null;
+    _pointers.clear();
+
     if (allowed) {
       widget.onAllowed();
       return;
     }
     if (widget.showBlockedFeedback && context.mounted) {
-      final needTwo = modes.interactionPolicy.requiresTwoFingerTap(widget.action);
+      final needTwo =
+          modes.interactionPolicy.requiresTwoFingerTap(widget.action);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             needTwo
-                ? 'Running mode: use two fingers for ${widget.action.name}'
+                ? 'Running mode: use two fingers for transport'
                 : 'Action blocked by mode interaction policy',
           ),
           duration: const Duration(milliseconds: 1600),
