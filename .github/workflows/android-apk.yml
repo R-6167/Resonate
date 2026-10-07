@@ -74,6 +74,21 @@ jobs:
           g++ -std=c++17 -O3 -I. /tmp/dsp_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_stress
           /tmp/dsp_stress
 
+          cat > /tmp/dsp_ab_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            int failures = 0;
+            int64_t overruns = 0;
+            const int rc = dsp_run_ab_stress(4000, &failures, &overruns);
+            std::printf("DSP A/B stress: rc=%d, failures=%d, overruns=%lld\n",
+                        rc, failures, (long long)overruns);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_ab_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_ab_stress
+          /tmp/dsp_ab_stress
+
       - name: Build release APK
         run: flutter build apk --release --no-shrink
 
