@@ -220,7 +220,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         if (h != 0L) {
             DspEngineRegistry.unregister(processorId)
             try {
-                DspEngineJni.nativeDestroy(h)
+                nativeApi.destroy(h)
             } catch (t: Throwable) {
                 Log.w(TAG, "id=$processorId nativeDestroy after demotion failed", t)
             }
