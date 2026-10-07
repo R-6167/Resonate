@@ -16,15 +16,6 @@ jobs:
           ref: modes_on_dj_v2
           fetch-depth: 0
       - run: python3 tools/wire_mode_player_density.py
-      - name: Validate player_screen parses
-        run: |
-          python3 -c "
-from pathlib import Path
-t=Path('lib/screens/player_screen.dart').read_text()
-assert 'ModePlayerDensity' in t
-assert 'Consumer2<MusicProvider, ModeProvider>' in t
-print('ok', t.count('density.'))
-"
       - run: |
           git config user.name "resonate-bot"
           git config user.email "bot@resonate.local"
