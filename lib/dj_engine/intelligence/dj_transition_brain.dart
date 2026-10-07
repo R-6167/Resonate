@@ -131,7 +131,7 @@ class DjTransitionBrain {
     double phraseWeight, double structureWeight,
   ) {
     final tempo = _tempoScore(a, b);
-    final harmonic = _harmonicScore(a, b);
+    final harmonic = policy.harmonicMix ? _harmonicScore(a, b) : 0.5;
     final energy = _energyTrajectoryScore(a, b, outPos, inPos);
     final spectrum = _spectrumScore(a, b);
     final phrase = _phraseScore(a, b, inPos);
