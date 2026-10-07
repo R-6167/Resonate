@@ -1,5 +1,6 @@
 import '../../models/song.dart';
 import '../models/mode_media_item.dart';
+import '../models/resonate_mode.dart';
 import '../providers/mode_provider.dart';
 
 /// Resolves content for mode-owned surfaces (shelves, generated queues and
