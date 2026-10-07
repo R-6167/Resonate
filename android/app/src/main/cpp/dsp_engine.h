@@ -106,6 +106,9 @@ int   dsp_get_info(void* handle, DspInfo* out);
 
 int   dsp_run_bass_stress(DspStressResult* out);
 
+/** Sustained dual-engine stress: rapid control updates + interleaved A/B processing. */
+int   dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t* overrun_calls);
+
 #ifdef __cplusplus
 }
 #endif
