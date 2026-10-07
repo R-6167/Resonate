@@ -18,10 +18,17 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class DspEngineAudioProcessor : BaseAudioProcessor() {
 
+    internal interface NativeDspApi {
+        fun create(sampleRate: Double, channels: Int): Long
+        fun destroy(handle: Long)
+        fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
+        fun setEnabled(handle: Long, enabled: Boolean)
+    }
+
     companion object {
         private const val TAG = "DspEngineAudioProcessor"
 
-        internal interface NativeDspApi {
+        private val jniApi = object : NativeDspApi {
             fun create(sampleRate: Double, channels: Int): Long
             fun destroy(handle: Long)
             fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
