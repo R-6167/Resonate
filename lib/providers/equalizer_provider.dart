@@ -492,8 +492,9 @@ class EqualizerProvider extends ChangeNotifier {
     _hardwareBound = true;
     try {
       await _loadHardwareBands();
-      await _androidEqualizer?.setEnabled(isEnabled);
-      // Re-apply studio curve after hardware is live so preset survives app restart.
+      // Hardware EQ is no longer part of the active audio path. Keep its
+      // parameters available for capability/UI inspection only.
+      // Re-apply the studio curve through the mature DSP engine.
       if (preset != 'Custom') {
         final match = allPresets.where((p) => p.name == preset);
         if (match.isNotEmpty) {
@@ -566,64 +567,22 @@ class EqualizerProvider extends ChangeNotifier {
   bool get nativeDspActive => ResonateNativeDspBridge.available;
   int get nativeDspBandCount => ResonateNativeDspBridge.lastBandCount ?? 0;
 
+  /// Push the studio curve to the mature live DSP engine.
+  ///
+  /// The native DSP processor is the single audio-path owner for EQ. Android's
+  /// device Equalizer/DynamicsProcessing APIs are intentionally not written here;
+  /// doing so would stack a second EQ on the same PCM stream.
   Future<void> _pushToHardware() async {
-    // Live DSP ENGINE (A/B sinks) — sticky even if hardware not bound yet.
     try {
-      final studioGainsLive = studioBands.map((b) => b.gainDb).toList();
-      final centersLive = studioBands.map((b) => b.frequencyHz).toList();
-      // ignore: unawaited_futures
+      final centers = studioBands.map((b) => b.frequencyHz).toList();
+      final gains = studioBands.map((b) => b.gainDb).toList();
       syncStudioBandsToNativeEq(
-        centersHz: centersLive,
-        gainsDb: studioGainsLive,
+        centersHz: centers,
+        gainsDb: gains,
         enabled: isEnabled,
       );
     } catch (e) {
       debugPrint('live DSP EQ push failed: $e');
-    }
-    if (!_hardwareBound) return;
-    final studioGains = studioBands.map((b) => b.gainDb).toList();
-    final centers = studioBands.map((b) => b.frequencyHz).toList();
-
-    // Stage A: classic Android Equalizer (device band count).
-    if (_androidEqualizer != null && bandStates.isNotEmpty) {
-      final mapped = mapStudioToHardware(studioGains);
-      try {
-        final parameters = await _androidEqualizer!.parameters;
-        for (var i = 0; i < bandStates.length && i < mapped.length; i++) {
-          final g = mapped[i].clamp(bandStates[i].minGain, bandStates[i].maxGain).toDouble();
-          bandStates[i].gain = g;
-          final nativeBand = parameters.bands.firstWhere((b) => b.index == bandStates[i].index);
-          await nativeBand.setGain(isEnabled ? g : 0.0);
-        }
-      } catch (e) {
-        debugPrint('push EQ to hardware failed: $e');
-      }
-    }
-
-    // Stage B: Resonate DynamicsProcessing only when user-enabled and attached.
-    try {
-      if (!_nativeDspEnabled) {
-        // hardware-only path
-      } else {
-      _dspPipeline.updateStudioGains(studioGains);
-      final n = ResonateNativeDspBridge.lastBandCount ?? 0;
-      if (n > 0) {
-        // Sample engine response at evenly spaced points across studio range for native bands.
-        final nativeCenters = <double>[
-          for (var i = 0; i < n; i++)
-            studioFrequencies.first +
-                (studioFrequencies.last - studioFrequencies.first) * (i / (n - 1).clamp(1, 100)),
-        ];
-        final nativeGains = _dspPipeline.hardwareTargets(nativeCenters);
-        await ResonateNativeDspBridge.pushBands(
-          centersHz: nativeCenters,
-          gainsDb: nativeGains,
-          enabled: isEnabled,
-        );
-      }
-      }
-    } catch (e) {
-      debugPrint('push EQ to Resonate native DSP failed: $e');
     }
   }
 
@@ -644,37 +603,20 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> _applyPreamp() async {
-    // Cuts (−6…0 dB): digital attenuation via MusicProvider player volume scale.
-    // Boosts (0…+6 dB): AndroidLoudnessEnhancer in millibels.
-    // Never use LoudnessEnhancer for cuts — some OEMs mute below ~−4 dB.
+    // Mature DSP owns EQ preamp/DVC. Do not mirror it into player volume or
+    // Android LoudnessEnhancer, otherwise the same gain is applied twice.
     final effective = isEnabled ? preamp.clamp(-6.0, 6.0) : 0.0;
     try {
-      // ignore: unawaited_futures
       syncPreampToDvc(effective, enabled: isEnabled);
-    } catch (_) {}
-    final cutDb = effective < 0 ? effective : 0.0;
-    final scale =
-        math.pow(10.0, cutDb / 20.0).toDouble().clamp(0.25, 1.0);
-    try {
-      if (_music != null) {
-        await _music!.setEqPreampScale(scale);
-      }
     } catch (e) {
-      debugPrint('preamp digital scale failed: $e');
+      debugPrint('live DSP preamp push failed: $e');
     }
-    if (!_hardwareBound) return;
-    if (_loudnessEnhancer == null) return;
-    try {
-      if (!isEnabled || effective <= 0.05) {
+    // Keep legacy Android LoudnessEnhancer explicitly disabled for this path.
+    if (_loudnessEnhancer != null) {
+      try {
         await _loudnessEnhancer!.setTargetGain(0);
         await _loudnessEnhancer!.setEnabled(false);
-        return;
-      }
-      final boostDb = effective.clamp(0.0, 6.0);
-      await _loudnessEnhancer!.setTargetGain(boostDb * 100.0);
-      await _loudnessEnhancer!.setEnabled(true);
-    } catch (e) {
-      debugPrint('preamp boost failed: $e');
+      } catch (_) {}
     }
   }
 
@@ -750,11 +692,8 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> setEnabled(bool value) async {
     isEnabled = value;
-    try {
-      await _androidEqualizer?.setEnabled(value);
-    } catch (e) {
-      debugPrint('equalizer enable failed: $e');
-    }
+    // The mature live DSP is the authoritative EQ processor. The Android
+    // Equalizer remains only as a read-only capability mirror for legacy UI.
     await _pushToHardware();
     await _applyPreamp();
     await _save();
