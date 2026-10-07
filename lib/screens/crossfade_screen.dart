@@ -6,6 +6,10 @@ import 'package:provider/provider.dart';
 import '../widgets/dj_mode_status_chip.dart';
 
 import '../providers/crossfade_provider.dart';
+import '../providers/music_provider.dart';
+import '../modes/providers/mode_provider.dart';
+import '../modes/integration/resonate_mode_ports.dart';
+import '../modes/screens/modes_screen.dart';
 
 class CrossfadeScreen extends StatelessWidget {
   const CrossfadeScreen({super.key});
@@ -23,9 +27,13 @@ class CrossfadeScreen extends StatelessWidget {
           onPressed: () => _confirmReset(context),
         ),
       ],
-      body: Consumer<CrossfadeProvider>(
-        builder: (context, crossfade, _) {
+      body: Consumer2<CrossfadeProvider, ModeProvider>(
+        builder: (context, crossfade, modes, _) {
           final enabled = crossfade.isEnabled;
+          final modeAllows = modes.crossfadeAllowed;
+          final music = context.watch<MusicProvider>();
+          final engineOn = music.effectiveCrossfadeEnabled;
+          final blockedByMode = enabled && !modeAllows;
           final durationMs = crossfade.duration.clamp(0.0, 12000.0);
           final fadeType = crossfade.fadeType;
 
@@ -51,6 +59,83 @@ class CrossfadeScreen extends StatelessWidget {
                 contextLabel:
                     'When DJ Mode is on, handoffs may seek to a beat and bias duration.',
               ),
+              if (blockedByMode) ...[
+                const SizedBox(height: 12),
+                Card(
+                  margin: EdgeInsets.zero,
+                  elevation: 0,
+                  color: scheme.tertiaryContainer.withValues(alpha: 0.45),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              color: scheme.onTertiaryContainer,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Blocked by ${modes.mode.label} mode',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onTertiaryContainer,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Crossfade is on in settings, but ${modes.mode.label} '
+                          'policy does not allow blending between tracks '
+                          '(speech / chapter listening stays precise). '
+                          'The engine will use hard cuts until you switch mode '
+                          'or change policy.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: scheme.onTertiaryContainer,
+                              ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<
+                                  void>(
+                                builder: (_) => ModesScreen(
+                                  folderPicker:
+                                      const ResonateModeFolderPickerPort(),
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Text('Open Modes'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else if (enabled && engineOn) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Engine: crossfade active for this mode.',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ] else if (enabled && !engineOn) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Engine: crossfade not applying (check duration and mode).',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: scheme.error,
+                      ),
+                ),
+              ],
               const SizedBox(height: 12),
 
               Card(
@@ -65,9 +150,13 @@ class CrossfadeScreen extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
-                    enabled
-                        ? 'Dual-engine transitions · ${crossfade.getDurationString()}'
-                        : 'Tracks play end-to-end with a hard cut',
+                    blockedByMode
+                        ? 'On in settings — blocked by ${modes.mode.label} mode'
+                        : enabled
+                            ? (engineOn
+                                ? 'Dual-engine transitions · ${crossfade.getDurationString()}'
+                                : 'Enabled — waiting for engine/duration')
+                            : 'Tracks play end-to-end with a hard cut',
                   ),
                   value: enabled,
                   onChanged: crossfade.toggleCrossfade,

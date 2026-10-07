@@ -66,7 +66,7 @@ rest of Resonate.
 - [ ] **Crossfade discoverability** — engine defaults to crossfade off; many
   builds feel “broken” until Settings → Crossfade is enabled with duration &gt; 0.
   Consider a sensible first-run default (e.g. 3s) or an onboarding hint.
-- [ ] **Mode vs Crossfade UI honesty** — when policy sets `crossfadeAllowed:
+- [x] **Mode vs Crossfade UI honesty** — when policy sets `crossfadeAllowed:
   false` (Podcast / Audiobook), the Crossfade screen can still look “on” while
   the engine refuses transitions. Surface “blocked by Mode” in UI.
 - [ ] **Single source of truth for crossfade prefs** — `CrossfadeProvider` and
