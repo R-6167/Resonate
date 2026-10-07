@@ -193,14 +193,8 @@ class MainActivity : AudioServiceActivity() {
             reverb?.release()
         } catch (_: Exception) {
         }
-        try {
-            resonateDsp?.release()
-        } catch (_: Exception) {
-        }
         virtualizer = null
         reverb = null
-        resonateDsp = null
-        resonateDspBandCount = 0
         effectSessionId = 0
     }
 
