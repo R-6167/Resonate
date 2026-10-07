@@ -14,31 +14,26 @@ object DspEngineRegistry {
 
     private val handles = ConcurrentHashMap<Int, Long>()
 
-    @Volatile
-    private var stickyLinearGain: Double = 1.0
+    /**
+     * One immutable generation of DSP settings. Publishing the whole state through
+     * one volatile reference prevents a newly-created A/B engine from observing a
+     * mixed generation (for example, new EQ with old preamp) during rapid UI changes.
+     */
+    private data class StickyState(
+        val linearGain: Double = 1.0,
+        val eqEnabled: Boolean = true,
+        val centersHz: DoubleArray? = null,
+        val gainsDb: DoubleArray? = null,
+        val speakerMode: Boolean = false,
+        val virtualBass: Double = 0.55,
+        val preamp: Double = 1.0,
+        val limiterHigh: Float = -0.5f,
+        val limiterLow: Float = -0.2f,
+        val crossoverHz: Float = 120f,
+    )
 
     @Volatile
-    private var stickyEqEnabled: Boolean = true
-
-    @Volatile
-    private var stickyCentersHz: DoubleArray? = null
-
-    @Volatile
-    private var stickyGainsDb: DoubleArray? = null
-
-    @Volatile
-    private var stickySpeakerMode: Boolean = false
-
-    @Volatile
-    private var stickyVirtualBass: Double = 0.55
-    @Volatile
-    private var stickyPreamp: Double = 1.0
-    @Volatile
-    private var stickyLimiterHigh: Float = -0.5f
-    @Volatile
-    private var stickyLimiterLow: Float = -0.2f
-    @Volatile
-    private var stickyCrossoverHz: Float = 120f
+    private var stickyState = StickyState()
 
     @JvmStatic
     @Synchronized
