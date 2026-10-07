@@ -15,10 +15,15 @@ import '../services/intelligence_settings_store.dart';
 import '../services/library_visibility_store.dart';
 import '../services/resonate_diagnostics.dart';
 import 'music_provider.dart';
+import '../modes/providers/mode_provider.dart';
+import '../modes/models/mode_media_item.dart';
+import '../modes/services/mode_content_resolver.dart';
 
 class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   final MusicProvider music;
   final DatabaseHelper _database = DatabaseHelper();
+  final ModeContentResolver _modeContentResolver = const ModeContentResolver();
+  ModeProvider? _modes;
 
   bool _enabled = true;
   int _autonomy = 1;
@@ -60,6 +65,16 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool get quietWhenBackground => _quietWhenBackground;
+
+  void attachModes(ModeProvider modes) {
+    _modes = modes;
+    modes.addListener(_onModeChanged);
+    _scheduleRefreshRecommendations();
+  }
+
+  void _onModeChanged() {
+    if (_enabled) _scheduleRefreshRecommendations();
+  }
 
   Future<void> setQuietWhenBackground(bool value) async {
     _quietWhenBackground = value;
@@ -349,8 +364,16 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
       for (final event in sessionEvents) { final artist = _artistKey(byId[event.songId]?.artist); if (artist.isNotEmpty) sessionArtistCounts[artist] = (sessionArtistCounts[artist] ?? 0) + 1; }
       await _updateSessionContext(events, byId);
 
+      final modeFilteredSongs = _modes == null
+          ? songs
+          : _modeContentResolver.resolve(
+              modes: _modes!,
+              songs: songs,
+              preferPreferredContent: false,
+            );
+
       final ranked = <IntelligenceRecommendation>[];
-      for (final song in songs) {
+      for (final song in modeFilteredSongs) {
         if (song.id == current?.id || song.filePath.trim().isEmpty) continue;
         if (isArtistAvoided(song.artist)) continue;
         final play = plays[song.id] ?? 0;
@@ -365,9 +388,18 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
         final familiarityBonus = (play > 0 ? familiarity * 0.2 : 0.0) + (completion * 0.25);
         final sessionContinuity = sessionArtistCounts[artist] != null ? 0.12 : 0.0;
         final feedback = _feedback[song.id] ?? 0.0;
+        final modeBias = _modes == null
+            ? 0
+            : _modes!.contentBiasScore(ModeMediaItem(
+                id: song.id,
+                filePath: song.filePath,
+                title: song.title,
+                album: song.album,
+                artist: song.artist,
+              ));
         final seek = seekEvidence[song.id];
         final seekBoost = seek?.strength ?? 0.0;
-        final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08) + seekBoost;
+        final score = (t * 0.35) + (completion * 0.25) + (artistScore * 0.15) + (timeAffinity * 0.1) + explorationBonus + familiarityBonus + sessionContinuity + (feedback * 0.08) + seekBoost + (modeBias * 0.08);
         // Phase B: slow confidence — base stays low until repeated local evidence.
         final evidenceBits = (t > 0 ? 1 : 0) +
             (completion > 0.55 ? 1 : 0) +
@@ -434,6 +466,7 @@ class IntelligenceProvider extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     LibraryVisibilityStore.instance.removeListener(_onVisibilityChanged);
     music.removeListener(_observePlayback);
+    _modes?.removeListener(_onModeChanged);
     super.dispose();
   }
 }
