@@ -151,7 +151,7 @@ class DjTransitionBrain {
   double _weightedScore(Map<String, double> s, {DjPolicy policy = DjPolicy.balanced}) {
     final phraseBoost = policy.phraseWeightBoost;
     return (s['tempo'] ?? 0.5) * 0.22 +
-        (s['harmony'] ?? 0.5) * 0.18 +
+        (s['harmonic'] ?? 0.5) * 0.18 +
         (s['energy'] ?? 0.5) * 0.16 +
         (s['spectrum'] ?? 0.5) * 0.10 +
         (s['phrase'] ?? 0.5) * (0.14 + phraseBoost) +
