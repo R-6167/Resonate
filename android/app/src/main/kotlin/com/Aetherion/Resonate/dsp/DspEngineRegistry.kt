@@ -74,7 +74,7 @@ object DspEngineRegistry {
         for (h in list) {
             try {
                 DspEngineJni.nativeSetSpeakerMode(h, enabled)
-                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+                DspEngineJni.nativeSetVirtualBass(h, stickyState.virtualBass)
             } catch (t: Throwable) {
                 Log.w(TAG, "setSpeakerMode failed handle=$h", t)
             }
@@ -85,7 +85,7 @@ object DspEngineRegistry {
     @JvmStatic
     fun applyVirtualBassAll(amount: Double) {
         stickyState = stickyState.copy(virtualBass = amount.coerceIn(0.0, 1.0))
-        if (!stickySpeakerMode) return
+        if (!stickyState.speakerMode) return
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -171,7 +171,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetLimiterCeiling(h, stickyLimiterHigh, stickyLimiterLow)
+                DspEngineJni.nativeSetLimiterCeiling(h, stickyState.limiterHigh, stickyState.limiterLow)
             } catch (t: Throwable) {
                 Log.w(TAG, "setLimiter failed handle=$h", t)
             }
@@ -184,7 +184,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetCrossoverHz(h, stickyCrossoverHz)
+                DspEngineJni.nativeSetCrossoverHz(h, stickyState.crossoverHz)
             } catch (t: Throwable) {
                 Log.w(TAG, "setCrossover failed handle=$h", t)
             }
