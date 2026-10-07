@@ -37,11 +37,21 @@ object DspEngineRegistry {
     private var stickyCrossoverHz: Float = 120f
 
     @JvmStatic
-    fun register(processorId: Int, handle: Long) {
-        if (handle == 0L) return
+    fun register(processorId: Int, handle: Long): Boolean {
+        if (handle == 0L) return false
+
+        // Configure the new engine before publishing it to the live registry.
+        // If JNI configuration fails, the caller still owns the handle and can
+        // destroy it safely; the registry never exposes a partially configured
+        // engine to A/B-wide setting updates.
+        if (!applyStickyToHandle(handle)) {
+            Log.w(TAG, "reject id=$processorId handle=$handle: sticky configuration failed")
+            return false
+        }
+
         handles[processorId] = handle
-        applyStickyToHandle(handle)
         Log.i(TAG, "register id=$processorId handle=$handle active=${handles.size}")
+        return true
     }
 
     @JvmStatic
@@ -215,7 +225,7 @@ object DspEngineRegistry {
         Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} enabled=$enabled targets=${list.size}")
     }
 
-    private fun applyStickyToHandle(handle: Long) {
+    private fun applyStickyToHandle(handle: Long): Boolean {
         try {
             DspEngineJni.nativeSetVolume(handle, stickyLinearGain)
             val gains = stickyGainsDb
@@ -230,7 +240,9 @@ object DspEngineRegistry {
             DspEngineJni.nativeSetLimiterCeiling(handle, stickyLimiterHigh, stickyLimiterLow)
             DspEngineJni.nativeSetCrossoverHz(handle, stickyCrossoverHz)
         } catch (t: Throwable) {
-            Log.w(TAG, "applySticky failed", t)
+            Log.w(TAG, "applySticky failed handle=$handle", t)
+            return false
         }
+        return true
     }
 }
