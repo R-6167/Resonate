@@ -8,6 +8,8 @@ import '../modes/providers/mode_provider.dart';
 import '../modes/screens/modes_screen.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
+import '../providers/intelligence_provider.dart';
+import '../models/song.dart';
 import '../services/mode_shelf_builder.dart';
 import '../screens/mode_shelf_screen.dart';
 import '../services/playback_authority.dart';
@@ -20,13 +22,17 @@ class ModeShelfCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<ModeProvider, LibraryProvider>(
-      builder: (context, modes, library, _) {
+    return Consumer3<ModeProvider, LibraryProvider, IntelligenceProvider>(
+      builder: (context, modes, library, intel, _) {
         if (!modes.isReady) return const SizedBox.shrink();
 
+        final intelSongs = intel.isEnabled
+            ? intel.recommendations.map((r) => r.song).toList()
+            : const <Song>[];
         final shelf = ModeShelfBuilder.build(
           modes: modes,
           library: library.allSongs,
+          intelligenceSongs: intelSongs,
         );
 
         // Normal: compact note, no faux playlist

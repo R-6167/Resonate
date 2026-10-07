@@ -198,6 +198,11 @@ class MusicProvider extends ChangeNotifier {
   /// User setting AND mode policy both allow crossfade.
   bool get effectiveCrossfadeEnabled =>
       _crossfadeEnabled && _modeCrossfadeAllowed;
+
+  /// DJ handoffs only when mode still allows crossfade.
+  bool get _djHandoffsLive =>
+      _modeCrossfadeAllowed &&
+      _djHandoffsLive;
   bool get effectiveShuffleEnabled =>
       _shuffleEnabled && _modeShuffleAllowed;
 
@@ -2897,7 +2902,7 @@ class MusicProvider extends ChangeNotifier {
   }) async {
     _lastDjCrossfadeBiasMs = 0;
     _activeDjExecutionPlan = null;
-    if ((!_djBeatAlignActive && !_djTempoMatchActive) || _djAnalysis == null) {
+    if ((!_djHandoffsLive) || _djAnalysis == null) {
       return;
     }
     if (outgoingSong == null) return;
@@ -3727,7 +3732,7 @@ class MusicProvider extends ChangeNotifier {
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
       // Hard execution failures are stronger negative learning than a later
       // manual skip. User cancellation/preemption exits before this catch.
-      if ((_djBeatAlignActive || _djTempoMatchActive || _djSfxActive) &&
+      if (_djHandoffsLive &&
           outgoingSong != null &&
           _lastDjStrategy != null) {
         unawaited(DjTransitionMemory.recordOutcome(

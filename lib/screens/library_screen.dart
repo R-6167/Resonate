@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import '../modes/providers/mode_provider.dart';
+import '../providers/intelligence_provider.dart';
+import '../models/song.dart';
+import '../services/mode_shelf_builder.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
@@ -342,8 +346,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           const Divider(),
           Expanded(
-            child: Consumer2<LibraryProvider, MusicProvider>(
-              builder: (context, library, music, _) {
+            child: Consumer3<LibraryProvider, MusicProvider, ModeProvider>(
+              builder: (context, library, music, modes, _) {
                 final songs =
                     library.filteredSongs.isNotEmpty ||
                         library.searchQuery.isNotEmpty ||
@@ -424,10 +428,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      subtitle: Text(
-                        song.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      subtitle: Builder(
+                        builder: (context) {
+                          final intel = context.watch<IntelligenceProvider>();
+                          final intelSongs = intel.isEnabled
+                              ? intel.recommendations.map((r) => r.song).toList()
+                              : const <Song>[];
+                          final badge = ModeShelfBuilder.membershipBadge(
+                            modes: modes,
+                            song: song,
+                            library: library.allSongs,
+                            intelligenceSongs: intelSongs,
+                          );
+                          final text = badge == null
+                              ? song.artist
+                              : '${song.artist} · $badge';
+                          return Text(
+                            text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: badge == null
+                                ? null
+                                : TextStyle(
+                                    color: Theme.of(context).colorScheme.tertiary,
+                                  ),
+                          );
+                        },
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
