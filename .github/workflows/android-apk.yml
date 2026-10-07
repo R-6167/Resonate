@@ -1,24 +1,27 @@
-name: Android APK
+name: Resonate CI
 
 on:
   push:
-    branches: [dj_Mode, Wire_dsp_engine, modes_on_dj_v2, main]
+    branches: [modes_on_dj_v2]
   pull_request:
-    branches: [dj_Mode, Wire_dsp_engine, modes_on_dj_v2, main]
+    branches: [modes_on_dj_v2]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: android-apk-${{ github.ref }}
+  group: resonate-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build debug APK
+  validate-and-build:
+    name: Validate DSP, Flutter, and Android
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
-      - name: Checkout Resonate
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -26,45 +29,63 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.47.2"
           channel: stable
           cache: true
 
       - name: Flutter version
         run: flutter --version
 
-      - name: Pub get
+      - name: Get dependencies
         run: flutter pub get
 
-      - name: Patch just_audio for DSP AudioProcessor injection
+      - name: Patch just_audio DSP sink
+        run: python3 scripts/patch_just_audio_dsp_sink.py
+
+      - name: Flutter analyze
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
+      - name: Flutter tests
+        run: flutter test --reporter expanded
+
+      - name: Native DSP compile and stress test
+        working-directory: android/app/src/main/cpp
         run: |
-          set +e
-          python3 scripts/patch_just_audio_dsp_sink.py
-          rc=$?
-          set -e
-          if [ "$rc" -eq 1 ]; then
-            echo "FATAL: AudioPlayer.java missing after pub get"
-            exit 1
-          fi
-          echo "patch_just_audio exit=$rc"
+          set -euo pipefail
+          g++ -std=c++17 -O3 -fPIC -I. -c dsp_engine_core.cpp -o /tmp/dsp_engine_core.o
+          g++ -std=c++17 -O3 -fPIC -I. -c dsp_stress.cpp -o /tmp/dsp_stress.o
+          cat > /tmp/dsp_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            DspStressResult r{};
+            const int rc = dsp_run_bass_stress(&r);
+            std::printf("DSP stress: %d/%d cases, peak=%f, cpu=%f%%, overruns=%d\n",
+                        r.cases_passed, r.cases_run, r.max_abs_peak,
+                        r.cpu_pct_of_budget, r.overrun_calls);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_stress
+          /tmp/dsp_stress
 
-      - name: Analyze (non-blocking)
-        continue-on-error: true
-        run: flutter analyze --no-fatal-infos || true
+      - name: Build release APK
+        run: flutter build apk --release --no-shrink
 
-      - name: Build APK (debug)
-        run: flutter build apk --debug --no-tree-shake-icons
+      - name: Verify release APK
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-      - name: List outputs
-        run: find build/app/outputs -type f -name "*.apk" -ls || true
-
-      - name: Upload APK
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: resonate-debug-apk
-          path: build/app/outputs/flutter-apk/*.apk
-          if-no-files-found: error
+          name: resonate-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
+          if-no-files-found: error
