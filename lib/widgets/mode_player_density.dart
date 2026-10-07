@@ -13,6 +13,7 @@ class ModePlayerDensity {
     required this.largeControls,
     required this.reducedChrome,
     required this.allowHorizontalSwipe,
+    required this.requiresTwoFingerPlayback,
     required this.artworkHeight,
     required this.transportIconSize,
     required this.playButtonSize,
@@ -20,6 +21,10 @@ class ModePlayerDensity {
     required this.secondaryIconSize,
     required this.seekTrackHeight,
     required this.seekThumbRadius,
+    required this.seekHitHeight,
+    required this.seekStrokeScale,
+    required this.homePlayMinWidth,
+    required this.homePlayMinHeight,
     required this.showIntelligenceCards,
     required this.showSecondaryRow,
     required this.hintLabel,
@@ -30,6 +35,7 @@ class ModePlayerDensity {
   final bool largeControls;
   final bool reducedChrome;
   final bool allowHorizontalSwipe;
+  final bool requiresTwoFingerPlayback;
   final double artworkHeight;
   final double transportIconSize;
   final double playButtonSize;
@@ -37,6 +43,10 @@ class ModePlayerDensity {
   final double secondaryIconSize;
   final double seekTrackHeight;
   final double seekThumbRadius;
+  final double seekHitHeight;
+  final double seekStrokeScale;
+  final double homePlayMinWidth;
+  final double homePlayMinHeight;
   final bool showIntelligenceCards;
   final bool showSecondaryRow;
   final String? hintLabel;
@@ -49,6 +59,7 @@ class ModePlayerDensity {
     final minimal = policy.uiDensity == UiDensity.minimal;
     final drivingOrRunning = modes.mode == ResonateMode.driving ||
         modes.mode == ResonateMode.running;
+    final twoFinger = interaction.minimumTapPointers >= 2;
 
     return ModePlayerDensity(
       mode: modes.mode,
@@ -56,19 +67,23 @@ class ModePlayerDensity {
       largeControls: large,
       reducedChrome: reduced || minimal,
       allowHorizontalSwipe: interaction.allowHorizontalSwipeNavigation,
+      requiresTwoFingerPlayback: twoFinger,
       artworkHeight: large ? 200 : 250,
       transportIconSize: large ? 42 : 30,
       playButtonSize: large ? 92 : 72,
       playIconSize: large ? 48 : 36,
       secondaryIconSize: large ? 28 : 24,
-      seekTrackHeight: large ? 6 : 3,
-      seekThumbRadius: large ? 12 : 8,
-      // Driving/Running: less distraction on the road / while moving
+      seekTrackHeight: large ? 8 : 4,
+      seekThumbRadius: large ? 14 : 8,
+      seekHitHeight: large ? 88 : 64,
+      seekStrokeScale: large ? 1.55 : 1.0,
+      homePlayMinWidth: large ? 128 : 96,
+      homePlayMinHeight: large ? 52 : 40,
       showIntelligenceCards: !drivingOrRunning && !minimal,
       showSecondaryRow: !minimal,
       hintLabel: switch (modes.mode) {
         ResonateMode.driving => 'Driving · larger controls',
-        ResonateMode.running => 'Running · large targets',
+        ResonateMode.running => 'Running · two-finger transport',
         ResonateMode.podcast => 'Podcast · precise resume',
         ResonateMode.audiobook => 'Audiobook · reduced chrome',
         ResonateMode.work => 'Work · calm layout',
