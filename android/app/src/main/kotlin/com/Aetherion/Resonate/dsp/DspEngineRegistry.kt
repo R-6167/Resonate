@@ -82,6 +82,12 @@ object DspEngineRegistry {
         return true
     }
 
+    internal fun resetForTests() {
+        handles.clear()
+        stickyState = StickyState()
+        nativeApi = jniApi
+    }
+
     @JvmStatic
     fun unregister(processorId: Int) {
         val h = handles.remove(processorId)
