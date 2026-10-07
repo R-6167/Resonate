@@ -161,8 +161,6 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeResetStats(
     dsp_reset_stats(reinterpret_cast<void*>(handle));
 }
 
-extern "C" JNIEXPORT jdoubleArray JNICALL
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetPreamp(
         JNIEnv*, jclass, jlong handle, jdouble linearGain) {
@@ -186,6 +184,7 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetCrossoverHz(
     dsp_set_crossover_hz(reinterpret_cast<void*>(handle), freqHz);
 }
 
+extern "C" JNIEXPORT jdoubleArray JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeRunBassStress(JNIEnv* env, jclass) {
     DspStressResult st{};
     const int rc = dsp_run_bass_stress(&st);
