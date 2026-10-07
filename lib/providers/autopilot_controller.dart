@@ -12,7 +12,6 @@ import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 import '../modes/providers/mode_provider.dart';
-import '../modes/models/mode_media_item.dart';
 import '../modes/services/mode_content_resolver.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
@@ -275,14 +274,6 @@ class AutopilotController extends ChangeNotifier {
     }
   }
 
-
-  ModeMediaItem _asModeItem(Song song) => ModeMediaItem(
-        id: song.id,
-        filePath: song.filePath,
-        title: song.title,
-        album: song.album,
-        artist: song.artist,
-      );
 
   /// Resolves generated Autopilot candidates against the active Mode.
   /// An active Mode is strict for generated content: if nothing matches, we
