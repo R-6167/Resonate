@@ -89,7 +89,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetVirtualBass(h, stickyVirtualBass)
+                DspEngineJni.nativeSetVirtualBass(h, stickyState.virtualBass)
             } catch (t: Throwable) {
                 Log.w(TAG, "setVirtualBass failed handle=$h", t)
             }
