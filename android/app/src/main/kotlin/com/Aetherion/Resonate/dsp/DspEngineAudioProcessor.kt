@@ -22,6 +22,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         private const val TAG = "DspEngineAudioProcessor"
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
+        private const val MAX_PROCESS_ERRORS = 8
 
         private val nextId = AtomicInteger(1)
     }
@@ -138,7 +139,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
                 if (consecutiveProcessErrors == 1 || consecutiveProcessErrors % 4 == 0) {
                     Log.w(TAG, "id=$processorId process rc=$rc errs=$consecutiveProcessErrors")
                 }
-                if (consecutiveProcessErrors >= DspSessionGate.MAX_PROCESS_ERRORS) {
+                if (consecutiveProcessErrors >= MAX_PROCESS_ERRORS) {
                     demoteToPassThrough("process_errors=$consecutiveProcessErrors")
                 }
             } else {
