@@ -1,0 +1,19 @@
+name: DSP ENGINE CI
+on:
+  push:
+    branches: [Wire_dsp_engine]
+  pull_request:
+    branches: [Wire_dsp_engine]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Stress harness
+        run: ./build/dsp_stress_runner
