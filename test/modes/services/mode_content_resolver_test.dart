@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:resonate/models/song.dart';
 import 'package:resonate/modes/models/media_type.dart';
+import 'package:resonate/modes/models/mode_media_item.dart';
 import 'package:resonate/modes/models/resonate_mode.dart';
 import 'package:resonate/modes/providers/mode_provider.dart';
 import 'package:resonate/modes/services/mode_content_resolver.dart';
@@ -14,6 +15,14 @@ Song _song(String id) => Song(
   filePath: '/music/$id.mp3',
   duration: const Duration(minutes: 3),
   dateAdded: DateTime(2026, 1, 1),
+);
+
+ModeMediaItem _item(String id) => ModeMediaItem(
+  id: id,
+  filePath: '/music/$id.mp3',
+  title: id,
+  album: 'Album',
+  artist: 'Artist',
 );
 
 void main() {
@@ -31,14 +40,8 @@ void main() {
     final modes = ModeProvider();
     await modes.ready;
     await modes.setMode(ResonateMode.running);
-    await modes.setUserMediaType(
-      _song('podcast'),
-      MediaType.podcast,
-    );
-    await modes.setUserMediaType(
-      _song('music'),
-      MediaType.music,
-    );
+    await modes.setUserMediaType(_item('podcast'), MediaType.podcast);
+    await modes.setUserMediaType(_item('music'), MediaType.music);
 
     final resolved = const ModeContentResolver().resolve(
       modes: modes,
