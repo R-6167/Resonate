@@ -20,6 +20,26 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
 
     companion object {
         private const val TAG = "DspEngineAudioProcessor"
+
+        internal interface NativeDspApi {
+            fun create(sampleRate: Double, channels: Int): Long
+            fun destroy(handle: Long)
+            fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int
+            fun setEnabled(handle: Long, enabled: Boolean)
+        }
+
+        private val jniApi = object : NativeDspApi {
+            override fun create(sampleRate: Double, channels: Int): Long =
+                DspEngineJni.nativeCreate(sampleRate, channels)
+            override fun destroy(handle: Long) = DspEngineJni.nativeDestroy(handle)
+            override fun process(handle: Long, buffer: ByteBuffer, frames: Int, channels: Int, sampleRate: Double): Int =
+                DspEngineJni.nativeProcessPcm16Direct(handle, buffer, frames, channels, sampleRate)
+            override fun setEnabled(handle: Long, enabled: Boolean) =
+                DspEngineJni.nativeSetEnabled(handle, enabled)
+        }
+
+        @Volatile
+        internal var nativeApi: NativeDspApi = jniApi
         const val MAX_FRAMES = 4096
         const val MAX_BYTES = MAX_FRAMES * 2 * 2
         private const val MAX_PROCESS_ERRORS = 8
@@ -28,6 +48,10 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
     }
 
     private val processorId = nextId.getAndIncrement()
+
+    internal fun resetNativeApiForTests() {
+        nativeApi = jniApi
+    }
 
     @Volatile
     private var nativeProcessEnabled = false
@@ -44,7 +68,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
 
         if (engineHandle != 0L) {
             try {
-                DspEngineJni.nativeSetEnabled(engineHandle, true)
+                nativeApi.setEnabled(engineHandle, true)
             } catch (t: Throwable) {
                 Log.w(TAG, "id=$processorId failed to re-enable native DSP", t)
                 demoteToPassThrough("enable_exception")
@@ -83,7 +107,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
 
         createAttempted = true
         try {
-            val h = DspEngineJni.nativeCreate(configuredRate.toDouble(), configuredChannels)
+            val h = nativeApi.create(configuredRate.toDouble(), configuredChannels)
             if (h == 0L) {
                 Log.w(TAG, "id=$processorId nativeCreate returned 0 — pass-through")
                 DspSessionGate.noteCreateFailure("null_handle")
@@ -95,7 +119,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             if (!DspEngineRegistry.register(processorId, h)) {
                 Log.w(TAG, "id=$processorId registry rejected handle=$h — pass-through")
                 try {
-                    DspEngineJni.nativeDestroy(h)
+                    nativeApi.destroy(h)
                 } catch (t: Throwable) {
                     Log.w(TAG, "id=$processorId rejected handle destroy failed", t)
                 }
@@ -140,7 +164,7 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
         if (frames <= 0 || frames > MAX_FRAMES) return
 
         try {
-            val rc = DspEngineJni.nativeProcessPcm16Direct(
+            val rc = nativeApi.process(
                 engineHandle,
                 output,
                 frames,
