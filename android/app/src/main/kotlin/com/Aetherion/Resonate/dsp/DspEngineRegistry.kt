@@ -69,7 +69,7 @@ object DspEngineRegistry {
     /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
     @JvmStatic
     fun applySpeakerModeAll(enabled: Boolean) {
-        stickySpeakerMode = enabled
+        stickyState = stickyState.copy(speakerMode = enabled)
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -84,7 +84,7 @@ object DspEngineRegistry {
 
     @JvmStatic
     fun applyVirtualBassAll(amount: Double) {
-        stickyVirtualBass = amount.coerceIn(0.0, 1.0)
+        stickyState = stickyState.copy(virtualBass = amount.coerceIn(0.0, 1.0))
         if (!stickySpeakerMode) return
         val list = snapshotHandles()
         for (h in list) {
@@ -138,11 +138,11 @@ object DspEngineRegistry {
             "activeEngines" to activeCount(),
             "gateTripped" to DspSessionGate.isTripped(),
             "nativeAllowed" to DspSessionGate.isNativeAllowed(),
-            "linearGain" to stickyLinearGain,
-            "eqEnabled" to stickyEqEnabled,
-            "eqBands" to (stickyGainsDb?.size ?: 0),
-            "speakerMode" to stickySpeakerMode,
-            "virtualBass" to stickyVirtualBass,
+            "linearGain" to stickyState.linearGain,
+            "eqEnabled" to stickyState.eqEnabled,
+            "eqBands" to (stickyState.gainsDb?.size ?: 0),
+            "speakerMode" to stickyState.speakerMode,
+            "virtualBass" to stickyState.virtualBass,
         )
         base.putAll(latencySnapshot())
         return base
@@ -153,7 +153,7 @@ object DspEngineRegistry {
     @JvmStatic
     fun applyPreampAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
-        stickyPreamp = g
+        stickyState = stickyState.copy(preamp = g)
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -167,8 +167,7 @@ object DspEngineRegistry {
 
     @JvmStatic
     fun applyLimiterCeilingAll(highDb: Float, lowDb: Float) {
-        stickyLimiterHigh = highDb.coerceIn(-6f, -0.1f)
-        stickyLimiterLow = lowDb.coerceIn(-6f, -0.1f)
+        stickyState = stickyState.copy(limiterHigh = highDb.coerceIn(-6f, -0.1f), limiterLow = lowDb.coerceIn(-6f, -0.1f))
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -181,7 +180,7 @@ object DspEngineRegistry {
 
     @JvmStatic
     fun applyCrossoverHzAll(hz: Float) {
-        stickyCrossoverHz = hz.coerceIn(80f, 200f)
+        stickyState = stickyState.copy(crossoverHz = hz.coerceIn(80f, 200f))
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -196,7 +195,7 @@ object DspEngineRegistry {
     @JvmStatic
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
-        stickyLinearGain = g
+        stickyState = stickyState.copy(linearGain = g)
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -211,9 +210,7 @@ object DspEngineRegistry {
     /** Studio curve → all live engines. */
     @JvmStatic
     fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
-        stickyEqEnabled = enabled
-        stickyCentersHz = centersHz?.copyOf()
-        stickyGainsDb = gainsDb.copyOf()
+        stickyState = stickyState.copy(eqEnabled = enabled, centersHz = centersHz?.copyOf(), gainsDb = gainsDb.copyOf())
         val list = snapshotHandles()
         for (h in list) {
             try {
@@ -226,19 +223,20 @@ object DspEngineRegistry {
     }
 
     private fun applyStickyToHandle(handle: Long): Boolean {
+        val state = stickyState
         try {
-            DspEngineJni.nativeSetVolume(handle, stickyLinearGain)
-            val gains = stickyGainsDb
+            DspEngineJni.nativeSetVolume(handle, state.linearGain)
+            val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
-                DspEngineJni.nativeSetEqBands(handle, stickyCentersHz, gains, stickyEqEnabled)
+                DspEngineJni.nativeSetEqBands(handle, state.centersHz, gains, state.eqEnabled)
             } else {
-                DspEngineJni.nativeSetEnabled(handle, stickyEqEnabled)
+                DspEngineJni.nativeSetEnabled(handle, state.eqEnabled)
             }
-            DspEngineJni.nativeSetSpeakerMode(handle, stickySpeakerMode)
-            DspEngineJni.nativeSetVirtualBass(handle, stickyVirtualBass)
-            DspEngineJni.nativeSetPreamp(handle, stickyPreamp)
-            DspEngineJni.nativeSetLimiterCeiling(handle, stickyLimiterHigh, stickyLimiterLow)
-            DspEngineJni.nativeSetCrossoverHz(handle, stickyCrossoverHz)
+            DspEngineJni.nativeSetSpeakerMode(handle, state.speakerMode)
+            DspEngineJni.nativeSetVirtualBass(handle, state.virtualBass)
+            DspEngineJni.nativeSetPreamp(handle, state.preamp)
+            DspEngineJni.nativeSetLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
+            DspEngineJni.nativeSetCrossoverHz(handle, state.crossoverHz)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed handle=$handle", t)
             return false
