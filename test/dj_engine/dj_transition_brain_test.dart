@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/dj_engine/dj_engine.dart';
+import 'package:resonate/dj_engine/core/dj_policy.dart';
 
 void main() {
   const engine = DjEngine();
@@ -45,6 +46,33 @@ void main() {
     expect(plan.candidate.kind, isNot(DjTransitionKind.safeCrossfade));
     expect(plan.steps, isNotEmpty);
     expect(plan.fallback, isFalse);
+  });
+
+  test('harmonic mix enables harmonic compatibility scoring', () {
+    final outgoing = track(id: 'a', key: 0);
+    final incoming = track(id: 'b', key: 0);
+    const neutralPolicy = DjPolicy(harmonicMix: false);
+    const harmonicPolicy = DjPolicy(harmonicMix: true);
+
+    final neutral = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+      policy: neutralPolicy,
+    );
+    final harmonic = engine.brain.generate(
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingPositionMs: 220000,
+      policy: harmonicPolicy,
+    );
+
+    final neutralSafe = neutral.firstWhere((c) => c.kind == DjTransitionKind.safeCrossfade);
+    final harmonicSafe = harmonic.firstWhere((c) => c.kind == DjTransitionKind.safeCrossfade);
+
+    expect(neutralSafe.scores['harmony'], 0.5);
+    expect(harmonicSafe.scores['harmony'], 1.0);
+    expect(harmonicSafe.score, greaterThan(neutralSafe.score));
   });
 
   test('keeps a usable fallback when analysis is absent', () {
