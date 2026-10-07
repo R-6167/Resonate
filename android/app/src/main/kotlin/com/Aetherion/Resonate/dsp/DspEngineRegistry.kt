@@ -14,6 +14,34 @@ object DspEngineRegistry {
 
     private val handles = ConcurrentHashMap<Int, Long>()
 
+    /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
+    internal interface NativeDspApi {
+        fun setEnabled(handle: Long, enabled: Boolean)
+        fun setVolume(handle: Long, linearGain: Double)
+        fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean)
+        fun setSpeakerMode(handle: Long, enabled: Boolean)
+        fun setVirtualBass(handle: Long, amount: Double)
+        fun setPreamp(handle: Long, linearGain: Double)
+        fun setLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)
+        fun setCrossoverHz(handle: Long, freqHz: Float)
+    }
+
+    private val jniApi = object : NativeDspApi {
+        override fun setEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetEnabled(handle, enabled)
+        override fun setVolume(handle: Long, linearGain: Double) = DspEngineJni.nativeSetVolume(handle, linearGain)
+        override fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) =
+            DspEngineJni.nativeSetEqBands(handle, centersHz, gainsDb, enabled)
+        override fun setSpeakerMode(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetSpeakerMode(handle, enabled)
+        override fun setVirtualBass(handle: Long, amount: Double) = DspEngineJni.nativeSetVirtualBass(handle, amount)
+        override fun setPreamp(handle: Long, linearGain: Double) = DspEngineJni.nativeSetPreamp(handle, linearGain)
+        override fun setLimiterCeiling(handle: Long, highDb: Float, lowDb: Float) =
+            DspEngineJni.nativeSetLimiterCeiling(handle, highDb, lowDb)
+        override fun setCrossoverHz(handle: Long, freqHz: Float) = DspEngineJni.nativeSetCrossoverHz(handle, freqHz)
+    }
+
+    @Volatile
+    internal var nativeApi: NativeDspApi = jniApi
+
     /**
      * One immutable generation of DSP settings. Publishing the whole state through
      * one volatile reference prevents a newly-created A/B engine from observing a
@@ -73,8 +101,8 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetSpeakerMode(h, enabled)
-                DspEngineJni.nativeSetVirtualBass(h, stickyState.virtualBass)
+                nativeApi.setSpeakerMode(h, enabled)
+                nativeApi.setVirtualBass(h, stickyState.virtualBass)
             } catch (t: Throwable) {
                 Log.w(TAG, "setSpeakerMode failed handle=$h", t)
             }
@@ -89,7 +117,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetVirtualBass(h, stickyState.virtualBass)
+                nativeApi.setVirtualBass(h, stickyState.virtualBass)
             } catch (t: Throwable) {
                 Log.w(TAG, "setVirtualBass failed handle=$h", t)
             }
@@ -157,7 +185,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetPreamp(h, g)
+                nativeApi.setPreamp(h, g)
             } catch (t: Throwable) {
                 Log.w(TAG, "setPreamp failed handle=$h", t)
             }
@@ -171,7 +199,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetLimiterCeiling(h, stickyState.limiterHigh, stickyState.limiterLow)
+                nativeApi.setLimiterCeiling(h, stickyState.limiterHigh, stickyState.limiterLow)
             } catch (t: Throwable) {
                 Log.w(TAG, "setLimiter failed handle=$h", t)
             }
@@ -184,7 +212,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetCrossoverHz(h, stickyState.crossoverHz)
+                nativeApi.setCrossoverHz(h, stickyState.crossoverHz)
             } catch (t: Throwable) {
                 Log.w(TAG, "setCrossover failed handle=$h", t)
             }
@@ -199,7 +227,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetVolume(h, g)
+                nativeApi.setVolume(h, g)
             } catch (t: Throwable) {
                 Log.w(TAG, "setVolume failed handle=$h", t)
             }
@@ -214,7 +242,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                DspEngineJni.nativeSetEqBands(h, centersHz, gainsDb, enabled)
+                nativeApi.setEqBands(h, centersHz, gainsDb, enabled)
             } catch (t: Throwable) {
                 Log.w(TAG, "setEqBands failed handle=$h", t)
             }
@@ -225,18 +253,18 @@ object DspEngineRegistry {
     private fun applyStickyToHandle(handle: Long): Boolean {
         val state = stickyState
         try {
-            DspEngineJni.nativeSetVolume(handle, state.linearGain)
+            nativeApi.setVolume(handle, state.linearGain)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
-                DspEngineJni.nativeSetEqBands(handle, state.centersHz, gains, state.eqEnabled)
+                nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)
             } else {
-                DspEngineJni.nativeSetEnabled(handle, state.eqEnabled)
+                nativeApi.setEnabled(handle, state.eqEnabled)
             }
-            DspEngineJni.nativeSetSpeakerMode(handle, state.speakerMode)
-            DspEngineJni.nativeSetVirtualBass(handle, state.virtualBass)
-            DspEngineJni.nativeSetPreamp(handle, state.preamp)
-            DspEngineJni.nativeSetLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
-            DspEngineJni.nativeSetCrossoverHz(handle, state.crossoverHz)
+            nativeApi.setSpeakerMode(handle, state.speakerMode)
+            nativeApi.setVirtualBass(handle, state.virtualBass)
+            nativeApi.setPreamp(handle, state.preamp)
+            nativeApi.setLimiterCeiling(handle, state.limiterHigh, state.limiterLow)
+            nativeApi.setCrossoverHz(handle, state.crossoverHz)
         } catch (t: Throwable) {
             Log.w(TAG, "applySticky failed handle=$handle", t)
             return false
