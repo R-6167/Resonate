@@ -1,6 +1,6 @@
-import '../models/song.dart';
-import '../modes/models/mode_media_item.dart';
-import '../modes/providers/mode_provider.dart';
+import '../../models/song.dart';
+import '../models/mode_media_item.dart';
+import '../providers/mode_provider.dart';
 
 /// Resolves content for mode-owned surfaces (shelves, generated queues and
 /// Autopilot). It never mutates or filters the canonical Library.
