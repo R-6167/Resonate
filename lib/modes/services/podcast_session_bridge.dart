@@ -39,9 +39,10 @@ class PodcastSessionBridge {
     required bool playing,
   }) {
     if (_isPodcast(modes, song)) {
-      if (!coordinator.isActive || _songId != song!.id) {
+      final podcastSong = song!;
+      if (!coordinator.isActive || _songId != podcastSong.id) {
         if (coordinator.isActive) coordinator.exit(DateTime.now(), position: position);
-        _songId = song.id;
+        _songId = podcastSong.id;
         if (playing) {
           coordinator.start(
             DateTime.now(),
