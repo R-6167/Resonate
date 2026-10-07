@@ -5,11 +5,7 @@ import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/media_folder_router.dart';
 
-/// One virtual shelf for the active listening mode.
-///
-/// Does **not** filter the main library. Folder matches rank first, then
-/// classifier / preference matches, then Intelligence recommendations allowed
-/// by mode policy.
+/// Virtual shelf for the active mode — never filters the main library.
 class ModeShelf {
   const ModeShelf({
     required this.mode,
@@ -25,7 +21,6 @@ class ModeShelf {
   final List<Song> fromIntelligence;
   final String? emptyReason;
 
-  /// Folders → classifier → intelligence; de-duplicated by id.
   List<Song> get tracks {
     final seen = <String>{};
     final out = <Song>[];
@@ -39,7 +34,6 @@ class ModeShelf {
   int get folderCount => fromFolders.length;
   int get suggestionCount => fromClassifier.length + fromIntelligence.length;
   int get intelligenceCount => fromIntelligence.length;
-
   bool get isNormal => mode == ResonateMode.normal;
 }
 
@@ -74,9 +68,8 @@ class ModeShelfBuilder {
     }
 
     final preferred = modes.policy.preferredMediaTypes;
-    final folderTypes = preferred.isEmpty
-        ? MediaFolderStoreSupported.types
-        : preferred;
+    final folderTypes =
+        preferred.isEmpty ? MediaFolderStoreSupported.types : preferred;
 
     final folderMap = <MediaType, List<String>>{};
     for (final type in folderTypes) {
@@ -92,8 +85,7 @@ class ModeShelfBuilder {
       final path = song.filePath.trim();
       if (path.isEmpty) continue;
 
-      final folderType = router.typeForPath(path);
-      if (folderType != null) {
+      if (router.typeForPath(path) != null) {
         fromFolders.add(song);
         continue;
       }
@@ -149,13 +141,9 @@ class ModeShelfBuilder {
 
     String? reason;
     if (folderCap.isEmpty && classCap.isEmpty && intelCap.isEmpty) {
-      if (folderMap.isEmpty) {
-        reason =
-            'No content folders for ${mode.label} yet. Add folders under Modes, or wait for library matches.';
-      } else {
-        reason =
-            'No tracks from ${mode.label} folders are in the library yet. Re-scan or check folder paths.';
-      }
+      reason = folderMap.isEmpty
+          ? 'No content folders for ${mode.label} yet. Add folders under Modes.'
+          : 'No tracks from ${mode.label} folders are in the library yet.';
     }
 
     return ModeShelf(
@@ -167,7 +155,6 @@ class ModeShelfBuilder {
     );
   }
 
-  /// Short badge for Library rows when the song is on the active mode shelf.
   static String? membershipBadge({
     required ModeProvider modes,
     required Song song,
