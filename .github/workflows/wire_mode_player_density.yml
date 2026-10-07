@@ -1,0 +1,34 @@
+name: Wire mode-aware player density
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/wire_mode_player_density.py"
+      - "lib/widgets/mode_player_density.dart"
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+      - run: python3 tools/wire_mode_player_density.py
+      - name: Validate player_screen parses
+        run: |
+          python3 -c "
+from pathlib import Path
+t=Path('lib/screens/player_screen.dart').read_text()
+assert 'ModePlayerDensity' in t
+assert 'Consumer2<MusicProvider, ModeProvider>' in t
+print('ok', t.count('density.'))
+"
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(modes): apply ModePlayerDensity on Now Playing"
+          git push origin modes_on_dj_v2
