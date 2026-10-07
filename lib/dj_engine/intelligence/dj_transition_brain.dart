@@ -76,7 +76,7 @@ class DjTransitionBrain {
         DjTransitionKind.outroIntro,
         intro,
         baseDuration,
-        _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.92, 0.90),
+        _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.92, 0.90, policy: policy),
       );
     }
 
@@ -86,7 +86,7 @@ class DjTransitionBrain {
         DjTransitionKind.beatBlend,
         aligned,
         baseDuration,
-        _scorePair(outgoing, incoming, outgoingAnchor, aligned, 0.80, 0.78),
+        _scorePair(outgoing, incoming, outgoingAnchor, aligned, 0.80, 0.78, policy: policy),
       );
 
       final phrase = _nextPhrase(incoming, aligned);
@@ -94,7 +94,7 @@ class DjTransitionBrain {
         DjTransitionKind.phraseBlend,
         phrase,
         (baseDuration * 1.15).round().clamp(3000, maxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88),
+        _scorePair(outgoing, incoming, outgoingAnchor, phrase, 0.92, 0.88, policy: policy),
       );
     }
 
@@ -105,7 +105,7 @@ class DjTransitionBrain {
         DjTransitionKind.breakdownDrop,
         breakdown.startMs,
         (drop.startMs - breakdown.startMs).clamp(3000, maxDurationMs).toInt(),
-        _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95),
+        _scorePair(outgoing, incoming, outgoingAnchor, breakdown.startMs, 0.88, 0.95, policy: policy),
       );
     }
 
@@ -113,14 +113,14 @@ class DjTransitionBrain {
       DjTransitionKind.energyBridge,
       intro,
       baseDuration,
-      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.72, 0.72),
+      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.72, 0.72, policy: policy),
     );
 
     add(
       DjTransitionKind.safeCrossfade,
       intro,
       baseDuration,
-      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.55, 0.60),
+      _scorePair(outgoing, incoming, outgoingAnchor, intro, 0.55, 0.60, policy: policy),
     );
 
     return result;
@@ -128,8 +128,9 @@ class DjTransitionBrain {
 
   Map<String, double> _scorePair(
     DjTrackProfile a, DjTrackProfile b, int outPos, int inPos,
-    double phraseWeight, double structureWeight,
-  ) {
+    double phraseWeight, double structureWeight, {
+    DjPolicy policy = DjPolicy.balanced,
+  }) {
     final tempo = _tempoScore(a, b);
     final harmonic = policy.harmonicMix ? _harmonicScore(a, b) : 0.5;
     final energy = _energyTrajectoryScore(a, b, outPos, inPos);
