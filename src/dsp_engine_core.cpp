@@ -2,12 +2,13 @@
  * DSP ENGINE — stereo-linked, crest-aware, 2-band, NEON-ready.
  *
  * Chain:
- *   EQ → speaker/bass → partial headroom → DVC
+ *   DC-block → EQ → speaker/bass → headroom → DVC (smoothed)
  *   → LR4 crossover (~120 Hz)
- *   → low-band gentle dynamics + high-band stereo-linked true-peak
+ *   → low-band gentle + high-band crest-aware true-peak
  *   → sum → soft-clip
  *
  * Process path never allocates. Look-ahead ~4 ms.
+ * Parameter ramps (~8 ms) avoid zipper on volume / headroom / VB.
  */
 #include "dsp_engine.h"
 
@@ -41,6 +42,52 @@ inline float sanitize(float x) {
     if (x < -8.f) return -8.f;
     return x;
 }
+
+/** One-pole DC blocker (~5-10 Hz). */
+struct DcBlocker {
+    float x1 = 0.f;
+    float y1 = 0.f;
+    float R = 0.995f;
+
+    void configure(int sample_rate, float fc_hz = 8.0f) {
+        if (sample_rate < 8000) sample_rate = 44100;
+        if (fc_hz < 1.f) fc_hz = 1.f;
+        if (fc_hz > 40.f) fc_hz = 40.f;
+        R = 1.0f - (2.0f * (float)M_PI * fc_hz / (float)sample_rate);
+        if (R < 0.90f) R = 0.90f;
+        if (R > 0.9999f) R = 0.9999f;
+        x1 = y1 = 0.f;
+    }
+
+    float process(float x) {
+        x = sanitize(x);
+        const float y = x - x1 + R * y1;
+        x1 = x;
+        y1 = y;
+        return sanitize(y);
+    }
+};
+
+/** Exponential parameter smoother. */
+struct Smoothed {
+    float current = 1.f;
+    float target = 1.f;
+    float coeff = 0.f;
+
+    void configure(int sample_rate, float time_ms) {
+        if (sample_rate < 8000) sample_rate = 44100;
+        if (time_ms < 0.5f) time_ms = 0.5f;
+        coeff = std::exp(-1.0f / (time_ms * 0.001f * (float)sample_rate));
+    }
+
+    void set_target(float t) { target = t; }
+    void snap(float t) { current = target = t; }
+
+    float next() {
+        current = coeff * current + (1.0f - coeff) * target;
+        return current;
+    }
+};
 
 struct Biquad {
     double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
@@ -307,6 +354,10 @@ struct Engine {
     bool eq_enabled = true;
     bool speaker_mode = false;
     double virtual_bass = 0.55;
+    DcBlocker dc[kMaxCh];
+    Smoothed sm_vol;
+    Smoothed sm_hr;
+    Smoothed sm_vb;
     int band_count = 0;
     double centers[kMaxBands]{};
     double gains[kMaxBands]{};
@@ -375,6 +426,7 @@ struct Engine {
             headroom_gain = 1.0f;
         }
         if (speaker_mode) headroom_gain *= 0.92f;
+        sm_hr.set_target(headroom_gain);
     }
 
     void rebuildSpeakerFilters() {
@@ -404,6 +456,17 @@ struct Engine {
             det_high[c].configure(sample_rate, la_ms);
             det_low[c].configure(sample_rate, la_ms);
         }
+    }
+
+    void configureSmoothersAndDc() {
+        for (int c = 0; c < channels; ++c)
+            dc[c].configure(sample_rate, 8.0f);
+        sm_vol.configure(sample_rate, 8.0f);
+        sm_hr.configure(sample_rate, 12.0f);
+        sm_vb.configure(sample_rate, 15.0f);
+        sm_vol.snap((float)volume);
+        sm_hr.snap(headroom_gain);
+        sm_vb.snap((float)virtual_bass);
     }
 };
 
@@ -436,6 +499,7 @@ void* dsp_create(const DspConfig* config) {
     e->rebuildSpeakerFilters();
     e->rebuildXover();
     e->rebuildLimiter();
+    e->configureSmoothersAndDc();
     return e;
 }
 
@@ -464,6 +528,7 @@ void dsp_set_volume(void* handle, double linear_gain) {
     if (linear_gain < 0.0) linear_gain = 0.0;
     if (linear_gain > 4.0) linear_gain = 4.0;
     e->volume = linear_gain;
+    e->sm_vol.set_target((float)linear_gain);
 }
 
 void dsp_eq_set_enabled(void* handle, bool enabled) {
@@ -521,6 +586,7 @@ void dsp_set_virtual_bass(void* handle, double amount) {
     if (amount < 0.0) amount = 0.0;
     if (amount > 1.0) amount = 1.0;
     e->virtual_bass = amount;
+    e->sm_vb.set_target((float)amount);
 }
 
 void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
@@ -532,21 +598,22 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
     const int ch = e->channels;
-    const float vol = static_cast<float>(e->volume);
-    const float hr = e->headroom_gain;
     const bool eq = e->eq_enabled;
     const bool speaker = e->speaker_mode;
-    const float vb = static_cast<float>(e->virtual_bass);
     const float knee = speaker ? 0.86f : 0.93f;
 
     for (int i = 0; i < frames; ++i) {
-        float delayed_lo[kMaxCh];
-        float delayed_hi[kMaxCh];
-        float peaks_lo[kMaxCh];
-        float peaks_hi[kMaxCh];
+        const float vol = e->sm_vol.next();
+        const float hr = e->sm_hr.next();
+        const float vb = e->sm_vb.next();
+
+        float delayed_lo[kMaxCh] = {};
+        float delayed_hi[kMaxCh] = {};
+        float peaks_lo[kMaxCh] = {};
+        float peaks_hi[kMaxCh] = {};
 
         for (int c = 0; c < ch; ++c) {
-            float s = sanitize(in[i * ch + c]);
+            float s = e->dc[c].process(in[i * ch + c]);
 
             if (eq) {
                 for (int b = 0; b < e->band_count; ++b)
