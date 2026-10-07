@@ -92,8 +92,19 @@ class DspEngineAudioProcessor : BaseAudioProcessor() {
             }
 
             engineHandle = h
+            if (!DspEngineRegistry.register(processorId, h)) {
+                Log.w(TAG, "id=$processorId registry rejected handle=$h — pass-through")
+                try {
+                    DspEngineJni.nativeDestroy(h)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "id=$processorId rejected handle destroy failed", t)
+                }
+                engineHandle = 0
+                nativeProcessEnabled = false
+                return
+            }
+
             DspSessionGate.noteCreateSuccess()
-            DspEngineRegistry.register(processorId, h)
             Log.i(TAG, "id=$processorId engine ok handle=$h sr=$configuredRate ch=$configuredChannels")
         } catch (t: Throwable) {
             Log.e(TAG, "id=$processorId nativeCreate failed", t)
