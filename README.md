@@ -1,20 +1,17 @@
 # DSP ENGINE
 
-Ultra-low-latency 64-bit audio processing engine (C ABI).
-
-> **This branch (`Wire_dsp_engine`) is DSP ENGINE only.**  
-> The Resonate music player app lives on other branches (`main`, `dj_Mode`, etc.).
+Standalone ultra-low-latency 64-bit audio processing engine with a C ABI.
 
 ## Features
 
 - Multi-band peaking EQ (RBJ biquads)
-- Direct Volume Control (DVC)
-- Partial auto-headroom (preserves loud bass)
-- Bass-aware true-peak limiter (4× oversampling + look-ahead)
-- **Stereo-linked** gain reduction (stable stereo image)
-- Speaker mode + psychoacoustic virtual bass
+- Direct volume control
+- Automatic headroom management
+- Bass-aware true-peak limiting with 4× inter-sample detection and look-ahead
+- Stereo-linked gain reduction
+- Speaker mode and psychoacoustic virtual bass
 - Offline bass stress harness
-- No heap allocation on the audio process path
+- No heap allocation on the audio processing path
 
 ## Layout
 
@@ -23,8 +20,8 @@ include/dsp_engine.h       Public C ABI
 src/dsp_engine_core.cpp    Engine core
 src/dsp_stress.cpp         Offline stress suite
 tools/stress_main.cpp      CLI stress runner
-CMakeLists.txt
-docs/
+docs/                      Engine design and validation notes
+CMakeLists.txt             Standalone build
 ```
 
 ## Build
@@ -41,21 +38,17 @@ cmake --build build -j
 EQ → speaker/bass → partial headroom → DVC → stereo-linked true-peak → soft-clip
 ```
 
-## C API (sketch)
+## C API
 
-```c
-#include "dsp_engine.h"
+Include `dsp_engine.h` and use `dsp_create()`, `dsp_start()`, `dsp_process()`, and `dsp_destroy()`.
 
-DspConfig cfg = {0};
-cfg.sample_rate = 48000;
-cfg.channels = 2;
-cfg.buffer_frames = 256;
+The engine supports both floating-point interleaved audio and an in-place PCM16 processing path.
 
-void* h = dsp_create(&cfg);
-dsp_start(h);
-dsp_process(h, in, out, frames);
-dsp_destroy(h);
-```
+## Validation
+
+The built-in stress suite checks finite output, peak containment, bass-heavy cases, speaker mode, virtual bass, and transient handling.
+
+See `docs/` for the detailed DSP notes.
 
 ## License
 
