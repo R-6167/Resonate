@@ -1,9 +1,8 @@
 name: Port DSP v0.4 from Wire_dsp_engine
+
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/port_dsp_v04_from_wire.yml"
+
 jobs:
   port:
     runs-on: ubuntu-latest
@@ -24,13 +23,13 @@ jobs:
           tar -xzf /tmp/wire.tar.gz -C /tmp/wire --strip-components=1
           test -f /tmp/wire/src/dsp_engine_core.cpp
           test -d /tmp/wire/packages/dsp_engine
-          echo "tarball ok"
 
-      - name: Install sources into modes_on_dj_v2
+      - name: Install sources
         run: |
           set -e
           W=/tmp/wire
-          mkdir -p include src packages
+          mkdir -p include src packages docs
+          rm -rf packages/dsp_engine
           cp -a "$W/packages/dsp_engine" packages/
           cp -f "$W/include/dsp_engine.h" include/
           cp -f "$W/src/dsp_engine_core.cpp" src/
@@ -38,142 +37,82 @@ jobs:
           cp -f "$W/include/dsp_engine.h" android/app/src/main/cpp/dsp_engine.h
           cp -f "$W/src/dsp_engine_core.cpp" android/app/src/main/cpp/dsp_engine_core.cpp
           cp -f "$W/src/dsp_stress.cpp" android/app/src/main/cpp/dsp_stress.cpp
-          mkdir -p docs
           for f in DSP_STABILIZATION.md DSP_TRUE_PEAK.md DSP_BASS_STRESS.md; do
             [ -f "$W/docs/$f" ] && cp -f "$W/docs/$f" "docs/$f" || true
           done
 
-      - name: Pubspec + JNI + Kotlin patches
+      - name: Patch pubspec JNI Kotlin bridge
         run: |
-          set -e
           python3 <<'PY'
 from pathlib import Path
 import os
-
-# pubspec
 p = Path('pubspec.yaml')
 t = p.read_text()
 if 'dsp_engine:' not in t:
-    t = t.replace(
-        '  url_launcher: ^6.3.2\n',
-        '  url_launcher: ^6.3.2\n\n  dsp_engine:\n    path: packages/dsp_engine\n  ffi: ^2.1.0\n',
-        1,
-    )
+    t = t.replace('  url_launcher: ^6.3.2\n', '  url_launcher: ^6.3.2\n\n  dsp_engine:\n    path: packages/dsp_engine\n  ffi: ^2.1.0\n', 1)
     p.write_text(t)
-    print('pubspec')
-
-# jni cpp
 jni = Path('android/app/src/main/cpp/dsp_engine_jni.cpp')
 if jni.exists() and 'nativeSetPreamp' not in jni.read_text():
     t = jni.read_text()
     extra = '''
 extern "C" JNIEXPORT void JNICALL
-Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetPreamp(
-    JNIEnv*, jclass, jlong handle, jdouble linearGain) {
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetPreamp(JNIEnv*, jclass, jlong handle, jdouble linearGain) {
     if (!handle) return;
     dsp_set_preamp(reinterpret_cast<void*>(handle), linearGain);
 }
-
 extern "C" JNIEXPORT void JNICALL
-Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetLimiterCeiling(
-    JNIEnv*, jclass, jlong handle, jfloat highDb, jfloat lowDb) {
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetLimiterCeiling(JNIEnv*, jclass, jlong handle, jfloat highDb, jfloat lowDb) {
     if (!handle) return;
     dsp_set_limiter_ceiling(reinterpret_cast<void*>(handle), highDb, lowDb);
 }
-
 extern "C" JNIEXPORT void JNICALL
-Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetCrossoverHz(
-    JNIEnv*, jclass, jlong handle, jfloat freqHz) {
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetCrossoverHz(JNIEnv*, jclass, jlong handle, jfloat freqHz) {
     if (!handle) return;
     dsp_set_crossover_hz(reinterpret_cast<void*>(handle), freqHz);
 }
 '''
     idx = t.find('Java_com_aetherion_resonate_dsp_DspEngineJni_nativeRunBassStress')
-    t = (t[:idx] + extra + '\n' + t[idx:]) if idx >= 0 else (t + extra)
+    t = (t[:idx] + extra + '\n' + t[idx:]) if idx >= 0 else t + extra
     jni.write_text(t)
-    print('jni')
-
-# kotlin
 for root, _, files in os.walk('android'):
     for f in files:
-        if f != 'DspEngineJni.kt':
-            continue
-        path = Path(root) / f
+        if f != 'DspEngineJni.kt': continue
+        path = Path(root)/f
         t = path.read_text()
-        if 'nativeSetPreamp' in t:
-            continue
-        t = t.replace(
-            'external fun nativeSetVirtualBass(handle: Long, amount: Double)\n',
-            'external fun nativeSetVirtualBass(handle: Long, amount: Double)\n'
-            '    external fun nativeSetPreamp(handle: Long, linearGain: Double)\n'
-            '    external fun nativeSetLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)\n'
-            '    external fun nativeSetCrossoverHz(handle: Long, freqHz: Float)\n',
-            1,
-        )
+        if 'nativeSetPreamp' in t: continue
+        t = t.replace('external fun nativeSetVirtualBass(handle: Long, amount: Double)\n',
+            'external fun nativeSetVirtualBass(handle: Long, amount: Double)\n    external fun nativeSetPreamp(handle: Long, linearGain: Double)\n    external fun nativeSetLimiterCeiling(handle: Long, highDb: Float, lowDb: Float)\n    external fun nativeSetCrossoverHz(handle: Long, freqHz: Float)\n', 1)
         path.write_text(t)
-        print('kotlin', path)
-
-# dart bridge
 br = Path('lib/services/audio_effects_bridge.dart')
 if br.exists() and 'setLiveDspLimiterCeiling' not in br.read_text():
     t = br.read_text()
     extra = '''
-  static Future<Map<String, dynamic>?> setLiveDspLimiterCeiling({
-    required double highDb,
-    required double lowDb,
-  }) async {
+  static Future<Map<String, dynamic>?> setLiveDspLimiterCeiling({required double highDb, required double lowDb}) async {
     try {
-      final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
-        'highDb': highDb,
-        'lowDb': lowDb,
-      });
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {'highDb': highDb, 'lowDb': lowDb});
       if (raw is Map) return Map<String, dynamic>.from(raw);
-    } catch (e) {
-      debugPrint('setLiveDspLimiterCeiling failed: $e');
-    }
+    } catch (e) { debugPrint('setLiveDspLimiterCeiling failed: $e'); }
     return null;
   }
-
   static Future<Map<String, dynamic>?> setLiveDspCrossoverHz(double hz) async {
     try {
-      final raw = await _channel.invokeMethod<dynamic>('setLiveDspCrossoverHz', {
-        'hz': hz,
-      });
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspCrossoverHz', {'hz': hz});
       if (raw is Map) return Map<String, dynamic>.from(raw);
-    } catch (e) {
-      debugPrint('setLiveDspCrossoverHz failed: $e');
-    }
+    } catch (e) { debugPrint('setLiveDspCrossoverHz failed: $e'); }
     return null;
   }
 '''
-    idx = t.rfind('}')
-    t = t[:idx] + extra + t[idx:]
+    t = t[:t.rfind('}')] + extra + t[t.rfind('}'):]
     br.write_text(t)
-    print('bridge')
-
-Path('docs/DSP_V04_INTEGRATION.md').write_text('''# DSP ENGINE v0.4 on modes_on_dj_v2
-
-Ported from `Wire_dsp_engine`.
-
-| Path | Role |
-|------|------|
-| `packages/dsp_engine` | Flutter FFI package |
-| `include/` + `src/` | Native sources for package CMake |
-| `android/app/src/main/cpp/` | Live just_audio AudioProcessor path |
-
-Chain: PCM → EQ → speaker/bass → auto headroom → limiter → soft clip → DVC → out
-
-Live audio still uses dual A/B `DspEngineAudioProcessor` handles for crossfade.
-''')
-print('done')
+Path('docs/DSP_V04_INTEGRATION.md').write_text('# DSP ENGINE v0.4 on modes_on_dj_v2\n\nPorted from Wire_dsp_engine.\nLive path: android cpp + dual A/B AudioProcessor.\nPackage: packages/dsp_engine (FFI).\n')
+print('ok')
 PY
 
-      - name: Commit and push
+      - name: Commit
         run: |
           git config user.name "resonate-bot"
           git config user.email "bot@resonate.local"
           git add -A
-          git status
-          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          if git diff --staged --quiet; then echo none; exit 0; fi
           git commit -m "feat(dsp): ENGINE v0.4 full process path from Wire_dsp_engine"
-          git push origin modes_on_dj_v2
+          git push origin HEAD:modes_on_dj_v2
