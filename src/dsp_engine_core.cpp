@@ -3,8 +3,7 @@
  *
  * Chain:
  *   DC-block → EQ → speaker/bass → headroom → preamp → DVC (smoothed)
- *   → LR4 crossover (~120 Hz)
- *   → low-band gentle + high-band crest-aware true-peak
+ *   → LR4 crossover (user Hz) → 2-band crest-aware true-peak
  *   → sum → soft-clip
  *
  * Process path never allocates. Look-ahead ~4 ms.
@@ -353,6 +352,9 @@ struct Engine {
     bool eq_enabled = true;
     bool speaker_mode = false;
     double virtual_bass = 0.55;
+    float ceiling_db_high = -0.5f;
+    float ceiling_db_low  = -0.2f;
+    float xover_hz = kXoverHz;
     DcBlocker dc[kMaxCh];
     Smoothed sm_vol;
     Smoothed sm_hr;
@@ -439,16 +441,20 @@ struct Engine {
 
     void rebuildXover() {
         for (int c = 0; c < channels; ++c)
-            xover[c].configure((double)sample_rate, kXoverHz);
+            xover[c].configure((double)sample_rate, (double)xover_hz);
     }
 
     void rebuildLimiter() {
         const float atk_h = speaker_mode ? 1.2f : 2.0f;
         const float rel_h = speaker_mode ? 140.0f : 200.0f;
-        const float ceil_h = speaker_mode ? -1.0f : -0.5f;
         const float atk_l = speaker_mode ? 2.0f : 3.0f;
         const float rel_l = speaker_mode ? 220.0f : 320.0f;
-        const float ceil_l = speaker_mode ? -0.5f : -0.2f;
+        float ceil_h = ceiling_db_high;
+        float ceil_l = ceiling_db_low;
+        if (speaker_mode) {
+            ceil_h -= 0.5f;
+            ceil_l -= 0.3f;
+        }
         const float la_ms = 4.0f;
         lim_high.configure(sample_rate, atk_h, rel_h, ceil_h);
         lim_low.configure(sample_rate, atk_l, rel_l, ceil_l);
@@ -572,6 +578,28 @@ int dsp_get_info(void* handle, DspInfo* out) {
         out->channels = e->channels;
     }
     return 0;
+}
+
+void dsp_set_limiter_ceiling(void* handle, float ceiling_db_high, float ceiling_db_low) {
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    auto clamp_db = [](float v) {
+        if (v < -6.0f) v = -6.0f;
+        if (v > -0.1f) v = -0.1f;
+        return v;
+    };
+    e->ceiling_db_high = clamp_db(ceiling_db_high);
+    e->ceiling_db_low  = clamp_db(ceiling_db_low);
+    e->rebuildLimiter();
+}
+
+void dsp_set_crossover_hz(void* handle, float freq_hz) {
+    if (!handle) return;
+    auto* e = static_cast<Engine*>(handle);
+    if (freq_hz < 80.0f) freq_hz = 80.0f;
+    if (freq_hz > 200.0f) freq_hz = 200.0f;
+    e->xover_hz = freq_hz;
+    e->rebuildXover();
 }
 
 void dsp_eq_set_enabled(void* handle, bool enabled) {
