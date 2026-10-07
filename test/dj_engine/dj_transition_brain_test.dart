@@ -70,8 +70,8 @@ void main() {
     final neutralSafe = neutral.firstWhere((c) => c.kind == DjTransitionKind.safeCrossfade);
     final harmonicSafe = harmonic.firstWhere((c) => c.kind == DjTransitionKind.safeCrossfade);
 
-    expect(neutralSafe.scores['harmony'], 0.5);
-    expect(harmonicSafe.scores['harmony'], 1.0);
+    expect(neutralSafe.scores['harmonic'], 0.5);
+    expect(harmonicSafe.scores['harmonic'], 1.0);
     expect(harmonicSafe.score, greaterThan(neutralSafe.score));
   });
 
