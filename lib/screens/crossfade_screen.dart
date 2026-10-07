@@ -8,6 +8,7 @@ import '../widgets/dj_mode_status_chip.dart';
 import '../providers/crossfade_provider.dart';
 import '../providers/music_provider.dart';
 import '../modes/providers/mode_provider.dart';
+import '../modes/models/resonate_mode.dart';
 import '../modes/integration/resonate_mode_ports.dart';
 import '../modes/screens/modes_screen.dart';
 
