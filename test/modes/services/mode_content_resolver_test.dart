@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../lib/models/song.dart';
-import '../../lib/modes/models/media_type.dart';
-import '../../lib/modes/models/resonate_mode.dart';
-import '../../lib/modes/providers/mode_provider.dart';
-import '../../lib/modes/services/mode_content_resolver.dart';
+import 'package:resonate/models/song.dart';
+import 'package:resonate/modes/models/media_type.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
+import 'package:resonate/modes/providers/mode_provider.dart';
+import 'package:resonate/modes/services/mode_content_resolver.dart';
 
 Song _song(String id) => Song(
   id: id,
