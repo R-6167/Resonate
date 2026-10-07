@@ -1,0 +1,63 @@
+name: Port DSP v0.4 from Wire_dsp_engine
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/port_dsp_v04_from_wire.yml"
+      - "tools/port_dsp_v04_from_wire.sh"
+jobs:
+  port:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+          fetch-depth: 0
+
+      - name: Fetch Wire_dsp_engine tree
+        run: |
+          git fetch origin Wire_dsp_engine:wire_dsp --depth=1
+          rm -rf /tmp/wire_dsp
+          git archive wire_dsp | tar -x -C /tmp -f - 2>/dev/null || true
+          # archive extracts to cwd files - use worktree instead
+          git worktree add /tmp/wire_dsp wire_dsp
+
+      - name: Copy package + native sources
+        run: |
+          set -e
+          WIRE=/tmp/wire_dsp
+          # Flutter package
+          mkdir -p packages
+          rm -rf packages/dsp_engine
+          cp -a "$WIRE/packages/dsp_engine" packages/
+          # Root include/src for package CMake (package looks 6 levels up)
+          mkdir -p include src
+          cp -f "$WIRE/include/dsp_engine.h" include/
+          cp -f "$WIRE/src/dsp_engine_core.cpp" src/
+          cp -f "$WIRE/src/dsp_stress.cpp" src/ 2>/dev/null || true
+          # App live path (just_audio AudioProcessor / JNI)
+          cp -f "$WIRE/include/dsp_engine.h" android/app/src/main/cpp/dsp_engine.h
+          cp -f "$WIRE/src/dsp_engine_core.cpp" android/app/src/main/cpp/dsp_engine_core.cpp
+          if [ -f "$WIRE/src/dsp_stress.cpp" ]; then
+            cp -f "$WIRE/src/dsp_stress.cpp" android/app/src/main/cpp/dsp_stress.cpp
+          fi
+          # Docs
+          mkdir -p docs
+          for f in DSP_STABILIZATION.md DSP_TRUE_PEAK.md DSP_BASS_STRESS.md; do
+            [ -f "$WIRE/docs/$f" ] && cp -f "$WIRE/docs/$f" docs/
+          done
+          echo "Copied v0.4 sources"
+
+      - name: Patch pubspec + JNI + bridge
+        run: bash tools/port_dsp_v04_from_wire.sh
+
+      - name: Commit
+        run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo No changes; exit 0; fi
+          git commit -m "feat(dsp): port ENGINE v0.4 from Wire_dsp_engine (package + live path)"
+          git push origin modes_on_dj_v2
