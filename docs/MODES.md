@@ -48,6 +48,7 @@ not call `play()` directly.
 | Settings → Playback → Modes screen | Present |
 | Mode chip on Now Playing + Home | Present |
 | Mode shelf (virtual playlist on Home) | Present |
+| Driving suggestion banner on Home | Present |
 | Policy soft-gates: crossfade / shuffle / precise resume | Present |
 | Autopilot content bias (`isAcceptableForAutopilot`, bias score) | Present |
 | Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
@@ -73,7 +74,7 @@ rest of Resonate.
 
 ### P1 — Modes as a product surface
 
-- [ ] **Driving suggestion UI** — `ModeProvider` already tracks
+- [x] **Driving suggestion UI** — `ModeProvider` already tracks
   suggest/dismiss/accept and auto-enter-on-car; **no home/player banner or
   chip** consumes it yet.
 - [x] **Active mode chip on Now Playing / home** — `ResonateModeChip`; tap opens Modes.

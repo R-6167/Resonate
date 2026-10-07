@@ -15,6 +15,7 @@ import '../widgets/resonate_logo.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_shelf_card.dart';
+import '../widgets/driving_suggestion_banner.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -162,7 +163,8 @@ class _HomeDashboard extends StatelessWidget {
     if (intelligence.isEnabled) {
       children.addAll([
         const SizedBox(height: 16),
-        const ModeShelfCard(),
+        const DrivingSuggestionBanner(),
+      const ModeShelfCard(),
       const EvolvingMixCard(),
       ]);
     }

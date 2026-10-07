@@ -1028,10 +1028,17 @@ class MusicProvider extends ChangeNotifier {
           'crossfadeInProgress': _crossfadeInProgress,
           'automaticCrossfadeInFlight': _automaticCrossfadeInFlight,
         }));
-        if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
-          // Remember that the outgoing track finished while we were fading.
-          // We will force an advance after the crossfade finishes (or fails).
+        if (_crossfadeInProgress ||
+            _automaticCrossfadeInFlight ||
+            _repeatSelfHandoffInFlight) {
+          // Outgoing finished mid-fade. For repeat-one this is expected (self
+          // handoff); for A→B we continue after commit without a second advance.
           _completionObservedDuringCrossfade = true;
+          if (_repeatMode == PlaybackRepeatMode.one ||
+              _repeatSelfHandoffInFlight) {
+            // Do not treat as "need to go to next queue item".
+            _lastCompletionSongId = completedSongId;
+          }
         } else if (!_completionAdvanceInProgress) {
           unawaited(onTrackEnded(completedSongId));
         }
@@ -1269,6 +1276,11 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeInProgress = false;
       _repeatSelfHandoffInFlight = false;
       _repeatSelfHandoffArmed = false;
+      // Outgoing engine often hits completed mid-ramp. Do not advance to B.
+      _completionObservedDuringCrossfade = false;
+      if (song.id.isNotEmpty) {
+        _lastCompletionSongId = song.id;
+      }
       return;
     }
     unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
@@ -1932,6 +1944,26 @@ class MusicProvider extends ChangeNotifier {
   /// track reached completed while the fade was in progress.
   Future<void> _ensureContinueAfterCrossfade() async {
     if (_completionAdvanceInProgress || _queue.isEmpty) return;
+
+    // Repeat-one already owns the next start (self handoff / seek 0).
+    if (_repeatMode == PlaybackRepeatMode.one) {
+      _completionObservedDuringCrossfade = false;
+      try {
+        final vol = _eqPreampScale.clamp(0.05, 1.0);
+        if (audioPlayer.volume < vol * 0.85) {
+          await audioPlayer.setVolume(vol);
+        }
+        if (_userWantsPlaying && !audioPlayer.playing) {
+          try {
+            audioPlayer.play();
+          } catch (_) {}
+        }
+        isPlaying = _userWantsPlaying && audioPlayer.playing;
+        _publishServiceState();
+        notifyListeners();
+      } catch (_) {}
+      return;
+    }
 
     // If we landed on the last track and repeat is off, stop cleanly.
     if (_queueIndex >= _queue.length - 1 && _repeatMode == PlaybackRepeatMode.off) {
@@ -3620,8 +3652,53 @@ class MusicProvider extends ChangeNotifier {
         });
       } catch (_) {}
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
-      _queueIndex = nextIndex; currentSong = nextSong; _lastCompletionSongId = null; currentDuration = nextSong.duration; currentPosition = incoming.position; isPlaying = incoming.playing;
-      await _persistQueue(); _bindActivePlayerStreams(); await _startHistoryEvent(nextSong); _publishServiceState(); notifyListeners();
+      _queueIndex = nextIndex;
+      currentSong = nextSong;
+      _lastCompletionSongId = null;
+      currentDuration = nextSong.duration;
+      currentPosition = incoming.position;
+      // Never inherit a stale mid-track resume for a freshly crossfaded-in song.
+      if (currentPosition.inMilliseconds < 2500) {
+        _resumeBySongId.remove(nextSong.id);
+        if (_resumeSongId == nextSong.id) {
+          _resumeSongId = null;
+          _resumePositionMs = 0;
+        }
+      }
+      // Audible guarantee: UI must not show B playing while engine is silent.
+      try {
+        await incoming.setSpeed(1.0);
+        await incoming.setVolume(master);
+        if (_userWantsPlaying && !incoming.playing) {
+          try {
+            incoming.play();
+          } catch (_) {}
+          for (var i = 0; i < 10 && !incoming.playing && _userWantsPlaying; i++) {
+            await Future<void>.delayed(Duration(milliseconds: 35 + i * 20));
+            try {
+              incoming.play();
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      isPlaying = _userWantsPlaying && (incoming.playing || incoming.volume >= 0.05);
+      if (_userWantsPlaying && !incoming.playing) {
+        // Last resort: hard cut to A with the incoming song (no silent scrub).
+        try {
+          await _playSongInternal(
+            nextSong,
+            queue: _queue,
+            startIndex: nextIndex,
+            playbackIntentToken: intentToken,
+          );
+        } catch (_) {}
+        return audioPlayer.playing;
+      }
+      await _persistQueue();
+      _bindActivePlayerStreams();
+      await _startHistoryEvent(nextSong);
+      _publishServiceState();
+      notifyListeners();
       try { await outgoing.stop(); } catch (_) {}
       // Restore volume on the now-idle engine so the next time it is used it is not stuck at 0.
       try { await outgoing.setVolume(master); } catch (_) {}
