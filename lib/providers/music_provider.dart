@@ -339,9 +339,6 @@ class MusicProvider extends ChangeNotifier {
   static const _savedQueueIndexKey = 'playback_queue_index';
   static const _shuffleEnabledKey = 'playback_shuffle_enabled';
   static const _repeatModeKey = 'playback_repeat_mode';
-  static const _crossfadeEnabledKey = 'crossfade_enabled';
-  static const _crossfadeDurationKey = 'crossfade_duration';
-  static const _crossfadeFadeTypeKey = 'crossfade_fade_type';
   static const _resumePositionKey = 'playback_resume_position_ms';
   static const _resumeSongIdKey = 'playback_resume_song_id';
   static const _resumeMapKey = 'playback_resume_map_v1';
