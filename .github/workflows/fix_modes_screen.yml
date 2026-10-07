@@ -1,0 +1,23 @@
+name: Fix modes_screen parse
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/fix_modes_screen_folders.py"
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: modes_on_dj_v2
+      - run: python3 tools/fix_modes_screen_folders.py
+      - run: |
+          git config user.name "resonate-bot"
+          git config user.email "bot@resonate.local"
+          git add -A
+          if git diff --staged --quiet; then echo none; exit 0; fi
+          git commit -m "fix: modes_screen Content folders / Mode shelf widget structure"
+          git push origin HEAD:modes_on_dj_v2
