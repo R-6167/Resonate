@@ -29,6 +29,7 @@ void main() {
 
   test('active mode removes disallowed generated content', () async {
     final modes = ModeProvider();
+    await modes.ready;
     await modes.setMode(ResonateMode.running);
     await modes.setUserMediaType(
       _song('podcast'),
@@ -50,6 +51,7 @@ void main() {
 
   test('resolver caps results without changing source list', () async {
     final modes = ModeProvider();
+    await modes.ready;
     await modes.setMode(ResonateMode.running);
     final songs = [_song('a'), _song('b'), _song('c')];
 
