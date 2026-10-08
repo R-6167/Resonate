@@ -22,6 +22,7 @@ class RunningCoordinator {
   RunningSessionState get state => session.state;
 
   RunningIntent start(DateTime now) {
+    motion.reset();
     session.start(now);
     return RunningIntent(
       type: RunningIntentType.sessionStarted,
@@ -50,6 +51,7 @@ class RunningCoordinator {
 
   RunningIntent complete(DateTime now) {
     session.complete(now);
+    motion.reset();
     return RunningIntent(
       type: RunningIntentType.sessionCompleted,
       at: now,
@@ -59,6 +61,7 @@ class RunningCoordinator {
 
   RunningIntent exit(DateTime now) {
     session.exit(now);
+    motion.reset();
     return RunningIntent(
       type: RunningIntentType.sessionExited,
       at: now,
@@ -67,8 +70,7 @@ class RunningCoordinator {
   }
 
   /// Reports a sensor-derived state change and, when appropriate, emits an
-  /// automation suggestion. Movement itself is always observable through the
-  /// motionChanged intent.
+  /// automation suggestion.
   ///
   /// A completed or idle session ignores movement so stale sensor callbacks
   /// cannot create playback suggestions outside a Running session.
