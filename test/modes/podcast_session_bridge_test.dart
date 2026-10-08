@@ -59,6 +59,23 @@ void main() {
       expect(bridge.isActive, isFalse);
     });
 
+    test('mode exit synchronizes and closes the active podcast session', () async {
+      final modes = await podcastModes();
+      final bridge = PodcastSessionBridge();
+      bridge.onSongStarted(modes: modes, song: song('episode'));
+
+      expect(bridge.isActive, isTrue);
+      await modes.setMode(ResonateMode.normal);
+      bridge.sync(
+        modes: modes,
+        song: song('episode'),
+        position: const Duration(minutes: 9),
+        playing: true,
+      );
+
+      expect(bridge.isActive, isFalse);
+    });
+
     test('pause, resume and completion follow host lifecycle', () async {
       final modes = await podcastModes();
       final bridge = PodcastSessionBridge();
