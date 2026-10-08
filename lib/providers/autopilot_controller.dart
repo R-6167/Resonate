@@ -165,6 +165,10 @@ class AutopilotController extends ChangeNotifier {
         (modePolicy?.preferCrossfade ?? true) &&
         (modePolicy?.crossfadeAllowed ?? true);
 
+    // A mode may explicitly opt out of automatic next-track behavior. This is
+    // a policy gate only; direct user transport remains unaffected.
+    if (modePolicy?.autoNextPreferred == false) return;
+
     // Keep the queue topped up early — Phase 5: only with explicit consent.
     final duration = music.currentDuration;
     final remaining = duration == null ? null : duration - music.currentPosition;
