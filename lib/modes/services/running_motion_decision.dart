@@ -32,6 +32,20 @@ class RunningMotionDecisionEngine {
     if (paused) _automationPausedPlayback = false;
   }
 
+  /// Clears all temporal and authority state at a Running session boundary.
+  ///
+  /// This is important because motion callbacks can outlive a Mode transition.
+  /// No prior-session automation decision may leak into a newly started
+  /// session.
+  void reset() {
+    _state = MotionState.unknown;
+    _stateSince = null;
+    _lastMovingAt = null;
+    _lastDecisionAt = null;
+    _automationPausedPlayback = false;
+    _userPausedPlayback = false;
+  }
+
   RunningMotionDecision ingest(
     MotionState state,
     DateTime now, {
