@@ -52,7 +52,8 @@ class ModePolicyCatalog {
           speedControlsEmphasized: true, sleepTimerSuggested: true,
           chapterAwareNavigation: false, uiDensity: UiDensity.reduced,
           hideAdvancedSettingsEntry: false, preferredMediaTypes: {MediaType.podcast},
-          avoidedMediaTypes: {}, automationElevated: false, preferLongSessions: true,
+          avoidedMediaTypes: {MediaType.music, MediaType.audiobook, MediaType.motivation, MediaType.unknown},
+          automationElevated: false, preferLongSessions: true,
         );
       case ResonateMode.motivation:
         return const PlaybackPolicy(
@@ -71,7 +72,8 @@ class ModePolicyCatalog {
           speedControlsEmphasized: true, sleepTimerSuggested: true,
           chapterAwareNavigation: true, uiDensity: UiDensity.reduced,
           hideAdvancedSettingsEntry: false, preferredMediaTypes: {MediaType.audiobook},
-          avoidedMediaTypes: {}, automationElevated: false, preferLongSessions: true,
+          avoidedMediaTypes: {MediaType.music, MediaType.podcast, MediaType.motivation, MediaType.unknown},
+          automationElevated: false, preferLongSessions: true,
         );
     }
   }
