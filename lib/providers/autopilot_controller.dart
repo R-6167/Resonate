@@ -14,6 +14,7 @@ import 'music_provider.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/models/motivation_intent.dart';
 import '../modes/services/mode_content_resolver.dart';
+import '../services/autopilot_mode_policy.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
 /// engine. MusicProvider remains authoritative for playback and queue state.
@@ -161,13 +162,14 @@ class AutopilotController extends ChangeNotifier {
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
     final modePolicy = modes?.policy;
-    final useCrossfade = (await IntelligenceSettingsStore.autopilotCrossfade()) &&
-        (modePolicy?.preferCrossfade ?? true) &&
-        (modePolicy?.crossfadeAllowed ?? true);
+    final useCrossfade = AutopilotModePolicy.shouldUseCrossfade(
+      userCrossfadeEnabled: await IntelligenceSettingsStore.autopilotCrossfade(),
+      policy: modePolicy,
+    );
 
     // A mode may explicitly opt out of automatic next-track behavior. This is
     // a policy gate only; direct user transport remains unaffected.
-    if (modePolicy?.autoNextPreferred == false) return;
+    if (!AutopilotModePolicy.allowsAutomaticNext(modePolicy)) return;
 
     // Keep the queue topped up early — Phase 5: only with explicit consent.
     final duration = music.currentDuration;
@@ -321,7 +323,7 @@ class AutopilotController extends ChangeNotifier {
       await intelligence.refreshRecommendations(notify: false);
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final modePolicy = modes?.policy;
-      final sequenceCount = modePolicy?.preferLongSessions == true ? 4 : 2;
+      final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
       final candidates = await _decisionEngine.chooseSequence(
         recommendations: intelligence.recommendations,
         queuedIds: futureQueued,
