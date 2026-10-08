@@ -1045,6 +1045,16 @@ class MusicProvider extends ChangeNotifier {
         // Advance only once per song to prevent competing source loads.
         if (completedSongId == null || completedSongId == _lastCompletionSongId) return;
         _lastCompletionSongId = completedSongId;
+
+        // Publish the completion to Modes before transport advances the queue.
+        // The current song is still the completed content at this point, so
+        // Motivation can emit speechCompleted/musicFollowupSuggested without
+        // Modes gaining any authority over queue advancement.
+        final completedSong = currentSong;
+        if (completedSong != null && completedSong.id == completedSongId) {
+          _modes?.onPlaybackCompleted(completedSong);
+        }
+
         currentPosition = currentDuration ?? currentPosition;
         // Stay "want playing" so the next track auto-starts (not resume).
         // Do NOT set isPlaying=false here — that raced with the advance play()
