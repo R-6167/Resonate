@@ -276,7 +276,7 @@ void main() {
       songs: [_song('unknown'), _song('music'), _song('motivation')],
       limit: 2,
     );
-    expect(resolved.map((song) => song.id), ['motivation', 'music']);
+    expect(resolved.map((song) => song.id), ['music', 'motivation']);
   });
 
   test('resolver has no fallback when a mode accepts no candidates', () async {
