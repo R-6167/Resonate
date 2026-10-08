@@ -1,12 +1,28 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/song.dart';
+import 'package:resonate/modes/integration/mode_playback_port.dart';
 import 'package:resonate/modes/models/media_type.dart';
 import 'package:resonate/modes/models/mode_media_item.dart';
 import 'package:resonate/modes/models/motivation_intent.dart';
 import 'package:resonate/modes/models/resonate_mode.dart';
 import 'package:resonate/modes/models/work_intent.dart';
 import 'package:resonate/modes/providers/mode_provider.dart';
+
+class _RecordingPlaybackPort implements ModePlaybackPort {
+  final List<String> policies = <String>[];
+
+  @override
+  void applyModePlaybackPolicy({
+    required bool crossfadeAllowed,
+    required bool shuffleAllowed,
+    required bool preciseResume,
+  }) {
+    policies.add(
+      '$crossfadeAllowed/$shuffleAllowed/$preciseResume',
+    );
+  }
+}
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -26,25 +42,49 @@ void main() {
     final modes = ModeProvider();
     await modes.ready;
     await modes.setMode(ResonateMode.motivation);
-    final motivation = makeSong('motivation-1', path: '/motivation/motivation.mp3');
+    final motivation = makeSong(
+      'motivation-1',
+      path: '/motivation/motivation.mp3',
+    );
     await Future<void>.delayed(Duration.zero);
     modes.onPlaybackStarted(motivation);
 
     expect(modes.motivationSessionActive, isTrue);
-    expect(modes.lastMotivationIntents.any((i) => i.type == MotivationIntentType.sessionStarted), isTrue);
-    expect(modes.lastMotivationIntents.any((i) => i.type == MotivationIntentType.speechStarted), isTrue);
+    expect(
+      modes.lastMotivationIntents
+          .any((i) => i.type == MotivationIntentType.sessionStarted),
+      isTrue,
+    );
+    expect(
+      modes.lastMotivationIntents
+          .any((i) => i.type == MotivationIntentType.speechStarted),
+      isTrue,
+    );
 
     modes.onPlaybackCompleted(motivation);
-    expect(modes.lastMotivationIntents.any((i) => i.type == MotivationIntentType.speechCompleted), isTrue);
-    expect(modes.lastMotivationIntents.any((i) => i.type == MotivationIntentType.musicFollowupSuggested), isTrue);
+    expect(
+      modes.lastMotivationIntents
+          .any((i) => i.type == MotivationIntentType.speechCompleted),
+      isTrue,
+    );
+    expect(
+      modes.lastMotivationIntents
+          .any((i) => i.type == MotivationIntentType.musicFollowupSuggested),
+      isTrue,
+    );
 
     await modes.setMode(ResonateMode.normal);
     expect(modes.motivationSessionActive, isFalse);
-    expect(modes.lastMotivationIntents.any((i) => i.type == MotivationIntentType.sessionExited), isTrue);
+    expect(
+      modes.lastMotivationIntents
+          .any((i) => i.type == MotivationIntentType.sessionExited),
+      isTrue,
+    );
     modes.dispose();
   });
 
-  test('Work lifecycle follows playback without taking playback authority', () async {
+  test('Work lifecycle follows playback without taking playback authority',
+      () async {
     final modes = ModeProvider();
     await modes.ready;
     await modes.setMode(ResonateMode.work);
@@ -71,6 +111,30 @@ void main() {
     expect(modes.mediaTypeFor(itemFor(music)), MediaType.music);
     await modes.setMode(ResonateMode.motivation);
     expect(modes.mediaTypeFor(itemFor(music)), MediaType.music);
+    modes.dispose();
+  });
+
+  test('Motivation and Work host boundary only pushes playback policy',
+      () async {
+    final modes = ModeProvider();
+    final playback = _RecordingPlaybackPort();
+    await modes.ready;
+    modes.attachPlayback(playback);
+
+    final initialCount = playback.policies.length;
+    await modes.setMode(ResonateMode.motivation);
+    final motivationCount = playback.policies.length;
+    expect(motivationCount, greaterThan(initialCount));
+    expect(playback.policies.last, 'true/true/true');
+
+    await modes.setMode(ResonateMode.work);
+    expect(playback.policies.length, greaterThan(motivationCount));
+    expect(playback.policies.last, 'true/true/false');
+
+    await modes.setMode(ResonateMode.normal);
+    expect(playback.policies.last, 'true/true/false');
+    expect(modes.motivationSessionActive, isFalse);
+    expect(modes.workSessionActive, isFalse);
     modes.dispose();
   });
 }
