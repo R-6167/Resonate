@@ -45,6 +45,47 @@ void main() {
     }
   });
 
+  test('DJ handoff authority follows the Mode crossfade capability matrix', () {
+    final blocked = [ResonateMode.podcast, ResonateMode.audiobook];
+    final enabled = [
+      ResonateMode.normal,
+      ResonateMode.running,
+      ResonateMode.driving,
+      ResonateMode.work,
+      ResonateMode.motivation,
+    ];
+
+    for (final mode in blocked) {
+      final p = ModePolicyCatalog.policyFor(mode);
+      expect(
+        p.crossfadeAllowed,
+        isFalse,
+        reason: '$mode must block DJ/crossfade handoffs at the Mode boundary',
+      );
+    }
+
+    for (final mode in enabled) {
+      final p = ModePolicyCatalog.policyFor(mode);
+      expect(
+        p.crossfadeAllowed,
+        isTrue,
+        reason: '$mode permits DJ/crossfade handoffs when the user has enabled crossfade',
+      );
+    }
+
+    // Preference is intentionally distinct from capability: Work and
+    // Motivation may prefer ordinary transitions while still permitting the
+    // user's DJ/crossfade capability.
+    expect(
+      ModePolicyCatalog.policyFor(ResonateMode.work).preferCrossfade,
+      isFalse,
+    );
+    expect(
+      ModePolicyCatalog.policyFor(ResonateMode.motivation).preferCrossfade,
+      isFalse,
+    );
+  });
+
   test('every mode has a deterministic policy', () {
     for (final mode in ResonateMode.values) {
       expect(ModePolicyCatalog.policyFor(mode).mode, mode);
