@@ -35,6 +35,14 @@ void main() {
     expect(ModePolicyCatalog.policyFor(ResonateMode.podcast).preferLongSessions, isTrue);
     expect(ModePolicyCatalog.policyFor(ResonateMode.audiobook).preferLongSessions, isTrue);
     expect(ModePolicyCatalog.policyFor(ResonateMode.normal).preferLongSessions, isFalse);
+
+    for (final mode in ResonateMode.values) {
+      expect(
+        ModePolicyCatalog.policyFor(mode).autoNextPreferred,
+        isTrue,
+        reason: 'Current modes all permit automatic next-track behavior: $mode',
+      );
+    }
   });
 
   test('every mode has a deterministic policy', () {
