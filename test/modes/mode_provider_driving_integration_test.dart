@@ -80,4 +80,28 @@ void main() {
 
     modes.dispose();
   });
+
+  test('dismissing a Driving suggestion closes it without entering Driving', () async {
+    final modes = ModeProvider();
+    final context = _FakeContext(ModeAudioContext.unknown);
+    modes.attachContext(context);
+    await modes.ready;
+
+    context.set(ModeAudioContext.car);
+    expect(modes.hasDrivingSuggestion, isTrue);
+
+    modes.dismissDrivingSuggestion();
+
+    expect(modes.hasDrivingSuggestion, isFalse);
+    expect(modes.mode, ResonateMode.normal);
+    expect(modes.drivingContextActive, isTrue);
+
+    context.set(ModeAudioContext.unknown);
+    context.set(ModeAudioContext.car);
+
+    expect(modes.hasDrivingSuggestion, isTrue);
+    expect(modes.mode, ResonateMode.normal);
+
+    modes.dispose();
+  });
 }
