@@ -197,13 +197,15 @@ class ModeProvider extends ChangeNotifier {
   void onPlaybackStarted(Song? song, {Duration position = Duration.zero}) {
     final now = DateTime.now();
     if (_mode == ResonateMode.motivation) {
+      final intents = <MotivationIntent>[];
       if (!_motivationCoordinator.isActive) {
-        _publishMotivationIntents(_motivationCoordinator.start(now));
+        intents.addAll(_motivationCoordinator.start(now));
       }
       if (song != null) {
         final item = ModeMediaItem(id: song.id, filePath: song.filePath, title: song.title, album: song.album, artist: song.artist);
-        _publishMotivationIntents(_motivationCoordinator.startContent(mediaTypeFor(item), now));
+        intents.addAll(_motivationCoordinator.startContent(mediaTypeFor(item), now));
       }
+      _publishMotivationIntents(intents);
     } else if (_mode == ResonateMode.work && !_workCoordinator.isActive) {
       _publishWorkIntents(_workCoordinator.start(now));
     }
@@ -328,8 +330,12 @@ class ModeProvider extends ChangeNotifier {
       _mediaFolders = await _folderStore.loadAll();
     } catch (_) {}
     _ready = true;
+    _motivationCoordinator.setMode(_mode);
+    _workCoordinator.setMode(_mode);
     _pushPolicyToEngine();
     if (_mode == ResonateMode.running) _enterRunning(DateTime.now());
+    if (_mode == ResonateMode.motivation) _publishMotivationIntents(_motivationCoordinator.start(DateTime.now()));
+    if (_mode == ResonateMode.work) _publishWorkIntents(_workCoordinator.start(DateTime.now()));
     notifyListeners();
   }
 
