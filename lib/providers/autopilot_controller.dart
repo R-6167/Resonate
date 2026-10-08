@@ -12,6 +12,7 @@ import '../services/playback_authority.dart';
 import 'intelligence_provider.dart';
 import 'music_provider.dart';
 import '../modes/providers/mode_provider.dart';
+import '../modes/models/motivation_intent.dart';
 import '../modes/services/mode_content_resolver.dart';
 
 /// Bridges Intelligence decisions into the existing MusicProvider playback
@@ -34,6 +35,7 @@ class AutopilotController extends ChangeNotifier {
   bool _consentLoaded = false;
   bool _consentGranted = false;
   DateTime? _lastEvaluation;
+  DateTime? _lastMotivationFollowupAt;
   bool _evaluationScheduled = false;
 
   AutopilotController({
@@ -43,6 +45,7 @@ class AutopilotController extends ChangeNotifier {
   }) {
     music.addListener(_onPlaybackChanged);
     intelligence.addListener(_onIntelligenceChanged);
+    modes?.addListener(_onModesChanged);
     _authority.addListener(_onAuthorityEvent);
     unawaited(_loadConsentAndEvaluate());
   }
@@ -76,6 +79,16 @@ class AutopilotController extends ChangeNotifier {
 
   void _onPlaybackChanged() => _scheduleEvaluate();
   void _onIntelligenceChanged() => _scheduleEvaluate();
+
+  void _onModesChanged() {
+    final m = modes;
+    if (m == null || m.lastMotivationIntents.isEmpty) return;
+    final intent = m.lastMotivationIntents.last;
+    if (intent.type != MotivationIntentType.musicFollowupSuggested) return;
+    if (_lastMotivationFollowupAt == intent.at) return;
+    _lastMotivationFollowupAt = intent.at;
+    _scheduleEvaluate();
+  }
 
   void _onAuthorityEvent() {
     final event = _authority.lastEvent;
@@ -180,7 +193,11 @@ class AutopilotController extends ChangeNotifier {
     } else if (intelligence.isAutopilotGraduated) {
       // Prefer existing queue next. Phase 5: only enqueue with consent.
       if (music.queueIndex < music.queue.length - 1) {
-        nextSong = music.queue[music.queueIndex + 1];
+        final upcoming = music.queue.skip(music.queueIndex + 1).toList();
+        final modeSafe = _applyModeBias(upcoming);
+        if (modeSafe.isNotEmpty) {
+          nextSong = modeSafe.first;
+        }
       } else if (_consentGranted) {
         await _ensurePredictedQueue(threshold);
         final top = intelligence.anticipatedNext?.song;
@@ -334,6 +351,7 @@ class AutopilotController extends ChangeNotifier {
   void dispose() {
     music.removeListener(_onPlaybackChanged);
     intelligence.removeListener(_onIntelligenceChanged);
+    modes?.removeListener(_onModesChanged);
     _authority.removeListener(_onAuthorityEvent);
     super.dispose();
   }
