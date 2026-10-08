@@ -6,6 +6,8 @@ import '../models/media_type.dart';
 import '../models/mode_media_item.dart';
 import '../models/playback_policy.dart';
 import '../models/resonate_mode.dart';
+import '../models/running_intent.dart';
+import '../models/running_session_state.dart';
 import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
 import '../services/media_folder_router.dart';
@@ -13,10 +15,12 @@ import '../services/media_folder_store.dart';
 import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
 import '../services/driving_coordinator.dart';
+import '../services/running_coordinator.dart';
 import '../models/interaction_policy.dart';
 import '../models/driving_intent.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
+import '../integration/mode_motion_port.dart';
 
 /// Central Modes Engine. It emits policy and delegates playback/context work
 /// to adapters supplied by the main Resonate application.
@@ -28,7 +32,13 @@ class ModeProvider extends ChangeNotifier {
   final MediaClassificationStore _store = MediaClassificationStore();
   final MediaFolderStore _folderStore = MediaFolderStore();
   final DrivingCoordinator _drivingCoordinator = DrivingCoordinator();
+  final RunningCoordinator _runningCoordinator = RunningCoordinator();
   List<DrivingIntent> _lastDrivingIntents = const <DrivingIntent>[];
+  List<RunningIntent> _lastRunningIntents = const <RunningIntent>[];
+
+  ModeMotionPort? _motion;
+  bool Function()? _isPlaying;
+  void Function(RunningIntent intent)? _runningIntentSink;
 
   ModePlaybackPort? _playback;
   ModeContextPort? _context;
@@ -53,6 +63,9 @@ class ModeProvider extends ChangeNotifier {
   bool get autoEnterDrivingOnCar => _autoEnterDrivingOnCar;
   bool get drivingContextActive => _drivingCoordinator.context == ModeAudioContext.car;
   List<DrivingIntent> get lastDrivingIntents => List.unmodifiable(_lastDrivingIntents);
+  List<RunningIntent> get lastRunningIntents => List.unmodifiable(_lastRunningIntents);
+  RunningSessionState get runningSessionState => _runningCoordinator.state;
+  bool get runningSessionActive => _runningCoordinator.state == RunningSessionState.active;
   bool get crossfadeAllowed => policy.crossfadeAllowed;
 
   List<String> foldersFor(MediaType type) =>
@@ -92,6 +105,67 @@ class ModeProvider extends ChangeNotifier {
     _context = context;
     context.addListener(_onContextChanged);
     _onContextChanged();
+  }
+
+  void attachMotion(
+    ModeMotionPort motion, {
+    required bool Function() isPlaying,
+    void Function(RunningIntent intent)? onIntent,
+  }) {
+    _motion?.removeListener(_onMotionChanged);
+    _motion?.stop();
+    _motion = motion;
+    _isPlaying = isPlaying;
+    _runningIntentSink = onIntent;
+    motion.addListener(_onMotionChanged);
+    if (_mode == ResonateMode.running) {
+      motion.start();
+    }
+  }
+
+  void _onMotionChanged() {
+    if (_mode != ResonateMode.running) return;
+    final state = _motion?.motionState;
+    final isPlaying = _isPlaying;
+    if (state == null || isPlaying == null) return;
+    _publishRunningIntents(
+      _runningCoordinator.ingestMotion(
+        state,
+        DateTime.now(),
+        isPlaying: isPlaying(),
+      ),
+    );
+  }
+
+  void _publishRunningIntents(List<RunningIntent> intents) {
+    if (intents.isEmpty) return;
+    _lastRunningIntents = List<RunningIntent>.unmodifiable(intents);
+    for (final intent in intents) {
+      try {
+        _runningIntentSink?.call(intent);
+      } catch (_) {}
+    }
+    notifyListeners();
+  }
+
+  void setRunningUserPaused(bool paused) {
+    if (_mode != ResonateMode.running) return;
+    _runningCoordinator.setUserPaused(paused);
+  }
+
+  void _enterRunning(DateTime now) {
+    if (_runningCoordinator.state == RunningSessionState.active) return;
+    _motion?.start();
+    _publishRunningIntents([_runningCoordinator.start(now)]);
+  }
+
+  void _exitRunning(DateTime now) {
+    if (_runningCoordinator.state == RunningSessionState.idle) {
+      _motion?.stop();
+      return;
+    }
+    _publishRunningIntents([_runningCoordinator.exit(now)]);
+    _motion?.stop();
   }
 
   void _onContextChanged() {
@@ -171,11 +245,14 @@ class ModeProvider extends ChangeNotifier {
     } catch (_) {}
     _ready = true;
     _pushPolicyToEngine();
+    if (_mode == ResonateMode.running) _enterRunning(DateTime.now());
     notifyListeners();
   }
 
   Future<void> setMode(ResonateMode mode) async {
     if (_mode == mode) return;
+    final previous = _mode;
+    if (previous == ResonateMode.running) _exitRunning(DateTime.now());
     _mode = mode;
     _drivingCoordinator.setMode(mode);
     if (mode == ResonateMode.driving) {
@@ -183,6 +260,7 @@ class ModeProvider extends ChangeNotifier {
       _drivingSuggestDismissed = false;
     }
     _pushPolicyToEngine();
+    if (mode == ResonateMode.running) _enterRunning(DateTime.now());
     _onContextChanged();
     notifyListeners();
     try {
@@ -247,6 +325,8 @@ class ModeProvider extends ChangeNotifier {
   @override
   void dispose() {
     _context?.removeListener(_onContextChanged);
+    _motion?.removeListener(_onMotionChanged);
+    _motion?.stop();
     super.dispose();
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:audio_service/audio_service.dart';
@@ -19,6 +20,8 @@ import 'providers/listening_history_provider.dart';
 import 'providers/music_provider.dart';
 import 'modes/providers/mode_provider.dart';
 import 'modes/integration/resonate_mode_ports.dart';
+import 'modes/integration/resonate_motion_port.dart';
+import 'modes/models/running_intent.dart';
 import 'providers/playback_features_provider.dart';
 import 'providers/playlist_provider.dart';
 import 'providers/theme_provider.dart';
@@ -290,7 +293,19 @@ class ResonateApp extends StatelessWidget {
             modes.attachContext(
               ResonateModeContextPort(context.read<BluetoothProvider>()),
             );
-            context.read<MusicProvider>().attachModes(modes);
+            final music = context.read<MusicProvider>();
+            modes.attachMotion(
+              ResonateMotionPort(),
+              isPlaying: () => music.isPlaying,
+              onIntent: (intent) {
+                if (intent.type == RunningIntentType.suggestPause) {
+                  unawaited(music.pause(source: 'running_automation'));
+                } else if (intent.type == RunningIntentType.suggestResume) {
+                  unawaited(music.resumePlayback(source: 'running_automation'));
+                }
+              },
+            );
+            music.attachModes(modes);
             context.read<IntelligenceProvider>().attachModes(modes);
             return modes;
           },
