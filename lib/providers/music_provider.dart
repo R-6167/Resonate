@@ -2316,7 +2316,13 @@ class MusicProvider extends ChangeNotifier {
         _resumePositionMs = mapped;
       }
     }
-    final shouldResume = resumeIfPossible && _resumeSongId == song.id && _resumePositionMs > 1500;
+    // Precise resume is a Mode playback policy. Normal/routine modes keep
+    // the existing start-from-zero behavior; content/session modes that
+    // explicitly require precise resume may restore the saved position.
+    final shouldResume = _modePreciseResume &&
+        resumeIfPossible &&
+        _resumeSongId == song.id &&
+        _resumePositionMs > 1500;
     return _serializePlayback(
       () => _playSongInternal(song, queue: queue, startIndex: startIndex, resume: shouldResume, playbackIntentToken: intentToken),
       command: 'play', source: 'normal_player', userInitiated: true, intentToken: intentToken,
