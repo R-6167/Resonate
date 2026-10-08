@@ -26,7 +26,7 @@ void main() {
     final modes = ModeProvider();
     await modes.ready;
     await modes.setMode(ResonateMode.motivation);
-    final motivation = makeSong('motivation-1', path: '/podcasts/motivation.mp3');
+    final motivation = makeSong('motivation-1', path: '/motivation/motivation.mp3');
     await Future<void>.delayed(Duration.zero);
     modes.onPlaybackStarted(motivation);
 
