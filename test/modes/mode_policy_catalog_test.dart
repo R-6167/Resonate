@@ -2,19 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/modes/models/media_type.dart';
 import 'package:resonate/modes/models/mode_media_item.dart';
+import 'package:resonate/modes/models/resonate_mode.dart';
 import 'package:resonate/modes/providers/mode_provider.dart';
 import 'package:resonate/modes/services/mode_content_resolver.dart';
-import 'package:resonate/modes/models/resonate_mode.dart';
 import 'package:resonate/modes/services/mode_policy_catalog.dart';
-
-
 
 Song _song(String id) => Song(
   id: id,
   title: id,
   artist: 'Test Artist',
   album: 'Test Album',
-  filePath: '/music/$id.mp3',
+  filePath: '/music/${id}.mp3',
   duration: const Duration(minutes: 3),
   dateAdded: DateTime(2026, 1, 1),
 );
@@ -30,136 +28,13 @@ Future<ModeProvider> _mode(
     await provider.setUserMediaType(
       ModeMediaItem(
         id: entry.key,
-        filePath: '/media/\${entry.key}.mp3',
+        filePath: '/media/${entry.key}.mp3',
         title: entry.key,
       ),
       entry.value,
     );
   }
   return provider;
-
-  test('ModeContentResolver preserves the canonical candidate set in Normal mode', () async {
-    final provider = await _mode(ResonateMode.normal, {});
-    final songs = <Song>[
-      _song('music'),
-      Song(
-        id: 'empty',
-        title: 'empty',
-        artist: 'Test Artist',
-        album: 'Test Album',
-        filePath: '',
-        duration: const Duration(minutes: 1),
-        dateAdded: DateTime(2026, 1, 1),
-      ),
-      _song('podcast'),
-    ];
-
-    final resolved = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: songs,
-    );
-
-    expect(resolved.map((song) => song.id), ['music', 'empty', 'podcast']);
-    expect(const ModeContentResolver().accepts(provider, songs[1]), isTrue);
-  });
-
-  test('ModeContentResolver strictly excludes avoided media and missing paths', () async {
-    final provider = await _mode(
-      ResonateMode.running,
-      {
-        'music': MediaType.music,
-        'podcast': MediaType.podcast,
-        'audiobook': MediaType.audiobook,
-        'unknown': MediaType.unknown,
-      },
-    );
-    final songs = [
-      _song('music'),
-      _song('podcast'),
-      _song('audiobook'),
-      _song('unknown'),
-      Song(
-        id: 'missing-path',
-        title: 'missing-path',
-        artist: 'Test Artist',
-        album: 'Test Album',
-        filePath: '',
-        duration: const Duration(minutes: 1),
-        dateAdded: DateTime(2026, 1, 1),
-      ),
-    ];
-
-    final resolved = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: songs,
-    );
-
-    expect(resolved.map((song) => song.id), ['music', 'unknown']);
-    expect(const ModeContentResolver().accepts(provider, songs[1]), isFalse);
-    expect(const ModeContentResolver().accepts(provider, songs[4]), isFalse);
-  });
-
-  test('preferred media is reordered without permitting avoided media', () async {
-    final provider = await _mode(
-      ResonateMode.running,
-      {
-        'unknown': MediaType.unknown,
-        'music': MediaType.music,
-        'podcast': MediaType.podcast,
-      },
-    );
-    final songs = [_song('unknown'), _song('music'), _song('podcast')];
-
-    final preferred = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: songs,
-    );
-    final acceptedOrder = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: songs,
-      preferPreferredContent: false,
-    );
-
-    expect(preferred.map((song) => song.id), ['music', 'unknown']);
-    expect(acceptedOrder.map((song) => song.id), ['unknown', 'music']);
-    expect(preferred, isNot(contains(songs[2])));
-  });
-
-  test('limit is applied after mode acceptance and preference ordering', () async {
-    final provider = await _mode(
-      ResonateMode.motivation,
-      {
-        'unknown': MediaType.unknown,
-        'music': MediaType.music,
-        'motivation': MediaType.motivation,
-      },
-    );
-    final resolved = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: [_song('unknown'), _song('music'), _song('motivation')],
-      limit: 2,
-    );
-
-    expect(resolved.map((song) => song.id), ['motivation', 'music']);
-  });
-
-  test('resolver has no fallback when a mode accepts no candidates', () async {
-    final provider = await _mode(
-      ResonateMode.audiobook,
-      {
-        'music': MediaType.music,
-        'podcast': MediaType.podcast,
-      },
-    );
-
-    final resolved = const ModeContentResolver().resolve(
-      modes: provider,
-      songs: [_song('music'), _song('podcast')],
-    );
-
-    expect(resolved, isEmpty);
-  });
-
 }
 
 void main() {
@@ -315,4 +190,106 @@ void main() {
       expect(ModePolicyCatalog.policyFor(mode).mode, mode);
     }
   });
+  test('ModeContentResolver preserves the canonical candidate set in Normal mode', () async {
+    final provider = await _mode(ResonateMode.normal, {});
+    final songs = <Song>[
+      _song('music'),
+      Song(
+        id: 'empty',
+        title: 'empty',
+        artist: 'Test Artist',
+        album: 'Test Album',
+        filePath: '',
+        duration: const Duration(minutes: 1),
+        dateAdded: DateTime(2026, 1, 1),
+      ),
+      _song('podcast'),
+    ];
+    final resolved = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: songs,
+    );
+    expect(resolved.map((song) => song.id), ['music', 'empty', 'podcast']);
+    expect(const ModeContentResolver().accepts(provider, songs[1]), isTrue);
+  });
+
+  test('ModeContentResolver strictly excludes avoided media and missing paths', () async {
+    final provider = await _mode(ResonateMode.running, {
+      'music': MediaType.music,
+      'podcast': MediaType.podcast,
+      'audiobook': MediaType.audiobook,
+      'unknown': MediaType.unknown,
+    });
+    final songs = [
+      _song('music'),
+      _song('podcast'),
+      _song('audiobook'),
+      _song('unknown'),
+      Song(
+        id: 'missing-path',
+        title: 'missing-path',
+        artist: 'Test Artist',
+        album: 'Test Album',
+        filePath: '',
+        duration: const Duration(minutes: 1),
+        dateAdded: DateTime(2026, 1, 1),
+      ),
+    ];
+    final resolved = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: songs,
+    );
+    expect(resolved.map((song) => song.id), ['music', 'unknown']);
+    expect(const ModeContentResolver().accepts(provider, songs[1]), isFalse);
+    expect(const ModeContentResolver().accepts(provider, songs[4]), isFalse);
+  });
+
+  test('preferred media is reordered without permitting avoided media', () async {
+    final provider = await _mode(ResonateMode.running, {
+      'unknown': MediaType.unknown,
+      'music': MediaType.music,
+      'podcast': MediaType.podcast,
+    });
+    final songs = [_song('unknown'), _song('music'), _song('podcast')];
+    final preferred = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: songs,
+    );
+    final acceptedOrder = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: songs,
+      preferPreferredContent: false,
+    );
+    expect(preferred.map((song) => song.id), ['music', 'unknown']);
+    expect(acceptedOrder.map((song) => song.id), ['unknown', 'music']);
+    expect(preferred, isNot(contains(songs[2])));
+  });
+
+  test('limit is applied after mode acceptance and preference ordering', () async {
+    final provider = await _mode(ResonateMode.motivation, {
+      'unknown': MediaType.unknown,
+      'music': MediaType.music,
+      'motivation': MediaType.motivation,
+    });
+    final resolved = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: [_song('unknown'), _song('music'), _song('motivation')],
+      limit: 2,
+    );
+    expect(resolved.map((song) => song.id), ['motivation', 'music']);
+  });
+
+  test('resolver has no fallback when a mode accepts no candidates', () async {
+    final provider = await _mode(ResonateMode.audiobook, {
+      'music': MediaType.music,
+      'podcast': MediaType.podcast,
+    });
+    final resolved = const ModeContentResolver().resolve(
+      modes: provider,
+      songs: [_song('music'), _song('podcast')],
+    );
+    expect(resolved, isEmpty);
+  });
+
+
 }
