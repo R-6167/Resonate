@@ -86,6 +86,71 @@ void main() {
     );
   });
 
+  test('policy matrix preserves cross-feature invariants for every mode', () {
+    for (final mode in ResonateMode.values) {
+      final p = ModePolicyCatalog.policyFor(mode);
+
+      // Capability and preference are independent: a mode may permit
+      // crossfade while choosing not to prefer it.
+      if (!p.crossfadeAllowed) {
+        expect(
+          p.preferCrossfade,
+          isFalse,
+          reason: '$mode cannot prefer a capability it explicitly blocks',
+        );
+      }
+
+      // Speech modes are precise and conservative; music-oriented modes may
+      // use ordinary crossfade behavior.
+      if (mode == ResonateMode.podcast ||
+          mode == ResonateMode.audiobook) {
+        expect(p.preciseResume, isTrue);
+        expect(p.speedControlsEmphasized, isTrue);
+        expect(p.sleepTimerSuggested, isTrue);
+        expect(p.shuffleAllowed, isFalse);
+        expect(p.crossfadeAllowed, isFalse);
+      }
+
+      // Reduced/minimal UI is only a presentation policy; it must not imply
+      // that canonical playback capability disappears.
+      expect(p.uiDensity, isNotNull);
+
+      // Preferred content is a bias, while avoided content is a hard
+      // generated-content exclusion enforced by ModeContentResolver.
+      expect(p.preferredMediaTypes, isNotNull);
+      expect(p.avoidedMediaTypes, isNotNull);
+    }
+  });
+
+  test('mode policy separates capability, preference, and automation authority', () {
+    final work = ModePolicyCatalog.policyFor(ResonateMode.work);
+    final motivation = ModePolicyCatalog.policyFor(ResonateMode.motivation);
+    final running = ModePolicyCatalog.policyFor(ResonateMode.running);
+    final driving = ModePolicyCatalog.policyFor(ResonateMode.driving);
+
+    expect(work.crossfadeAllowed, isTrue);
+    expect(work.preferCrossfade, isFalse);
+    expect(work.automationElevated, isFalse);
+
+    expect(motivation.crossfadeAllowed, isTrue);
+    expect(motivation.preferCrossfade, isFalse);
+    expect(motivation.automationElevated, isFalse);
+
+    expect(running.crossfadeAllowed, isTrue);
+    expect(running.automationElevated, isTrue);
+
+    expect(driving.crossfadeAllowed, isTrue);
+    expect(driving.automationElevated, isTrue);
+    expect(driving.preferLongSessions, isTrue);
+
+    // Elevated automation is a policy signal, not a playback capability.
+    // The actual authority remains in the host playback engine.
+    expect(
+      running.automationElevated || driving.automationElevated,
+      isTrue,
+    );
+  });
+
   test('every mode has a deterministic policy', () {
     for (final mode in ResonateMode.values) {
       expect(ModePolicyCatalog.policyFor(mode).mode, mode);
