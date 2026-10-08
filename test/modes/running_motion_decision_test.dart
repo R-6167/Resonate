@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/modes/models/motion_state.dart';
 import 'package:resonate/modes/models/running_automation_policy.dart';
 import 'package:resonate/modes/services/running_motion_decision.dart';
+import 'package:resonate/modes/services/running_coordinator.dart';
 
 void main() {
   final t0 = DateTime(2026, 1, 1, 12);
@@ -81,5 +82,42 @@ void main() {
       engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 20)), isPlaying: false),
       RunningMotionDecision.maintain,
     );
+  });
+
+  test('reset clears automation and user authority state', () {
+    final engine = RunningMotionDecisionEngine();
+    engine.ingest(MotionState.stationary, t0, isPlaying: true);
+    expect(
+      engine.ingest(MotionState.stationary, t0.add(const Duration(seconds: 15)), isPlaying: true),
+      RunningMotionDecision.suggestPause,
+    );
+    engine.setUserPaused(true);
+    engine.reset();
+
+    expect(engine.automationPausedPlayback, isFalse);
+    expect(engine.state, MotionState.unknown);
+    expect(
+      engine.ingest(MotionState.moving, t0.add(const Duration(seconds: 5)), isPlaying: false),
+      RunningMotionDecision.maintain,
+    );
+  });
+
+  test('Running coordinator resets automation at session boundaries', () {
+    final engine = RunningMotionDecisionEngine();
+    final coordinator = RunningCoordinator(motion: engine);
+
+    coordinator.start(t0);
+    coordinator.ingestMotion(
+      MotionState.stationary,
+      t0.add(const Duration(seconds: 15)),
+      isPlaying: true,
+    );
+    expect(engine.automationPausedPlayback, isTrue);
+
+    coordinator.exit(t0.add(const Duration(seconds: 16)));
+    coordinator.start(t0.add(const Duration(seconds: 17)));
+
+    expect(engine.automationPausedPlayback, isFalse);
+    expect(engine.state, MotionState.unknown);
   });
 }
