@@ -183,6 +183,7 @@ class ModeProvider extends ChangeNotifier {
       _drivingSuggestDismissed = false;
     }
     _pushPolicyToEngine();
+    _onContextChanged();
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
