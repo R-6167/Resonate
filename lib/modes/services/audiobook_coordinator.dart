@@ -6,18 +6,35 @@ import '../models/resonate_mode.dart';
 /// It owns the audiobook session contract and resume/navigation signals only.
 /// Playback, chapter metadata, position persistence, and sleep-timer execution
 /// remain responsibilities of the host Resonate application.
+///
+/// Chapter navigation is capability-driven: the coordinator must not claim
+/// chapter navigation exists until the host supplies a real chapter-capable
+/// integration. This keeps the Mode policy honest while leaving the contract
+/// ready for a future chapter metadata/navigation adapter.
 class AudiobookCoordinator {
   ResonateMode _mode = ResonateMode.audiobook;
   bool _active = false;
   bool _paused = false;
   Duration? _lastKnownPosition;
+  bool _chapterNavigationAvailable;
+
+  AudiobookCoordinator({
+    bool chapterNavigationAvailable = false,
+  }) : _chapterNavigationAvailable = chapterNavigationAvailable;
 
   ResonateMode get mode => _mode;
   bool get isActive => _active;
   bool get isPaused => _paused;
   Duration? get lastKnownPosition => _lastKnownPosition;
+  bool get chapterNavigationAvailable => _chapterNavigationAvailable;
 
   void setMode(ResonateMode mode) => _mode = mode;
+
+  /// Enables chapter navigation only when the host has a real chapter
+  /// metadata/navigation implementation.
+  void setChapterNavigationAvailable(bool available) {
+    _chapterNavigationAvailable = available;
+  }
 
   List<AudiobookIntent> start(DateTime now, {Duration? resumePosition}) {
     if (_active) return const [];
@@ -42,12 +59,15 @@ class AudiobookCoordinator {
         at: now,
         mode: _mode,
       ),
-      AudiobookIntent(
+    ];
+
+    if (_chapterNavigationAvailable) {
+      intents.add(AudiobookIntent(
         type: AudiobookIntentType.chapterNavigationAvailable,
         at: now,
         mode: _mode,
-      ),
-    ];
+      ));
+    }
 
     if (resumePosition != null) {
       intents.add(AudiobookIntent(
