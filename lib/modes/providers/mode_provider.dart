@@ -14,6 +14,7 @@ import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
 import '../services/driving_coordinator.dart';
 import '../models/interaction_policy.dart';
+import '../models/driving_intent.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
 
