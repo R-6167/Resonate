@@ -12,6 +12,7 @@ import '../services/media_folder_router.dart';
 import '../services/media_folder_store.dart';
 import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
+import '../services/driving_coordinator.dart';
 import '../models/interaction_policy.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
@@ -25,6 +26,8 @@ class ModeProvider extends ChangeNotifier {
   final MediaClassifier _classifier = MediaClassifier.instance;
   final MediaClassificationStore _store = MediaClassificationStore();
   final MediaFolderStore _folderStore = MediaFolderStore();
+  final DrivingCoordinator _drivingCoordinator = DrivingCoordinator();
+  List<DrivingIntent> _lastDrivingIntents = const <DrivingIntent>[];
 
   ModePlaybackPort? _playback;
   ModeContextPort? _context;
@@ -47,6 +50,8 @@ class ModeProvider extends ChangeNotifier {
   bool get hasDrivingSuggestion =>
       _drivingSuggestOpen && _mode != ResonateMode.driving && !_autoEnterDrivingOnCar;
   bool get autoEnterDrivingOnCar => _autoEnterDrivingOnCar;
+  bool get drivingContextActive => _drivingCoordinator.context == ModeAudioContext.car;
+  List<DrivingIntent> get lastDrivingIntents => List.unmodifiable(_lastDrivingIntents);
   bool get crossfadeAllowed => policy.crossfadeAllowed;
 
   List<String> foldersFor(MediaType type) =>
@@ -89,7 +94,14 @@ class ModeProvider extends ChangeNotifier {
   }
 
   void _onContextChanged() {
-    final car = _context?.audioContext == ModeAudioContext.car;
+    final context = _context?.audioContext ?? ModeAudioContext.unknown;
+    _drivingCoordinator.setMode(_mode);
+    _lastDrivingIntents = _drivingCoordinator.ingestContext(
+      context,
+      DateTime.now(),
+      autoEnterEnabled: _autoEnterDrivingOnCar,
+    );
+    final car = context == ModeAudioContext.car;
     if (!car) {
       final changed = _drivingSuggestOpen || _drivingSuggestDismissed;
       _drivingSuggestOpen = false;
@@ -164,6 +176,7 @@ class ModeProvider extends ChangeNotifier {
   Future<void> setMode(ResonateMode mode) async {
     if (_mode == mode) return;
     _mode = mode;
+    _drivingCoordinator.setMode(mode);
     if (mode == ResonateMode.driving) {
       _drivingSuggestOpen = false;
       _drivingSuggestDismissed = false;
