@@ -4,31 +4,33 @@ Modes is a **policy and session layer** on top of the existing Resonate playback
 engine. It must never become a second player, focus owner, or auto-resume bully.
 
 **Integration branch:** `modes_on_dj_v2` (DJ engine tip + Modes package).
-**Package origin:** `modes_lab` (Modes-only lab branch).
 
-## Architecture (intended)
+## Architecture
 
 ```text
-User intent / context
-        ↓
-Media Classifier + content folders + overrides
-        ↓
-ModeProvider → PlaybackPolicy + InteractionPolicy
-        ↓
-Host ports (playback / context / folder picker)
-        ↓
-MusicProvider / Autopilot / UI (consume policy only)
+Canonical Library
+      |
+      +---------------------> Direct user playback / queues
+      |
+      +-> ModeContentResolver -> shelves / recommendations / Autopilot
+                                  |
+                           ModeProvider policy
+                                  |
+                     +------------+------------+
+                     |                         |
+                Playback adapter          UI / sessions
+                     |                         |
+                MusicProvider            coordinators
 ```
 
-Modes emits **policy**. The host **enforces** it at a small number of explicit
-playback/automation gates (crossfade, shuffle, resume, content bias). Modes
-does **not** become the authority over the canonical library.
+Modes emits **policy**. The host enforces it at explicit playback and
+automation gates. Modes does **not** become the authority over the canonical
+library.
 
-Content folders and media classification are an **input to mode-specific
-playlist generation, shelves, Autopilot ranking, and session selection**. They
-must not hide, remove, or globally filter the user's Library when the active
-mode changes. Switching from Audiobook/Podcast/Running/etc. must never make
-existing library items disappear.
+Content folders and media classification are inputs to mode-specific generated
+content. They must not hide, remove, or globally filter the user's Library when
+the active mode changes. Direct user playback and explicit user-owned queues
+remain accessible.
 
 Coordinators describe session intent; they do not call `play()` directly.
 
@@ -37,143 +39,115 @@ Coordinators describe session intent; they do not call `play()` directly.
 | Mode | Intent |
 |------|--------|
 | Normal | Legacy Resonate behavior |
-| Running | Music-first, large targets, two-finger interaction, motion-aware session |
+| Running | Music-first, motion-aware session |
 | Driving | Car context, reduced UI density, conservative automation |
 | Work | Long sessions, less aggressive transitions |
-| Podcast | Precise resume, no crossfade/shuffle |
+| Podcast | Precise resume, speech-first, no crossfade/shuffle |
 | Motivation | Speech + optional music follow-up |
-| Audiobook | Precise resume, chapter-aware navigation, no crossfade |
+| Audiobook | Precise resume, chapter-aware navigation, no crossfade/shuffle |
 
-## What is wired today (`modes_on_dj_v2`)
+## Current integration status
 
-| Item | Status |
+| Area | Status |
 |------|--------|
-| `lib/modes/**` package (models, coordinators, catalog, tests) | Present |
-| `ModeProvider` registered in app graph | Present |
-| `ResonateModeContextPort` (Bluetooth car → driving suggest) | Present |
-| `ResonateModePlaybackPort` → soft gates on `MusicProvider` | Present |
-| `ResonateModeFolderPickerPort` (FilePicker directories) | Present |
-| Settings → Playback → Modes screen | Present |
-| Mode chip on Now Playing + Home | Present |
-| Mode shelf (virtual playlist on Home) | Present |
-| Mode shelf full screen (See all) | Present |
-| Mode shelf full screen (See all) | Present |
-| Driving suggestion banner on Home | Present |
-| Mode-aware player density | Present |
-| Policy soft-gates: crossfade / shuffle / precise resume | Present |
-| Autopilot + mode content bias (`isAcceptableForAutopilot`, bias score) | Present |
-| Mode-aware playlist/shelf generation from classifier + folders | Present |
-| Canonical Library remains mode-independent | Present |
-| Crossfade engine path (user toggle + mode allow) | Present (default **off**) |
-| DJ engine, EQ, glass UI, library, queue | Present (from DJ base) |
+| ModeProvider + policy catalog | Complete |
+| Playback port → MusicProvider policy gates | Complete |
+| Crossfade / shuffle / precise-resume enforcement | Complete |
+| ModeContentResolver | Complete |
+| Intelligence recommendations through mode resolver | Complete |
+| Autopilot through mode resolver + policy | Complete |
+| Canonical Library remains mode-independent | Complete |
+| Mode-aware player density / interaction policy | Integrated |
+| Driving suggestion flow | Integrated |
+| Podcast session lifecycle | Integrated |
+| Audiobook session lifecycle + capability boundary | Integrated |
+| Driving / Running / Motivation / Work coordinators | Integrated |
+| Running motion decision lifecycle reset | Integrated |
+| DJ × Mode crossfade authority | Integrated |
+| Active automatic transition cancellation at Mode boundary | Integrated |
+| User crossfade disable cancels automatic transition | Integrated |
+| Harmonic Mix wiring | Integrated |
+| Regression / policy test coverage | Stage D complete |
+| CI / Android build gate | Green through Stage D |
 
-## Missing features
+## Stage D — Policy & Regression Hardening: COMPLETE
 
-These are **specified or packaged** but **not productized** on the integration
-branch. This list is the backlog before Modes can feel “complete” next to the
-rest of Resonate.
+Stage D established the policy boundaries and regression coverage:
 
-### P0 — Playback confidence
+- Every current Mode publishes an explicit playback policy.
+- Mode changes replace playback policy state rather than accumulating it.
+- Attaching playback immediately publishes the current Mode policy.
+- MusicProvider remains authoritative for actual playback behavior.
+- User crossfade preference is preserved while Mode policy can gate effective use.
+- Podcast/Audiobook speech policy is strict for generated content.
+- DJ handoffs yield to Mode crossfade authority.
+- Active automatic crossfade/preload work is invalidated when policy blocks it.
+- Canonical Library/direct user queues remain outside Mode content filtering.
+- Autopilot policy is isolated behind a pure policy boundary.
 
-- [ ] **Crossfade discoverability** — engine defaults to crossfade off; many
-  builds feel “broken” until Settings → Crossfade is enabled with duration &gt; 0.
-  Consider a sensible first-run default (e.g. 3s) or an onboarding hint.
-- [x] **Mode vs Crossfade UI honesty** — when policy sets `crossfadeAllowed:
-  false` (Podcast / Audiobook), the Crossfade screen can still look “on” while
-  the engine refuses transitions. Surface “blocked by Mode” in UI.
-- [x] **Single source of truth for crossfade prefs** — `CrossfadeProvider`
-  owns persisted UI preferences; `MusicProvider` owns runtime playback
-  enforcement and no longer persists a second copy.
+## Stage E — Host-Level Integration & Promotion Hardening
 
-### P1 — Modes as a product surface
+Stage E is **not** another expansion of the Mode policy matrix. It verifies that
+the completed policy boundaries survive real host/runtime flows.
 
-- [x] **Driving suggestion UI** — `ModeProvider` already tracks
-  suggest/dismiss/accept and auto-enter-on-car; **no home/player banner or
-  chip** consumes it yet.
-- [x] **Active mode chip on Now Playing / home** — `ResonateModeChip`; tap opens Modes.
-- [x] **`uiDensity` enforcement** (player transport + chrome) — `PlaybackPolicy.uiDensity` and
-  `InteractionPolicy` are not applied to player transport, lists, or settings
-  density (Driving/Running large targets, reduced chrome).
-- [x] **`ModeInteractionGuard` in real UI** (Running two-finger transport) — Running’s two-finger / no
-  long-press / no horizontal swipe contract is not enforced on player gestures.
-- [x] **Classifier for mode-generated content** — folder routing and overrides
-  feed mode shelves/playlist generation and Autopilot. `ModeContentResolver`
-  is now the strict boundary for generated content: disallowed media types are
-  removed, preferred types are ranked first, and an empty match stays empty
-  rather than falling back to a disallowed item. The canonical Library
-  deliberately remains outside this gate; direct library playback keeps
-  normal user-owned access.
+### E1 — Dynamic runtime boundaries
+- [ ] Verify Mode changes during an active playback/transition session.
+- [ ] Verify a blocked Mode cannot commit stale automatic A/B work.
+- [ ] Verify user transport remains authoritative during automatic work.
+- [ ] Verify direct Library playback and explicit user queues remain unfiltered.
 
-### P1 — Session coordinators (package exists, host does not call them)
+### E2 — Host lifecycle coverage
+- [ ] Exercise enter → playback → pause/resume → completion → exit for each
+  session coordinator where applicable.
+- [ ] Verify Mode changes synchronize Podcast/Audiobook session state.
+- [ ] Verify Running lifecycle reset prevents stale motion decisions.
+- [ ] Verify Driving suggestion/accept/dismiss does not silently take playback
+  ownership.
+- [ ] Verify Motivation/Work lifecycle callbacks remain suggestion/policy only.
 
-None of these coordinators are invoked from `MusicProvider`, player lifecycle,
-or mode enter/exit today:
+### E3 — Promotion gate
+- [ ] Green Flutter analyze/tests.
+- [ ] Green native DSP tests/stress.
+- [ ] Green release APK build.
+- [ ] Install APK on a low-end device.
+- [ ] Normal-mode parity smoke test.
+- [ ] Mode switching while playing.
+- [ ] Speech-mode crossfade/shuffle/precise-resume smoke test.
+- [ ] Long uninterrupted playback regression.
 
-- [ ] **`PodcastCoordinator`** — session boundaries, precise resume handoff to
-  engine, no-crossfade confirmation.
-- [ ] **`AudiobookCoordinator`** — same family as podcast; chapter-aware nav
-  policy unused in UI.
-- [ ] **`DrivingCoordinator`** — car context intents beyond suggest flag;
-  couple with transport target sizing.
-- [ ] **`RunningCoordinator` + `RunningSessionController` +
-  `RunningMotionDecision`** — movement states (unknown / stationary / stopped /
-  moving); host must supply motion; brief stop must not pause.
-- [ ] **`MotivationCoordinator`** — speech started/completed and music
-  follow-up suggestions.
-- [ ] **`WorkCoordinator`** — long-session bias and reduced transition
-  aggressiveness beyond static policy flags.
+The promotion gate is only satisfied when CI and the manual playback regression
+are both green.
 
-### P2 — Context and input adapters
+## Remaining product polish
 
-- [ ] **Motion / activity port** — Running is sensor-agnostic by design; no
-  host adapter feeds `MotionState` yet.
-- [ ] **Richer car context** — today car is Bluetooth-name / type heuristics
-  only; optional route service alignment with Modes context is incomplete as a
-  single API.
-- [ ] **Folder categories in library UX** — folder assignment lives under Modes
-  settings only; library rows do not show “Podcast folder” / override badges.
+These are deliberately outside Stage D and should not be confused with policy
+correctness:
 
-### P2 — Intelligence and automation
-
-- [x] **Autopilot + Modes authority audit (Stage 1)** — generated Autopilot
-  candidates now pass through the strict ModeContentResolver. An active Mode
-  can remove disallowed generated candidates without gaining authority over
-  the canonical Library or user-owned explicit queue items. Consent and the
-  existing PlaybackAuthority gates remain unchanged.
-- [ ] **DJ + Modes interaction rules** — document when DJ handoffs yield to
-  Podcast/Audiobook no-crossfade policy and when DJ aggressiveness is clamped
-  in Driving/Work.
-- [x] **DJ Harmonic Mix setting is wired** — the setting now reaches the DJ
-  policy and the transition brain; when disabled, harmonic scoring remains
-  neutral so existing DJ behavior is preserved.
-- [ ] **Sleep timer / speed controls emphasis** — policy flags
-  (`sleepTimerSuggested`, `speedControlsEmphasized`) are not reflected in
-  player chrome per mode.
-
-### P3 — Polish and docs
-
-- [ ] **Modes entry from home** — not only Settings → Playback.
-- [ ] **End-to-end tests** — host-level tests for policy gates (crossfade blocked
-  in Podcast, shuffle blocked, precise resume on/off) on `MusicProvider`.
-- [ ] **Promote path** — checklist to merge `modes_on_dj_v2` → `dj_engine_v2`
-  only after P0–P1 and a green APK + manual Normal-mode parity test.
+- Crossfade discoverability / first-run explanation.
+- Richer folder badges in Library.
+- Richer car/context adapters.
+- Motion sensor adapter for Running.
+- Home entry/polish for Modes where still absent.
+- Mode-specific sleep-timer / speed-control emphasis where the UI does not yet
+  expose the policy.
+- Further DJ aggressiveness tuning for Driving/Work.
 
 ## Explicit non-goals
 
 - Modes must **not** own `AudioPlayer` instances or MediaSession.
-- Modes must **not** auto-resume after focus loss, phone calls, or another app’s
-  audio (focus yield stays in the playback/session layer).
-- Modes must **not** merge by rewriting DJ history; keep surgical integration on
-  top of the stable DJ tip.
+- Modes must **not** auto-resume after focus loss, phone calls, or another app's
+  audio.
+- Modes must **not** rewrite DJ history.
+- Modes must **not** hide or globally filter the canonical Library.
 
-## Related docs
-
-- `docs/dj_engine_v2.md` — DJ engine behavior on the same line of development.
-- Branch `modes_lab` — pure Modes package + unit tests (no full app).
-
-## Changelog (integration)
+## Changelog
 
 | Date | Note |
 |------|------|
-| 2026-10-06 | Package copied onto `modes_on_dj_v2`; ports + ModeProvider + Autopilot bias; missing-features section added. |
-| 2026-10-07 | Stage 0 hardening: fixed DJ handoff gate recursion, wired Harmonic Mix, made CrossfadeProvider the persisted preference authority, and clarified that Modes never owns/filters the canonical Library. |\n| 2026-10-07 | Stage 1: added `ModeContentResolver`, connected Intelligence recommendations and Autopilot-generated candidates to strict mode content selection, and kept canonical Library/direct user queues outside the Mode filter. |
+| 2026-10-06 | Modes package integrated onto `modes_on_dj_v2`. |
+| 2026-10-07 | Stage 0 hardening: DJ handoff gate recursion fixed, Harmonic Mix wired, CrossfadeProvider made the persisted preference authority, and canonical Library isolation clarified. |
+| 2026-10-07 | Stage 1: ModeContentResolver connected to Intelligence and Autopilot generated content. |
+| 2026-10-08 | Stages 2A–2F: Podcast, Audiobook, Driving, Running, Motivation, Work, playback lifecycle, Autopilot mode policy, and precise-resume boundaries integrated. |
+| 2026-10-08 | Stage C: DJ × Mode interaction authority and cancellation rules hardened. |
+| 2026-10-08 | Stage D: policy matrix, resolver, Autopilot, Mode→Playback, and MusicProvider regression coverage completed and CI verified green. |
+| 2026-10-08 | Stage E opened: host-level integration and promotion hardening. |
