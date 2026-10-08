@@ -600,12 +600,33 @@ class MusicProvider extends ChangeNotifier {
     required bool shuffleAllowed,
     required bool preciseResume,
   }) {
+    final crossfadeWasAllowed = _modeCrossfadeAllowed;
     final changed = _modeCrossfadeAllowed != crossfadeAllowed ||
         _modeShuffleAllowed != shuffleAllowed ||
         _modePreciseResume != preciseResume;
     _modeCrossfadeAllowed = crossfadeAllowed;
     _modeShuffleAllowed = shuffleAllowed;
     _modePreciseResume = preciseResume;
+
+    // A Mode boundary is an authority boundary. If the new Mode blocks
+    // crossfade (notably Podcast/Audiobook), an already-running automatic
+    // A/B/DJ handoff must be invalidated rather than being allowed to finish
+    // under the previous Mode's policy. User transport remains unaffected.
+    if (crossfadeWasAllowed &&
+        !crossfadeAllowed &&
+        (_crossfadeInProgress ||
+            _automaticCrossfadeInFlight ||
+            _repeatSelfHandoffInFlight)) {
+      _cancelAutomaticPlaybackWork();
+      unawaited(ResonateDiagnostics.record('mode_crossfade_cancelled', {
+        'reason': 'mode_policy_disallowed_crossfade',
+        'djActive': _djBeatAlignActive ||
+            _djTempoMatchActive ||
+            _djSfxActive,
+        'songId': currentSong?.id,
+      }));
+    }
+
     if (changed) notifyListeners();
   }
 
