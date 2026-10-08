@@ -1,4 +1,5 @@
 import '../modes/screens/modes_screen.dart';
+import '../modes/providers/mode_provider.dart';
 import '../modes/integration/resonate_mode_ports.dart';
 import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
