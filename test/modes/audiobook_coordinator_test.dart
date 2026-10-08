@@ -7,7 +7,7 @@ void main() {
   final t1 = t0.add(const Duration(minutes: 1));
   final position = const Duration(minutes: 12, seconds: 30);
 
-  test('starts once and exposes audiobook controls', () {
+  test('starts with safe controls and no chapter claim by default', () {
     final coordinator = AudiobookCoordinator();
 
     final intents = coordinator.start(t0);
@@ -18,10 +18,40 @@ void main() {
         AudiobookIntentType.sessionStarted,
         AudiobookIntentType.speedControlsElevated,
         AudiobookIntentType.sleepTimerSuggested,
-        AudiobookIntentType.chapterNavigationAvailable,
       ],
     );
+    expect(coordinator.chapterNavigationAvailable, isFalse);
     expect(coordinator.start(t1), isEmpty);
+  });
+
+  test('publishes chapter navigation only when host capability is supplied', () {
+    final coordinator = AudiobookCoordinator(
+      chapterNavigationAvailable: true,
+    );
+
+    final intents = coordinator.start(t0);
+
+    expect(
+      intents.any(
+        (intent) => intent.type == AudiobookIntentType.chapterNavigationAvailable,
+      ),
+      isTrue,
+    );
+  });
+
+  test('chapter capability can be enabled for a future host adapter', () {
+    final coordinator = AudiobookCoordinator();
+
+    coordinator.setChapterNavigationAvailable(true);
+    expect(coordinator.chapterNavigationAvailable, isTrue);
+
+    final intents = coordinator.start(t0);
+    expect(
+      intents.any(
+        (intent) => intent.type == AudiobookIntentType.chapterNavigationAvailable,
+      ),
+      isTrue,
+    );
   });
 
   test('requests precise resume when a position is supplied', () {
