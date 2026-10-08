@@ -102,44 +102,48 @@ void main() {
     expect(provider.hasDrivingSuggestion, isFalse);
     provider.dispose();
   });
-}
 
+  test(
+    'motivation playback lifecycle emits intents without owning playback',
+    () async {
+      final provider = ModeProvider();
+      await provider.ready;
+      await provider.setMode(ResonateMode.motivation);
 
-  test('motivation playback lifecycle emits intents without owning playback', () async {
-    final provider = ModeProvider();
-    await provider.ready;
-    await provider.setMode(ResonateMode.motivation);
+      provider.onPlaybackStarted(null);
+      expect(provider.motivationSessionActive, isTrue);
 
-    provider.onPlaybackStarted(null);
-    expect(provider.motivationSessionActive, isTrue);
+      provider.onPlaybackPaused();
+      expect(provider.lastMotivationIntents, isNotEmpty);
 
-    provider.onPlaybackPaused();
-    expect(provider.lastMotivationIntents, isNotEmpty);
+      provider.onPlaybackResumed(null);
+      expect(provider.lastMotivationIntents, isNotEmpty);
 
-    provider.onPlaybackResumed(null);
-    expect(provider.lastMotivationIntents, isNotEmpty);
+      provider.onPlaybackStopped();
+      expect(provider.lastMotivationIntents, isNotEmpty);
+      provider.dispose();
+    },
+  );
 
-    provider.onPlaybackStopped();
-    expect(provider.lastMotivationIntents, isNotEmpty);
-    provider.dispose();
-  });
+  test(
+    'work playback lifecycle stays policy-only and resets on mode exit',
+    () async {
+      final provider = ModeProvider();
+      await provider.ready;
+      await provider.setMode(ResonateMode.work);
 
-  test('work playback lifecycle stays policy-only and resets on mode exit', () async {
-    final provider = ModeProvider();
-    await provider.ready;
-    await provider.setMode(ResonateMode.work);
+      provider.onPlaybackStarted(null);
+      expect(provider.workSessionActive, isTrue);
 
-    provider.onPlaybackStarted(null);
-    expect(provider.workSessionActive, isTrue);
+      provider.onPlaybackPaused();
+      provider.onPlaybackResumed(null);
+      expect(provider.workSessionActive, isTrue);
 
-    provider.onPlaybackPaused();
-    provider.onPlaybackResumed(null);
-    expect(provider.workSessionActive, isTrue);
-
-    await provider.setMode(ResonateMode.normal);
-    expect(provider.workSessionActive, isFalse);
-    provider.dispose();
-  });
+      await provider.setMode(ResonateMode.normal);
+      expect(provider.workSessionActive, isFalse);
+      provider.dispose();
+    },
+  );
 
   test('running mode exits with a clean lifecycle boundary', () async {
     final provider = ModeProvider();
@@ -153,24 +157,27 @@ void main() {
     provider.dispose();
   });
 
-  test('driving suggestion accept changes policy but does not directly invoke playback',
-      () async {
-    final provider = ModeProvider();
-    final context = FakeContext();
-    final playback = FakePlayback();
-    await provider.ready;
-    provider.attachContext(context);
-    provider.attachPlayback(playback);
+  test(
+    'driving suggestion accept changes policy but does not directly invoke playback',
+    () async {
+      final provider = ModeProvider();
+      final context = FakeContext();
+      final playback = FakePlayback();
+      await provider.ready;
+      provider.attachContext(context);
+      provider.attachPlayback(playback);
 
-    context.setContext(ModeAudioContext.car);
-    expect(provider.hasDrivingSuggestion, isTrue);
-    expect(provider.mode, ResonateMode.normal);
+      context.setContext(ModeAudioContext.car);
+      expect(provider.hasDrivingSuggestion, isTrue);
+      expect(provider.mode, ResonateMode.normal);
 
-    await provider.acceptDrivingSuggestion();
+      await provider.acceptDrivingSuggestion();
 
-    expect(provider.mode, ResonateMode.driving);
-    expect(playback.crossfade, isTrue);
-    expect(playback.shuffle, isTrue);
-    expect(playback.preciseResume, isFalse);
-    provider.dispose();
-  });
+      expect(provider.mode, ResonateMode.driving);
+      expect(playback.crossfade, isTrue);
+      expect(playback.shuffle, isTrue);
+      expect(playback.preciseResume, isFalse);
+      provider.dispose();
+    },
+  );
+}
