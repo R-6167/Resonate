@@ -65,16 +65,24 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Equalizer', 'Tone, preamp, bass, width & reverb', Icons.equalizer_rounded, const EqualizerScreen()),
               _item(context, 'Per-song EQ', 'Individual song profiles', Icons.music_note_rounded, const EqualizerScreen()),
             ]),
-            _section(context, 'Intelligence', Icons.auto_awesome, [
-              _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
+            Consumer<ModeProvider>(
+              builder: (context, modes, _) => _section(
+                context,
+                'Intelligence',
+                Icons.auto_awesome,
+                [
+                  if (!modes.policy.hideAdvancedSettingsEntry)
+                    _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
               _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
-              ListTile(
-                leading: const Icon(Icons.restart_alt_rounded),
-                title: const Text('Reset learned feedback'),
-                subtitle: const Text('Clear recommendation feedback, not listening history'),
-                onTap: () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
+                  ListTile(
+                    leading: const Icon(Icons.restart_alt_rounded),
+                    title: const Text('Reset learned feedback'),
+                    subtitle: const Text('Clear recommendation feedback, not listening history'),
+                    onTap: () => _confirm(context, 'Reset Intelligence', 'Clear learned recommendation feedback?', () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
+                  ),
+                ],
               ),
-            ]),
+            ),
             _section(context, 'Bluetooth & Devices', Icons.bluetooth_audio_rounded, [
               _item(context, 'Device controls', 'Media buttons, notification and connection behavior', Icons.settings_input_component_rounded, const BluetoothSettingsScreen()),
             ]),
