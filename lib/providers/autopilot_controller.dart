@@ -160,7 +160,10 @@ class AutopilotController extends ChangeNotifier {
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
-    final useCrossfade = await IntelligenceSettingsStore.autopilotCrossfade();
+    final modePolicy = modes?.policy;
+    final useCrossfade = (await IntelligenceSettingsStore.autopilotCrossfade()) &&
+        (modePolicy?.preferCrossfade ?? true) &&
+        (modePolicy?.crossfadeAllowed ?? true);
 
     // Keep the queue topped up early — Phase 5: only with explicit consent.
     final duration = music.currentDuration;
@@ -313,6 +316,8 @@ class AutopilotController extends ChangeNotifier {
     try {
       await intelligence.refreshRecommendations(notify: false);
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
+      final modePolicy = modes?.policy;
+      final sequenceCount = modePolicy?.preferLongSessions == true ? 4 : 2;
       final candidates = await _decisionEngine.chooseSequence(
         recommendations: intelligence.recommendations,
         queuedIds: futureQueued,
@@ -321,7 +326,7 @@ class AutopilotController extends ChangeNotifier {
         sessionSkipStreak: intelligence.sessionSkipStreak,
         sessionCompletionStreak: intelligence.sessionCompletionStreak,
         sessionArtistCounts: intelligence.sessionArtistCounts,
-        count: 2,
+        count: sequenceCount,
       );
       final biased = _applyModeBias(candidates);
       if (biased.isNotEmpty) {
