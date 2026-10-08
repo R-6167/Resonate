@@ -22,6 +22,7 @@ import '../widgets/mode_player_density.dart';
 import 'mode_shelf_screen.dart';
 import '../widgets/mode_guarded_action.dart';
 import '../modes/models/mode_action.dart';
+import '../modes/models/resonate_mode.dart';
 import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
