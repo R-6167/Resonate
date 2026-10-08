@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/providers/music_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('MusicProvider enforces Mode playback gates independently of user state', () {
     final music = MusicProvider();
 
