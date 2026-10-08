@@ -27,6 +27,8 @@ class ModePlayerDensity {
     required this.homePlayMinHeight,
     required this.showIntelligenceCards,
     required this.showSecondaryRow,
+    required this.speedControlsEmphasized,
+    required this.sleepTimerSuggested,
     required this.hintLabel,
   });
 
@@ -49,6 +51,8 @@ class ModePlayerDensity {
   final double homePlayMinHeight;
   final bool showIntelligenceCards;
   final bool showSecondaryRow;
+  final bool speedControlsEmphasized;
+  final bool sleepTimerSuggested;
   final String? hintLabel;
 
   factory ModePlayerDensity.fromMode(ModeProvider modes) {
@@ -81,6 +85,8 @@ class ModePlayerDensity {
       homePlayMinHeight: large ? 52 : 40,
       showIntelligenceCards: !drivingOrRunning && !minimal,
       showSecondaryRow: !minimal,
+      speedControlsEmphasized: policy.speedControlsEmphasized,
+      sleepTimerSuggested: policy.sleepTimerSuggested,
       hintLabel: switch (modes.mode) {
         ResonateMode.driving => 'Driving · larger controls',
         ResonateMode.running => 'Running · two-finger transport',
