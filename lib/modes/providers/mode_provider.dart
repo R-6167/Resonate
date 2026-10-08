@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../models/song.dart';
 import '../models/media_type.dart';
 import '../models/mode_media_item.dart';
 import '../models/playback_policy.dart';
@@ -15,8 +16,12 @@ import '../services/media_folder_store.dart';
 import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
 import '../services/driving_coordinator.dart';
+import '../services/motivation_coordinator.dart';
+import '../services/work_coordinator.dart';
 import '../services/running_coordinator.dart';
 import '../models/interaction_policy.dart';
+import '../models/motivation_intent.dart';
+import '../models/work_intent.dart';
 import '../models/driving_intent.dart';
 import '../integration/mode_context_port.dart';
 import '../integration/mode_playback_port.dart';
@@ -67,6 +72,15 @@ class ModeProvider extends ChangeNotifier {
   RunningSessionState get runningSessionState => _runningCoordinator.state;
   bool get runningSessionActive => _runningCoordinator.state == RunningSessionState.active;
   bool get crossfadeAllowed => policy.crossfadeAllowed;
+  final MotivationCoordinator _motivationCoordinator = MotivationCoordinator();
+  final WorkCoordinator _workCoordinator = WorkCoordinator();
+  List<MotivationIntent> _lastMotivationIntents = const <MotivationIntent>[];
+  List<WorkIntent> _lastWorkIntents = const <WorkIntent>[];
+
+  List<MotivationIntent> get lastMotivationIntents => List.unmodifiable(_lastMotivationIntents);
+  List<WorkIntent> get lastWorkIntents => List.unmodifiable(_lastWorkIntents);
+  bool get motivationSessionActive => _motivationCoordinator.isActive;
+  bool get workSessionActive => _workCoordinator.isActive;
 
   List<String> foldersFor(MediaType type) =>
       List.unmodifiable(_mediaFolders[type] ?? const <String>[]);
@@ -168,6 +182,76 @@ class ModeProvider extends ChangeNotifier {
     _motion?.stop();
   }
 
+  void _publishMotivationIntents(List<MotivationIntent> intents) {
+    if (intents.isEmpty) return;
+    _lastMotivationIntents = List<MotivationIntent>.unmodifiable(intents);
+    notifyListeners();
+  }
+
+  void _publishWorkIntents(List<WorkIntent> intents) {
+    if (intents.isEmpty) return;
+    _lastWorkIntents = List<WorkIntent>.unmodifiable(intents);
+    notifyListeners();
+  }
+
+  void onPlaybackStarted(Song? song, {Duration position = Duration.zero}) {
+    final now = DateTime.now();
+    if (_mode == ResonateMode.motivation) {
+      if (!_motivationCoordinator.isActive) {
+        _publishMotivationIntents(_motivationCoordinator.start(now));
+      }
+      if (song != null) {
+        final item = ModeMediaItem(id: song.id, filePath: song.filePath, title: song.title, album: song.album, artist: song.artist);
+        _publishMotivationIntents(_motivationCoordinator.startContent(mediaTypeFor(item), now));
+      }
+    } else if (_mode == ResonateMode.work && !_workCoordinator.isActive) {
+      _publishWorkIntents(_workCoordinator.start(now));
+    }
+  }
+
+  void onPlaybackPaused() {
+    final now = DateTime.now();
+    if (_mode == ResonateMode.motivation) {
+      _publishMotivationIntents(_motivationCoordinator.pause(now));
+    } else if (_mode == ResonateMode.work) {
+      _publishWorkIntents(_workCoordinator.pause(now));
+    }
+  }
+
+  void onPlaybackResumed(Song? song) {
+    final now = DateTime.now();
+    if (_mode == ResonateMode.motivation) {
+      if (!_motivationCoordinator.isActive) {
+        onPlaybackStarted(song);
+      } else {
+        _publishMotivationIntents(_motivationCoordinator.resume(now));
+      }
+    } else if (_mode == ResonateMode.work) {
+      if (!_workCoordinator.isActive) {
+        _publishWorkIntents(_workCoordinator.start(now));
+      } else {
+        _publishWorkIntents(_workCoordinator.resume(now));
+      }
+    }
+  }
+
+  void onPlaybackCompleted(Song? song) {
+    if (_mode != ResonateMode.motivation || song == null) return;
+    final item = ModeMediaItem(id: song.id, filePath: song.filePath, title: song.title, album: song.album, artist: song.artist);
+    _publishMotivationIntents(
+      _motivationCoordinator.completeContent(mediaTypeFor(item), DateTime.now()),
+    );
+  }
+
+  void onPlaybackStopped() {
+    final now = DateTime.now();
+    if (_mode == ResonateMode.motivation) {
+      _publishMotivationIntents(_motivationCoordinator.complete(now));
+    } else if (_mode == ResonateMode.work) {
+      _publishWorkIntents(_workCoordinator.complete(now));
+    }
+  }
+
   void _onContextChanged() {
     final context = _context?.audioContext ?? ModeAudioContext.unknown;
     _drivingCoordinator.setMode(_mode);
@@ -253,6 +337,8 @@ class ModeProvider extends ChangeNotifier {
     if (_mode == mode) return;
     final previous = _mode;
     if (previous == ResonateMode.running) _exitRunning(DateTime.now());
+    if (previous == ResonateMode.motivation) _publishMotivationIntents(_motivationCoordinator.exit(DateTime.now()));
+    if (previous == ResonateMode.work) _publishWorkIntents(_workCoordinator.exit(DateTime.now()));
     _mode = mode;
     _drivingCoordinator.setMode(mode);
     if (mode == ResonateMode.driving) {
@@ -261,6 +347,8 @@ class ModeProvider extends ChangeNotifier {
     }
     _pushPolicyToEngine();
     if (mode == ResonateMode.running) _enterRunning(DateTime.now());
+    if (mode == ResonateMode.motivation) _motivationCoordinator.setMode(mode);
+    if (mode == ResonateMode.work) _workCoordinator.setMode(mode);
     _onContextChanged();
     notifyListeners();
     try {

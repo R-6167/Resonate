@@ -208,6 +208,7 @@ class MusicProvider extends ChangeNotifier {
     modes.addListener(_onModesChangedForSessions);
     _podcastSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
     _audiobookSession.sync(modes: modes, song: currentSong, position: currentPosition, playing: isPlaying);
+    modes.onPlaybackStarted(currentSong, position: currentPosition);
   }
 
   void _onModesChangedForSessions() {
@@ -2433,6 +2434,7 @@ class MusicProvider extends ChangeNotifier {
         song: selectedSong,
         resumePosition: resume ? Duration(milliseconds: _resumePositionMs) : null,
       );
+      _modes?.onPlaybackStarted(selectedSong, position: resume ? Duration(milliseconds: _resumePositionMs) : Duration.zero);
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentDuration = selectedSong.duration;
@@ -3998,6 +4000,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> resumePlayback({String source = 'normal_player'}) {
     _podcastSession.onResumed(currentPosition);
     _audiobookSession.onResumed(currentPosition);
+    _modes?.onPlaybackResumed(currentSong);
     final intentToken = _playbackIntentGate.issue();
     _cancelAutomaticPlaybackWork();
     return _serializePlayback(() async {
@@ -4132,6 +4135,7 @@ class MusicProvider extends ChangeNotifier {
         _persistResumePosition(force: true);
         _podcastSession.onPaused(currentPosition);
     _audiobookSession.onPaused(currentPosition);
+        _modes?.onPlaybackPaused();
         _publishServiceState();
         notifyListeners();
         await ResonateDiagnostics.record('audio_focus_pause', {
@@ -4153,6 +4157,7 @@ class MusicProvider extends ChangeNotifier {
       _userWantsPlaying = false;
       _podcastSession.onStopped(currentPosition);
     _audiobookSession.onStopped(currentPosition);
+      _modes?.onPlaybackStopped();
       await _finishHistoryEvent();
       await _stopBoth();
       isPlaying = false;
