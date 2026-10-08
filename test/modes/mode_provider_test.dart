@@ -61,6 +61,29 @@ void main() {
     provider.dispose();
   });
 
+  test('dynamic mode switches update policy without taking playback ownership', () async {
+    final playback = FakePlayback();
+    final provider = ModeProvider();
+    await provider.ready;
+    provider.attachPlayback(playback);
+
+    await provider.setMode(ResonateMode.running);
+    expect(playback.crossfade, isTrue);
+    expect(playback.shuffle, isTrue);
+    expect(playback.preciseResume, isFalse);
+
+    await provider.setMode(ResonateMode.audiobook);
+    expect(playback.crossfade, isFalse);
+    expect(playback.shuffle, isFalse);
+    expect(playback.preciseResume, isTrue);
+
+    await provider.setMode(ResonateMode.normal);
+    expect(playback.crossfade, isTrue);
+    expect(playback.shuffle, isTrue);
+    expect(playback.preciseResume, isFalse);
+    provider.dispose();
+  });
+
   test('car context offers Driving without touching playback directly', () async {
     final provider = ModeProvider();
     final context = FakeContext();
