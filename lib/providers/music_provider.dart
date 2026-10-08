@@ -616,7 +616,9 @@ class MusicProvider extends ChangeNotifier {
         !crossfadeAllowed &&
         (_crossfadeInProgress ||
             _automaticCrossfadeInFlight ||
-            _repeatSelfHandoffInFlight)) {
+            _repeatSelfHandoffInFlight ||
+            _crossfadePreloadInFlight ||
+            _preloadedNextSongId != null)) {
       _cancelAutomaticPlaybackWork();
       unawaited(ResonateDiagnostics.record('mode_crossfade_cancelled', {
         'reason': 'mode_policy_disallowed_crossfade',
@@ -631,8 +633,31 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async {
+    final wasEnabled = _crossfadeEnabled;
     _crossfadeEnabled = enabled;
     if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000;
+
+    // The user's crossfade switch is a playback authority boundary too.
+    // Turning it off while automatic A/B/DJ work is active must invalidate
+    // that work immediately rather than letting a transition finish under
+    // a setting the user has already disabled.
+    if (wasEnabled &&
+        !enabled &&
+        (_crossfadeInProgress ||
+            _automaticCrossfadeInFlight ||
+            _repeatSelfHandoffInFlight ||
+            _crossfadePreloadInFlight ||
+            _preloadedNextSongId != null)) {
+      _cancelAutomaticPlaybackWork();
+      unawaited(ResonateDiagnostics.record('crossfade_cancelled', {
+        'reason': 'user_crossfade_disabled',
+        'djActive': _djBeatAlignActive ||
+            _djTempoMatchActive ||
+            _djSfxActive,
+        'songId': currentSong?.id,
+      }));
+    }
+
     notifyListeners();
   }
 
