@@ -298,6 +298,9 @@ class MusicProvider extends ChangeNotifier {
 
   /// True when we have a saved mid-track position for the current queue song.
   bool get canContinueListening {
+    // Continue-listening is the user-facing precise-resume affordance. Keep it
+    // hidden when the active Mode explicitly starts content from the beginning.
+    if (!_modePreciseResume) return false;
     final song = currentSong;
     if (song == null) return false;
     if (_resumeSongId != song.id) return false;
@@ -312,6 +315,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// Resume the restored queue song from the last saved position.
   Future<bool> continueListening({String source = 'continue_listening'}) {
+    // The command must obey the same Mode policy as the visible affordance.
+    if (!_modePreciseResume) return Future<bool>.value(false);
     final song = currentSong;
     if (song == null) return Future<bool>.value(false);
     final intentToken = _playbackIntentGate.issue();
