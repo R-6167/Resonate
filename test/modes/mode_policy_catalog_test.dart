@@ -28,7 +28,7 @@ Future<ModeProvider> _mode(
     await provider.setUserMediaType(
       ModeMediaItem(
         id: entry.key,
-        filePath: '/media/${entry.key}.mp3',
+        filePath: '/music/${entry.key}.mp3',
         title: entry.key,
       ),
       entry.value,
