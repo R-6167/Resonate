@@ -20,6 +20,23 @@ void main() {
     }
   });
 
+  test('mode transition and session preferences are explicit', () {
+    expect(ModePolicyCatalog.policyFor(ResonateMode.normal).preferCrossfade, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.running).preferCrossfade, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.driving).preferCrossfade, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.work).preferCrossfade, isFalse);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.podcast).preferCrossfade, isFalse);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.audiobook).preferCrossfade, isFalse);
+
+    expect(ModePolicyCatalog.policyFor(ResonateMode.running).automationElevated, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.driving).automationElevated, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.driving).preferLongSessions, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.work).preferLongSessions, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.podcast).preferLongSessions, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.audiobook).preferLongSessions, isTrue);
+    expect(ModePolicyCatalog.policyFor(ResonateMode.normal).preferLongSessions, isFalse);
+  });
+
   test('every mode has a deterministic policy', () {
     for (final mode in ResonateMode.values) {
       expect(ModePolicyCatalog.policyFor(mode).mode, mode);
