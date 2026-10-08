@@ -108,6 +108,11 @@ void main() {
 
     coordinator.start(t0);
     coordinator.ingestMotion(
+      MotionState.moving,
+      t0,
+      isPlaying: true,
+    );
+    coordinator.ingestMotion(
       MotionState.stationary,
       t0.add(const Duration(seconds: 15)),
       isPlaying: true,
