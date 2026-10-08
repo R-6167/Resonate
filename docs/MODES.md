@@ -68,7 +68,7 @@ Coordinators describe session intent; they do not call `play()` directly.
 | User crossfade disable cancels automatic transition | Integrated |
 | Harmonic Mix wiring | Integrated |
 | Regression / policy test coverage | Stage D complete |
-| CI / Android build gate | Green through Stage D |
+| CI / Android build gate | Green through Stage E host-boundary tests |
 
 ## Stage D — Policy & Regression Hardening: COMPLETE
 
@@ -91,19 +91,29 @@ Stage E is **not** another expansion of the Mode policy matrix. It verifies that
 the completed policy boundaries survive real host/runtime flows.
 
 ### E1 — Dynamic runtime boundaries
-- [ ] Verify Mode changes during an active playback/transition session.
-- [ ] Verify a blocked Mode cannot commit stale automatic A/B work.
-- [ ] Verify user transport remains authoritative during automatic work.
-- [ ] Verify direct Library playback and explicit user queues remain unfiltered.
+- [x] Mode changes during active playback update the host playback policy.
+- [x] Blocked Mode cancellation path invalidates active automatic A/B work.
+- [x] User transport invalidates stale automatic transition generations.
+- [x] Direct Library playback and explicit user queues remain unfiltered by
+      Mode content resolution.
+- [ ] Add a device-level transition interruption regression with real dual
+      engine playback.
+
+The host cancellation implementation invalidates both the local automatic
+transition generation and transport epoch before clearing A/B state. Async
+automatic work may still unwind, but its captured generation/epoch can no longer
+commit a stale transition.
 
 ### E2 — Host lifecycle coverage
 - [ ] Exercise enter → playback → pause/resume → completion → exit for each
   session coordinator where applicable.
-- [ ] Verify Mode changes synchronize Podcast/Audiobook session state.
-- [ ] Verify Running lifecycle reset prevents stale motion decisions.
-- [ ] Verify Driving suggestion/accept/dismiss does not silently take playback
-  ownership.
-- [ ] Verify Motivation/Work lifecycle callbacks remain suggestion/policy only.
+- [x] Mode changes synchronize Podcast/Audiobook session state.
+- [x] Running lifecycle reset prevents stale motion decisions.
+- [x] Driving suggestion/accept/dismiss does not silently take playback
+      ownership.
+- [x] Motivation/Work lifecycle callbacks remain suggestion/policy only.
+- [ ] Add/complete the remaining coordinator host-boundary matrix where a
+      transport-level assertion is still missing.
 
 ### E3 — Promotion gate
 - [ ] Green Flutter analyze/tests.
@@ -120,8 +130,7 @@ are both green.
 
 ## Remaining product polish
 
-These are deliberately outside Stage D and should not be confused with policy
-correctness:
+These are deliberately outside Stage D and should not be confused with policy correctness:
 
 - Crossfade discoverability / first-run explanation.
 - Richer folder badges in Library.
@@ -151,3 +160,4 @@ correctness:
 | 2026-10-08 | Stage C: DJ × Mode interaction authority and cancellation rules hardened. |
 | 2026-10-08 | Stage D: policy matrix, resolver, Autopilot, Mode→Playback, and MusicProvider regression coverage completed and CI verified green. |
 | 2026-10-08 | Stage E opened: host-level integration and promotion hardening. |
+| 2026-10-08 | Stage E host-boundary coverage: Podcast mode exit, Driving suggestion dismissal, dynamic mode playback policy, and stale automatic-transition invalidation documented and verified through CI. |
