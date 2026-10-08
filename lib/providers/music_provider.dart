@@ -473,13 +473,17 @@ class MusicProvider extends ChangeNotifier {
     DjPolicy policy = DjPolicy.balanced,
   }) {
     _djPolicy = policy;
-    final wasActive = _djBeatAlignActive || _djTempoMatchActive;
+    final wasActive =
+        _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
     _djBeatAlignActive = beatAlignActive;
     _djTempoMatchActive = tempoMatchActive;
     _djMaxStretchPercent = maxStretchPercent.clamp(3, 20);
     _djSfxActive = sfxActive;
     _djAnalysis = analysis;
-    if (wasActive && !beatAlignActive && !tempoMatchActive) {
+    if (wasActive &&
+        !beatAlignActive &&
+        !tempoMatchActive &&
+        !sfxActive) {
       unawaited(_recoverDjEngineState(reason: 'dj_mode_disabled'));
     }
   }
