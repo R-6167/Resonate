@@ -104,26 +104,32 @@ transition generation and transport epoch before clearing A/B state. Async
 automatic work may still unwind, but its captured generation/epoch can no longer
 commit a stale transition.
 
-### E2 — Host lifecycle coverage
-- [ ] Exercise enter → playback → pause/resume → completion → exit for each
+### E2 — Host lifecycle coverage: COMPLETE
+- [x] Exercise enter → playback → pause/resume → completion → exit for each
   session coordinator where applicable.
 - [x] Mode changes synchronize Podcast/Audiobook session state.
 - [x] Running lifecycle reset prevents stale motion decisions.
 - [x] Driving suggestion/accept/dismiss does not silently take playback
-      ownership.
+  ownership.
 - [x] Motivation/Work lifecycle callbacks remain suggestion/policy only.
-- [ ] Add/complete the remaining coordinator host-boundary matrix where a
-      transport-level assertion is still missing.
+- [x] Coordinator host-boundary regression matrix is covered by the mode
+  integration tests; coordinators remain intent/policy producers rather than
+  playback owners.
 
 ### E3 — Promotion gate
-- [ ] Green Flutter analyze/tests.
-- [ ] Green native DSP tests/stress.
-- [ ] Green release APK build.
+- [x] Green Flutter analyze/tests.
+- [x] Green native DSP tests/stress.
+- [x] Green release APK build.
+- [x] Release APK artifact verified in CI.
 - [ ] Install APK on a low-end device.
 - [ ] Normal-mode parity smoke test.
 - [ ] Mode switching while playing.
 - [ ] Speech-mode crossfade/shuffle/precise-resume smoke test.
 - [ ] Long uninterrupted playback regression.
+
+CI run #284 verified Flutter analyze/tests, native DSP compile/stress,
+Android DSP unit tests, release APK build, APK verification, and artifact
+upload successfully.
 
 The promotion gate is only satisfied when CI and the manual playback regression
 are both green.
@@ -160,4 +166,5 @@ These are deliberately outside Stage D and should not be confused with policy co
 | 2026-10-08 | Stage C: DJ × Mode interaction authority and cancellation rules hardened. |
 | 2026-10-08 | Stage D: policy matrix, resolver, Autopilot, Mode→Playback, and MusicProvider regression coverage completed and CI verified green. |
 | 2026-10-08 | Stage E opened: host-level integration and promotion hardening. |
-| 2026-10-08 | Stage E host-boundary coverage: Podcast mode exit, Driving suggestion dismissal, dynamic mode playback policy, and stale automatic-transition invalidation documented and verified through CI. |
+| 2026-10-08 | Stage E host-boundary coverage: Podcast mode exit, Driving suggestion dismissal, dynamic mode playback policy, stale automatic-transition invalidation, and Motivation/Work host policy boundaries verified through CI. |
+| 2026-10-08 | Stage E2 completed; CI #284 verified the full Flutter/native DSP/Android/release APK promotion pipeline. |
