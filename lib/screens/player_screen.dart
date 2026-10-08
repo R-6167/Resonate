@@ -515,63 +515,56 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Future<void> _showMoreOptions(BuildContext context) async {
     final playback = context.read<PlaybackFeaturesProvider>();
     final eq = context.read<EqualizerProvider>();
+    final modes = context.read<ModeProvider>();
+    final density = ModePlayerDensity.fromMode(modes);
     await showBlurredModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (_) {
+        final speedTile = ListTile(
+          leading: Icon(Icons.speed_rounded, color: density.speedControlsEmphasized ? Theme.of(context).colorScheme.primary : null),
+          title: Text(density.speedControlsEmphasized ? 'Playback speed · ${modes.mode.label}' : 'Playback speed', style: density.speedControlsEmphasized ? const TextStyle(fontWeight: FontWeight.w700) : null),
+          trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
+          onTap: () { Navigator.pop(context); _showSpeed(context, playback); },
+        );
+        final sleepTile = ListTile(
+          leading: Icon(Icons.timer_outlined, color: density.sleepTimerSuggested ? Theme.of(context).colorScheme.primary : null),
+          title: Text(density.sleepTimerSuggested ? 'Sleep timer · Suggested' : 'Sleep timer', style: density.sleepTimerSuggested ? const TextStyle(fontWeight: FontWeight.w700) : null),
+          trailing: Text(playback.sleepTimerLabel),
+          onTap: () { Navigator.pop(context); _showSleepTimer(context, playback); },
+        );
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.equalizer_rounded),
-                title: const Text('Equalizer'),
-                subtitle: Text(eq.isEnabled ? eq.preset : 'Disabled'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const EqualizerScreen(),
-                    ),
-                  );
-                },
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (density.speedControlsEmphasized) speedTile,
+            if (density.sleepTimerSuggested) sleepTile,
+            ListTile(
+              leading: const Icon(Icons.equalizer_rounded),
+              title: const Text('Equalizer'),
+              subtitle: Text(eq.isEnabled ? eq.preset : 'Disabled'),
+              onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen())); },
+            ),
+            if (!density.speedControlsEmphasized) speedTile,
+            ListTile(
+              leading: const Icon(Icons.tune_rounded),
+              title: const Text('Pitch'),
+              trailing: Text('${playback.pitch.toStringAsFixed(2)}×'),
+              onTap: () { Navigator.pop(context); _showPitch(context, playback); },
+            ),
+            Consumer<PlaybackFeaturesProvider>(
+              builder: (_, current, __) => SwitchListTile(
+                secondary: const Icon(Icons.volume_down_rounded),
+                title: const Text('Volume normalization'),
+                subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'),
+                value: current.normalizationEnabled,
+                onChanged: current.setNormalizationEnabled,
               ),
-              ListTile(
-                leading: const Icon(Icons.speed_rounded),
-                title: const Text('Playback speed'),
-                trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showSpeed(context, playback);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.tune_rounded),
-                title: const Text('Pitch'),
-                trailing: Text('${playback.pitch.toStringAsFixed(2)}×'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showPitch(context, playback);
-                },
-              ),
-              Consumer<PlaybackFeaturesProvider>(builder: (_, current, __) => SwitchListTile(secondary: const Icon(Icons.volume_down_rounded), title: const Text('Volume normalization'), subtitle: Text('Target ${current.targetLoudness.toStringAsFixed(0)} LUFS • track gain when available'), value: current.normalizationEnabled, onChanged: current.setNormalizationEnabled)),
-              ListTile(
-                leading: const Icon(Icons.timer_outlined),
-                title: const Text('Sleep timer'),
-                trailing: Text(playback.sleepTimerLabel),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showSleepTimer(context, playback);
-                },
-              ),
-            ],
-          ),
+            ),
+            if (!density.sleepTimerSuggested) sleepTile,
+          ]),
         );
       },
     );
   }
-
   Future<void> _showSpeed(
     BuildContext context,
     PlaybackFeaturesProvider playback,
