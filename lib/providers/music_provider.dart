@@ -1855,13 +1855,28 @@ class MusicProvider extends ChangeNotifier {
           : durationNow.inMilliseconds - audioPlayer.position.inMilliseconds;
       final startMarginMs = (1200 + (xfMs ~/ 10)).clamp(1500, 3000);
       final safeTriggerMs = (xfMs + startMarginMs).clamp(2000, 16000);
-      if (remainingNowMs != null && remainingNowMs > safeTriggerMs) {
+      // Background/route changes can briefly invalidate timing signals. Fail
+      // closed when the active engine has no trustworthy duration/position,
+      // and never start a transition outside the near-end window.
+      if (durationNow == null ||
+          durationNow <= Duration.zero ||
+          remainingNowMs == null ||
+          remainingNowMs > safeTriggerMs ||
+          remainingNowMs < 1200) {
         _automaticCrossfadeInFlight = false;
         _crossfadeInProgress = false;
         _transitionArmedAt = null;
-        await ResonateDiagnostics.record('crossfade_aborted_early', {
+        await ResonateDiagnostics.record('crossfade_aborted_timing_revalidation', {
           'remainingMs': remainingNowMs,
           'safeTriggerMs': safeTriggerMs,
+          'durationMs': durationNow?.inMilliseconds,
+          'reason': durationNow == null || durationNow <= Duration.zero
+              ? 'duration_unavailable'
+              : remainingNowMs == null
+                  ? 'position_unavailable'
+                  : remainingNowMs > safeTriggerMs
+                      ? 'not_near_end'
+                      : 'too_late',
           'outgoingSongId': fromSongId,
           'queueIndex': fromIndex,
         });
@@ -3677,6 +3692,20 @@ class MusicProvider extends ChangeNotifier {
           ]);
         } catch (_) {}
 
+        // A manual transport can arrive while either native volume write is
+        // awaiting completion. Re-check ownership before runtime monitoring,
+        // which may call play() to recover the incoming engine.
+        if (transitionWasPreempted()) {
+          await ResonateDiagnostics.record('crossfade_cancelled', {
+            'stage': 'fade_volume_write',
+            'preempted': _userTransportEpoch != transportEpoch,
+            'outgoingSongId': outgoingSong?.id,
+            'incomingSongId': nextSong.id,
+            'intentToken': intentToken,
+          });
+          return false;
+        }
+
         // Runtime DJ monitor: the transition must adapt to the actual A/B
         // engines, not merely the planned timeline. A transient start delay is
         // recovered; a persistent stall falls back to ordinary playback.
@@ -3789,9 +3818,29 @@ class MusicProvider extends ChangeNotifier {
         }
       }
       await _restoreDjTransitionSfx();
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'after_fade_sfx_restore',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       // Guarantee silence on outgoing before pause/stop — never cut from a
       // still-audible level (the "sudden volume loss" symptom).
       for (var s = 0; s < 3; s++) {
+        if (transitionWasPreempted()) {
+          await ResonateDiagnostics.record('crossfade_cancelled', {
+            'stage': 'outgoing_mute',
+            'preempted': _userTransportEpoch != transportEpoch,
+            'outgoingSongId': outgoingSong?.id,
+            'incomingSongId': nextSong.id,
+            'intentToken': intentToken,
+          });
+          return false;
+        }
         try { await outgoing.setVolume(0.0); } catch (_) {}
         await Future<void>.delayed(const Duration(milliseconds: 25));
         try {
@@ -3808,12 +3857,25 @@ class MusicProvider extends ChangeNotifier {
       // Finish the outgoing history record while currentSong still refers to it.
       // Mutating currentSong first caused history to be attributed to the next track.
       await _finishHistoryEvent();
-      if (!_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(master); } catch (_) {} return false; }
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'finish_history',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       // Pause only after volume is already 0 so pause cannot audibly chop the tail.
       try { await outgoing.pause(); } catch (_) {}
+      if (transitionWasPreempted()) return false;
       try { await incoming.setLoopMode(LoopMode.off); } catch (_) {}
+      if (transitionWasPreempted()) return false;
       try { await incoming.setVolume(master); } catch (_) {}
+      if (transitionWasPreempted()) return false;
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+      if (transitionWasPreempted()) return false;
       try {
         if (incoming.volume < 0.05) await incoming.setVolume(master);
       } catch (_) {}
@@ -3875,8 +3937,10 @@ class MusicProvider extends ChangeNotifier {
         return audioPlayer.playing;
       }
       await _persistQueue();
+      if (transitionWasPreempted()) return false;
       _bindActivePlayerStreams();
       await _startHistoryEvent(nextSong);
+      if (transitionWasPreempted()) return false;
       _publishServiceState();
       notifyListeners();
       try { await outgoing.stop(); } catch (_) {}

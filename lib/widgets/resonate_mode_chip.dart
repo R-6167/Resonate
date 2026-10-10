@@ -26,7 +26,8 @@ class ResonateModeChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ModeProvider>(
       builder: (context, modes, _) {
-        if (!modes.isReady) return const SizedBox.shrink();
+        // Keep the identifier visible while persisted Mode state restores.
+        // The Consumer rebuilds with the restored active Mode when ready.
         final mode = modes.mode;
         if (!showNormal && mode == ResonateMode.normal) {
           return const SizedBox.shrink();

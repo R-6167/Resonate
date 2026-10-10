@@ -89,8 +89,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     return ResonateGlassScaffold(
       title: const Text('Now Playing'),
       actions: [
-          const ResonateModeChip(dense: true),
-          const DjModeStatusChip(dense: true),
           Consumer<MusicProvider>(
             builder: (_, music, __) {
               return Padding(
@@ -199,7 +197,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const ResonateModeChip(dense: true),
+              const Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  ResonateModeChip(dense: false),
+                  DjModeStatusChip(dense: false, showWhenOff: true),
+                ],
+              ),
               const SizedBox(height: 6),
               const DjTransitionReasonChip(),
               if (density.hintLabel != null) ...[
