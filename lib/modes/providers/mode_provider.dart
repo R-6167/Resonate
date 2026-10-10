@@ -56,7 +56,12 @@ class ModeProvider extends ChangeNotifier {
   bool _autoEnterDrivingOnCar = false;
   late final Future<void> _readyFuture = _init();
 
-  ModeProvider();
+  // Start loading persisted mode state as soon as the provider is created.
+  // The player chip intentionally waits for isReady; a lazy, never-awaited
+  // future left it hidden for the entire session.
+  ModeProvider() {
+    unawaited(_readyFuture);
+  }
 
   Future<void> get ready => _readyFuture;
   ResonateMode get mode => _mode;
