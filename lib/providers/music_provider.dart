@@ -155,6 +155,8 @@ class MusicProvider extends ChangeNotifier {
   List<String> _gaplessWindowIds = const [];
   bool _gaplessSourceActive = false;
   bool _transportInFlight = false;
+  int _pendingUserTransportCount = 0;
+  bool get _userTransportPending => _pendingUserTransportCount > 0;
   bool _userWantsPlaying = false;
   bool _loadingSource = false;
   DateTime? _lastPlayKickAt;
@@ -1263,6 +1265,7 @@ class MusicProvider extends ChangeNotifier {
 
   void _maybeStartAutomaticCrossfade(Duration position) {
     if (!effectiveCrossfadeEnabled || !audioPlayer.playing) return;
+    if (_userTransportPending) return;
     // Never arm auto-crossfade while the user is driving transport or loading.
     if (_transportInFlight || _loadingSource) return;
     if (_crossfadeInProgress ||
@@ -1835,8 +1838,10 @@ class MusicProvider extends ChangeNotifier {
     final epoch = _userTransportEpoch;
     final fromIndex = _queueIndex;
     final fromSongId = currentSong?.id;
-    if (_transportInFlight || _loadingSource) {
+    if (_transportInFlight || _loadingSource || _userTransportPending) {
       _automaticCrossfadeInFlight = false;
+      _crossfadeInProgress = false;
+      _transitionArmedAt = null;
       return;
     }
     try {
@@ -2356,32 +2361,55 @@ class MusicProvider extends ChangeNotifier {
     }));
   }
 
-  Future<T> _serializePlayback<T>(Future<T> Function() operation, {required String command, required String source, bool userInitiated = false, int? intentToken, Future<T> Function()? onSuperseded}) async {
-  final effectiveIntent = intentToken ?? (userInitiated ? _playbackIntentGate.issue() : _playbackIntentGate.currentToken);
-  if (userInitiated) {
-    _authority.markExternalUserCommand(source, command);
-    unawaited(ResonateDiagnostics.record('playback_command_accepted', {'command': command, 'source': source, 'intentToken': effectiveIntent}));
+  Future<T> _serializePlayback<T>(
+    Future<T> Function() operation, {
+    required String command,
+    required String source,
+    bool userInitiated = false,
+    int? intentToken,
+    Future<T> Function()? onSuperseded,
+  }) async {
+    // Mark transport intent synchronously, before the diagnostic write or
+    // coordinator await. Otherwise a near-end position callback can launch a
+    // fresh automatic crossfade in the gap before a tapped track starts.
+    final transportPriority = userInitiated && const {
+      'toggle', 'pause', 'stop', 'seek', 'play', 'next', 'previous',
+    }.contains(command);
+    if (transportPriority) _pendingUserTransportCount++;
+    try {
+      final effectiveIntent = intentToken ??
+          (userInitiated ? _playbackIntentGate.issue() : _playbackIntentGate.currentToken);
+      if (userInitiated) {
+        _authority.markExternalUserCommand(source, command);
+        unawaited(ResonateDiagnostics.record('playback_command_accepted', {
+          'command': command,
+          'source': source,
+          'intentToken': effectiveIntent,
+        }));
+      }
+      await ResonateDiagnostics.record('playback_operation_queued', {
+        'command': command,
+        'source': source,
+        'userInitiated': userInitiated,
+        'intentToken': effectiveIntent,
+        'lane': transportPriority ? 'transport_priority' : 'source_serialized',
+      });
+      if (transportPriority) {
+        return await _playbackCoordinator.runTransport(operation);
+      }
+      return await _playbackCoordinator.runSourceMutation(
+        operation,
+        command: command,
+        supersedePending: userInitiated &&
+            const {'play', 'next', 'previous'}.contains(command),
+        onSuperseded: onSuperseded,
+      );
+    } finally {
+      if (transportPriority && _pendingUserTransportCount > 0) {
+        _pendingUserTransportCount--;
+      }
+    }
   }
-  // Phase 4 hardened: user play/next/previous/toggle/pause/stop/seek run immediately
-  // (transport lane) so they cannot sit behind a stuck source queue.
-  final transportPriority = userInitiated && const {
-    'toggle', 'pause', 'stop', 'seek', 'play', 'next', 'previous',
-  }.contains(command);
-  await ResonateDiagnostics.record('playback_operation_queued', {
-    'command': command,
-    'source': source,
-    'userInitiated': userInitiated,
-    'intentToken': effectiveIntent,
-    'lane': transportPriority ? 'transport_priority' : 'source_serialized',
-  });
-  if (transportPriority) return _playbackCoordinator.runTransport(operation);
-  return _playbackCoordinator.runSourceMutation(
-    operation,
-    command: command,
-    supersedePending: userInitiated && const {'play', 'next', 'previous'}.contains(command),
-    onSuperseded: onSuperseded,
-  );
-}
 
   Future<bool> playSong(Song song, {List<Song>? queue, int startIndex = 0, bool resumeIfPossible = false, int? resumeAtMs}) {
     final intentToken = _playbackIntentGate.issue();
