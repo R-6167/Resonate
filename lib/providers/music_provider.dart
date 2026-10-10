@@ -1833,6 +1833,13 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _runAutomaticCrossfade() async {
+    // Do not even register automatic ownership if a user transport is queued.
+    if (_transportInFlight || _loadingSource || _userTransportPending) {
+      _automaticCrossfadeInFlight = false;
+      _crossfadeInProgress = false;
+      _transitionArmedAt = null;
+      return;
+    }
     final generation = _authority.beginAutomatic('automatic_crossfade');
     final transitionMarker = _automaticTransitionGeneration + 1;
     final epoch = _userTransportEpoch;
@@ -3749,6 +3756,7 @@ class MusicProvider extends ChangeNotifier {
                 'positionMs': incoming.position.inMilliseconds,
                 'songId': nextSong.id,
               });
+              if (transitionWasPreempted()) return false;
               if (incomingRecoveryAttempts <= 2) {
                 incoming.play();
               } else {
@@ -3762,6 +3770,7 @@ class MusicProvider extends ChangeNotifier {
               final now = DateTime.now();
               if (_djRuntimeCorrectionUntil != null && now.isAfter(_djRuntimeCorrectionUntil!)) {
                 try { await incoming.setSpeed(_djRuntimeCorrectionBaseSpeed); } catch (_) {}
+                if (transitionWasPreempted()) return false;
                 _djRuntimeCorrectionUntil = null;
               }
               if (runtimeBeatMs.length >= 4 &&
@@ -3790,6 +3799,7 @@ class MusicProvider extends ChangeNotifier {
                   _djBeatCorrectionAttempts++;
                   try {
                     await incoming.setSpeed(decision.speed);
+                    if (transitionWasPreempted()) return false;
                     _djRuntimeCorrectionUntil = now.add(Duration(milliseconds: decision.holdMs));
                     await ResonateDiagnostics.record('dj_runtime_monitor', {
                       'event': 'beat_phase_speed_corrected',
@@ -3803,6 +3813,7 @@ class MusicProvider extends ChangeNotifier {
                       'linear': linear,
                       'songId': nextSong.id,
                     });
+                    if (transitionWasPreempted()) return false;
                   } catch (_) {}
                 }
               }
@@ -3820,6 +3831,7 @@ class MusicProvider extends ChangeNotifier {
                   'positionMs': incomingPos,
                   'songId': nextSong.id,
                 });
+                if (transitionWasPreempted()) return false;
                 if (incomingRecoveryAttempts <= 2) {
                   incoming.play();
                   lastIncomingProgressAt = DateTime.now();
