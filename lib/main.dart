@@ -290,6 +290,7 @@ class ResonateApp extends StatelessWidget {
             modes.attachPlayback(
               ResonateModePlaybackPort(context.read<MusicProvider>()),
             );
+            modes.attachMediaSource(const ResonateModeMediaSourcePort());
             modes.attachContext(
               ResonateModeContextPort(context.read<BluetoothProvider>()),
             );

@@ -57,19 +57,20 @@ class ModeShelfBuilder {
       );
     }
 
-    if (library.isEmpty) {
+    final preferred = modes.policy.preferredMediaTypes;
+    final folderTypes =
+        preferred.isEmpty ? MediaFolderStoreSupported.types : preferred;
+    final selectedFolderSongs = modes.folderSongsFor(folderTypes);
+
+    if (library.isEmpty && selectedFolderSongs.isEmpty) {
       return ModeShelf(
         mode: mode,
         fromFolders: const [],
         fromClassifier: const [],
         fromIntelligence: const [],
-        emptyReason: 'Library is empty — scan or add music first.',
+        emptyReason: 'Library and selected mode folders contain no scanned tracks yet.',
       );
     }
-
-    final preferred = modes.policy.preferredMediaTypes;
-    final folderTypes =
-        preferred.isEmpty ? MediaFolderStoreSupported.types : preferred;
 
     final folderMap = <MediaType, List<String>>{};
     for (final type in folderTypes) {
@@ -78,7 +79,8 @@ class ModeShelfBuilder {
     }
     final router = MediaFolderRouter(folderMap);
 
-    final fromFolders = <Song>[];
+    final fromFolders = <Song>[...selectedFolderSongs];
+    final fromFolderIds = fromFolders.map((song) => song.id).toSet();
     final fromClassifier = <Song>[];
 
     for (final song in library) {
@@ -86,7 +88,7 @@ class ModeShelfBuilder {
       if (path.isEmpty) continue;
 
       if (router.typeForPath(path) != null) {
-        fromFolders.add(song);
+        if (fromFolderIds.add(song.id)) fromFolders.add(song);
         continue;
       }
 
@@ -114,7 +116,7 @@ class ModeShelfBuilder {
       fromClassifier.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
     }
 
-    final folderIds = fromFolders.map((s) => s.id).toSet();
+    final folderIds = fromFolderIds;
     final classIds = fromClassifier.map((s) => s.id).toSet();
     final fromIntel = <Song>[];
     for (final song in intelligenceSongs) {
@@ -143,7 +145,7 @@ class ModeShelfBuilder {
     if (folderCap.isEmpty && classCap.isEmpty && intelCap.isEmpty) {
       reason = folderMap.isEmpty
           ? 'No content folders for ${mode.label} yet. Add folders under Modes.'
-          : 'No tracks from ${mode.label} folders are in the library yet.';
+          : 'No playable tracks found in the selected ${mode.label} folders yet.';
     }
 
     return ModeShelf(

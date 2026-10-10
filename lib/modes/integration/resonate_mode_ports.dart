@@ -1,10 +1,12 @@
-import 'package:file_picker/file_picker.dart';
+import '../../models/song.dart';
+import '../../services/audio_file_service.dart';
 
 import '../../providers/bluetooth_provider.dart';
 import '../../providers/music_provider.dart';
 import '../models/media_type.dart';
 import 'mode_context_port.dart';
 import 'mode_folder_picker_port.dart';
+import 'mode_media_source_port.dart';
 import 'mode_playback_port.dart';
 
 /// Bridges [BluetoothProvider] car detection into Modes without exposing
@@ -76,19 +78,20 @@ class ResonateModeFolderPickerPort implements ModeFolderPickerPort {
 
   @override
   Future<String?> pickFolder(MediaType type) async {
-    try {
-      final label = switch (type) {
-        MediaType.podcast => 'Podcasts',
-        MediaType.audiobook => 'Audiobooks',
-        MediaType.music => 'Music',
-        MediaType.motivation => 'Motivation',
-        MediaType.unknown => 'Media',
-      };
-      return await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Select $label folder',
-      );
-    } catch (_) {
-      return null;
-    }
+    final selected = await AudioFileService.pickModeFolder();
+    return selected?['uri'];
+  }
+}
+
+/// Scans mode folders without changing the canonical Library's selected folders.
+class ResonateModeMediaSourcePort implements ModeMediaSourcePort {
+  const ResonateModeMediaSourcePort();
+
+  @override
+  Future<List<Song>> scanFolder(String folderUri) {
+    return AudioFileService.scanAudioFiles(
+      folderUris: <String>[folderUri],
+      minimumDurationMs: 0,
+    );
   }
 }

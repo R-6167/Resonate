@@ -13,6 +13,7 @@ import '../services/media_classification_store.dart';
 import '../services/media_classifier.dart';
 import '../services/media_folder_router.dart';
 import '../services/media_folder_store.dart';
+import '../integration/mode_media_source_port.dart';
 import '../services/mode_policy_catalog.dart';
 import '../services/mode_interaction_catalog.dart';
 import '../services/driving_coordinator.dart';
@@ -50,6 +51,9 @@ class ModeProvider extends ChangeNotifier {
   ResonateMode _mode = ResonateMode.normal;
   Map<String, MediaClassification> _userOverrides = {};
   Map<MediaType, List<String>> _mediaFolders = {};
+  ModeMediaSourcePort? _mediaSource;
+  Map<MediaType, List<Song>> _folderSongsByType = {};
+  final Map<String, MediaType> _folderSongTypes = <String, MediaType>{};
   bool _ready = false;
   bool _drivingSuggestOpen = false;
   bool _drivingSuggestDismissed = false;
@@ -90,13 +94,32 @@ class ModeProvider extends ChangeNotifier {
   List<String> foldersFor(MediaType type) =>
       List.unmodifiable(_mediaFolders[type] ?? const <String>[]);
 
+  List<Song> folderSongsFor([Iterable<MediaType>? types]) {
+    final seen = <String>{};
+    final result = <Song>[];
+    for (final type in types ?? MediaFolderStore.supportedTypes) {
+      for (final song in _folderSongsByType[type] ?? const <Song>[]) {
+        if (seen.add(song.id)) result.add(song);
+      }
+    }
+    return List<Song>.unmodifiable(result);
+  }
+
+  bool isModeFolderSong(String songId) => _folderSongTypes.containsKey(songId);
+
   bool hasFolderFor(MediaType type, String path) =>
       MediaFolderRouter(_mediaFolders).hasFolder(type, path);
+
+  void attachMediaSource(ModeMediaSourcePort source) {
+    _mediaSource = source;
+    unawaited(_reloadAllFolderSongs());
+  }
 
   Future<void> addMediaFolder(MediaType type, String path) async {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.addFolder(type, path);
     _mediaFolders = await _folderStore.loadAll();
+    await _reloadTypeFolderSongs(type);
     notifyListeners();
   }
 
@@ -104,6 +127,7 @@ class ModeProvider extends ChangeNotifier {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.removeFolder(type, path);
     _mediaFolders = await _folderStore.loadAll();
+    await _reloadTypeFolderSongs(type);
     notifyListeners();
   }
 
@@ -111,7 +135,50 @@ class ModeProvider extends ChangeNotifier {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.clearFolders(type);
     _mediaFolders = await _folderStore.loadAll();
+    await _reloadTypeFolderSongs(type);
     notifyListeners();
+  }
+
+  Future<void> _reloadAllFolderSongs() async {
+    await ready;
+    final source = _mediaSource;
+    if (source == null) return;
+    final loaded = <MediaType, List<Song>>{};
+    for (final type in MediaFolderStore.supportedTypes) {
+      final songs = <Song>[];
+      for (final folder in foldersFor(type)) {
+        try { songs.addAll(await source.scanFolder(folder)); } catch (_) {}
+      }
+      loaded[type] = _uniqueSongs(songs);
+    }
+    _folderSongsByType = loaded;
+    _rebuildFolderSongTypes();
+    notifyListeners();
+  }
+
+  Future<void> _reloadTypeFolderSongs(MediaType type) async {
+    final source = _mediaSource;
+    if (source == null) return;
+    final songs = <Song>[];
+    for (final folder in foldersFor(type)) {
+      try { songs.addAll(await source.scanFolder(folder)); } catch (_) {}
+    }
+    _folderSongsByType[type] = _uniqueSongs(songs);
+    _rebuildFolderSongTypes();
+  }
+
+  List<Song> _uniqueSongs(Iterable<Song> songs) {
+    final seen = <String>{};
+    return songs.where((song) => seen.add(song.id)).toList(growable: false);
+  }
+
+  void _rebuildFolderSongTypes() {
+    _folderSongTypes.clear();
+    for (final type in MediaFolderStore.supportedTypes) {
+      for (final song in _folderSongsByType[type] ?? const <Song>[]) {
+        _folderSongTypes[song.id] = type;
+      }
+    }
   }
 
   void attachPlayback(ModePlaybackPort playback) {
@@ -371,6 +438,13 @@ class ModeProvider extends ChangeNotifier {
   MediaClassification classificationFor(ModeMediaItem item) {
     final override = _userOverrides[item.id];
     if (override != null) return override;
+
+    final scannedFolderType = _folderSongTypes[item.id];
+    if (scannedFolderType != null) {
+      return MediaClassification(type: scannedFolderType, confidence: 1.0,
+        source: ClassificationSource.user,
+        reason: 'Scanned from a user-selected mode folder');
+    }
 
     final folderType = MediaFolderRouter(_mediaFolders).typeForPath(item.filePath);
     if (folderType != null) {

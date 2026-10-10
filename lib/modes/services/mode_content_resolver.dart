@@ -14,13 +14,22 @@ class ModeContentResolver {
     int? limit,
     bool preferPreferredContent = true,
   }) {
-    if (songs.isEmpty) return const <Song>[];
     if (modes.mode.id == 'normal') {
       return _cap(songs, limit);
     }
 
+    final folderTypes = modes.policy.preferredMediaTypes.isEmpty
+        ? null
+        : modes.policy.preferredMediaTypes;
+    final candidates = <Song>[];
+    final seen = <String>{};
+    for (final song in [...songs, ...modes.folderSongsFor(folderTypes)]) {
+      if (seen.add(song.id)) candidates.add(song);
+    }
+    if (candidates.isEmpty) return const <Song>[];
+
     final accepted = <Song>[];
-    for (final song in songs) {
+    for (final song in candidates) {
       if (song.filePath.trim().isEmpty) continue;
       final item = ModeMediaItem(
         id: song.id,

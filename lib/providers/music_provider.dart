@@ -2408,7 +2408,9 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> _playSongInternal(Song song, {List<Song>? queue, int startIndex = 0, bool resume = false, int? playbackIntentToken}) async {
     await _visibility.load();
-    if (_visibility.isRestricted && !_visibility.isVisible(song.id)) {
+    if (_visibility.isRestricted &&
+        !_visibility.isVisible(song.id) &&
+        !(_modes?.isModeFolderSong(song.id) ?? false)) {
       await ResonateDiagnostics.record('playback_rejected_outside_library_scope', {
         'songId': song.id,
         'stage': 'play_song_internal',
