@@ -1914,6 +1914,26 @@ class MusicProvider extends ChangeNotifier {
         generation: generation,
       ).timeout(timeout, onTimeout: () {
         debugPrint('automatic crossfade timed out');
+        // Future.timeout does not cancel the underlying Future. Invalidate its
+        // ownership before fallback/cleanup so a delayed native player call
+        // cannot later commit the handoff or restore stale gain.
+        if (_userTransportEpoch == epoch &&
+            _automaticTransitionGeneration == transitionMarker) {
+          _automaticTransitionGeneration++;
+          _preloadedNextSongId = null;
+          _crossfadePreloadInFlight = false;
+          _automaticCrossfadeInFlight = false;
+          _crossfadeInProgress = false;
+          _transitionArmedAt = null;
+          unawaited(ResonateDiagnostics.record('crossfade_timeout_invalidated', {
+            'transitionGeneration': transitionMarker,
+            'currentGeneration': _automaticTransitionGeneration,
+            'userTransportEpoch': _userTransportEpoch,
+            'outgoingSongId': fromSongId,
+            'queueIndex': fromIndex,
+            'timeoutMs': timeout.inMilliseconds,
+          }));
+        }
         return false;
       });
       if (ok) return;
@@ -4246,6 +4266,14 @@ class MusicProvider extends ChangeNotifier {
         DateTime.now().difference(armed) < const Duration(seconds: 22)) {
       return;
     }
+    // Clearing flags alone does not cancel the old Future. If it is suspended
+    // in a native player call (for example while the screen is off), it could
+    // resume later and commit a second engine handoff. Invalidate ownership
+    // before releasing the flags so all stale continuations fail their guards.
+    final invalidatedGeneration = _automaticTransitionGeneration;
+    _automaticTransitionGeneration++;
+    _preloadedNextSongId = null;
+    _crossfadePreloadInFlight = false;
     unawaited(ResonateDiagnostics.record('stuck_transition_cleared', {
       'reason': reason,
       'crossfadeInProgress': _crossfadeInProgress,
@@ -4254,6 +4282,8 @@ class MusicProvider extends ChangeNotifier {
           ? null
           : DateTime.now().difference(armed).inMilliseconds,
       'songId': currentSong?.id,
+      'invalidatedGeneration': invalidatedGeneration,
+      'currentGeneration': _automaticTransitionGeneration,
     }));
     _crossfadeInProgress = false;
     _automaticCrossfadeInFlight = false;

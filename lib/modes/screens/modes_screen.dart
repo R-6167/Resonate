@@ -141,9 +141,18 @@ class ModesScreen extends StatelessWidget {
                     tooltip: 'Add folder',
                     icon: const Icon(Icons.create_new_folder_outlined),
                     onPressed: () async {
-                      final path = await folderPicker!.pickFolder(type);
-                      if (path != null && path.trim().isNotEmpty) {
-                        await modes.addMediaFolder(type, path);
+                      try {
+                        final path = await folderPicker!.pickFolder(type);
+                        if (path != null && path.trim().isNotEmpty) {
+                          await modes.addMediaFolder(type, path);
+                        }
+                      } catch (error) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Could not access that folder: $error'),
+                          ),
+                        );
                       }
                     },
                   ),
