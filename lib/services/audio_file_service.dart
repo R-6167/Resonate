@@ -45,8 +45,11 @@ class AudioFileService {
       }
       return songs;
     } catch (e) {
+      // Let ModeProvider surface SAF/provider errors to the user. Returning an
+      // empty list here made revoked grants and provider failures look like a
+      // successfully scanned folder with no audio files.
       print('Mode folder scan failed: $e');
-      return <Song>[];
+      rethrow;
     }
   }
 
