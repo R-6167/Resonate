@@ -3879,10 +3879,13 @@ class MusicProvider extends ChangeNotifier {
       try {
         if (incoming.volume < 0.05) await incoming.setVolume(master);
       } catch (_) {}
+      if (transitionWasPreempted()) return false;
       // Hard guarantee: incoming must be audible before we flip active engine.
       try {
         await incoming.setSpeed(1.0);
+        if (transitionWasPreempted()) return false;
         await incoming.setVolume(master);
+        if (transitionWasPreempted()) return false;
         if (!incoming.playing) {
           try { incoming.play(); } catch (_) {}
         }
@@ -3893,6 +3896,7 @@ class MusicProvider extends ChangeNotifier {
           'songId': nextSong.id,
         });
       } catch (_) {}
+      if (transitionWasPreempted()) return false;
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex;
       currentSong = nextSong;
@@ -3910,19 +3914,23 @@ class MusicProvider extends ChangeNotifier {
       // Audible guarantee: UI must not show B playing while engine is silent.
       try {
         await incoming.setSpeed(1.0);
+        if (transitionWasPreempted()) return false;
         await incoming.setVolume(master);
+        if (transitionWasPreempted()) return false;
         if (_userWantsPlaying && !incoming.playing) {
           try {
             incoming.play();
           } catch (_) {}
           for (var i = 0; i < 10 && !incoming.playing && _userWantsPlaying; i++) {
             await Future<void>.delayed(Duration(milliseconds: 35 + i * 20));
+            if (transitionWasPreempted()) return false;
             try {
               incoming.play();
             } catch (_) {}
           }
         }
       } catch (_) {}
+      if (transitionWasPreempted()) return false;
       isPlaying = _userWantsPlaying && (incoming.playing || incoming.volume >= 0.05);
       if (_userWantsPlaying && !incoming.playing) {
         // Last resort: hard cut to A with the incoming song (no silent scrub).
@@ -3943,7 +3951,9 @@ class MusicProvider extends ChangeNotifier {
       if (transitionWasPreempted()) return false;
       _publishServiceState();
       notifyListeners();
+      if (transitionWasPreempted()) return false;
       try { await outgoing.stop(); } catch (_) {}
+      if (transitionWasPreempted()) return false;
       // Restore volume on the now-idle engine so the next time it is used it is not stuck at 0.
       try { await outgoing.setVolume(master); } catch (_) {}
       _preloadedNextSongId = null;
