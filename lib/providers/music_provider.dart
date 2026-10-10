@@ -4050,7 +4050,6 @@ class MusicProvider extends ChangeNotifier {
       try {
         final idle = inactivePlayer;
         final active = audioPlayer;
-        final master = _eqPreampScale.clamp(0.05, 1.0);
         try {
           await idle.pause();
         } catch (_) {}
@@ -4060,12 +4059,9 @@ class MusicProvider extends ChangeNotifier {
         try {
           await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
         } catch (_) {}
-        // Keep the active engine audible at master if the user still wants play.
-        try {
-          if (_userWantsPlaying && active.volume < master * 0.5) {
-            await active.setVolume(master);
-          }
-        } catch (_) {}
+        // Do not force the active engine to master during cancellation. It may
+        // still be in a fade, or a user-selected track may be taking ownership;
+        // boosting here creates a transient volume jump before that handoff.
       } catch (_) {}
     }());
     if (_repeatSelfHandoffArmed || _repeatSelfHandoffInFlight) {
