@@ -92,6 +92,7 @@ class ResonateModeMediaSourcePort implements ModeMediaSourcePort {
     return AudioFileService.scanAudioFiles(
       folderUris: <String>[folderUri],
       minimumDurationMs: 0,
+      includeNonMusic: true,
     );
   }
 }

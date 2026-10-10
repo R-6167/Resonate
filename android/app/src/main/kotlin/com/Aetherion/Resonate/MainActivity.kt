@@ -54,7 +54,7 @@ class MainActivity : AudioServiceActivity() {
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)
                 "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
-                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000))
+                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000, call.argument<Boolean>("includeNonMusic") ?: false))
                 "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
                 "readMediaHead" -> readMediaHead(
                     call.argument<String>("uri") ?: "",
@@ -303,7 +303,7 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private fun querySelectedAudio(folders: List<String>, minimumDurationMs: Int = 0, includeSize: Boolean = false): Any {
+    private fun querySelectedAudio(folders: List<String>, minimumDurationMs: Int = 0, includeSize: Boolean = false, includeNonMusic: Boolean = false): Any {
         if (!hasAudioPermission()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
         val prefixes = selectedPrefixes(folders)
         if (prefixes.isEmpty() && folders.isNotEmpty()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
@@ -318,7 +318,7 @@ class MainActivity : AudioServiceActivity() {
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.RELATIVE_PATH,
         )
-        val selection = StringBuilder("${MediaStore.Audio.Media.IS_MUSIC} != 0")
+        val selection = StringBuilder(if (includeNonMusic && folders.isNotEmpty()) "1=1" else "${MediaStore.Audio.Media.IS_MUSIC} != 0")
         if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
         val selectionArgs = if (minimumDurationMs > 0) arrayOf(minimumDurationMs.toString()) else null
         val songs = mutableListOf<Map<String, Any?>>()
@@ -363,9 +363,9 @@ class MainActivity : AudioServiceActivity() {
         return if (includeSize) totalSize else songs
     }
 
-    private fun scanAudio(folders: List<String>, minimumDurationMs: Int): List<Map<String, Any?>> =
+    private fun scanAudio(folders: List<String>, minimumDurationMs: Int, includeNonMusic: Boolean = false): List<Map<String, Any?>> =
         @Suppress("UNCHECKED_CAST")
-        (querySelectedAudio(folders, minimumDurationMs, includeSize = false) as List<Map<String, Any?>>)
+        (querySelectedAudio(folders, minimumDurationMs, includeSize = false, includeNonMusic = includeNonMusic) as List<Map<String, Any?>>)
 
     private fun getAudioSize(folders: List<String>): Long =
         querySelectedAudio(folders, includeSize = true) as Long
