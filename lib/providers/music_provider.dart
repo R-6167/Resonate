@@ -1914,6 +1914,26 @@ class MusicProvider extends ChangeNotifier {
         generation: generation,
       ).timeout(timeout, onTimeout: () {
         debugPrint('automatic crossfade timed out');
+        // Future.timeout does not cancel the underlying Future. Invalidate its
+        // ownership before fallback/cleanup so a delayed native player call
+        // cannot later commit the handoff or restore stale gain.
+        if (_userTransportEpoch == epoch &&
+            _automaticTransitionGeneration == transitionMarker) {
+          _automaticTransitionGeneration++;
+          _preloadedNextSongId = null;
+          _crossfadePreloadInFlight = false;
+          _automaticCrossfadeInFlight = false;
+          _crossfadeInProgress = false;
+          _transitionArmedAt = null;
+          unawaited(ResonateDiagnostics.record('crossfade_timeout_invalidated', {
+            'transitionGeneration': transitionMarker,
+            'currentGeneration': _automaticTransitionGeneration,
+            'userTransportEpoch': _userTransportEpoch,
+            'outgoingSongId': fromSongId,
+            'queueIndex': fromIndex,
+            'timeoutMs': timeout.inMilliseconds,
+          }));
+        }
         return false;
       });
       if (ok) return;
