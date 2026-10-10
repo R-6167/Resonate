@@ -1846,6 +1846,27 @@ class MusicProvider extends ChangeNotifier {
               ? (_crossfadeDurationMs + plannedBias).clamp(500, 6500)
               : _crossfadeDurationMs)
           .toInt();
+      // Position events can become discontinuous around backgrounding/audio
+      // service resumes. Revalidate the actual remaining time here instead of
+      // trusting the earlier position-stream trigger to still be current.
+      final durationNow = audioPlayer.duration ?? currentDuration;
+      final remainingNowMs = durationNow == null
+          ? null
+          : durationNow.inMilliseconds - audioPlayer.position.inMilliseconds;
+      final startMarginMs = (1200 + (xfMs ~/ 10)).clamp(1500, 3000);
+      final safeTriggerMs = (xfMs + startMarginMs).clamp(2000, 16000);
+      if (remainingNowMs != null && remainingNowMs > safeTriggerMs) {
+        _automaticCrossfadeInFlight = false;
+        _crossfadeInProgress = false;
+        _transitionArmedAt = null;
+        await ResonateDiagnostics.record('crossfade_aborted_early', {
+          'remainingMs': remainingNowMs,
+          'safeTriggerMs': safeTriggerMs,
+          'outgoingSongId': fromSongId,
+          'queueIndex': fromIndex,
+        });
+        return;
+      }
       final timeout =
           Duration(milliseconds: (xfMs + 12000).clamp(12000, 30000));
       final ok = await _performTrueCrossfade(
@@ -3620,7 +3641,10 @@ class MusicProvider extends ChangeNotifier {
             _authority.isStale(generation) ||
             !_playbackIntentGate.isCurrent(intentToken)) {
           try { await incoming.stop(); } catch (_) {}
-          try { await outgoing.setVolume(master); } catch (_) {}
+          // Restore the outgoing engine to its pre-fade level, not master.
+          // A stale transition restoring master caused audible jumps on
+          // user pre-emption and can override an intentional attenuation.
+          try { await outgoing.setVolume(base); } catch (_) {}
           await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
           await ResonateDiagnostics.record('crossfade_cancelled', {
             'stage': 'fade',
