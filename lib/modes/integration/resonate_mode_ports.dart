@@ -89,10 +89,6 @@ class ResonateModeMediaSourcePort implements ModeMediaSourcePort {
 
   @override
   Future<List<Song>> scanFolder(String folderUri) {
-    return AudioFileService.scanAudioFiles(
-      folderUris: <String>[folderUri],
-      minimumDurationMs: 0,
-      includeNonMusic: true,
-    );
+    return AudioFileService.scanModeFolder(folderUri);
   }
 }
