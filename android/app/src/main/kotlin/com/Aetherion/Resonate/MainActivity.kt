@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
+import android.media.MediaMetadataRetriever
 import android.media.MediaFormat
 import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.Virtualizer
@@ -43,6 +44,7 @@ class MainActivity : AudioServiceActivity() {
     private var virtualizer: Virtualizer? = null
     private var reverb: EnvironmentalReverb? = null
     private val pcmExecutor = Executors.newSingleThreadExecutor()
+    private val folderScanExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,6 +57,7 @@ class MainActivity : AudioServiceActivity() {
                 "pickFolder" -> pickFolder(result)
                 "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
                 "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000, call.argument<Boolean>("includeNonMusic") ?: false))
+                "scanModeFolder" -> scanModeFolderAsync(call.argument<String>("folderUri") ?: "", result)
                 "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
                 "readMediaHead" -> readMediaHead(
                     call.argument<String>("uri") ?: "",
@@ -361,6 +364,104 @@ class MainActivity : AudioServiceActivity() {
             }
         }
         return if (includeSize) totalSize else songs
+    }
+
+    /**
+     * Scan the selected SAF tree directly. MediaStore can omit audiobook formats
+     * (notably .m4b) or files that have not been indexed yet, so Mode folders must
+     * not depend on READ_MEDIA_AUDIO or IS_MUSIC classification.
+     */
+    private fun scanModeFolderAsync(folderUri: String, result: MethodChannel.Result) {
+        folderScanExecutor.execute {
+            try {
+                val songs = scanModeFolder(folderUri)
+                runOnUiThread { result.success(songs) }
+            } catch (e: Exception) {
+                android.util.Log.w("ResonateModes", "Mode folder scan failed", e)
+                runOnUiThread {
+                    result.error("MODE_FOLDER_SCAN_FAILED", e.message ?: "Unable to scan selected folder", null)
+                }
+            }
+        }
+    }
+
+    private fun scanModeFolder(folderUri: String): List<Map<String, Any?>> {
+        if (folderUri.isBlank()) return emptyList()
+        val treeUri = Uri.parse(folderUri)
+        val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val results = mutableListOf<Map<String, Any?>>()
+        val visited = mutableSetOf<String>()
+        val audioExtensions = setOf(
+            "aac", "aif", "aiff", "alac", "amr", "ape", "flac", "m4a",
+            "m4b", "m4p", "mid", "midi", "mp3", "oga", "ogg", "opus",
+            "wav", "wma", "3ga"
+        )
+
+        fun visit(documentId: String, depth: Int) {
+            if (depth > 32 || !visited.add(documentId)) return
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                ),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (idColumn < 0 || nameColumn < 0 || mimeColumn < 0) return@use
+                while (cursor.moveToNext()) {
+                    val childId = cursor.getString(idColumn) ?: continue
+                    val name = cursor.getString(nameColumn) ?: "Unknown Title"
+                    val mime = cursor.getString(mimeColumn) ?: ""
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        visit(childId, depth + 1)
+                        continue
+                    }
+                    val extension = name.substringAfterLast('.', "").lowercase()
+                    if (!mime.startsWith("audio/") && extension !in audioExtensions) continue
+                    val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                    var title = name.substringBeforeLast('.', name).ifBlank { "Unknown Title" }
+                    var artist = "Unknown Artist"
+                    var album = "Unknown Album"
+                    var durationMs = 0L
+                    val metadata = MediaMetadataRetriever()
+                    try {
+                        metadata.setDataSource(this@MainActivity, fileUri)
+                        title = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            ?.takeIf { it.isNotBlank() } ?: title
+                        artist = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                            ?.takeIf { it.isNotBlank() } ?: artist
+                        album = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                            ?.takeIf { it.isNotBlank() } ?: album
+                        durationMs = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toLongOrNull() ?: 0L
+                    } catch (e: Exception) {
+                        android.util.Log.d("ResonateModes", "Metadata unavailable for $name", e)
+                    } finally {
+                        try { metadata.release() } catch (_: Exception) {}
+                    }
+                    results.add(
+                        mapOf(
+                            "filePath" to fileUri.toString(),
+                            "title" to title,
+                            "artist" to artist,
+                            "album" to album,
+                            "duration" to durationMs,
+                            "dateAdded" to 0L,
+                        )
+                    )
+                }
+            }
+        }
+
+        visit(rootDocumentId, 0)
+        return results
     }
 
     private fun scanAudio(folders: List<String>, minimumDurationMs: Int, includeNonMusic: Boolean = false): List<Map<String, Any?>> =
