@@ -4246,6 +4246,14 @@ class MusicProvider extends ChangeNotifier {
         DateTime.now().difference(armed) < const Duration(seconds: 22)) {
       return;
     }
+    // Clearing flags alone does not cancel the old Future. If it is suspended
+    // in a native player call (for example while the screen is off), it could
+    // resume later and commit a second engine handoff. Invalidate ownership
+    // before releasing the flags so all stale continuations fail their guards.
+    final invalidatedGeneration = _automaticTransitionGeneration;
+    _automaticTransitionGeneration++;
+    _preloadedNextSongId = null;
+    _crossfadePreloadInFlight = false;
     unawaited(ResonateDiagnostics.record('stuck_transition_cleared', {
       'reason': reason,
       'crossfadeInProgress': _crossfadeInProgress,
@@ -4254,6 +4262,8 @@ class MusicProvider extends ChangeNotifier {
           ? null
           : DateTime.now().difference(armed).inMilliseconds,
       'songId': currentSong?.id,
+      'invalidatedGeneration': invalidatedGeneration,
+      'currentGeneration': _automaticTransitionGeneration,
     }));
     _crossfadeInProgress = false;
     _automaticCrossfadeInFlight = false;
