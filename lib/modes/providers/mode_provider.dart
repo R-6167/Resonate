@@ -128,7 +128,7 @@ class ModeProvider extends ChangeNotifier {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.removeFolder(type, path);
     _mediaFolders = await _folderStore.loadAll();
-    await _reloadTypeFolderSongs(type);
+    await _reloadAllFolderSongs();
     notifyListeners();
   }
 
@@ -136,7 +136,7 @@ class ModeProvider extends ChangeNotifier {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.clearFolders(type);
     _mediaFolders = await _folderStore.loadAll();
-    await _reloadTypeFolderSongs(type);
+    await _reloadAllFolderSongs();
     notifyListeners();
   }
 
