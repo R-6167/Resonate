@@ -54,6 +54,7 @@ class ModeProvider extends ChangeNotifier {
   ModeMediaSourcePort? _mediaSource;
   Map<MediaType, List<Song>> _folderSongsByType = {};
   final Map<String, MediaType> _folderSongTypes = <String, MediaType>{};
+  int _folderScanGeneration = 0;
   bool _ready = false;
   bool _drivingSuggestOpen = false;
   bool _drivingSuggestDismissed = false;
@@ -119,7 +120,7 @@ class ModeProvider extends ChangeNotifier {
     if (!MediaFolderStore.supportedTypes.contains(type)) return;
     await _folderStore.addFolder(type, path);
     _mediaFolders = await _folderStore.loadAll();
-    await _reloadTypeFolderSongs(type);
+    await _reloadAllFolderSongs();
     notifyListeners();
   }
 
@@ -140,6 +141,7 @@ class ModeProvider extends ChangeNotifier {
   }
 
   Future<void> _reloadAllFolderSongs() async {
+    final generation = ++_folderScanGeneration;
     await ready;
     final source = _mediaSource;
     if (source == null) return;
@@ -147,24 +149,18 @@ class ModeProvider extends ChangeNotifier {
     for (final type in MediaFolderStore.supportedTypes) {
       final songs = <Song>[];
       for (final folder in foldersFor(type)) {
-        try { songs.addAll(await source.scanFolder(folder)); } catch (_) {}
+        try {
+          songs.addAll(await source.scanFolder(folder));
+        } catch (_) {}
       }
       loaded[type] = _uniqueSongs(songs);
     }
+    // A folder change may have triggered a newer scan while this one awaited
+    // native MediaStore work. Never let the older result overwrite it.
+    if (generation != _folderScanGeneration) return;
     _folderSongsByType = loaded;
     _rebuildFolderSongTypes();
     notifyListeners();
-  }
-
-  Future<void> _reloadTypeFolderSongs(MediaType type) async {
-    final source = _mediaSource;
-    if (source == null) return;
-    final songs = <Song>[];
-    for (final folder in foldersFor(type)) {
-      try { songs.addAll(await source.scanFolder(folder)); } catch (_) {}
-    }
-    _folderSongsByType[type] = _uniqueSongs(songs);
-    _rebuildFolderSongTypes();
   }
 
   List<Song> _uniqueSongs(Iterable<Song> songs) {
