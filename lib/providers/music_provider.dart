@@ -3517,10 +3517,9 @@ class MusicProvider extends ChangeNotifier {
           !_playbackIntentGate.isCurrent(intentToken);
 
       if (transitionWasPreempted()) {
-        try { await incoming.stop(); } catch (_) {}
-        try { await incoming.setVolume(0.0); } catch (_) {}
-        await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
-        await _restoreDjTransitionSfx();
+        // A newer transport now owns both reusable engines and their effects.
+        // Do not stop/mute either engine here: the incoming engine may already
+        // have been repurposed to play the user's newly selected track.
         await ResonateDiagnostics.record('crossfade_cancelled', {
           'stage': 'before_incoming_start',
           'preempted': _userTransportEpoch != transportEpoch,
@@ -3539,10 +3538,8 @@ class MusicProvider extends ChangeNotifier {
       for (var i = 0; i < 25 && !incomingStarted; i++) {
         // Do not retry play/seek on B after a manual transport supersedes us.
         if (transitionWasPreempted()) {
-          try { await incoming.stop(); } catch (_) {}
-          try { await incoming.setVolume(0.0); } catch (_) {}
-          await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
-          await _restoreDjTransitionSfx();
+          // Engine instances are shared with manual playback. The new
+          // transport owns cleanup; stale crossfade work must not touch them.
           await ResonateDiagnostics.record('crossfade_cancelled', {
             'stage': 'incoming_start_poll',
             'preempted': _userTransportEpoch != transportEpoch,
@@ -3642,12 +3639,8 @@ class MusicProvider extends ChangeNotifier {
             _automaticTransitionGeneration != transitionGeneration ||
             _authority.isStale(generation) ||
             !_playbackIntentGate.isCurrent(intentToken)) {
-          try { await incoming.stop(); } catch (_) {}
-          // Restore the outgoing engine to its pre-fade level, not master.
-          // A stale transition restoring master caused audible jumps on
-          // user pre-emption and can override an intentional attenuation.
-          try { await outgoing.setVolume(base); } catch (_) {}
-          await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+          // Do not issue engine/effect commands after ownership changes.
+          // The replacement transport may already be using either A or B.
           await ResonateDiagnostics.record('crossfade_cancelled', {
             'stage': 'fade',
             'preempted': _userTransportEpoch != transportEpoch,
@@ -3810,7 +3803,8 @@ class MusicProvider extends ChangeNotifier {
       if (_userTransportEpoch != transportEpoch ||
           _automaticTransitionGeneration != transitionGeneration ||
           _authority.isStale(generation) ||
-          !_playbackIntentGate.isCurrent(intentToken)) { try { await incoming.stop(); } catch (_) {} try { await outgoing.setVolume(base); } catch (_) {} await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'preempted': _userTransportEpoch != transportEpoch, 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
+          !_playbackIntentGate.isCurrent(intentToken)) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {'stage': 'commit', 'preempted': _userTransportEpoch != transportEpoch, 'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'intentToken': intentToken}); return false; }
       // Finish the outgoing history record while currentSong still refers to it.
       // Mutating currentSong first caused history to be attributed to the next track.
       await _finishHistoryEvent();
@@ -3898,6 +3892,23 @@ class MusicProvider extends ChangeNotifier {
       });
       return true;
     } catch (e, stack) {
+      // Cancellation can race any awaited engine operation. If a user command
+      // or newer transition has taken ownership, do not run failure recovery
+      // against the shared A/B players (the "incoming" engine may now be the
+      // user's selected track).
+      if (_userTransportEpoch != transportEpoch ||
+          _automaticTransitionGeneration != transitionGeneration ||
+          _authority.isStale(generation) ||
+          !_playbackIntentGate.isCurrent(intentToken)) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'stale_failure_cleanup',
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'error': e.toString(),
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       debugPrint('True crossfade failed: $e'); debugPrint('$stack');
       try { await incoming.stop(); } catch (_) {}
@@ -4001,20 +4012,23 @@ class MusicProvider extends ChangeNotifier {
           });
         } catch (_) {}
       }
-      // If UI thinks we are playing but active engine is near-silent, unstick.
-      try {
-        final active = audioPlayer;
-        final vol = _eqPreampScale.clamp(0.05, 1.0).toDouble();
-        if ((_userWantsPlaying || active.playing) && active.volume < 0.05) {
-          await active.setSpeed(1.0);
-          await active.setVolume(vol);
-          await ResonateDiagnostics.record('playback_volume_unstick', {
-            'reason': 'crossfade_finally',
-            'volume': active.volume,
-            'engine': _activeIsA ? 'A' : 'B',
-          });
-        }
-      } catch (_) {}
+      // A stale transition must never "unstick" the current active engine:
+      // it may now belong to a manual track selection with intentional gain.
+      if (ownsTransition) {
+        try {
+          final active = audioPlayer;
+          final vol = _eqPreampScale.clamp(0.05, 1.0).toDouble();
+          if ((_userWantsPlaying || active.playing) && active.volume < 0.05) {
+            await active.setSpeed(1.0);
+            await active.setVolume(vol);
+            await ResonateDiagnostics.record('playback_volume_unstick', {
+              'reason': 'crossfade_finally',
+              'volume': active.volume,
+              'engine': _activeIsA ? 'A' : 'B',
+            });
+          }
+        } catch (_) {}
+      }
       notifyListeners();
 
       // Critical fix: if the outgoing track reached completed while we were
