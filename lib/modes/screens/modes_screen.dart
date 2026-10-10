@@ -115,10 +115,25 @@ class ModesScreen extends StatelessWidget {
           ListTile(
             leading: Icon(_iconFor(type)),
             title: Text(_labelFor(type)),
-            subtitle: Text(
-              folders.isEmpty
-                  ? 'No folder selected'
-                  : '${folders.length} folder${folders.length == 1 ? '' : 's'} selected',
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  folders.isEmpty
+                      ? 'No folder selected'
+                      : '${folders.length} folder${folders.length == 1 ? '' : 's'} selected',
+                ),
+                if (folders.isNotEmpty)
+                  Text('${modes.folderSongCountFor(type)} audio files found'),
+                if (modes.folderScanErrorFor(type) != null)
+                  Text(
+                    'Folder scan failed: ${modes.folderScanErrorFor(type)}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+              ],
             ),
             trailing: folderPicker == null
                 ? null
