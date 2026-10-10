@@ -556,11 +556,18 @@ class MusicProvider extends ChangeNotifier {
   }
   /// Restore normal speed + audible volume after DJ handoff mistakes.
   Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
+    // Recovery is asynchronous and may overlap a manual track selection. It
+    // must never restore master volume on an engine captured before that
+    // selection, or it can make the old track audible again.
+    final recoveryTransportEpoch = _userTransportEpoch;
+    bool wasPreempted() => recoveryTransportEpoch != _userTransportEpoch;
     try {
       await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
+      if (wasPreempted()) return;
     } catch (_) {}
     try {
       await _restoreDjTransitionSfx();
+      if (wasPreempted()) return;
     } catch (_) {}
     try {
       final active = audioPlayer;
@@ -569,21 +576,26 @@ class MusicProvider extends ChangeNotifier {
       try {
         await active.setSpeed(1.0);
       } catch (_) {}
+      if (wasPreempted()) return;
       try {
         await inactive.setSpeed(1.0);
       } catch (_) {}
+      if (wasPreempted()) return;
       try {
         if ((_userWantsPlaying || active.playing) && active.volume < vol * 0.85) {
           await active.setVolume(vol);
         }
       } catch (_) {}
+      if (wasPreempted()) return;
       try {
         await inactive.setVolume(0.0);
       } catch (_) {}
+      if (wasPreempted()) return;
       try {
         final session = await AudioSession.instance;
         await session.setActive(true);
       } catch (_) {}
+      if (wasPreempted()) return;
       await ResonateDiagnostics.recordDj(
         stage: 'engine_recover',
         outcome: 'applied',
@@ -4166,6 +4178,9 @@ class MusicProvider extends ChangeNotifier {
     // transport operation. Old futures may still unwind, but cannot commit.
     _userTransportEpoch++;
     _automaticTransitionGeneration++;
+    // A resume/duck/route-recovery fade must not keep writing volume after
+    // a newer manual transport command takes ownership.
+    _volumeFadeGen++;
     _automaticCrossfadeInFlight = false;
     _crossfadeInProgress = false;
     _completionAdvanceInProgress = false;
