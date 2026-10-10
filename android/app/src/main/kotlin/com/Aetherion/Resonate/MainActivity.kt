@@ -271,7 +271,38 @@ class MainActivity : AudioServiceActivity() {
         val result = folderResult ?: return; folderResult = null
         if (resultCode != Activity.RESULT_OK || data?.data == null) { result.success(null); return }
         val uri = data.data!!
-        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+        val grantFlags = data.flags and
+            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if (grantFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION == 0) {
+            result.error(
+                "FOLDER_READ_PERMISSION_MISSING",
+                "Android did not grant read access to the selected folder. Please choose it again.",
+                null,
+            )
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(uri, grantFlags)
+        } catch (e: Exception) {
+            android.util.Log.w("ResonateModes", "Could not persist selected folder access", e)
+            result.error(
+                "FOLDER_PERMISSION_PERSIST_FAILED",
+                "Could not keep access to the selected folder. Please choose it again. ${e.message ?: ""}".trim(),
+                null,
+            )
+            return
+        }
+        val hasReadGrant = contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
+        }
+        if (!hasReadGrant) {
+            result.error(
+                "FOLDER_PERMISSION_NOT_PERSISTED",
+                "Android did not retain access to the selected folder. Please choose it again.",
+                null,
+            )
+            return
+        }
         val documentId = DocumentsContract.getTreeDocumentId(uri)
         val name = documentId.substringAfter(':').trim('/').substringAfterLast('/').ifBlank { "Device storage" }
         result.success(mapOf("uri" to uri.toString(), "name" to name))
@@ -388,6 +419,14 @@ class MainActivity : AudioServiceActivity() {
     private fun scanModeFolder(folderUri: String): List<Map<String, Any?>> {
         if (folderUri.isBlank()) return emptyList()
         val treeUri = Uri.parse(folderUri)
+        val hasReadGrant = contentResolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isReadPermission
+        }
+        if (!hasReadGrant) {
+            throw SecurityException(
+                "Saved access to this folder has expired. Remove it and select the folder again."
+            )
+        }
         val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
         val results = mutableListOf<Map<String, Any?>>()
         val visited = mutableSetOf<String>()
@@ -400,7 +439,7 @@ class MainActivity : AudioServiceActivity() {
         fun visit(documentId: String, depth: Int) {
             if (depth > 32 || !visited.add(documentId)) return
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
-            contentResolver.query(
+            val cursor = contentResolver.query(
                 childrenUri,
                 arrayOf(
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -410,11 +449,16 @@ class MainActivity : AudioServiceActivity() {
                 null,
                 null,
                 null,
-            )?.use { cursor ->
+            ) ?: throw IllegalStateException(
+                "Storage provider returned no listing for selected folder: $documentId"
+            )
+            cursor.use {
                 val idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                if (idColumn < 0 || nameColumn < 0 || mimeColumn < 0) return@use
+                if (idColumn < 0 || nameColumn < 0 || mimeColumn < 0) {
+                    throw IllegalStateException("Storage provider returned an unreadable folder listing")
+                }
                 while (cursor.moveToNext()) {
                     val childId = cursor.getString(idColumn) ?: continue
                     val name = cursor.getString(nameColumn) ?: "Unknown Title"
