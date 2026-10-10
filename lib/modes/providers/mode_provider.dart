@@ -53,6 +53,7 @@ class ModeProvider extends ChangeNotifier {
   Map<MediaType, List<String>> _mediaFolders = {};
   ModeMediaSourcePort? _mediaSource;
   Map<MediaType, List<Song>> _folderSongsByType = {};
+  final Map<MediaType, String> _folderScanErrors = <MediaType, String>{};
   final Map<String, MediaType> _folderSongTypes = <String, MediaType>{};
   int _folderScanGeneration = 0;
   bool _ready = false;
@@ -94,6 +95,13 @@ class ModeProvider extends ChangeNotifier {
 
   List<String> foldersFor(MediaType type) =>
       List.unmodifiable(_mediaFolders[type] ?? const <String>[]);
+
+  /// Last folder scan failure for this media type, if any. An empty scan is
+  /// otherwise indistinguishable from a SAF permission/provider failure.
+  String? folderScanErrorFor(MediaType type) => _folderScanErrors[type];
+
+  int folderSongCountFor(MediaType type) =>
+      (_folderSongsByType[type] ?? const <Song>[]).length;
 
   List<Song> folderSongsFor([Iterable<MediaType>? types]) {
     final seen = <String>{};
@@ -148,10 +156,20 @@ class ModeProvider extends ChangeNotifier {
     final loaded = <MediaType, List<Song>>{};
     for (final type in MediaFolderStore.supportedTypes) {
       final songs = <Song>[];
+      String? scanError;
       for (final folder in foldersFor(type)) {
         try {
           songs.addAll(await source.scanFolder(folder));
-        } catch (_) {}
+        } catch (error) {
+          // Preserve successful results from other folders, but don't silently
+          // present a permission/provider failure as a genuinely empty Mode.
+          scanError ??= error.toString();
+        }
+      }
+      if (scanError == null) {
+        _folderScanErrors.remove(type);
+      } else {
+        _folderScanErrors[type] = scanError;
       }
       loaded[type] = _uniqueSongs(songs);
     }
