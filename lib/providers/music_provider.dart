@@ -3483,19 +3483,61 @@ class MusicProvider extends ChangeNotifier {
         ),
         outgoingProfile: outProfile,
       );
+
+      // A user can select a different Library track while preparation awaits
+      // analysis/SFX work. Re-check ownership immediately before starting B;
+      // the fade-loop guard alone is too late because B may already be audible.
+      bool transitionWasPreempted() =>
+          _userTransportEpoch != transportEpoch ||
+          _automaticTransitionGeneration != transitionGeneration ||
+          _authority.isStale(generation) ||
+          !_playbackIntentGate.isCurrent(intentToken);
+
+      if (transitionWasPreempted()) {
+        try { await incoming.stop(); } catch (_) {}
+        try { await incoming.setVolume(0.0); } catch (_) {}
+        await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+        await _restoreDjTransitionSfx();
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'before_incoming_start',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
+
       // Fire-and-poll play on B — await play() can hang and block auto-next forever.
       try {
         incoming.play();
       } catch (_) {}
       var incomingStarted = incoming.playing;
       for (var i = 0; i < 25 && !incomingStarted; i++) {
+        // Do not retry play/seek on B after a manual transport supersedes us.
+        if (transitionWasPreempted()) {
+          try { await incoming.stop(); } catch (_) {}
+          try { await incoming.setVolume(0.0); } catch (_) {}
+          await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
+          await _restoreDjTransitionSfx();
+          await ResonateDiagnostics.record('crossfade_cancelled', {
+            'stage': 'incoming_start_poll',
+            'preempted': _userTransportEpoch != transportEpoch,
+            'outgoingSongId': outgoingSong?.id,
+            'incomingSongId': nextSong.id,
+            'intentToken': intentToken,
+          });
+          return false;
+        }
         if (incoming.playing) {
           incomingStarted = true;
           break;
         }
         if (i == 5 || i == 12 || i == 18) {
           try { await incoming.seek(Duration.zero); } catch (_) {}
-          try { incoming.play(); } catch (_) {}
+          if (!transitionWasPreempted()) {
+            try { incoming.play(); } catch (_) {}
+          }
         }
         await Future<void>.delayed(Duration(milliseconds: 40 + i * 15));
         incomingStarted = incoming.playing;
