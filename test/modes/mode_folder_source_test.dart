@@ -18,6 +18,13 @@ class _FakeModeMediaSource implements ModeMediaSourcePort {
       byFolder[folderUri] ?? const <Song>[];
 }
 
+class _FailingModeMediaSource implements ModeMediaSourcePort {
+  @override
+  Future<List<Song>> scanFolder(String folderUri) async {
+    throw StateError('persisted folder permission unavailable');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -62,4 +69,20 @@ void main() {
     );
     expect(modes.isModeFolderSong(song.id), isTrue);
   });
+  test('folder scan failures remain visible instead of appearing empty', () async {
+    const folder =
+        'content://com.android.externalstorage.documents/tree/primary%3AAudiobooks';
+    final modes = ModeProvider()
+      ..attachMediaSource(_FailingModeMediaSource());
+    await modes.ready;
+    await modes.addMediaFolder(MediaType.audiobook, folder);
+
+    expect(modes.folderSongCountFor(MediaType.audiobook), 0);
+    expect(
+      modes.folderScanErrorFor(MediaType.audiobook),
+      contains('persisted folder permission unavailable'),
+    );
+    modes.dispose();
+  });
+
 }
