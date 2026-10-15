@@ -2,9 +2,9 @@ name: Resonate CI
 
 on:
   push:
-    branches: [modes_on_dj_v2]
+    branches: [Resonate-True-Apk]
   pull_request:
-    branches: [modes_on_dj_v2]
+    branches: [Resonate-True-Apk]
   workflow_dispatch:
 
 permissions:
