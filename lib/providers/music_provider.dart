@@ -4354,7 +4354,7 @@ class MusicProvider extends ChangeNotifier {
             // The transition did not commit a new queue item. Completion was
             // suppressed while the fade owned the player, so explicitly hand
             // the completed song back to the single completion path.
-            unawaited(onTrackEnded(completedSongId));
+            unawaited(onTrackEnded(completedSongId!));
           } else {
             unawaited(_ensureContinueAfterCrossfade());
           }
