@@ -1506,7 +1506,7 @@ class MusicProvider extends ChangeNotifier {
         start: false,
       ).timeout(const Duration(milliseconds: 2800));
       if (!_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming, outgoing, master);
+        await _abortRepeatSelfEngine(incoming);
         return false;
       }
       try {
@@ -1527,7 +1527,7 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
       }
       if (!incoming.playing || !_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming, outgoing, master);
+        await _abortRepeatSelfEngine(incoming);
         return false;
       }
 
@@ -1544,7 +1544,7 @@ class MusicProvider extends ChangeNotifier {
       final startOut = outgoing.volume.clamp(0.05, 1.0);
       for (var i = 1; i <= steps; i++) {
         if (!_repeatSelfTransitionCurrent(generation)) {
-          await _abortRepeatSelfEngine(incoming, outgoing, master);
+          await _abortRepeatSelfEngine(incoming);
           return false;
         }
         final t = i / steps;
@@ -1560,7 +1560,7 @@ class MusicProvider extends ChangeNotifier {
       }
 
       if (!_repeatSelfTransitionCurrent(generation)) {
-        await _abortRepeatSelfEngine(incoming, outgoing, master);
+        await _abortRepeatSelfEngine(incoming);
         return false;
       }
       _activeIsA = !_activeIsA;
@@ -1615,15 +1615,12 @@ class MusicProvider extends ChangeNotifier {
       _repeatMode == PlaybackRepeatMode.one &&
       _userWantsPlaying;
 
-  Future<void> _abortRepeatSelfEngine(
-    AudioPlayer incoming,
-    AudioPlayer outgoing,
-    double master,
-  ) async {
+  Future<void> _abortRepeatSelfEngine(AudioPlayer incoming) async {
     try { await incoming.pause(); } catch (_) {}
     try { await incoming.setVolume(0.0); } catch (_) {}
     // The cancellation owner restores the outgoing gain only when no newer
     // transport command has taken ownership; stale work must not boost it.
+  }
 
   Future<void> _recoverCancelledRepeatSelfEngine() async {
     final active = audioPlayer;
