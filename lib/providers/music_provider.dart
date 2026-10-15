@@ -1572,15 +1572,21 @@ class MusicProvider extends ChangeNotifier {
       _publishServiceState();
       notifyListeners();
 
+      // A user command can arrive just after the engine swap. Do not let this
+      // old handoff's cleanup pause or retune an engine now owned by that command.
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.pause();
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.setVolume(master);
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.setSpeed(1.0);
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await incoming.setVolume(master);
       } catch (_) {}
