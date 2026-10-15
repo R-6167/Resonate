@@ -1595,15 +1595,12 @@ class MusicProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('repeat dual failed: $e');
       debugPrint('$st');
-      try {
-        await incoming.pause();
-      } catch (_) {}
-      try {
-        await incoming.setVolume(0.0);
-      } catch (_) {}
-      try {
-        await outgoing.setVolume(master);
-      } catch (_) {}
+      try { await incoming.pause(); } catch (_) {}
+      try { await incoming.setVolume(0.0); } catch (_) {}
+      if (_repeatSelfGeneration == generation &&
+          identical(outgoing, audioPlayer)) {
+        try { await outgoing.setVolume(master); } catch (_) {}
+      }
       return false;
     }
   }
@@ -1707,22 +1704,21 @@ class MusicProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('soft loop failed: $e');
       debugPrint('$st');
-      try {
-        await player.seek(Duration.zero);
-        if (_userWantsPlaying) {
-          try {
-            player.play();
-          } catch (_) {}
-          try {
-            await player.setVolume(master);
-          } catch (_) {}
-        }
-      } catch (_) {}
-      unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
-        'reason': 'soft_loop_error',
-        'songId': song.id,
-        'error': '$e',
-      }));
+      // Do not restart or rewind after a user/mode cancellation.
+      if (generation == _repeatSelfGeneration && _repeatSelfHandoffInFlight) {
+        try {
+          await player.seek(Duration.zero);
+          if (_userWantsPlaying) {
+            try { player.play(); } catch (_) {}
+            try { await player.setVolume(master); } catch (_) {}
+          }
+        } catch (_) {}
+        unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
+          'reason': 'soft_loop_error',
+          'songId': song.id,
+          'error': '$e',
+        }));
+      }
     } finally {
       // A stale loop must not clear state owned by a newer transition.
       if (generation == _repeatSelfGeneration) {
@@ -1738,7 +1734,10 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _runRepeatSelfHandoff() async {
     // Legacy entry — redirect to soft loop.
     final loopMs = _crossfadeDurationMs.clamp(800, 3500);
-    await _runRepeatSelfSoftLoop(loopMs: loopMs);
+    await _runRepeatSelfSoftLoop(
+      loopMs: loopMs,
+      generation: _repeatSelfGeneration,
+    );
   }
 
   Future<bool> _performRepeatSelfHandoff({
