@@ -682,6 +682,12 @@ class MusicProvider extends ChangeNotifier {
     try { await idle.setLoopMode(LoopMode.off); } catch (_) {}
     try { await active.setLoopMode(activeLoop); } catch (_) {}
     if (generation != _modeBoundaryGeneration || !identical(active, audioPlayer)) return;
+    if (!_isDucked &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight &&
+        !_repeatSelfHandoffInFlight) {
+      try { await active.setVolume(_eqPreampScale.clamp(0.0, 1.0)); } catch (_) {}
+    }
     _bindActivePlayerStreams();
     _publishServiceState();
   }
@@ -1616,10 +1622,8 @@ class MusicProvider extends ChangeNotifier {
   ) async {
     try { await incoming.pause(); } catch (_) {}
     try { await incoming.setVolume(0.0); } catch (_) {}
-    if (identical(outgoing, audioPlayer)) {
-      try { await outgoing.setVolume(master); } catch (_) {}
-    }
-  }
+    // The cancellation owner restores the outgoing gain only when no newer
+    // transport command has taken ownership; stale work must not boost it.
 
   Future<void> _recoverCancelledRepeatSelfEngine() async {
     final active = audioPlayer;
