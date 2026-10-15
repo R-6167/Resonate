@@ -97,6 +97,7 @@ class MusicProvider extends ChangeNotifier {
   bool _crossfadeInProgress = false;
   bool _completionAdvanceInProgress = false;
   bool _completionObservedDuringCrossfade = false;
+  String? _completionObservedSongId;
   bool _queueRestoreInProgress = false;
   bool _crossfadeEnabled = false;
   int _crossfadeDurationMs = 3000;
@@ -1206,6 +1207,7 @@ class MusicProvider extends ChangeNotifier {
           // Outgoing finished mid-fade. For repeat-one this is expected (self
           // handoff); for A→B we continue after commit without a second advance.
           _completionObservedDuringCrossfade = true;
+          _completionObservedSongId = completedSongId;
           if (_repeatMode == PlaybackRepeatMode.one ||
               _repeatSelfHandoffInFlight) {
             // Do not treat as "need to go to next queue item".
@@ -4333,11 +4335,32 @@ class MusicProvider extends ChangeNotifier {
       // crossfading, the normal completion path was suppressed. Force
       // continuation now that the hand-off is finished.
       if (_completionObservedDuringCrossfade) {
+        final completedSongId = _completionObservedSongId;
+        final completedStillCurrent = completedSongId != null &&
+            currentSong?.id == completedSongId;
         _completionObservedDuringCrossfade = false;
+        _completionObservedSongId = null;
         if (!_completionAdvanceInProgress) {
-          unawaited(_ensureContinueAfterCrossfade());
+          unawaited(ResonateDiagnostics.record('completion_transition_recovered', {
+            'result': completedStillCurrent
+                ? 'advance_completed_track'
+                : 'continue_committed_track',
+            'completedSongId': completedSongId,
+            'currentSongId': currentSong?.id,
+            'queueIndex': _queueIndex,
+            'queueLength': _queue.length,
+          }));
+          if (completedStillCurrent) {
+            // The transition did not commit a new queue item. Completion was
+            // suppressed while the fade owned the player, so explicitly hand
+            // the completed song back to the single completion path.
+            unawaited(onTrackEnded(completedSongId));
+          } else {
+            unawaited(_ensureContinueAfterCrossfade());
+          }
         }
       } else {
+        _completionObservedSongId = null;
         _completionObservedDuringCrossfade = false;
       }
     }
@@ -4360,6 +4383,7 @@ class MusicProvider extends ChangeNotifier {
     _crossfadeInProgress = false;
     _completionAdvanceInProgress = false;
     _completionObservedDuringCrossfade = false;
+    _completionObservedSongId = null;
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
     // Silence the *idle* engine only. Hardcoding Engine B used to mute playback
