@@ -1911,24 +1911,33 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _preloadNextForCrossfade() async {
     if (!effectiveCrossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
     final next = _crossfadeTargetSong;
-    if (next == null) return;
-    if (_preloadedNextSongId == next.id) return;
+    if (next == null || _preloadedNextSongId == next.id) return;
+
+    // A preload is automatic work too. Capture ownership so a Mode change,
+    // crossfade toggle, or manual transport cannot let a stale async preload
+    // overwrite the idle engine after a newer command has taken ownership.
+    final generation = _automaticTransitionGeneration;
+    final transportEpoch = _userTransportEpoch;
+    bool stillOwnsPreload() =>
+        generation == _automaticTransitionGeneration &&
+        transportEpoch == _userTransportEpoch &&
+        effectiveCrossfadeEnabled &&
+        _crossfadeTargetSong?.id == next.id;
     _crossfadePreloadInFlight = true;
-    // DJ Mode: priority-warm analysis for current + next queue head (not only idle scan).
+
+    // DJ Mode: priority-warm analysis for current + next queue head.
     if (_djAnalysis != null &&
         (_djBeatAlignActive || _djTempoMatchActive)) {
       final cur = currentSong;
       if (cur != null) _djAnalysis!.scheduleAnalyze(cur);
       _djAnalysis!.scheduleAnalyze(next);
-      // Warm a few upcoming rows so Autopilot/Intelligence handoffs stay ready.
       final start = _queueIndex + 1;
       final end = (start + 4).clamp(0, _queue.length);
       for (var i = start; i < end; i++) {
-        if (i == _crossfadeTargetIndex) continue;
-        _djAnalysis!.scheduleAnalyze(_queue[i]);
+        if (i != _crossfadeTargetIndex) _djAnalysis!.scheduleAnalyze(_queue[i]);
       }
     }
-    // Snapshot outgoing level — never raise A/B while preloading.
+
     final outgoing = audioPlayer;
     double? outgoingVol;
     try {
@@ -1936,47 +1945,68 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {
       outgoingVol = _volume;
     }
+
     try {
       final incoming = inactivePlayer;
       final incomingEq = inactiveEqualizer;
       final incomingLoud = inactiveLoudnessEnhancer;
+
       await incoming.setLoopMode(LoopMode.off);
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.stop();
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       await incoming.setVolume(0.0);
+      if (!stillOwnsPreload()) return;
       await incoming.setAudioSource(AudioSource.uri(_audioUri(next.filePath), tag: next));
+      if (!stillOwnsPreload()) return;
+
       unawaited(_enableEffects(incoming, incomingEq, incomingLoud));
       await incoming.setVolume(0.0);
-      // Decode/warm without staying audible: brief play then pause at volume 0.
+      if (!stillOwnsPreload()) return;
+
+      // Decode/warm muted. Re-check ownership after every delay before
+      // issuing more commands to the shared player.
       try {
         incoming.play();
       } catch (_) {}
       for (var i = 0; i < 6 && !incoming.playing; i++) {
         await Future<void>.delayed(Duration(milliseconds: 30 + i * 15));
+        if (!stillOwnsPreload()) return;
         try {
           await incoming.setVolume(0.0);
         } catch (_) {}
+        if (!stillOwnsPreload()) return;
         if (i % 2 == 0) {
           try {
             incoming.play();
           } catch (_) {}
         }
       }
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.pause();
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.seek(Duration.zero);
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       await incoming.setVolume(0.0);
-      // Restore outgoing if anything touched the active engine (defensive).
+      if (!stillOwnsPreload()) return;
+
+      // Do not let a stale preload restore gain on an engine that has become
+      // active for a newer transition.
       try {
         final targetOut = (outgoingVol ?? _volume).clamp(0.0, 1.0);
-        if ((outgoing.volume - targetOut).abs() > 0.02) {
+        if (identical(outgoing, audioPlayer) &&
+            (outgoing.volume - targetOut).abs() > 0.02) {
           await outgoing.setVolume(targetOut);
         }
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
+
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('crossfade_preloaded', {
         'songId': next.id,
@@ -1986,13 +2016,22 @@ class MusicProvider extends ChangeNotifier {
         'outgoingVolume': outgoingVol,
       });
     } catch (e) {
-      _preloadedNextSongId = null;
-      debugPrint('crossfade preload failed: $e');
-      await ResonateDiagnostics.record('crossfade_preload_failed', {
-        'error': e.toString(),
-      });
+      if (generation == _automaticTransitionGeneration &&
+          transportEpoch == _userTransportEpoch) {
+        if (_preloadedNextSongId == next.id) _preloadedNextSongId = null;
+        debugPrint('crossfade preload failed: $e');
+        await ResonateDiagnostics.record('crossfade_preload_failed', {
+          'error': e.toString(),
+          'songId': next.id,
+        });
+      }
     } finally {
-      _crossfadePreloadInFlight = false;
+      // A cancelled older preload must not clear the in-flight flag belonging
+      // to a newer preload started after cancellation.
+      if (generation == _automaticTransitionGeneration &&
+          transportEpoch == _userTransportEpoch) {
+        _crossfadePreloadInFlight = false;
+      }
     }
   }
 
