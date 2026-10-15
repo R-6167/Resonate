@@ -2572,14 +2572,18 @@ class MusicProvider extends ChangeNotifier {
         _userWantsPlaying = true;
       }
       isPlaying = false;
+      _userWantsPlaying = false;
       currentPosition = currentDuration ?? currentPosition;
       await _persistQueue();
       _publishServiceState();
       notifyListeners();
       await ResonateDiagnostics.record('completion_advance_result', {
-        'result': 'queue_exhausted',
+        'result': skippedFailedTracks > 0
+            ? 'queue_exhausted_after_failed_tracks'
+            : 'queue_exhausted',
         'fromSongId': fromSongId,
         'queueIndex': _queueIndex,
+        'failedTrackCount': skippedFailedTracks,
       });
     } catch (e) {
       await ResonateDiagnostics.record('completion_advance_result', {
