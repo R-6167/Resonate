@@ -2494,7 +2494,7 @@ class MusicProvider extends ChangeNotifier {
         var candidateIndex = -1;
 
         // Prefer the next item in queue order. Repeat All alone may wrap.
-        for (var i = (scanFromIndex + 1).clamp(0, _queue.length); i < _queue.length; i++) {
+        for (var i = (scanFromIndex + 1).clamp(0, _queue.length).toInt(); i < _queue.length; i++) {
           if (!attemptedSongIds.contains(_queue[i].id)) {
             candidateIndex = i;
             break;
@@ -2506,6 +2506,11 @@ class MusicProvider extends ChangeNotifier {
               candidateIndex = i;
               break;
             }
+          }
+          // If every other item failed, give the just-completed item one
+          // final attempt. The bounded outer loop prevents endless retries.
+          if (candidateIndex < 0 && attempt == _queue.length - 1) {
+            candidateIndex = _queue.indexWhere((s) => s.id == fromSongId);
           }
         }
         if (candidateIndex < 0) break;
