@@ -1,6 +1,6 @@
 # Playback controls & crossfade audit
 
-Branch under review: `Resonate-True-Apk` via PR #10 (`fix/repeat-one-cancel-and-mode-return`)
+Branch under review: `fix/queue-completion-recovery` targeting `Resonate-True-Apk`
 
 Audit updated: 2026-10-15
 
@@ -12,6 +12,7 @@ Audit updated: 2026-10-15
 4. **Completion suppressed during a transition is recovered.** The provider remembers which song completed during an automatic transition. When the transition exits, it checks whether the queue actually committed another song. If not, it routes the completed song back through the single completion/advance path; if it did, it only ensures the committed track continues.
 5. **Preload work now has ownership checks.** A crossfade preload captures the automatic-transition generation and user-transport epoch, checks that ownership after asynchronous player operations, and avoids clearing the in-flight flag or error state belonging to a newer preload.
 6. **Stale transition cleanup avoids taking ownership from newer commands.** Crossfade cancellation and repeat-self recovery are guarded so old asynchronous work does not restore volume, pause an engine, or rewrite metadata after a manual transport operation takes over.
+7. **Completion skips failed queue sources instead of stranding playback.** Automatic completion tries each distinct upcoming queue item in order; if a source cannot load, it records the failure and continues to the next candidate. Repeat All may wrap, including a final bounded retry of the just-completed item, without retrying forever.
 
 ## Intended transport rules
 
@@ -38,7 +39,7 @@ Audit updated: 2026-10-15
 | Mode switch while audio is loading | Stream rebinding and loop reconciliation must not race a new source load |
 | Volume and effects | Check master volume, EQ preamp, loudness, DJ bass ducking, and fade gain are restored once—not multiplied or reset unexpectedly |
 | Repeat-one edge timing | Test with short tracks and completion events arriving during both dual-engine and soft-loop fallback |
-| Queue completion recovery | Test when the incoming engine load fails, times out, or completes at the same time as the outgoing engine |
+| Queue completion recovery | Failed queue sources are skipped with bounded attempts; test when an incoming engine load fails, times out, or completes at the same time as the outgoing engine |
 | Test coverage | Provider unit tests cover mode policy gates, but full engine lifecycle and OEM behavior need integration/device tests |
 
 ## Manual regression checklist
@@ -49,12 +50,12 @@ Audit updated: 2026-10-15
 4. Set Repeat All and play through the last queue item; confirm it wraps to the first item.
 5. Switch Audiobook → Normal, then test play/pause, Next, Previous, and library selection without restarting the app.
 6. Start A→B crossfade and press Next or Previous mid-fade; confirm the requested track remains active.
-7. Let a track complete while crossfade is enabled, then repeat with the incoming source unavailable; confirm no stuck completion or duplicate advance.
+7. Let a track complete while crossfade is enabled, then repeat with the next queue source unavailable; confirm the provider skips that source and continues once to the next playable item.
 8. After an engine handoff, adjust system volume and app volume; confirm audio remains audible and at the expected level.
 9. Repeat the tests with the screen off and with local `content://` audio where available.
 
 ## Verification status
 
-- CI previously passed for the earlier PR revision.
-- The current revision must pass CI after the preload ownership guard before merge.
+- PR #10 was merged into `Resonate-True-Apk` and its latest CI run passed.
+- Queue completion recovery is a follow-up change on `fix/queue-completion-recovery`; its CI result is pending until the new PR run completes.
 - CI cannot verify device-specific audio routing, OEM player timing, or actual perceived volume. Those checks remain open until run on hardware.
