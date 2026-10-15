@@ -688,7 +688,9 @@ class MusicProvider extends ChangeNotifier {
         ? LoopMode.off
         : switch (_repeatMode) {
             PlaybackRepeatMode.one => LoopMode.one,
-            PlaybackRepeatMode.all => LoopMode.all,
+            // Repeat-all advances the app queue; native LoopMode.all on a single
+            // source would repeat the current track instead of advancing.
+            PlaybackRepeatMode.all => LoopMode.off,
             PlaybackRepeatMode.off => LoopMode.off,
           };
     try { await idle.pause(); } catch (_) {}
@@ -2776,7 +2778,9 @@ class MusicProvider extends ChangeNotifier {
       final loopMode = (!effectiveCrossfadeEnabled)
           ? switch (_repeatMode) {
               PlaybackRepeatMode.one => LoopMode.one,
-              PlaybackRepeatMode.all => LoopMode.all,
+              // Repeat-all advances the app queue; native LoopMode.all on a single
+            // source would repeat the current track instead of advancing.
+            PlaybackRepeatMode.all => LoopMode.off,
               PlaybackRepeatMode.off => LoopMode.off,
             }
           : LoopMode.off;
