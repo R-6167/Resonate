@@ -117,6 +117,7 @@ class MusicProvider extends ChangeNotifier {
   // Invalidates repeat-one handoffs when crossfade is disabled or a newer
   // transport/mode command takes ownership.
   int _repeatSelfGeneration = 0;
+  int _modeBoundaryGeneration = 0;
   String? _repeatSelfTargetSongId;
   /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
   bool _djBeatAlignActive = false;
@@ -456,7 +457,13 @@ class MusicProvider extends ChangeNotifier {
     await _persistPlaybackModes(); await _persistQueue(); notifyListeners();
   }
 
-  Future<void> setRepeatMode(PlaybackRepeatMode mode) async { _repeatMode = mode; await _persistPlaybackModes(); notifyListeners(); }
+  Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
+    if (_repeatMode == mode) return;
+    _repeatMode = mode;
+    await _persistPlaybackModes();
+    unawaited(_synchronizeModePlaybackBoundary());
+    notifyListeners();
+  }
 
   Future<void> _persistPlaybackModes() async {
     try {
@@ -650,7 +657,33 @@ class MusicProvider extends ChangeNotifier {
       }));
     }
 
-    if (changed) notifyListeners();
+    if (changed) {
+      unawaited(_synchronizeModePlaybackBoundary());
+      notifyListeners();
+    }
+  }
+
+  /// Reconcile native loop state and stream ownership when Modes changes the
+  /// playback policy. AudioPlayer loop mode persists across Mode boundaries;
+  /// without this, Audiobook's LoopMode.one can leak into Normal mode.
+  Future<void> _synchronizeModePlaybackBoundary() async {
+    final generation = ++_modeBoundaryGeneration;
+    final active = audioPlayer;
+    final idle = inactivePlayer;
+    final activeLoop = effectiveCrossfadeEnabled
+        ? LoopMode.off
+        : switch (_repeatMode) {
+            PlaybackRepeatMode.one => LoopMode.one,
+            PlaybackRepeatMode.all => LoopMode.all,
+            PlaybackRepeatMode.off => LoopMode.off,
+          };
+    try { await idle.pause(); } catch (_) {}
+    try { await idle.setVolume(0.0); } catch (_) {}
+    try { await idle.setLoopMode(LoopMode.off); } catch (_) {}
+    try { await active.setLoopMode(activeLoop); } catch (_) {}
+    if (generation != _modeBoundaryGeneration || !identical(active, audioPlayer)) return;
+    _bindActivePlayerStreams();
+    _publishServiceState();
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async {
@@ -679,6 +712,7 @@ class MusicProvider extends ChangeNotifier {
       }));
     }
 
+    unawaited(_synchronizeModePlaybackBoundary());
     notifyListeners();
   }
 
