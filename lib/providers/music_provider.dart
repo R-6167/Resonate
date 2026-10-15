@@ -97,6 +97,7 @@ class MusicProvider extends ChangeNotifier {
   bool _crossfadeInProgress = false;
   bool _completionAdvanceInProgress = false;
   bool _completionObservedDuringCrossfade = false;
+  String? _completionObservedSongId;
   bool _queueRestoreInProgress = false;
   bool _crossfadeEnabled = false;
   int _crossfadeDurationMs = 3000;
@@ -114,6 +115,10 @@ class MusicProvider extends ChangeNotifier {
   /// Repeat-one + crossfade: seamless loop via idle engine (no queue advance).
   bool _repeatSelfHandoffArmed = false;
   bool _repeatSelfHandoffInFlight = false;
+  // Invalidates repeat-one handoffs when crossfade is disabled or a newer
+  // transport/mode command takes ownership.
+  int _repeatSelfGeneration = 0;
+  int _modeBoundaryGeneration = 0;
   String? _repeatSelfTargetSongId;
   /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
   bool _djBeatAlignActive = false;
@@ -453,7 +458,22 @@ class MusicProvider extends ChangeNotifier {
     await _persistPlaybackModes(); await _persistQueue(); notifyListeners();
   }
 
-  Future<void> setRepeatMode(PlaybackRepeatMode mode) async { _repeatMode = mode; await _persistPlaybackModes(); notifyListeners(); }
+  Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
+    if (_repeatMode == mode) return;
+    final transitionActive = _crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight ||
+        _preloadedNextSongId != null;
+    // Repeat mode changes the meaning of an in-flight transition. In
+    // particular, turning Repeat One off must invalidate its self-loop before
+    // that stale operation can commit or fall back to replaying the old track.
+    if (transitionActive) _cancelAutomaticPlaybackWork();
+    _repeatMode = mode;
+    await _persistPlaybackModes();
+    unawaited(_synchronizeModePlaybackBoundary());
+    notifyListeners();
+  }
 
   Future<void> _persistPlaybackModes() async {
     try {
@@ -647,7 +667,55 @@ class MusicProvider extends ChangeNotifier {
       }));
     }
 
-    if (changed) notifyListeners();
+    if (changed) {
+      unawaited(_synchronizeModePlaybackBoundary());
+      notifyListeners();
+    }
+  }
+
+  /// Reconcile native loop state and stream ownership when Modes changes the
+  /// playback policy. AudioPlayer loop mode persists across Mode boundaries;
+  /// without this, Audiobook's LoopMode.one can leak into Normal mode.
+  Future<void> _synchronizeModePlaybackBoundary() async {
+    final generation = ++_modeBoundaryGeneration;
+    // A policy update must never pause an engine after a new handoff has
+    // started. Re-check ownership after each await, not only at method exit.
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight) return;
+    final active = audioPlayer;
+    final idle = inactivePlayer;
+    bool ownsBoundary() =>
+        generation == _modeBoundaryGeneration &&
+        identical(active, audioPlayer) &&
+        identical(idle, inactivePlayer) &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight &&
+        !_repeatSelfHandoffInFlight;
+
+    final activeLoop = effectiveCrossfadeEnabled
+        ? LoopMode.off
+        : switch (_repeatMode) {
+            PlaybackRepeatMode.one => LoopMode.one,
+            // Repeat-all advances the app queue; native LoopMode.all on a single
+            // source would repeat the current track instead of advancing.
+            PlaybackRepeatMode.all => LoopMode.off,
+            PlaybackRepeatMode.off => LoopMode.off,
+          };
+    try { await idle.pause(); } catch (_) {}
+    if (!ownsBoundary()) return;
+    try { await idle.setVolume(0.0); } catch (_) {}
+    if (!ownsBoundary()) return;
+    try { await idle.setLoopMode(LoopMode.off); } catch (_) {}
+    if (!ownsBoundary()) return;
+    try { await active.setLoopMode(activeLoop); } catch (_) {}
+    if (!ownsBoundary()) return;
+    if (!_isDucked) {
+      try { await active.setVolume(_eqPreampScale.clamp(0.0, 1.0)); } catch (_) {}
+    }
+    if (!ownsBoundary()) return;
+    _bindActivePlayerStreams();
+    _publishServiceState();
   }
 
   Future<void> setCrossfadeEnabled(bool enabled) async {
@@ -676,6 +744,7 @@ class MusicProvider extends ChangeNotifier {
       }));
     }
 
+    unawaited(_synchronizeModePlaybackBoundary());
     notifyListeners();
   }
 
@@ -1147,6 +1216,7 @@ class MusicProvider extends ChangeNotifier {
           // Outgoing finished mid-fade. For repeat-one this is expected (self
           // handoff); for A→B we continue after commit without a second advance.
           _completionObservedDuringCrossfade = true;
+          _completionObservedSongId = completedSongId;
           if (_repeatMode == PlaybackRepeatMode.one ||
               _repeatSelfHandoffInFlight) {
             // Do not treat as "need to go to next queue item".
@@ -1371,6 +1441,7 @@ class MusicProvider extends ChangeNotifier {
 
   /// Prefer dual-engine A→B self-crossfade; fall back to soft loop on timeout.
   Future<void> _runRepeatSelfDualOrSoft({required int loopMs}) async {
+    final generation = _repeatSelfGeneration;
     final song = currentSong;
     if (song == null) {
       _automaticCrossfadeInFlight = false;
@@ -1378,13 +1449,33 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     final ms = loopMs.clamp(1200, 4000);
-    final ok = await _performRepeatSelfDual(milliseconds: ms).timeout(
+    final ok = await _performRepeatSelfDual(
+      milliseconds: ms,
+      generation: generation,
+    ).timeout(
       Duration(milliseconds: ms + 4500),
       onTimeout: () {
         debugPrint('repeat self dual timed out');
+        // Future.timeout does not cancel the underlying native operation.
+        // Invalidate it instead of starting a competing soft loop.
+        if (_repeatSelfGeneration == generation) {
+          _repeatSelfGeneration++;
+          _automaticCrossfadeInFlight = false;
+          _crossfadeInProgress = false;
+          _repeatSelfHandoffInFlight = false;
+          _repeatSelfHandoffArmed = false;
+          _repeatSelfTargetSongId = null;
+          unawaited(_recoverCancelledRepeatSelfEngine());
+        }
         return false;
       },
     );
+    if (_repeatSelfGeneration != generation ||
+        !_repeatSelfHandoffInFlight ||
+        !effectiveCrossfadeEnabled ||
+        _repeatMode != PlaybackRepeatMode.one) {
+      return;
+    }
     if (ok) {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
@@ -1397,14 +1488,28 @@ class MusicProvider extends ChangeNotifier {
       }
       return;
     }
+    // Only genuine load/play failures may use the single-engine fallback.
+    // Cancellation or a changed mode/setting must never restart Track A.
+    if (_repeatSelfGeneration != generation ||
+        !_repeatSelfHandoffInFlight ||
+        !effectiveCrossfadeEnabled ||
+        _repeatMode != PlaybackRepeatMode.one) {
+      return;
+    }
     unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
-      'reason': 'dual_timeout_or_fail',
+      'reason': 'dual_load_or_play_failed',
       'songId': song.id,
     }));
-    await _runRepeatSelfSoftLoop(loopMs: math.min(ms, 2000));
+    await _runRepeatSelfSoftLoop(
+      loopMs: math.min(ms, 2000),
+      generation: generation,
+    );
   }
 
-  Future<bool> _performRepeatSelfDual({required int milliseconds}) async {
+  Future<bool> _performRepeatSelfDual({
+    required int milliseconds,
+    required int generation,
+  }) async {
     final song = currentSong;
     if (song == null || song.filePath.trim().isEmpty) return false;
     if (!audioPlayer.playing && !_userWantsPlaying) return false;
@@ -1427,6 +1532,10 @@ class MusicProvider extends ChangeNotifier {
         song,
         start: false,
       ).timeout(const Duration(milliseconds: 2800));
+      if (!_repeatSelfTransitionCurrent(generation)) {
+        await _abortRepeatSelfEngine(incoming);
+        return false;
+      }
       try {
         await incoming.seek(Duration.zero);
       } catch (_) {}
@@ -1444,7 +1553,10 @@ class MusicProvider extends ChangeNotifier {
           incoming.play();
         } catch (_) {}
       }
-      if (!incoming.playing) return false;
+      if (!incoming.playing || !_repeatSelfTransitionCurrent(generation)) {
+        await _abortRepeatSelfEngine(incoming);
+        return false;
+      }
 
       unawaited(ResonateDiagnostics.record('repeat_self_ramp', {
         'mode': 'dual',
@@ -1458,7 +1570,10 @@ class MusicProvider extends ChangeNotifier {
       final stepMs = (ms / steps).round().clamp(20, 60);
       final startOut = outgoing.volume.clamp(0.05, 1.0);
       for (var i = 1; i <= steps; i++) {
-        if (!_userWantsPlaying || !_repeatSelfHandoffInFlight) return false;
+        if (!_repeatSelfTransitionCurrent(generation)) {
+          await _abortRepeatSelfEngine(incoming);
+          return false;
+        }
         final t = i / steps;
         final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);
         final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);
@@ -1471,6 +1586,10 @@ class MusicProvider extends ChangeNotifier {
         await Future<void>.delayed(Duration(milliseconds: stepMs));
       }
 
+      if (!_repeatSelfTransitionCurrent(generation)) {
+        await _abortRepeatSelfEngine(incoming);
+        return false;
+      }
       _activeIsA = !_activeIsA;
       _lastCompletionSongId = null;
       currentPosition = incoming.position;
@@ -1480,15 +1599,21 @@ class MusicProvider extends ChangeNotifier {
       _publishServiceState();
       notifyListeners();
 
+      // A user command can arrive just after the engine swap. Do not let this
+      // old handoff's cleanup pause or retune an engine now owned by that command.
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.pause();
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.setVolume(master);
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await outgoing.setSpeed(1.0);
       } catch (_) {}
+      if (generation != _repeatSelfGeneration) return true;
       try {
         await incoming.setVolume(master);
       } catch (_) {}
@@ -1503,23 +1628,50 @@ class MusicProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('repeat dual failed: $e');
       debugPrint('$st');
-      try {
-        await incoming.pause();
-      } catch (_) {}
-      try {
-        await incoming.setVolume(0.0);
-      } catch (_) {}
-      try {
-        await outgoing.setVolume(master);
-      } catch (_) {}
+      try { await incoming.pause(); } catch (_) {}
+      try { await incoming.setVolume(0.0); } catch (_) {}
+      if (_repeatSelfGeneration == generation &&
+          identical(outgoing, audioPlayer)) {
+        try { await outgoing.setVolume(master); } catch (_) {}
+      }
       return false;
     }
   }
 
+  bool _repeatSelfTransitionCurrent(int generation) =>
+      generation == _repeatSelfGeneration &&
+      _repeatSelfHandoffInFlight &&
+      effectiveCrossfadeEnabled &&
+      _repeatMode == PlaybackRepeatMode.one &&
+      _userWantsPlaying;
+
+  Future<void> _abortRepeatSelfEngine(AudioPlayer incoming) async {
+    try { await incoming.pause(); } catch (_) {}
+    try { await incoming.setVolume(0.0); } catch (_) {}
+    // The cancellation owner restores the outgoing gain only when no newer
+    // transport command has taken ownership; stale work must not boost it.
+  }
+
+  Future<void> _recoverCancelledRepeatSelfEngine() async {
+    final active = audioPlayer;
+    final idle = inactivePlayer;
+    try { await idle.pause(); } catch (_) {}
+    try { await idle.setVolume(0.0); } catch (_) {}
+    try {
+      if (identical(active, audioPlayer)) {
+        await active.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+      }
+    } catch (_) {}
+  }
+
   /// Soft loop: fade out → seek(0) → fade in on the *active* engine only.
   /// Avoids loading the same content:// URI on A and B (OEM hang / static).
-  Future<void> _runRepeatSelfSoftLoop({required int loopMs}) async {
+  Future<void> _runRepeatSelfSoftLoop({
+    required int loopMs,
+    required int generation,
+  }) async {
     final song = currentSong;
+    if (!_repeatSelfTransitionCurrent(generation)) return;
     if (song == null) {
       _automaticCrossfadeInFlight = false;
       _repeatSelfHandoffInFlight = false;
@@ -1545,6 +1697,7 @@ class MusicProvider extends ChangeNotifier {
 
       final from = player.volume.clamp(0.0, 1.0);
       await _fadePlayerVolume(player, from, 0.0, durationMs: ms ~/ 2);
+      if (!_repeatSelfTransitionCurrent(generation)) return;
       if (!_userWantsPlaying) {
         unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
           'reason': 'user_stopped',
@@ -1557,6 +1710,7 @@ class MusicProvider extends ChangeNotifier {
       } catch (e) {
         debugPrint('soft loop seek: $e');
       }
+      if (!_repeatSelfTransitionCurrent(generation)) return;
       currentPosition = Duration.zero;
       try {
         player.play();
@@ -1567,7 +1721,9 @@ class MusicProvider extends ChangeNotifier {
           player.play();
         } catch (_) {}
       }
+      if (!_repeatSelfTransitionCurrent(generation)) return;
       await _fadePlayerVolume(player, 0.0, master, durationMs: ms ~/ 2);
+      if (!_repeatSelfTransitionCurrent(generation)) return;
       isPlaying = player.playing || _userWantsPlaying;
       _lastCompletionSongId = null;
       _publishServiceState();
@@ -1581,35 +1737,40 @@ class MusicProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('soft loop failed: $e');
       debugPrint('$st');
-      try {
-        await player.seek(Duration.zero);
-        if (_userWantsPlaying) {
-          try {
-            player.play();
-          } catch (_) {}
-          try {
-            await player.setVolume(master);
-          } catch (_) {}
-        }
-      } catch (_) {}
-      unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
-        'reason': 'soft_loop_error',
-        'songId': song.id,
-        'error': '$e',
-      }));
+      // Do not restart or rewind after a user/mode cancellation.
+      if (generation == _repeatSelfGeneration && _repeatSelfHandoffInFlight) {
+        try {
+          await player.seek(Duration.zero);
+          if (_userWantsPlaying) {
+            try { player.play(); } catch (_) {}
+            try { await player.setVolume(master); } catch (_) {}
+          }
+        } catch (_) {}
+        unawaited(ResonateDiagnostics.record('repeat_self_fallback', {
+          'reason': 'soft_loop_error',
+          'songId': song.id,
+          'error': '$e',
+        }));
+      }
     } finally {
-      _automaticCrossfadeInFlight = false;
-      _crossfadeInProgress = false;
-      _repeatSelfHandoffInFlight = false;
-      _repeatSelfHandoffArmed = false;
-      _repeatSelfTargetSongId = null;
+      // A stale loop must not clear state owned by a newer transition.
+      if (generation == _repeatSelfGeneration) {
+        _automaticCrossfadeInFlight = false;
+        _crossfadeInProgress = false;
+        _repeatSelfHandoffInFlight = false;
+        _repeatSelfHandoffArmed = false;
+        _repeatSelfTargetSongId = null;
+      }
     }
   }
 
   Future<void> _runRepeatSelfHandoff() async {
     // Legacy entry — redirect to soft loop.
     final loopMs = _crossfadeDurationMs.clamp(800, 3500);
-    await _runRepeatSelfSoftLoop(loopMs: loopMs);
+    await _runRepeatSelfSoftLoop(
+      loopMs: loopMs,
+      generation: _repeatSelfGeneration,
+    );
   }
 
   Future<bool> _performRepeatSelfHandoff({
@@ -1759,24 +1920,33 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _preloadNextForCrossfade() async {
     if (!effectiveCrossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
     final next = _crossfadeTargetSong;
-    if (next == null) return;
-    if (_preloadedNextSongId == next.id) return;
+    if (next == null || _preloadedNextSongId == next.id) return;
+
+    // A preload is automatic work too. Capture ownership so a Mode change,
+    // crossfade toggle, or manual transport cannot let a stale async preload
+    // overwrite the idle engine after a newer command has taken ownership.
+    final generation = _automaticTransitionGeneration;
+    final transportEpoch = _userTransportEpoch;
+    bool stillOwnsPreload() =>
+        generation == _automaticTransitionGeneration &&
+        transportEpoch == _userTransportEpoch &&
+        effectiveCrossfadeEnabled &&
+        _crossfadeTargetSong?.id == next.id;
     _crossfadePreloadInFlight = true;
-    // DJ Mode: priority-warm analysis for current + next queue head (not only idle scan).
+
+    // DJ Mode: priority-warm analysis for current + next queue head.
     if (_djAnalysis != null &&
         (_djBeatAlignActive || _djTempoMatchActive)) {
       final cur = currentSong;
       if (cur != null) _djAnalysis!.scheduleAnalyze(cur);
       _djAnalysis!.scheduleAnalyze(next);
-      // Warm a few upcoming rows so Autopilot/Intelligence handoffs stay ready.
       final start = _queueIndex + 1;
       final end = (start + 4).clamp(0, _queue.length);
       for (var i = start; i < end; i++) {
-        if (i == _crossfadeTargetIndex) continue;
-        _djAnalysis!.scheduleAnalyze(_queue[i]);
+        if (i != _crossfadeTargetIndex) _djAnalysis!.scheduleAnalyze(_queue[i]);
       }
     }
-    // Snapshot outgoing level — never raise A/B while preloading.
+
     final outgoing = audioPlayer;
     double? outgoingVol;
     try {
@@ -1784,47 +1954,68 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {
       outgoingVol = _volume;
     }
+
     try {
       final incoming = inactivePlayer;
       final incomingEq = inactiveEqualizer;
       final incomingLoud = inactiveLoudnessEnhancer;
+
       await incoming.setLoopMode(LoopMode.off);
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.stop();
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       await incoming.setVolume(0.0);
+      if (!stillOwnsPreload()) return;
       await incoming.setAudioSource(AudioSource.uri(_audioUri(next.filePath), tag: next));
+      if (!stillOwnsPreload()) return;
+
       unawaited(_enableEffects(incoming, incomingEq, incomingLoud));
       await incoming.setVolume(0.0);
-      // Decode/warm without staying audible: brief play then pause at volume 0.
+      if (!stillOwnsPreload()) return;
+
+      // Decode/warm muted. Re-check ownership after every delay before
+      // issuing more commands to the shared player.
       try {
         incoming.play();
       } catch (_) {}
       for (var i = 0; i < 6 && !incoming.playing; i++) {
         await Future<void>.delayed(Duration(milliseconds: 30 + i * 15));
+        if (!stillOwnsPreload()) return;
         try {
           await incoming.setVolume(0.0);
         } catch (_) {}
+        if (!stillOwnsPreload()) return;
         if (i % 2 == 0) {
           try {
             incoming.play();
           } catch (_) {}
         }
       }
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.pause();
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       try {
         await incoming.seek(Duration.zero);
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
       await incoming.setVolume(0.0);
-      // Restore outgoing if anything touched the active engine (defensive).
+      if (!stillOwnsPreload()) return;
+
+      // Do not let a stale preload restore gain on an engine that has become
+      // active for a newer transition.
       try {
         final targetOut = (outgoingVol ?? _volume).clamp(0.0, 1.0);
-        if ((outgoing.volume - targetOut).abs() > 0.02) {
+        if (identical(outgoing, audioPlayer) &&
+            (outgoing.volume - targetOut).abs() > 0.02) {
           await outgoing.setVolume(targetOut);
         }
       } catch (_) {}
+      if (!stillOwnsPreload()) return;
+
       _preloadedNextSongId = next.id;
       await ResonateDiagnostics.record('crossfade_preloaded', {
         'songId': next.id,
@@ -1834,13 +2025,22 @@ class MusicProvider extends ChangeNotifier {
         'outgoingVolume': outgoingVol,
       });
     } catch (e) {
-      _preloadedNextSongId = null;
-      debugPrint('crossfade preload failed: $e');
-      await ResonateDiagnostics.record('crossfade_preload_failed', {
-        'error': e.toString(),
-      });
+      if (generation == _automaticTransitionGeneration &&
+          transportEpoch == _userTransportEpoch) {
+        if (_preloadedNextSongId == next.id) _preloadedNextSongId = null;
+        debugPrint('crossfade preload failed: $e');
+        await ResonateDiagnostics.record('crossfade_preload_failed', {
+          'error': e.toString(),
+          'songId': next.id,
+        });
+      }
     } finally {
-      _crossfadePreloadInFlight = false;
+      // A cancelled older preload must not clear the in-flight flag belonging
+      // to a newer preload started after cancellation.
+      if (generation == _automaticTransitionGeneration &&
+          transportEpoch == _userTransportEpoch) {
+        _crossfadePreloadInFlight = false;
+      }
     }
   }
 
@@ -2628,7 +2828,9 @@ class MusicProvider extends ChangeNotifier {
       final loopMode = (!effectiveCrossfadeEnabled)
           ? switch (_repeatMode) {
               PlaybackRepeatMode.one => LoopMode.one,
-              PlaybackRepeatMode.all => LoopMode.all,
+              // Repeat-all advances the app queue; native LoopMode.all on a single
+            // source would repeat the current track instead of advancing.
+            PlaybackRepeatMode.all => LoopMode.off,
               PlaybackRepeatMode.off => LoopMode.off,
             }
           : LoopMode.off;
@@ -4181,11 +4383,32 @@ class MusicProvider extends ChangeNotifier {
       // crossfading, the normal completion path was suppressed. Force
       // continuation now that the hand-off is finished.
       if (_completionObservedDuringCrossfade) {
+        final completedSongId = _completionObservedSongId;
+        final completedStillCurrent = completedSongId != null &&
+            currentSong?.id == completedSongId;
         _completionObservedDuringCrossfade = false;
+        _completionObservedSongId = null;
         if (!_completionAdvanceInProgress) {
-          unawaited(_ensureContinueAfterCrossfade());
+          unawaited(ResonateDiagnostics.record('completion_transition_recovered', {
+            'result': completedStillCurrent
+                ? 'advance_completed_track'
+                : 'continue_committed_track',
+            'completedSongId': completedSongId,
+            'currentSongId': currentSong?.id,
+            'queueIndex': _queueIndex,
+            'queueLength': _queue.length,
+          }));
+          if (completedStillCurrent) {
+            // The transition did not commit a new queue item. Completion was
+            // suppressed while the fade owned the player, so explicitly hand
+            // the completed song back to the single completion path.
+            unawaited(onTrackEnded(completedSongId!));
+          } else {
+            unawaited(_ensureContinueAfterCrossfade());
+          }
         }
       } else {
+        _completionObservedSongId = null;
         _completionObservedDuringCrossfade = false;
       }
     }
@@ -4196,7 +4419,10 @@ class MusicProvider extends ChangeNotifier {
   void _cancelAutomaticPlaybackWork() {
     // Invalidate all in-flight automatic A/B work before starting the user's
     // transport operation. Old futures may still unwind, but cannot commit.
+    final hadRepeatSelfHandoff = _repeatSelfHandoffArmed || _repeatSelfHandoffInFlight;
+    _repeatSelfGeneration++;
     _userTransportEpoch++;
+    final cancellationEpoch = _userTransportEpoch;
     _automaticTransitionGeneration++;
     // A resume/duck/route-recovery fade must not keep writing volume after
     // a newer manual transport command takes ownership.
@@ -4205,6 +4431,7 @@ class MusicProvider extends ChangeNotifier {
     _crossfadeInProgress = false;
     _completionAdvanceInProgress = false;
     _completionObservedDuringCrossfade = false;
+    _completionObservedSongId = null;
     _preloadedNextSongId = null;
     _crossfadePreloadInFlight = false;
     // Silence the *idle* engine only. Hardcoding Engine B used to mute playback
@@ -4222,9 +4449,15 @@ class MusicProvider extends ChangeNotifier {
         try {
           await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
         } catch (_) {}
-        // Do not force the active engine to master during cancellation. It may
-        // still be in a fade, or a user-selected track may be taking ownership;
-        // boosting here creates a transient volume jump before that handoff.
+        // A cancelled repeat-one ramp may have attenuated the active engine.
+        // Restore it only if no newer transport command has taken ownership.
+        if (hadRepeatSelfHandoff &&
+            _userTransportEpoch == cancellationEpoch &&
+            identical(active, audioPlayer)) {
+          try {
+            await active.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+          } catch (_) {}
+        }
       } catch (_) {}
     }());
     if (_repeatSelfHandoffArmed || _repeatSelfHandoffInFlight) {
