@@ -2482,69 +2482,108 @@ class MusicProvider extends ChangeNotifier {
         });
         return;
       }
-      if (fromIndex < _queue.length - 1) {
-        final next = _queue[fromIndex + 1];
-        final ok = await _playSongInternal(next, queue: _queue, startIndex: fromIndex + 1, playbackIntentToken: intentToken);
-        // Guarantee audible start after auto-advance (no user gesture available).
-        if (ok && !audioPlayer.playing && _userWantsPlaying) {
-          try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
-          } catch (_) {}
-          try {
-            await audioPlayer.seek(Duration.zero);
-          } catch (_) {}
-          try {
-            await audioPlayer.play();
-          } catch (_) {}
-          isPlaying = audioPlayer.playing || _userWantsPlaying;
-          _publishServiceState();
-          notifyListeners();
+      // A queue item can fail to load (for example a stale MediaStore URI).
+      // Do not strand playback on that item while later queue entries are valid.
+      // Track IDs rather than indices because _playSongInternal may reorder the
+      // queue when shuffle is enabled.
+      final attemptedSongIds = <String>{fromSongId};
+      var scanFromIndex = fromIndex;
+      var skippedFailedTracks = 0;
+      for (var attempt = 0; attempt < _queue.length; attempt++) {
+        if (_queue.isEmpty) break;
+        var candidateIndex = -1;
+
+        // Prefer the next item in queue order. Repeat All alone may wrap.
+        for (var i = (scanFromIndex + 1).clamp(0, _queue.length).toInt(); i < _queue.length; i++) {
+          if (!attemptedSongIds.contains(_queue[i].id)) {
+            candidateIndex = i;
+            break;
+          }
         }
-        await ResonateDiagnostics.record('completion_advance_result', {
-          'result': ok ? 'advanced' : 'failed',
-          'fromSongId': fromSongId,
-          'toSongId': currentSong?.id,
-          'queueIndex': _queueIndex,
-          'playing': audioPlayer.playing,
-        });
-        return;
-      }
-      if (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty) {
-        final ok = await _playSongInternal(_queue.first, queue: _queue, startIndex: 0, playbackIntentToken: intentToken);
-        if (ok && !audioPlayer.playing && _userWantsPlaying) {
-          try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
-          } catch (_) {}
-          try {
-            await audioPlayer.seek(Duration.zero);
-          } catch (_) {}
-          try {
-            await audioPlayer.play();
-          } catch (_) {}
-          isPlaying = audioPlayer.playing || _userWantsPlaying;
-          _publishServiceState();
-          notifyListeners();
+        if (candidateIndex < 0 && _repeatMode == PlaybackRepeatMode.all) {
+          for (var i = 0; i < _queue.length; i++) {
+            if (!attemptedSongIds.contains(_queue[i].id)) {
+              candidateIndex = i;
+              break;
+            }
+          }
+          // If every other item failed, give the just-completed item one
+          // final attempt. The bounded outer loop prevents endless retries.
+          if (candidateIndex < 0 && attempt == _queue.length - 1) {
+            candidateIndex = _queue.indexWhere((s) => s.id == fromSongId);
+          }
         }
+        if (candidateIndex < 0) break;
+
+        final candidate = _queue[candidateIndex];
+        attemptedSongIds.add(candidate.id);
+        _userWantsPlaying = true;
+        final ok = await _playSongInternal(
+          candidate,
+          queue: _queue,
+          startIndex: candidateIndex,
+          playbackIntentToken: intentToken,
+        );
+
+        if (ok) {
+          // Guarantee an audible start after auto-advance (no user gesture).
+          if (!audioPlayer.playing && _userWantsPlaying) {
+            try {
+              final session = await AudioSession.instance;
+              await session.setActive(true);
+            } catch (_) {}
+            try {
+              await audioPlayer.seek(Duration.zero);
+            } catch (_) {}
+            try {
+              audioPlayer.play();
+            } catch (_) {}
+            isPlaying = audioPlayer.playing || _userWantsPlaying;
+            _publishServiceState();
+            notifyListeners();
+          }
+          await ResonateDiagnostics.record('completion_advance_result', {
+            'result': skippedFailedTracks > 0
+                ? 'advanced_after_failed_tracks'
+                : (candidateIndex <= fromIndex &&
+                        _repeatMode == PlaybackRepeatMode.all
+                    ? 'wrapped'
+                    : 'advanced'),
+            'fromSongId': fromSongId,
+            'toSongId': currentSong?.id,
+            'queueIndex': _queueIndex,
+            'failedTrackCount': skippedFailedTracks,
+            'playing': audioPlayer.playing,
+          });
+          return;
+        }
+
+        skippedFailedTracks++;
+        scanFromIndex = _queueIndex;
         await ResonateDiagnostics.record('completion_advance_result', {
-          'result': ok ? 'wrapped' : 'failed',
+          'result': 'skipped_unplayable_track',
           'fromSongId': fromSongId,
-          'toSongId': currentSong?.id,
+          'failedSongId': candidate.id,
+          'failedTrackCount': skippedFailedTracks,
           'queueIndex': _queueIndex,
-          'playing': audioPlayer.playing,
         });
-        return;
+        // _playSongInternal marks user intent false on failure; auto-advance
+        // still owns the transport and may try the next distinct queue item.
+        _userWantsPlaying = true;
       }
       isPlaying = false;
+      _userWantsPlaying = false;
       currentPosition = currentDuration ?? currentPosition;
       await _persistQueue();
       _publishServiceState();
       notifyListeners();
       await ResonateDiagnostics.record('completion_advance_result', {
-        'result': 'queue_exhausted',
+        'result': skippedFailedTracks > 0
+            ? 'queue_exhausted_after_failed_tracks'
+            : 'queue_exhausted',
         'fromSongId': fromSongId,
         'queueIndex': _queueIndex,
+        'failedTrackCount': skippedFailedTracks,
       });
     } catch (e) {
       await ResonateDiagnostics.record('completion_advance_result', {
