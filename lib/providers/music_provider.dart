@@ -459,6 +459,15 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setRepeatMode(PlaybackRepeatMode mode) async {
     if (_repeatMode == mode) return;
+    final transitionActive = _crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _crossfadePreloadInFlight ||
+        _preloadedNextSongId != null;
+    // Repeat mode changes the meaning of an in-flight transition. In
+    // particular, turning Repeat One off must invalidate its self-loop before
+    // that stale operation can commit or fall back to replaying the old track.
+    if (transitionActive) _cancelAutomaticPlaybackWork();
     _repeatMode = mode;
     await _persistPlaybackModes();
     unawaited(_synchronizeModePlaybackBoundary());
