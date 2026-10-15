@@ -1,53 +1,60 @@
-# Playback controls & crossfade audit (modes_on_dj_v2)
+# Playback controls & crossfade audit
 
-Date: 2026-10-07
+Branch under review: `Resonate-True-Apk` via PR #10 (`fix/repeat-one-cancel-and-mode-return`)
 
-## Fixed in this pass
+Audit updated: 2026-10-15
 
-1. **`_cancelAutomaticPlaybackWork` silenced Engine B always**  
-   After a successful crossfade, active engine is often **B**. Pause / next /
-   previous called cancel, which paused and zeroed **B** → silent playback or
-   dead volume after skip. **Fix:** only silence `inactivePlayer`; restore
-   active volume toward master when user still wants play.
+## Fixes implemented in this pass
 
-2. **`canCrossfadeNext` ignored mode/user crossfade enable**  
-   Could theoretically arm paths when `effectiveCrossfadeEnabled` was false.
-   **Fix:** gate on `effectiveCrossfadeEnabled` first.
+1. **Repeat One cancellation is generation-guarded.** Turning Repeat One or crossfade off invalidates an in-flight self-handoff so a timed-out dual-engine transition cannot fall back to a stale soft loop and replay the old song.
+2. **Mode boundary reconciles native loop state.** Audiobook's native `LoopMode.one` is not allowed to leak into Normal mode. The inactive engine is quieted and active stream subscriptions are rebound after policy changes, except while an automatic handoff owns the engines.
+3. **Repeat All is queue-driven.** Native `LoopMode.all` is disabled for the single-source player. Queue completion advances to the next song and wraps to index zero at the end.
+4. **Completion suppressed during a transition is recovered.** The provider remembers which song completed during an automatic transition. When the transition exits, it checks whether the queue actually committed another song. If not, it routes the completed song back through the single completion/advance path; if it did, it only ensures the committed track continues.
+5. **Preload work now has ownership checks.** A crossfade preload captures the automatic-transition generation and user-transport epoch, checks that ownership after asynchronous player operations, and avoids clearing the in-flight flag or error state belonging to a newer preload.
+6. **Stale transition cleanup avoids taking ownership from newer commands.** Crossfade cancellation and repeat-self recovery are guarded so old asynchronous work does not restore volume, pause an engine, or rewrite metadata after a manual transport operation takes over.
 
-3. **Seek during crossfade**  
-   Seek only moved the active (outgoing) engine while fade continued on both.
-   **Fix:** cancel in-flight transition before seek when a fade is active.
+## Intended transport rules
 
-## Still watch (not changed / residual risk)
+| User action or state | Required behavior |
+|---|---|
+| Repeat One + crossfade | Repeat the same song; do not advance the queue or publish another song as current |
+| Disable Repeat One during self-handoff | Cancel old self-handoff; next completion follows the newly selected repeat policy |
+| Repeat All | Advance through queue, then wrap to first item; never native-loop only the current source |
+| Disable crossfade during preload/fade | Invalidate automatic work; do not let stale preload commit after the setting changes |
+| Mode disables crossfade | No new automatic fade under the blocked policy; do not interrupt an already committed active song |
+| Audiobook → Normal | Restore Normal repeat/crossfade policy and transport controls without force-stopping the app |
+| Completion during an A→B transition | Advance exactly once if the fade did not commit a new queue item; otherwise continue the committed item |
+| Manual Next / Previous / song selection | New user transport owns the engines; stale automatic work cannot later switch the track back |
+| Pause | No automatic recovery should resume playback against the user's pause intent |
+| Seek during fade | Abort/serialize conflicting transition work so the engines cannot diverge in position |
 
-| Area | Risk | Notes |
-|------|------|--------|
-| Dual-engine OEM load | Incoming `play()` hang | Timeouts + hard `_playSongInternal` fallback exist |
-| Gapless + crossfade | Index jump | Flattened to single URI at crossfade start |
-| Repeat-one + completion | Title jumps to B | Mitigated: completion suppressed for repeat-one |
-| Mode Podcast/Audiobook | Crossfade force-off | Soft gate; Crossfade screen may still look “on” |
-| Two-finger Running | Single finger snackbar | Does not cancel crossfade |
-| `setVolume` mid-fade | Skips player volume write | Intentional; avoid fighting ramp |
-| Pending next while loading | Queued next steps | Clamp 12; can feel delayed |
-| DJ stretch speeds | Cancel clears | After cancel, speeds restored via `_clearDjStretchSpeeds` |
-| UI title vs engine | Must track `currentSong` only after commit | Commit path updates index + song together |
+## Known risks still requiring verification
 
-## Control matrix (intended)
+| Area | Remaining risk / next check |
+|---|---|
+| Android OEM / content URI behavior | `AudioPlayer` source loads and `play()` can behave differently across devices; verify on a low-end Android device and with `content://` library items |
+| Gapless + crossfade | The gapless source is flattened before dual-engine fade; verify queue index, title, and audio stay aligned after several rapid skips |
+| Pause/resume after Engine B becomes active | Confirm inactive-engine cleanup never mutes the active engine and resume does not resurrect the outgoing track |
+| Mode switch while audio is loading | Stream rebinding and loop reconciliation must not race a new source load |
+| Volume and effects | Check master volume, EQ preamp, loudness, DJ bass ducking, and fade gain are restored once—not multiplied or reset unexpectedly |
+| Repeat-one edge timing | Test with short tracks and completion events arriving during both dual-engine and soft-loop fallback |
+| Queue completion recovery | Test when the incoming engine load fails, times out, or completes at the same time as the outgoing engine |
+| Test coverage | Provider unit tests cover mode policy gates, but full engine lifecycle and OEM behavior need integration/device tests |
 
-| User action mid-crossfade | Expected |
-|---------------------------|----------|
-| Pause | Cancel fade, pause both, no auto-resume |
-| Next / Previous | Cancel fade, hard cut to target |
-| Seek | Cancel fade, seek active engine |
-| Play (resume) | No auto re-arm until playing again |
-| Repeat-one near end | Self dual or soft loop; **never** advance queue |
-| Mode disables crossfade | No auto-fade; gapless/hard next only |
+## Manual regression checklist
 
-## Manual test checklist
+1. Enable Repeat One and crossfade. Let Track A loop; confirm title and audio remain Track A.
+2. Disable Repeat One or crossfade during the handoff. Confirm the old loop cannot reclaim playback.
+3. Press Next once after that change; confirm exactly one queue step and correct title/audio.
+4. Set Repeat All and play through the last queue item; confirm it wraps to the first item.
+5. Switch Audiobook → Normal, then test play/pause, Next, Previous, and library selection without restarting the app.
+6. Start A→B crossfade and press Next or Previous mid-fade; confirm the requested track remains active.
+7. Let a track complete while crossfade is enabled, then repeat with the incoming source unavailable; confirm no stuck completion or duplicate advance.
+8. After an engine handoff, adjust system volume and app volume; confirm audio remains audible and at the expected level.
+9. Repeat the tests with the screen off and with local `content://` audio where available.
 
-1. Crossfade on, play A→B: after B is active (engine chip B), **pause** — must stay silent, not dead-mute forever on resume.
-2. Mid-fade **next** — immediate cut, no return to old fade target.
-3. Mid-fade **seek** — fade aborts, position updates on current track.
-4. Repeat-one + crossfade: title stays on same track through loop.
-5. Podcast mode: no auto-crossfade even if Crossfade settings enabled.
-6. After A→B, **volume rocker** and app volume still audible.
+## Verification status
+
+- CI previously passed for the earlier PR revision.
+- The current revision must pass CI after the preload ownership guard before merge.
+- CI cannot verify device-specific audio routing, OEM player timing, or actual perceived volume. Those checks remain open until run on hardware.
