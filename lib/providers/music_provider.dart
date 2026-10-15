@@ -678,13 +678,21 @@ class MusicProvider extends ChangeNotifier {
   /// without this, Audiobook's LoopMode.one can leak into Normal mode.
   Future<void> _synchronizeModePlaybackBoundary() async {
     final generation = ++_modeBoundaryGeneration;
-    // A policy update that still permits crossfade must not pause the idle
-    // engine underneath an already-running handoff.
+    // A policy update must never pause an engine after a new handoff has
+    // started. Re-check ownership after each await, not only at method exit.
     if (_crossfadeInProgress ||
         _automaticCrossfadeInFlight ||
         _repeatSelfHandoffInFlight) return;
     final active = audioPlayer;
     final idle = inactivePlayer;
+    bool ownsBoundary() =>
+        generation == _modeBoundaryGeneration &&
+        identical(active, audioPlayer) &&
+        identical(idle, inactivePlayer) &&
+        !_crossfadeInProgress &&
+        !_automaticCrossfadeInFlight &&
+        !_repeatSelfHandoffInFlight;
+
     final activeLoop = effectiveCrossfadeEnabled
         ? LoopMode.off
         : switch (_repeatMode) {
@@ -695,16 +703,17 @@ class MusicProvider extends ChangeNotifier {
             PlaybackRepeatMode.off => LoopMode.off,
           };
     try { await idle.pause(); } catch (_) {}
+    if (!ownsBoundary()) return;
     try { await idle.setVolume(0.0); } catch (_) {}
+    if (!ownsBoundary()) return;
     try { await idle.setLoopMode(LoopMode.off); } catch (_) {}
+    if (!ownsBoundary()) return;
     try { await active.setLoopMode(activeLoop); } catch (_) {}
-    if (generation != _modeBoundaryGeneration || !identical(active, audioPlayer)) return;
-    if (!_isDucked &&
-        !_crossfadeInProgress &&
-        !_automaticCrossfadeInFlight &&
-        !_repeatSelfHandoffInFlight) {
+    if (!ownsBoundary()) return;
+    if (!_isDucked) {
       try { await active.setVolume(_eqPreampScale.clamp(0.0, 1.0)); } catch (_) {}
     }
+    if (!ownsBoundary()) return;
     _bindActivePlayerStreams();
     _publishServiceState();
   }
