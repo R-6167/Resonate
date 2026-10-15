@@ -668,6 +668,11 @@ class MusicProvider extends ChangeNotifier {
   /// without this, Audiobook's LoopMode.one can leak into Normal mode.
   Future<void> _synchronizeModePlaybackBoundary() async {
     final generation = ++_modeBoundaryGeneration;
+    // A policy update that still permits crossfade must not pause the idle
+    // engine underneath an already-running handoff.
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight) return;
     final active = audioPlayer;
     final idle = inactivePlayer;
     final activeLoop = effectiveCrossfadeEnabled
