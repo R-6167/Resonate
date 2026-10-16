@@ -108,6 +108,7 @@ class DjIdleAnalysisService {
           );
         } catch (e) {
           _failed++;
+          _lastProfileAttemptAt[song.id] = DateTime.now();
           await ResonateDiagnostics.recordDj(
             stage: 'idle_scan_error',
             songId: song.id,
