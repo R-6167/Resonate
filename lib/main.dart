@@ -383,6 +383,13 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startForegroundAnalysisOpportunities();
+      try {
+        context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+      } catch (_) {}
+    });
   }
 
   @override
