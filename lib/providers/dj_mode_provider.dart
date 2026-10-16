@@ -17,6 +17,8 @@ class DjModeProvider extends ChangeNotifier {
   DjModeProvider({required this.music, DjAnalysisService? analysis})
       : _analysis = analysis ?? DjAnalysisService() {
     _idle = DjIdleAnalysisService(analysis: _analysis);
+    _lastObservedPlaying = music.isPlaying;
+    music.addListener(_onMusicChanged);
     unawaited(_load());
   }
 
@@ -34,6 +36,9 @@ class DjModeProvider extends ChangeNotifier {
   DjAggressiveness _aggressiveness = DjAggressiveness.balanced;
   double _minConfidence = 0.40;
   bool _loaded = false;
+  bool _lastObservedPlaying = false;
+  DateTime? _lastEventScanAt;
+  Timer? _eventScanDebounce;
 
   bool get isLoaded => _loaded;
   bool get isEnabled => _enabled;
@@ -173,8 +178,52 @@ class DjModeProvider extends ChangeNotifier {
   }
 
   void _maybeStartIdleScan() {
-    if (!_enabled || !_analyzeIdle) return;
+    if (!_enabled || !_analyzeIdle || music.isPlaying) return;
     unawaited(_idle.startIfNeeded(maxSongs: 48));
+  }
+
+  /// Called by app lifecycle and audio-route events. Work is intentionally
+  /// small and rate-limited so unlock/BT event bursts do not start many scans.
+  void onAnalysisOpportunity(String reason) {
+    if (!_loaded || !_enabled || !_analyzeIdle) return;
+    _eventScanDebounce?.cancel();
+    _eventScanDebounce = Timer(const Duration(seconds: 8), () {
+      if (!_enabled || !_analyzeIdle || music.isPlaying || _idle.isRunning) {
+        return;
+      }
+      final now = DateTime.now();
+      final last = _lastEventScanAt;
+      if (last != null && now.difference(last) < const Duration(minutes: 2)) {
+        return;
+      }
+      _lastEventScanAt = now;
+      unawaited(ResonateDiagnostics.recordDj(
+        stage: 'idle_scan_trigger',
+        outcome: 'scheduled',
+        reason: reason,
+      ));
+      unawaited(_idle.startIfNeeded(maxSongs: 12));
+    });
+  }
+
+  void _onMusicChanged() {
+    final playing = music.isPlaying;
+    if (playing == _lastObservedPlaying) return;
+    _lastObservedPlaying = playing;
+    if (playing) {
+      _eventScanDebounce?.cancel();
+      _idle.stop();
+    } else {
+      onAnalysisOpportunity('playback_became_idle');
+    }
+  }
+
+  @override
+  void dispose() {
+    _eventScanDebounce?.cancel();
+    music.removeListener(_onMusicChanged);
+    _idle.stop();
+    super.dispose();
   }
 
   /// Manual trigger from settings / diagnostics.
