@@ -36,6 +36,7 @@ class DjSfxRack {
   DjSfxRack({math.Random? random}) : _rng = random ?? math.Random();
 
   final math.Random _rng;
+  final Map<DjSfxPreset, int> _usageCounts = <DjSfxPreset, int>{};
   DjSfxPreset? activePreset;
   bool engaged = false;
   List<double>? _savedEqGains;
@@ -107,6 +108,27 @@ class DjSfxRack {
     };
   }
 
+  /// If the preferred effect has already been used twice, rotate to an
+  /// underused effect from the same aggressiveness pool when possible.
+  DjSfxPreset _applyUsageFairness(
+    DjSfxPreset preferred, {
+    required DjAggressiveness aggressiveness,
+  }) {
+    if ((_usageCounts[preferred] ?? 0) < 2) return preferred;
+    final alternatives = _bagFor(aggressiveness)
+        .where((preset) =>
+            preset != preferred && (_usageCounts[preset] ?? 0) < 2)
+        .toList();
+    if (alternatives.isEmpty) return preferred;
+    final lowestCount = alternatives
+        .map((preset) => _usageCounts[preset] ?? 0)
+        .reduce((a, b) => a < b ? a : b);
+    final leastUsed = alternatives
+        .where((preset) => (_usageCounts[preset] ?? 0) == lowestCount)
+        .toList();
+    return leastUsed[_rng.nextInt(leastUsed.length)];
+  }
+
   DjSfxPreset pickRandom({
     double energyScore = 0.5,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
@@ -145,7 +167,7 @@ class DjSfxRack {
   }) async {
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    activePreset = preset ??
+    final preferred = preset ??
         _pickPhraseAwarePreset(
           energyScore: score,
           transitionKind: transitionKind,
@@ -153,6 +175,8 @@ class DjSfxRack {
           positionMs: outgoing?.position.inMilliseconds ?? 0,
           aggressiveness: aggressiveness,
         );
+    activePreset = _applyUsageFairness(preferred, aggressiveness: aggressiveness);
+    _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;
     _eqTouched = false;
     _outgoing = outgoing;

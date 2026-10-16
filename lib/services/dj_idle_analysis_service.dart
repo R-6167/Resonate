@@ -10,6 +10,8 @@ import 'resonate_diagnostics.dart';
 /// Background BPM/key tag scan when DJ Mode "Analyze library when idle" is on.
 ///
 /// Hardened: one loop, yields between songs, skips usable cache, records fails.
+/// The analysis pipeline may decode several windows on slower devices, so its
+/// timeout is deliberately longer than a single short audio decode.
 class DjIdleAnalysisService {
   DjIdleAnalysisService({
     DatabaseHelper? database,
@@ -62,7 +64,7 @@ class DjIdleAnalysisService {
           final before = existing;
           final after = await _analysis
               .analyzeSong(song, force: before == null)
-              .timeout(const Duration(seconds: 8), onTimeout: () {
+              .timeout(const Duration(seconds: 30), onTimeout: () {
             throw TimeoutException('dj idle analyze timeout');
           });
           final gained = (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
