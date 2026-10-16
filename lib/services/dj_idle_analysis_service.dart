@@ -27,6 +27,8 @@ class DjIdleAnalysisService {
   int _scanned = 0;
   int _updated = 0;
   int _failed = 0;
+  final Map<String, DateTime> _lastProfileAttemptAt = <String, DateTime>{};
+  static const Duration _retryCooldown = Duration(hours: 6);
 
   bool get isRunning => _running;
   int get scanned => _scanned;
@@ -53,20 +55,45 @@ class DjIdleAnalysisService {
         if (song.filePath.trim().isEmpty) continue;
         try {
           final existing = await _analysis.getAnalysis(song.id);
+          final hasUsableTags = existing != null &&
+              (existing.hasUsableBpm || existing.hasUsableKey);
+          final hasSectionProfile = existing?.sectionHint != null &&
+              existing?.sectionHint != 'unknown';
           if (existing != null &&
               !existing.isStale &&
-              (existing.hasUsableBpm || existing.hasUsableKey) &&
-              (existing.sectionHint != null &&
-                  existing.sectionHint != 'unknown')) {
+              hasUsableTags &&
+              hasSectionProfile) {
             continue;
           }
+
+          final now = DateTime.now();
+          final lastAttempt = _lastProfileAttemptAt[song.id];
+          if (lastAttempt != null &&
+              now.difference(lastAttempt) < _retryCooldown) {
+            continue;
+          }
+          // Persisted empty results also need a cooldown across app launches;
+          // otherwise every unlock/route event would repeat expensive work.
+          if (existing != null &&
+              !existing.isStale &&
+              !hasUsableTags &&
+              existing.analyzedAt != null &&
+              now.difference(existing.analyzedAt!) < _retryCooldown) {
+            continue;
+          }
+
           _scanned++;
           final before = existing;
+          final needsFullProfile = before == null ||
+              before.isStale ||
+              !hasUsableTags ||
+              !hasSectionProfile;
           final after = await _analysis
-              .analyzeSong(song, force: before == null)
+              .analyzeSong(song, force: needsFullProfile)
               .timeout(const Duration(seconds: 30), onTimeout: () {
             throw TimeoutException('dj idle analyze timeout');
           });
+          _lastProfileAttemptAt[song.id] = DateTime.now();
           final gained = (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
               (after.hasUsableKey && !(before?.hasUsableKey ?? false));
           if (gained) _updated++;
