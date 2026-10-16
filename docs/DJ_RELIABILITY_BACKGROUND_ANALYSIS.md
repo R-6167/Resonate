@@ -10,7 +10,7 @@ Target branch: `Resonate-True-Apk`
 ## Event-driven analysis: current implementation
 
 The current implementation now uses a single idle-analysis service and triggers small batches from:
-1. App resume/unlock.
+1. App startup and app resume/unlock.
 2. Bluetooth/audio-route changes detected by the existing audio-device provider.
 3. Playback transitioning to idle.
 4. A low-frequency 20-minute opportunity while the app remains foregrounded.
