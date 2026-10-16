@@ -7,25 +7,29 @@ Target branch: `Resonate-True-Apk`
 - DJ transition SFX now tracks session-local usage by preset. When the preferred effect has already been used twice, the rack rotates to a least-used eligible effect in the same aggressiveness pool when an alternative remains under the two-use threshold.
 - Idle DJ analysis timeout was increased from 8 to 30 seconds because the current analyzer may decode multiple windows and is expected to run on slower Android devices. This reduces premature timeout reports; it does not make a timed-out Future cancellable.
 
-## Next implementation slice: event-driven background analysis
+## Event-driven analysis: current implementation
 
-Use a single coordinator to schedule small batches when the device/app offers a quiet opportunity. Proposed triggers:
+The current implementation now uses a single idle-analysis service and triggers small batches from:
+1. App startup and app resume/unlock.
+2. Bluetooth/audio-route changes detected by the existing audio-device provider.
+3. Playback transitioning to idle.
+4. Library scan/import completion or a changed library song count.
+5. A low-frequency 20-minute opportunity while the app remains foregrounded.
+5. The existing DJ settings/manual scan entry points.
 
-1. App becomes active after unlock / resume.
-2. Bluetooth or audio-route changes.
-3. Library scan/import adds or changes tracks.
-4. Playback reaches a stable idle window, with low-frequency periodic opportunities while the app process is alive.
-5. A user explicitly requests analysis from DJ settings.
+Safeguards currently implemented:
+- Event bursts are debounced and event-triggered batches are rate-limited.
+- Event-triggered batches are limited to 12 analyzed songs; manual/settings scans retain their larger cap.
+- Analysis is not started by these event triggers while playback is active. Starting playback requests that an in-progress idle scan stop between songs.
+- Valid cached profiles are skipped.
+- Missing section profiles can be re-analyzed even if a partial BPM/key result already exists.
+- Failed attempts and persisted empty results receive a six-hour cooldown to prevent every unlock or route event from repeating the same expensive work.
 
-Rules:
-- Analyze only missing, stale, or unusable metadata; preserve valid cached profiles.
-- Deduplicate per-song work and prevent overlapping scan loops.
-- Prioritize the current song and next few queue candidates, then process the rest of the library in small batches.
-- Yield between files and stop/deprioritize work when playback transitions, foreground interaction, or other high-priority work begins.
-- Persist progress and last-attempt status so repeated triggers do not rescan the same failed file endlessly.
-- Distinguish `no_tags`, unsupported/unreadable media, and true analyzer errors in diagnostics.
-- Add bounded retry/backoff for failed tracks rather than immediately retrying on every trigger.
-- Treat Android background execution honestly: lifecycle callbacks and Dart timers are not guaranteed to run after the process is suspended or killed. Reliable closed-app scheduling needs a native scheduled-work mechanism (e.g. WorkManager) and must be added only with explicit constraints and device testing.
+Known limitations / next hardening:
+- The six-hour cooldown for failed/empty persisted results uses the existing `analyzedAt` field; the missing-section retry cooldown is in memory and resets after process restart.
+- Dart `Future.timeout` does not cancel the underlying analysis operation. A timed-out analysis may still finish in the background. The analysis pipeline needs cooperative cancellation or a serial work queue before this can be considered fully hardened.
+- Foreground timers and lifecycle events do not guarantee work while Android has suspended or killed the app. Reliable closed-app scheduling requires a native scheduled-work mechanism (e.g. WorkManager), plus device tests and appropriate battery constraints.
+- The current trigger path requires DJ Mode and “Analyze library when idle” to be enabled.
 
 ## Audio-focus issue (separate follow-up)
 

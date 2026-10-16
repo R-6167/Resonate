@@ -375,20 +375,112 @@ class _LifecycleHome extends StatefulWidget {
 
 class _LifecycleHomeState extends State<_LifecycleHome>
     with WidgetsBindingObserver {
+  BluetoothProvider? _bluetooth;
+  LibraryProvider? _library;
+  Timer? _analysisOpportunityTimer;
+  String? _lastBluetoothSignature;
+  int? _lastLibrarySongCount;
+  bool _wasLibraryScanning = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startForegroundAnalysisOpportunities();
+      try {
+        context.read<DjModeProvider>().onAnalysisOpportunity('app_started');
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = context.read<BluetoothProvider>();
+    if (identical(next, _bluetooth)) return;
+    _bluetooth?.removeListener(_onBluetoothChanged);
+    _bluetooth = next;
+    _lastBluetoothSignature = _bluetoothSignature(next);
+    next.addListener(_onBluetoothChanged);
+
+    final library = context.read<LibraryProvider>();
+    if (!identical(library, _library)) {
+      _library?.removeListener(_onLibraryChanged);
+      _library = library;
+      _lastLibrarySongCount = library.allSongs.length;
+      _wasLibraryScanning = library.isScanning;
+      library.addListener(_onLibraryChanged);
+    }
+  }
+
+  void _onLibraryChanged() {
+    final library = _library;
+    if (library == null) return;
+    final count = library.allSongs.length;
+    final scanFinished = _wasLibraryScanning && !library.isScanning;
+    final libraryChanged = _lastLibrarySongCount != count;
+    _wasLibraryScanning = library.isScanning;
+    _lastLibrarySongCount = count;
+    if (!scanFinished && !libraryChanged) return;
+    try {
+      context.read<DjModeProvider>().onAnalysisOpportunity('library_changed');
+    } catch (_) {}
+  }
+
+  String _bluetoothSignature(BluetoothProvider provider) =>
+      '${provider.bluetoothConnected}|${provider.connectedDeviceName}|${provider.audioContext.name}';
+
+  void _onBluetoothChanged() {
+    final bluetooth = _bluetooth;
+    if (bluetooth == null) return;
+    final signature = _bluetoothSignature(bluetooth);
+    if (signature == _lastBluetoothSignature) return;
+    _lastBluetoothSignature = signature;
+    try {
+      context.read<DjModeProvider>().onAnalysisOpportunity('audio_route_changed');
+    } catch (_) {}
+  }
+
+  void _startForegroundAnalysisOpportunities() {
+    _analysisOpportunityTimer?.cancel();
+    _analysisOpportunityTimer = Timer.periodic(
+      const Duration(minutes: 20),
+      (_) {
+        try {
+          context.read<DjModeProvider>().onAnalysisOpportunity(
+                'foreground_idle_window',
+              );
+        } catch (_) {}
+      },
+    );
+  }
+
+  void _stopForegroundAnalysisOpportunities() {
+    _analysisOpportunityTimer?.cancel();
+    _analysisOpportunityTimer = null;
   }
 
   @override
   void dispose() {
+    _stopForegroundAnalysisOpportunities();
+    _bluetooth?.removeListener(_onBluetoothChanged);
+    _library?.removeListener(_onLibraryChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startForegroundAnalysisOpportunities();
+      try {
+        context.read<DjModeProvider>().onAnalysisOpportunity('app_resumed');
+      } catch (_) {}
+      return;
+    }
+    _stopForegroundAnalysisOpportunities();
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached ||
