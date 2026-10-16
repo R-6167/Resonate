@@ -13,7 +13,8 @@ The current implementation now uses a single idle-analysis service and triggers 
 1. App startup and app resume/unlock.
 2. Bluetooth/audio-route changes detected by the existing audio-device provider.
 3. Playback transitioning to idle.
-4. A low-frequency 20-minute opportunity while the app remains foregrounded.
+4. Library scan/import completion or a changed library song count.
+5. A low-frequency 20-minute opportunity while the app remains foregrounded.
 5. The existing DJ settings/manual scan entry points.
 
 Safeguards currently implemented:
@@ -27,7 +28,6 @@ Safeguards currently implemented:
 Known limitations / next hardening:
 - The six-hour cooldown for failed/empty persisted results uses the existing `analyzedAt` field; the missing-section retry cooldown is in memory and resets after process restart.
 - Dart `Future.timeout` does not cancel the underlying analysis operation. A timed-out analysis may still finish in the background. The analysis pipeline needs cooperative cancellation or a serial work queue before this can be considered fully hardened.
-- Library import/scan events are not yet directly wired into this coordinator.
 - Foreground timers and lifecycle events do not guarantee work while Android has suspended or killed the app. Reliable closed-app scheduling requires a native scheduled-work mechanism (e.g. WorkManager), plus device tests and appropriate battery constraints.
 - The current trigger path requires DJ Mode and “Analyze library when idle” to be enabled.
 
