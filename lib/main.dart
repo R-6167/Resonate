@@ -375,6 +375,10 @@ class _LifecycleHome extends StatefulWidget {
 
 class _LifecycleHomeState extends State<_LifecycleHome>
     with WidgetsBindingObserver {
+  BluetoothProvider? _bluetooth;
+  Timer? _analysisOpportunityTimer;
+  String? _lastBluetoothSignature;
+
   @override
   void initState() {
     super.initState();
@@ -382,13 +386,67 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = context.read<BluetoothProvider>();
+    if (identical(next, _bluetooth)) return;
+    _bluetooth?.removeListener(_onBluetoothChanged);
+    _bluetooth = next;
+    _lastBluetoothSignature = _bluetoothSignature(next);
+    next.addListener(_onBluetoothChanged);
+  }
+
+  String _bluetoothSignature(BluetoothProvider provider) =>
+      '${provider.bluetoothConnected}|${provider.connectedDeviceName}|${provider.audioContext.name}';
+
+  void _onBluetoothChanged() {
+    final bluetooth = _bluetooth;
+    if (bluetooth == null) return;
+    final signature = _bluetoothSignature(bluetooth);
+    if (signature == _lastBluetoothSignature) return;
+    _lastBluetoothSignature = signature;
+    try {
+      context.read<DjModeProvider>().onAnalysisOpportunity('audio_route_changed');
+    } catch (_) {}
+  }
+
+  void _startForegroundAnalysisOpportunities() {
+    _analysisOpportunityTimer?.cancel();
+    _analysisOpportunityTimer = Timer.periodic(
+      const Duration(minutes: 20),
+      (_) {
+        try {
+          context.read<DjModeProvider>().onAnalysisOpportunity(
+                'foreground_idle_window',
+              );
+        } catch (_) {}
+      },
+    );
+  }
+
+  void _stopForegroundAnalysisOpportunities() {
+    _analysisOpportunityTimer?.cancel();
+    _analysisOpportunityTimer = null;
+  }
+
+  @override
   void dispose() {
+    _stopForegroundAnalysisOpportunities();
+    _bluetooth?.removeListener(_onBluetoothChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startForegroundAnalysisOpportunities();
+      try {
+        context.read<DjModeProvider>().onAnalysisOpportunity('app_resumed');
+      } catch (_) {}
+      return;
+    }
+    _stopForegroundAnalysisOpportunities();
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached ||
