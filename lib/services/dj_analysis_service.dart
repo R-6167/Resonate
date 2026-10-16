@@ -26,6 +26,16 @@ class DjAnalysisService {
   final Map<String, DjTrackProfile> _profileMemory = {};
   final Map<String, DjAnalysis> _memory = {};
   final Set<String> _inFlight = {};
+  int _analysisGeneration = 0;
+
+  /// Best-effort cancellation for native PCM decode currently used by DJ analysis.
+  /// The generation also prevents this song from starting more windows or
+  /// persisting a profile after the user has requested a stop. 
+  void cancelCurrentAnalysis() {
+    _analysisGeneration++;
+    // ignore: unawaited_futures
+    _estimator.cancelNativePcmAnalysis();
+  }
 
   Future<DjAnalysis?> getAnalysis(String songId) async {
     final cached = _memory[songId];
@@ -143,6 +153,8 @@ class DjAnalysisService {
   ///
   /// Re-analyzes when [force] is true, version is stale, or file identity changed.
   Future<DjAnalysis> analyzeSong(Song song, {bool force = false}) async {
+    final generation = _analysisGeneration;
+    bool cancelled() => generation != _analysisGeneration;
     if (!force) {
       final existing = await getAnalysis(song.id);
       if (existing != null) {
@@ -180,8 +192,27 @@ class DjAnalysisService {
       final legacyEstimate = await _estimator.estimateFile(
         song.filePath,
         durationMs: song.duration.inMilliseconds,
+        isCancelled: cancelled,
       );
-      final estimate = await _estimateWithV2Profile(song, legacyEstimate);
+      if (cancelled()) {
+        return DjAnalysis(
+          songId: song.id,
+          bpmConfidence: 0.0,
+          analysisVersion: DjAnalysis.currentVersion,
+        );
+      }
+      final estimate = await _estimateWithV2Profile(
+        song,
+        legacyEstimate,
+        isCancelled: cancelled,
+      );
+      if (cancelled()) {
+        return DjAnalysis(
+          songId: song.id,
+          bpmConfidence: 0.0,
+          analysisVersion: DjAnalysis.currentVersion,
+        );
+      }
       final analysis = estimate == null
           ? DjAnalysis(
               songId: song.id,
@@ -234,13 +265,15 @@ class DjAnalysisService {
 
   Future<DjBpmEstimate?> _estimateWithV2Profile(
     Song song,
-    DjBpmEstimate? legacy,
-  ) async {
+    DjBpmEstimate? legacy, {
+    bool Function()? isCancelled,
+  }) async {
     final durationMs = song.duration.inMilliseconds;
     if (durationMs <= 0) return legacy;
 
     final windows = <DjDecodedPcmWindow>[];
     Future<void> addWindow(int startMs, String role, double seconds) async {
+      if (isCancelled?.call() ?? false) return;
       final decoded = await _estimator.extractDecodedPcmWindow(
         song.filePath,
         maxSeconds: seconds,
@@ -272,10 +305,12 @@ class DjAnalysisService {
 
     final ordered = positions.toList()..sort();
     for (final startMs in ordered) {
+      if (isCancelled?.call() ?? false) return null;
       final role = startMs == 0
           ? 'start'
           : (startMs >= durationMs - windowMs - 1000 ? 'end' : 'mid');
       await addWindow(startMs, role, sampleSeconds);
+      if (isCancelled?.call() ?? false) return null;
     }
 
     if (windows.isEmpty) return legacy;
