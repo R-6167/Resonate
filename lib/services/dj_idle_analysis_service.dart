@@ -152,5 +152,6 @@ class DjIdleAnalysisService {
   /// must not pretend it can interrupt an in-flight platform operation.
   void stop() {
     _stopRequested = true;
+    _analysis.cancelCurrentAnalysis();
   }
 }
