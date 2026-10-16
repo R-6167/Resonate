@@ -68,7 +68,19 @@ class DjBpmEstimator {
   static const MethodChannel _channel =
       MethodChannel('com.aetherion.resonate/media_store');
 
-  Future<DjBpmEstimate?> estimateFile(String filePath, {int? durationMs}) async {
+  Future<void> cancelNativePcmAnalysis() async {
+    try {
+      await _channel.invokeMethod<bool>('cancelPcmAnalysis');
+    } catch (e) {
+      debugPrint('DjBpmEstimator.cancelNativePcmAnalysis: $e');
+    }
+  }
+
+  Future<DjBpmEstimate?> estimateFile(
+    String filePath, {
+    int? durationMs,
+    bool Function()? isCancelled,
+  }) async {
     try {
       if (filePath.isEmpty) return null;
 
@@ -112,11 +124,14 @@ class DjBpmEstimator {
 
       // 3) Native PCM decode for compressed / MediaStore tracks.
       // Always try PCM so energy / loudness / beatOffset exist even when ID3 has BPM.
+      if (isCancelled?.call() ?? false) return null;
       final nativePcm = await _estimateFromNativePcm(filePath);
+      if (isCancelled?.call() ?? false) return null;
       // Whole-track structure: second window near the end when duration is known.
       DjBpmEstimate? endPcm;
       final dur = durationMs ?? 0;
       if (dur > 45000) {
+        if (isCancelled?.call() ?? false) return null;
         final startMs = (dur - 18000).clamp(20000, dur - 8000);
         endPcm = await _estimateFromNativePcm(
           filePath,

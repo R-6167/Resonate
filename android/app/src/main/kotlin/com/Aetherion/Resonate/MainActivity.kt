@@ -44,6 +44,7 @@ class MainActivity : AudioServiceActivity() {
     private var virtualizer: Virtualizer? = null
     private var reverb: EnvironmentalReverb? = null
     private val pcmExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var pcmCancellationGeneration: Long = 0L
     private val folderScanExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -70,6 +71,12 @@ class MainActivity : AudioServiceActivity() {
                     (call.argument<Number>("startMs") ?: 0).toLong(),
                     result,
                 )
+                "cancelPcmAnalysis" -> {
+                    // Invalidates active and already-queued PCM jobs. A fresh
+                    // request captures the new generation and remains eligible.
+                    pcmCancellationGeneration += 1L
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -556,6 +563,7 @@ class MainActivity : AudioServiceActivity() {
     /** Decode a short PCM window via MediaExtractor/MediaCodec (MP3/M4A/content://). */
     private fun extractPcmWindow(uriString: String, maxSeconds: Double, startMs: Long, result: MethodChannel.Result) {
         if (uriString.isBlank()) { result.success(null); return }
+        val requestGeneration = pcmCancellationGeneration
         pcmExecutor.execute {
             var extractor: MediaExtractor? = null
             var codec: MediaCodec? = null
@@ -611,10 +619,14 @@ class MainActivity : AudioServiceActivity() {
                 var inputDone = false
                 var outputDone = false
                 var safety = 0
-                while (!outputDone && safety < 800 && outBytes.size() < maxPcmBytes) {
+                while (!outputDone &&
+                    safety < 800 &&
+                    outBytes.size() < maxPcmBytes &&
+                    requestGeneration == pcmCancellationGeneration
+                ) {
                     safety++
                     if (!inputDone) {
-                        val inIndex = codec.dequeueInputBuffer(8000)
+                        val inIndex = codec.dequeueInputBuffer(100)
                         if (inIndex >= 0) {
                             val inBuf = codec.getInputBuffer(inIndex)
                             if (inBuf != null) {
@@ -630,7 +642,7 @@ class MainActivity : AudioServiceActivity() {
                             }
                         }
                     }
-                    val outIndex = codec.dequeueOutputBuffer(info, 8000)
+                    val outIndex = codec.dequeueOutputBuffer(info, 100)
                     if (outIndex >= 0) {
                         if (info.size > 0 && info.presentationTimeUs <= maxUs) {
                             val outBuf = codec.getOutputBuffer(outIndex)
@@ -647,6 +659,10 @@ class MainActivity : AudioServiceActivity() {
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
                         if (outBytes.size() >= maxPcmBytes) outputDone = true
                     }
+                }
+                if (requestGeneration != pcmCancellationGeneration) {
+                    runOnUiThread { result.success(null) }
+                    return@execute
                 }
                 val pcm = outBytes.toByteArray()
                 if (pcm.size < sampleRate) { runOnUiThread { result.success(null) }; return@execute }

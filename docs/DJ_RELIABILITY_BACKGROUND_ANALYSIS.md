@@ -12,10 +12,10 @@ Target branch: `Resonate-True-Apk`
 
 ## Remaining analysis hardening
 
-- A playback/stop request is cooperative: if a native decode is already in progress, the current song must finish before the idle scan stops. This is intentional to avoid orphaned decode jobs and overlapping work.
-- The native MediaExtractor/MediaCodec path does not yet expose cancellation. A future change should add explicit cancellation/serialization at the platform boundary and verify that late native results cannot write stale profiles.
+- Playback/stop requests now invalidate active and queued PCM decode jobs through a native cancellation generation. The decoder checks that generation between short MediaCodec buffer waits and releases MediaCodec/MediaExtractor in `finally`.
+- Cancellation is best-effort, not instantaneous: platform setup/configure calls can still take time. The Dart analysis generation prevents subsequent windows and profile persistence after cancellation. Verify on-device that cancellation returns promptly and a later fresh scan can run normally.
 - The six-hour cooldown for missing-section retries is in memory and resets after process restart. Persisting attempt state separately from successful analysis would make retries more predictable.
-- Removing the non-cancelling timeout avoids orphaned overlapping work, but a platform call that never returns can hold the current scan open. Add native cancellation or a carefully designed watchdog that cancels the underlying operation before restoring a timeout.
+- The native cancellation path is cooperative and best-effort. If a platform setup call itself blocks, cancellation may not be immediate; do not reintroduce a timeout unless it also cancels the underlying operation.
 - Foreground timers and lifecycle events do not guarantee work while Android has suspended or killed the app. Reliable closed-app scheduling requires a native scheduled-work mechanism (e.g. WorkManager), plus device tests and appropriate battery constraints.
 - The current trigger path requires DJ Mode and “Analyze library when idle” to be enabled.
 
