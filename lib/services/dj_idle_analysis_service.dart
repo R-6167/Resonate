@@ -9,9 +9,11 @@ import 'resonate_diagnostics.dart';
 
 /// Background BPM/key tag scan when DJ Mode "Analyze library when idle" is on.
 ///
-/// Hardened: one loop, yields between songs, skips usable cache, records fails.
-/// The analysis pipeline may decode several windows on slower devices, so its
-/// timeout is deliberately longer than a single short audio decode.
+/// Idle analysis deliberately awaits each song to completion. A Future.timeout
+/// does not cancel the native decode/analyzer underneath it; timing out and
+/// advancing the loop can leave orphaned work running alongside later songs.
+/// Playback/stop requests therefore take effect between songs, not by
+/// abandoning a still-running analysis operation.
 class DjIdleAnalysisService {
   DjIdleAnalysisService({
     DatabaseHelper? database,
@@ -88,13 +90,17 @@ class DjIdleAnalysisService {
               before.isStale ||
               !hasUsableTags ||
               !hasSectionProfile;
-          final after = await _analysis
-              .analyzeSong(song, force: needsFullProfile)
-              .timeout(const Duration(seconds: 30), onTimeout: () {
-            throw TimeoutException('dj idle analyze timeout');
-          });
+
+          // Do not wrap this in Future.timeout: Dart timeout only stops waiting,
+          // not the native decode. Keep the scan serial until the analyzer
+          // really completes so the next song cannot overlap orphaned work.
+          final after = await _analysis.analyzeSong(
+            song,
+            force: needsFullProfile,
+          );
           _lastProfileAttemptAt[song.id] = DateTime.now();
-          final gained = (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
+          final gained =
+              (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
               (after.hasUsableKey && !(before?.hasUsableKey ?? false));
           if (gained) _updated++;
           await ResonateDiagnostics.recordDj(
@@ -104,6 +110,7 @@ class DjIdleAnalysisService {
             extra: {
               'bpm': after.bpm,
               'hasKey': after.hasUsableKey,
+              'stopRequestedDuringAnalysis': _stopRequested,
             },
           );
         } catch (e) {
@@ -116,6 +123,7 @@ class DjIdleAnalysisService {
             reason: e.toString(),
           );
         }
+        // Yield to the UI and re-check stop state before the next song.
         await Future<void>.delayed(const Duration(milliseconds: 120));
       }
       await ResonateDiagnostics.recordDj(
@@ -138,6 +146,10 @@ class DjIdleAnalysisService {
     }
   }
 
+  /// Stops after the currently awaited song analysis completes.
+  ///
+  /// Native decoding does not currently expose cancellation, so this method
+  /// must not pretend it can interrupt an in-flight platform operation.
   void stop() {
     _stopRequested = true;
   }
