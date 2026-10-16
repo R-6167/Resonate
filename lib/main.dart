@@ -376,8 +376,11 @@ class _LifecycleHome extends StatefulWidget {
 class _LifecycleHomeState extends State<_LifecycleHome>
     with WidgetsBindingObserver {
   BluetoothProvider? _bluetooth;
+  LibraryProvider? _library;
   Timer? _analysisOpportunityTimer;
   String? _lastBluetoothSignature;
+  int? _lastLibrarySongCount;
+  bool _wasLibraryScanning = false;
 
   @override
   void initState() {
@@ -401,6 +404,29 @@ class _LifecycleHomeState extends State<_LifecycleHome>
     _bluetooth = next;
     _lastBluetoothSignature = _bluetoothSignature(next);
     next.addListener(_onBluetoothChanged);
+
+    final library = context.read<LibraryProvider>();
+    if (!identical(library, _library)) {
+      _library?.removeListener(_onLibraryChanged);
+      _library = library;
+      _lastLibrarySongCount = library.allSongs.length;
+      _wasLibraryScanning = library.isScanning;
+      library.addListener(_onLibraryChanged);
+    }
+  }
+
+  void _onLibraryChanged() {
+    final library = _library;
+    if (library == null) return;
+    final count = library.allSongs.length;
+    final scanFinished = _wasLibraryScanning && !library.isScanning;
+    final libraryChanged = _lastLibrarySongCount != count;
+    _wasLibraryScanning = library.isScanning;
+    _lastLibrarySongCount = count;
+    if (!scanFinished && !libraryChanged) return;
+    try {
+      context.read<DjModeProvider>().onAnalysisOpportunity('library_changed');
+    } catch (_) {}
   }
 
   String _bluetoothSignature(BluetoothProvider provider) =>
@@ -440,6 +466,7 @@ class _LifecycleHomeState extends State<_LifecycleHome>
   void dispose() {
     _stopForegroundAnalysisOpportunities();
     _bluetooth?.removeListener(_onBluetoothChanged);
+    _library?.removeListener(_onLibraryChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
