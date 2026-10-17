@@ -34,3 +34,18 @@ The user reported two calls where playback continued until manually paused. Inve
 - Analysis tests: slow analysis completes without starting overlapping song work, failed analysis does not permanently block future retries, and stop requests are respected between songs.
 - Device tests: screen-off playback, app resume/unlock, Bluetooth connect/disconnect, low-end Android, and incoming calls.
 - CI green is necessary but cannot prove OEM audio-focus behavior or real-world background scheduling.
+
+
+## Idle-analysis cancellation classification
+
+Diagnostics from 2026-10-17 included idle-scan events where
+`stopRequestedDuringAnalysis` was true but the outcome was recorded as
+`no_tags`. That conflated an intentional stop with a completed analysis that
+found no usable BPM/key data, and the scan also recorded a retry cooldown.
+
+The idle scanner now emits `outcome=cancelled` when a stop arrives during an
+analysis, does not increment the failure count, and does not stamp the in-memory
+retry cooldown. A genuine completed analysis with no usable tags remains
+`no_tags`; an actual exception remains `failed`. This is diagnostic and retry
+behavior only: it does not claim to improve BPM/key accuracy or make native
+analysis cancellation instantaneous.
