@@ -183,6 +183,7 @@ class MusicProvider extends ChangeNotifier {
   StreamSubscription<void>? _noisySubscription;
   StreamSubscription<AudioDevicesChangedEvent>? _devicesChangedSubscription;
   DateTime? _lastRouteRecoverAt;
+  String? _lastCrossfadeDurationUnavailableSongId;
 
   /// True while system asked us to duck (notification / nav / transient).
   bool _isDucked = false;
@@ -1379,8 +1380,26 @@ class MusicProvider extends ChangeNotifier {
         _repeatSelfHandoffInFlight) {
       return;
     }
-    final duration = audioPlayer.duration ?? currentDuration;
-    if (duration == null || duration <= Duration.zero) return;
+    // Only the active engine's loaded-source duration is trustworthy for
+    // crossfade timing. currentDuration may be metadata or belong to the prior
+    // source after a background/route transition, so never use it to arm a fade.
+    final duration = audioPlayer.duration;
+    if (duration == null || duration <= Duration.zero) {
+      final songId = currentSong?.id;
+      if (songId != null && _lastCrossfadeDurationUnavailableSongId != songId) {
+        _lastCrossfadeDurationUnavailableSongId = songId;
+        unawaited(ResonateDiagnostics.record('crossfade_trigger_skipped_duration_unavailable', {
+          'songId': songId,
+          'positionMs': position.inMilliseconds,
+          'metadataDurationMs': currentDuration?.inMilliseconds,
+          'engine': _activeIsA ? 'A' : 'B',
+          'playing': audioPlayer.playing,
+          'reason': 'active_engine_duration_unavailable',
+        }));
+      }
+      return;
+    }
+    _lastCrossfadeDurationUnavailableSongId = null;
     final remaining = duration - position;
     if (remaining <= Duration.zero) return;
 
@@ -2097,7 +2116,7 @@ class MusicProvider extends ChangeNotifier {
       // Position events can become discontinuous around backgrounding/audio
       // service resumes. Revalidate the actual remaining time here instead of
       // trusting the earlier position-stream trigger to still be current.
-      final durationNow = audioPlayer.duration ?? currentDuration;
+      final durationNow = audioPlayer.duration;
       final remainingNowMs = durationNow == null
           ? null
           : durationNow.inMilliseconds - audioPlayer.position.inMilliseconds;
@@ -2118,6 +2137,8 @@ class MusicProvider extends ChangeNotifier {
           'remainingMs': remainingNowMs,
           'safeTriggerMs': safeTriggerMs,
           'durationMs': durationNow?.inMilliseconds,
+          'positionMs': audioPlayer.position.inMilliseconds,
+          'engine': _activeIsA ? 'A' : 'B',
           'reason': durationNow == null || durationNow <= Duration.zero
               ? 'duration_unavailable'
               : remainingNowMs == null
