@@ -12,7 +12,6 @@ import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
 import '../widgets/resonate_logo.dart';
-import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
 import '../modes/providers/mode_provider.dart';
