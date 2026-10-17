@@ -200,15 +200,27 @@ class DjSfxRack {
       if (generation != _engageGen || !engaged) return;
       await AudioEffectsBridge.setBassBoost(0.0);
       if (generation != _engageGen || !engaged) return;
-      await _applyFxAt(0.0, score);
+      await _applyFxAt(
+        0.0,
+        score,
+        isCurrent: () => generation == _engageGen && engaged,
+      );
       if (generation != _engageGen || !engaged) return;
       if (_usesEq(activePreset!)) {
         // Mark EQ as touched before the first await so restore can recover even
         // if cancellation arrives between applying the two engine equalizers.
         _eqTouched = true;
-        await _applyEqAt(equalizerA, 0.0);
+        await _applyEqAt(
+          equalizerA,
+          0.0,
+          isCurrent: () => generation == _engageGen && engaged,
+        );
         if (generation != _engageGen || !engaged) return;
-        await _applyEqAt(equalizerB, 0.0);
+        await _applyEqAt(
+          equalizerB,
+          0.0,
+          isCurrent: () => generation == _engageGen && engaged,
+        );
         if (generation != _engageGen || !engaged) return;
       }
       // Fire one-shot early so it sits over the outgoing fade.
@@ -234,15 +246,20 @@ class DjSfxRack {
     AudioPlayer? outgoing,
   }) async {
     if (!engaged || activePreset == null) return;
+    final generation = _engageGen;
+    bool isCurrent() => generation == _engageGen && engaged;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
     if (outgoing != null) _outgoing = outgoing;
     try {
-      await _applyFxAt(t, score);
+      await _applyFxAt(t, score, isCurrent: isCurrent);
+      if (!isCurrent() || activePreset == null) return;
       if (_usesEq(activePreset!)) {
-        await _applyEqAt(equalizerA, t);
-        await _applyEqAt(equalizerB, t);
         _eqTouched = true;
+        await _applyEqAt(equalizerA, t, isCurrent: isCurrent);
+        if (!isCurrent()) return;
+        await _applyEqAt(equalizerB, t, isCurrent: isCurrent);
+        if (!isCurrent()) return;
       }
       // Duck oneshot under the incoming rise so samples fade with the blend.
       final shot = _oneshot;
@@ -664,11 +681,18 @@ class DjSfxRack {
     return ((1.55 - t) / 0.55).clamp(0.0, 1.0);
   }
 
-  Future<void> _applyFxAt(double t, double score) async {
+  Future<void> _applyFxAt(
+    double t,
+    double score, {
+    bool Function()? isCurrent,
+  }) async {
+    bool current() => isCurrent?.call() ?? true;
+    if (!current()) return;
     final p = activePreset ?? DjSfxPreset.echo;
     final env = _envelope(t);
     final x = t.clamp(0.0, 1.0);
     await AudioEffectsBridge.setBassBoost(0.0);
+    if (!current()) return;
 
     // Sample presets: light reverb bed only (the WAV is the character).
     double width = 0.0;
@@ -717,7 +741,9 @@ class DjSfxRack {
     width = (width * env * energyScale).clamp(0.0, 0.28);
     reverb = (reverb * env * energyScale).clamp(0.0, 0.48);
     await AudioEffectsBridge.setVirtualizer(width);
+    if (!current()) return;
     await AudioEffectsBridge.setReverb(reverb);
+    if (!current()) return;
 
     if (_usesSpeed(p) && _outgoing != null) {
       final speed = p == DjSfxPreset.vinylStop
@@ -739,10 +765,16 @@ class DjSfxRack {
     }
   }
 
-  Future<void> _applyEqAt(AndroidEqualizer? eq, double t) async {
-    if (eq == null || activePreset == null) return;
+  Future<void> _applyEqAt(
+    AndroidEqualizer? eq,
+    double t, {
+    bool Function()? isCurrent,
+  }) async {
+    bool current() => isCurrent?.call() ?? true;
+    if (!current() || eq == null || activePreset == null) return;
     try {
       final p = await eq.parameters;
+      if (!current() || activePreset == null) return;
       final bands = p.bands;
       if (bands.isEmpty) return;
       final n = bands.length;
@@ -764,8 +796,10 @@ class DjSfxRack {
             gain = 0.0;
         }
         gain *= env;
+        if (!current() || activePreset == null) return;
         await bands[i].setGain(gain.clamp(minG, maxG).toDouble());
       }
+      if (!current() || activePreset == null) return;
       await eq.setEnabled(true);
     } catch (_) {}
   }
