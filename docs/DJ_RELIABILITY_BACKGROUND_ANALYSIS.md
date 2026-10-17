@@ -63,3 +63,16 @@ effects and restores each engine from its own snapshot. If a snapshot cannot be
 read, restoration retains the existing preference-based fallback for that
 engine. CI can validate the code path, but device testing is still required to
 confirm native equalizer behavior across real transitions.
+
+
+## Consecutive-transition engine-state diagnostics
+
+Crossfade commits already record that the incoming engine is playing and has
+reached the target gain. That checkpoint does not show whether both reusable
+engines finish cleanup at normal speed, nor whether the inactive engine is left
+audible. The provider now emits `crossfade_final_engine_state` after owned
+transition cleanup, including active/inactive volume, speed, playing state,
+active engine, song ID, and playback intent. Use sequences of these events to
+identify a stale speed or gain across consecutive transitions. The event is
+observability only; it does not assert native audio is audible and does not
+replace real-device testing.
