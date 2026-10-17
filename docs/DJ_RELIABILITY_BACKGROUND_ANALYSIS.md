@@ -99,7 +99,9 @@ identified as a call versus another player, so levels 3–4 cannot guarantee
 call-only resume. Level 2 is the conservative choice when yielding to other
 players matters most.
 
-EQ-aware automatic gain compensation is not enabled by this change. The current
-preamp path is attenuation-oriented; deriving safe positive compensation from
-hardware-dependent EQ bands needs a separate per-engine calculation and native
-clipping/device validation before it can offer automatic boosts.
+Automatic EQ headroom is available as an opt-in setting. It estimates the
+largest positive software EQ band and subtracts that amount from the requested
+preamp, bounded by the DSP's -6 dB floor. This is a conservative heuristic, not
+a measurement of actual output or clipping. It can reduce effective gain but
+does not automatically boost output to compensate for EQ cuts; that would need
+a separate loudness/peak model and native clipping/device validation.
