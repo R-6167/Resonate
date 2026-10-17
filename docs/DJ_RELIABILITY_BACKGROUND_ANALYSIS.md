@@ -49,3 +49,17 @@ retry cooldown. A genuine completed analysis with no usable tags remains
 `no_tags`; an actual exception remains `failed`. This is diagnostic and retry
 behavior only: it does not claim to improve BPM/key accuracy or make native
 analysis cancellation instantaneous.
+
+
+## Independent EQ snapshots per DJ engine
+
+The SFX rack previously captured one equalizer gain list from engine A and
+used that same list when restoring both engine A and engine B. If the engines
+had different pre-transition gain states, restoring the effect could overwrite
+engine B's original gains with engine A's values.
+
+The rack now snapshots each equalizer independently before applying transition
+effects and restores each engine from its own snapshot. If a snapshot cannot be
+read, restoration retains the existing preference-based fallback for that
+engine. CI can validate the code path, but device testing is still required to
+confirm native equalizer behavior across real transitions.
