@@ -113,22 +113,22 @@ class ResonateGlassCard extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final decoration = DecoratedBox(
       decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
-            color: (isDark ? Colors.white : scheme.surface)
-                .withValues(alpha: isDark ? 0.08 : 0.55),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.35),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
+        borderRadius: BorderRadius.circular(borderRadius),
+        color: (isDark ? Colors.white : scheme.surface)
+            .withValues(alpha: isDark ? 0.08 : 0.55),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+            blurRadius: blurEnabled ? 16 : 8,
+            offset: const Offset(0, 4),
           ),
-          child: Padding(padding: padding, child: child),
-        );
+        ],
+      ),
+      child: Padding(padding: padding, child: child),
+    );
     final card = blurEnabled
         ? ClipRRect(
             borderRadius: BorderRadius.circular(borderRadius),
