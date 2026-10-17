@@ -1,21 +1,18 @@
 package com.Aetherion.Resonate
 
-import android.Manifest
 import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
 import android.media.MediaFormat
-import android.media.audiofx.EnvironmentalReverb
-import android.media.audiofx.Virtualizer
 import android.net.Uri
-import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import com.Aetherion.Resonate.effects.AndroidEffectsBridge
+import com.Aetherion.Resonate.media.PermissionHelper
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -30,19 +27,14 @@ class MainActivity : AudioServiceActivity() {
 
     private val channelName = "com.aetherion.resonate/media_store"
     private val effectsChannelName = "com.aetherion.resonate/audio_effects"
-    private val permissionRequestCode = 6167
     private val folderRequestCode = 6168
-    private val notificationPermissionRequestCode = 6169
     private val diagnosticFileRequestCode = 6170
-    private var permissionResult: MethodChannel.Result? = null
     private var folderResult: MethodChannel.Result? = null
-    private var notificationPermissionResult: MethodChannel.Result? = null
     private var diagnosticFileResult: MethodChannel.Result? = null
     private var pendingDiagnosticBytes: ByteArray? = null
     private var pendingDiagnosticMime: String = "application/json"
-    private var effectSessionId: Int = 0
-    private var virtualizer: Virtualizer? = null
-    private var reverb: EnvironmentalReverb? = null
+    private val permissionHelper by lazy { PermissionHelper(this) }
+    private val effectsBridge = AndroidEffectsBridge()
     private val pcmExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var pcmCancellationGeneration: Long = 0L
     private val folderScanExecutor = Executors.newSingleThreadExecutor()
@@ -51,8 +43,8 @@ class MainActivity : AudioServiceActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
-                "requestAudioPermission" -> requestAudioPermission(result)
-                "requestNotificationPermission" -> requestNotificationPermission(result)
+                "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
+                "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
                 "getSystemVolume" -> getSystemVolume(result)
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
                 "pickFolder" -> pickFolder(result)
@@ -84,7 +76,7 @@ class MainActivity : AudioServiceActivity() {
             try {
                 when (call.method) {
                     "attachToSession" -> {
-                        attachEffects(call.argument<Int>("sessionId") ?: 0)
+                        effectsBridge.attachToSession(call.argument<Int>("sessionId") ?: 0)
                         result.success(true)
                     }
                     "setBassBoost" -> {
@@ -92,13 +84,11 @@ class MainActivity : AudioServiceActivity() {
                         result.success(true)
                     }
                     "setVirtualizer" -> {
-                        val s = (call.argument<Int>("strength") ?: 0).coerceIn(0, 1000)
-                        if (s > 0) ensureVirtualizer()?.setStrength(s.toShort())
+                        effectsBridge.setVirtualizer(call.argument<Int>("strength") ?: 0)
                         result.success(true)
                     }
                     "setReverb" -> {
-                        val s = (call.argument<Int>("strength") ?: 0).coerceIn(-900, 1000)
-                        if (s != 0) ensureReverb()?.reverbLevel = s.toShort()
+                        effectsBridge.setReverb(call.argument<Int>("strength") ?: 0)
                         result.success(true)
                     }
                     // ---- Live DSP ENGINE (per-stream A/B via DspEngineRegistry) ----
@@ -148,77 +138,14 @@ class MainActivity : AudioServiceActivity() {
                     "getLiveDspStatus" -> {
                         result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
                     }
-
                     "release" -> {
-                        releaseEffects()
+                        effectsBridge.release()
                         result.success(true)
                     }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
         }
-    }
-
-    private fun attachEffects(sessionId: Int) {
-        // Mature Resonate DSP is the authoritative processing engine.
-        // Only retain the session id here for optional creative Android effects.
-        if (sessionId <= 0) return
-        effectSessionId = sessionId
-    }
-
-    private fun ensureVirtualizer(): Virtualizer? {
-        if (effectSessionId <= 0) return null
-        if (virtualizer != null) return virtualizer
-        return try {
-            Virtualizer(0, effectSessionId).also {
-                it.enabled = true
-                virtualizer = it
-            }
-        } catch (_: Throwable) {
-            virtualizer = null
-            null
-        }
-    }
-
-    private fun ensureReverb(): EnvironmentalReverb? {
-        if (effectSessionId <= 0) return null
-        if (reverb != null) return reverb
-        return try {
-            EnvironmentalReverb(0, effectSessionId).also {
-                it.enabled = true
-                reverb = it
-            }
-        } catch (_: Throwable) {
-            reverb = null
-            null
-        }
-    }
-
-    private fun releaseEffects() {
-        try {
-            virtualizer?.release()
-        } catch (_: Exception) {
-        }
-        try {
-            reverb?.release()
-        } catch (_: Exception) {
-        }
-        virtualizer = null
-        reverb = null
-        effectSessionId = 0
-    }
-
-    private fun audioPermission(): String = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
-    private fun hasAudioPermission(): Boolean = checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED
-
-    private fun requestAudioPermission(result: MethodChannel.Result) {
-        if (hasAudioPermission()) { result.success(true); return }
-        permissionResult = result; requestPermissions(arrayOf(audioPermission()), permissionRequestCode)
-    }
-
-    private fun requestNotificationPermission(result: MethodChannel.Result) {
-        if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) { result.success(true); return }
-        notificationPermissionResult = result; requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), notificationPermissionRequestCode)
     }
 
     private fun getSystemVolume(result: MethodChannel.Result) {
@@ -317,10 +244,7 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            permissionRequestCode -> { permissionResult?.success(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED); permissionResult = null }
-            notificationPermissionRequestCode -> { notificationPermissionResult?.success(grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED); notificationPermissionResult = null }
-        }
+        permissionHelper.onRequestPermissionsResult(requestCode, grantResults)
     }
 
     private fun selectedPrefixes(folders: List<String>): Set<String> = folders.mapNotNull { value ->
@@ -345,7 +269,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun querySelectedAudio(folders: List<String>, minimumDurationMs: Int = 0, includeSize: Boolean = false, includeNonMusic: Boolean = false): Any {
-        if (!hasAudioPermission()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
+        if (!permissionHelper.hasAudioPermission()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
         val prefixes = selectedPrefixes(folders)
         if (prefixes.isEmpty() && folders.isNotEmpty()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
         val projection = arrayOf(
@@ -442,7 +366,6 @@ class MainActivity : AudioServiceActivity() {
             "m4b", "m4p", "mid", "midi", "mp3", "oga", "ogg", "opus",
             "wav", "wma", "3ga"
         )
-
         fun visit(documentId: String, depth: Int) {
             if (depth > 32 || !visited.add(documentId)) return
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
@@ -510,7 +433,6 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         }
-
         visit(rootDocumentId, 0)
         return results
     }
@@ -521,7 +443,6 @@ class MainActivity : AudioServiceActivity() {
 
     private fun getAudioSize(folders: List<String>): Long =
         querySelectedAudio(folders, includeSize = true) as Long
-
 
     /** Read first N bytes of a content:// or file path (ID3 head scan). */
     private fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
@@ -589,7 +510,6 @@ class MainActivity : AudioServiceActivity() {
                     try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
                 }
                 if (!opened) { runOnUiThread { result.success(null) }; return@execute }
-
                 var audioTrack = -1
                 var format: MediaFormat? = null
                 for (i in 0 until extractor.trackCount) {
@@ -680,7 +600,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
-        releaseEffects()
+        effectsBridge.release()
         super.onDestroy()
     }
 }
