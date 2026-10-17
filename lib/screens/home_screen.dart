@@ -119,7 +119,15 @@ class _HomeDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
-    final music = context.watch<MusicProvider>();
+    // MusicProvider emits frequent position/engine notifications. Select only the
+    // playback fields this dashboard renders so position ticks don't rebuild the
+    // entire For You feed while the user scrolls.
+    final music = context.read<MusicProvider>();
+    final currentSong = context.select<MusicProvider, Song?>((p) => p.currentSong);
+    final isPlaying = context.select<MusicProvider, bool>((p) => p.isPlaying);
+    final canContinueListening = context.select<MusicProvider, bool>((p) => p.canContinueListening);
+    final resumePositionMs = context.select<MusicProvider, int>((p) => p.resumePositionMs);
+    final currentDuration = context.select<MusicProvider, Duration?>((p) => p.currentDuration);
     final intelligence = context.watch<IntelligenceProvider>();
     final modes = context.watch<ModeProvider>();
     final density = ModePlayerDensity.fromMode(modes);
@@ -131,10 +139,10 @@ class _HomeDashboard extends StatelessWidget {
       AutopilotHomeCard(songCount: songs.length),
     ];
 
-    if (music.canContinueListening && music.currentSong != null && !music.isPlaying) {
-      final song = music.currentSong!;
-      final pos = music.resumePositionMs;
-      final dur = (music.currentDuration ?? song.duration).inMilliseconds;
+    if (canContinueListening && currentSong != null && !isPlaying) {
+      final song = currentSong;
+      final pos = resumePositionMs;
+      final dur = (currentDuration ?? song.duration).inMilliseconds;
       final progress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
       children.addAll([
         const SizedBox(height: 14),
@@ -173,29 +181,14 @@ class _HomeDashboard extends StatelessWidget {
       ]);
     }
 
-    if (music.currentSong != null) {
+    if (currentSong != null) {
       children.addAll([
         const SizedBox(height: 20),
         _sectionTitle(context, 'Now playing'),
         ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(
-          leading: CircleAvatar(child: Icon(music.isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
-          title: Text(music.currentSong!.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(music.currentSong!.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
-              const Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: [
-                  ResonateModeChip(dense: true),
-                  DjModeStatusChip(dense: true),
-                ],
-              ),
-            ],
-          ),
-          isThreeLine: true,
+          leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
+          title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: FilledButton.tonalIcon(
             style: FilledButton.styleFrom(
               minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
@@ -206,10 +199,10 @@ class _HomeDashboard extends StatelessWidget {
             ),
             onPressed: () => PlaybackAuthority.instance.userToggle(music),
             icon: Icon(
-              music.isPlaying ? Icons.pause : Icons.play_arrow,
+              isPlaying ? Icons.pause : Icons.play_arrow,
               size: density.largeControls ? 28 : 22,
             ),
-            label: Text(music.isPlaying ? 'Pause' : 'Play'),
+            label: Text(isPlaying ? 'Pause' : 'Play'),
           ),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())),
         )),
@@ -357,6 +350,9 @@ class _RecommendationTileState extends State<_RecommendationTile> {
         final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
         final confidenceText = '${widget.item.confidenceLabel} • $confidence%';
         return ResonateGlassCard(
+          // Live BackdropFilter blur on every recommendation card is expensive
+          // during scrolling, particularly on low-end Android devices.
+          blurEnabled: false,
           padding: EdgeInsets.zero,
           margin: const EdgeInsets.only(bottom: 9),
           child: ListTile(
