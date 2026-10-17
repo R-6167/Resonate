@@ -97,41 +97,50 @@ class ResonateGlassCard extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 14),
     this.margin,
     this.borderRadius = 20,
+    this.blurEnabled = true,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry? margin;
   final double borderRadius;
+  /// Disable expensive backdrop sampling for dense scrolling lists.
+  final bool blurEnabled;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final card = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
-            color: (isDark ? Colors.white : scheme.surface)
-                .withValues(alpha: isDark ? 0.08 : 0.55),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.35),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Padding(padding: padding, child: child),
+    final decoration = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(borderRadius),
+        color: (isDark ? Colors.white : scheme.surface)
+            .withValues(alpha: isDark ? 0.08 : 0.55),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.35),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+            blurRadius: blurEnabled ? 16 : 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
+      child: Padding(padding: padding, child: child),
     );
+    final card = blurEnabled
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(borderRadius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: decoration,
+            ),
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(borderRadius),
+            child: decoration,
+          );
     if (margin != null) {
       return Padding(padding: margin!, child: card);
     }
@@ -148,6 +157,7 @@ class ResonateGlassSection extends StatelessWidget {
     required this.children,
     this.initiallyExpanded = false,
     this.accent,
+    this.lightweight = false,
   });
 
   final String title;
@@ -155,12 +165,15 @@ class ResonateGlassSection extends StatelessWidget {
   final List<Widget> children;
   final bool initiallyExpanded;
   final Color? accent;
+  /// Uses a translucent solid surface instead of a live blur for scroll-heavy screens.
+  final bool lightweight;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = accent ?? scheme.primary;
     return ResonateGlassCard(
+      blurEnabled: !lightweight,
       margin: const EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.zero,
       child: Theme(

@@ -188,8 +188,22 @@ class MusicProvider extends ChangeNotifier {
   bool _isDucked = false;
   /// When exclusive focus was lost (call / other media) — used for long-call gate.
   DateTime? _focusLostAt;
+  int _focusResumeGeneration = 0;
   int _volumeFadeGen = 0;
   static const double _duckLevel = 0.32;
+  bool _audioFocusAutomationEnabled = true;
+  int _audioFocusLevel = 2;
+  bool get audioFocusAutomationEnabled => _audioFocusAutomationEnabled;
+  int get audioFocusLevel => _audioFocusLevel;
+
+  Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
+    if (automatic != null) _audioFocusAutomationEnabled = automatic;
+    if (level != null) _audioFocusLevel = level.clamp(1, 4).toInt();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_audioFocusAutomationKey, _audioFocusAutomationEnabled);
+    await prefs.setInt(_audioFocusLevelKey, _audioFocusLevel);
+    notifyListeners();
+  }
   static const int _duckFadeMs = 180;
   /// Short transport fade for user pause / resume (keeps next/seek snappy).
   static const int _transportFadeMs = 220;
@@ -376,6 +390,8 @@ class MusicProvider extends ChangeNotifier {
   static const _savedQueueIndexKey = 'playback_queue_index';
   static const _shuffleEnabledKey = 'playback_shuffle_enabled';
   static const _repeatModeKey = 'playback_repeat_mode';
+  static const _audioFocusAutomationKey = 'audio_focus_automation_enabled';
+  static const _audioFocusLevelKey = 'audio_focus_automation_level';
   static const _resumePositionKey = 'playback_resume_position_ms';
   static const _resumeSongIdKey = 'playback_resume_song_id';
   static const _resumeMapKey = 'playback_resume_map_v1';
@@ -430,6 +446,8 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
+      _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
+      _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4).toInt();
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
       // Crossfade preferences are owned and restored by CrossfadeProvider.
@@ -825,12 +843,13 @@ class MusicProvider extends ChangeNotifier {
         }));
         if (event.begin) {
           if (event.type == AudioInterruptionType.pause) {
-            // Calls / exclusive media: pause, keep intent, stamp focus-loss time.
+            // Calls / exclusive media: pause and invalidate any pending auto-resume.
+            _focusResumeGeneration++;
             _focusLostAt = DateTime.now();
             unawaited(pause(source: 'system'));
           } else if (event.type == AudioInterruptionType.duck) {
-            // Notifications / nav / transient: soft duck with fade.
-            unawaited(_duckForInterruption());
+            // Notifications / nav / transient: configurable soft duck.
+            if (_audioFocusAutomationEnabled) unawaited(_duckForInterruption());
           } else {
             // Unknown transient — prefer duck over a hard stop.
             unawaited(_duckForInterruption());
@@ -841,21 +860,28 @@ class MusicProvider extends ChangeNotifier {
           } else if (event.type == AudioInterruptionType.pause) {
             final lostAt = _focusLostAt;
             _focusLostAt = null;
-            final lostLong = lostAt != null &&
-                DateTime.now().difference(lostAt) > _autoResumeMaxFocusLoss;
-            if (lostLong) {
+            final lostDuration = lostAt == null
+                ? null
+                : DateTime.now().difference(lostAt);
+            final resumeLimit = _audioFocusLevel == 3
+                ? const Duration(seconds: 30)
+                : _autoResumeMaxFocusLoss;
+            final mayAutoResume = _audioFocusAutomationEnabled && _audioFocusLevel >= 3;
+            final lostLong = lostDuration != null && lostDuration > resumeLimit;
+            if (!mayAutoResume || lostLong) {
               // Long call: do not surprise-resume; user taps play when ready.
               _userWantsPlaying = false;
               unawaited(ResonateDiagnostics.record('audio_focus_event', {
-                'action': 'skip_auto_resume_long_focus_loss',
-                'lostMs': lostAt == null
-                    ? null
-                    : DateTime.now().difference(lostAt).inMilliseconds,
+                'action': mayAutoResume ? 'skip_auto_resume_long_focus_loss' : 'manual_resume_required',
+                'focusLevel': _audioFocusLevel,
+                'automationEnabled': _audioFocusAutomationEnabled,
+                'lostMs': lostDuration?.inMilliseconds,
               }));
               return;
             }
             if (_userWantsPlaying) {
-              unawaited(_resumeAfterSystemFocus());
+              final generation = ++_focusResumeGeneration;
+              unawaited(_resumeAfterSystemFocus(generation: generation));
             }
           } else if (_userWantsPlaying && _isDucked) {
             unawaited(_unduckAfterInterruption());
@@ -971,7 +997,8 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _isDucked = true;
-    final target = (_duckLevel * _eqPreampScale).clamp(0.05, 0.45);
+    final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
+    final target = (duck * _eqPreampScale).clamp(0.05, 0.45);
     try {
       final aVol = _playerA.volume;
       final bVol = _playerB.volume;
@@ -1027,22 +1054,19 @@ class MusicProvider extends ChangeNotifier {
   }
 
   /// Re-claim session then resume after a call / exclusive focus loss.
-  Future<void> _resumeAfterSystemFocus() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.setActive(true);
-    } catch (_) {}
-    // Brief settle for OEM audio policy after a call.
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!_userWantsPlaying) return;
+  Future<void> _resumeAfterSystemFocus({required int generation}) async {
+    // Let Android settle before resuming. Do not setActive(true) here: doing so
+    // can reclaim focus from another music app that has just taken ownership.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
     _isDucked = false;
     try {
       await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
     } catch (_) {}
     await resumePlayback(source: 'system');
-    // Nudge volume again — some devices stay muted one tick after setActive.
+    // Nudge volume again only if no newer focus event superseded this recovery.
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    if (_userWantsPlaying && !_crossfadeInProgress) {
+    if (generation == _focusResumeGeneration && _userWantsPlaying && !_crossfadeInProgress) {
       try {
         await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
         if (!audioPlayer.playing) {
@@ -4608,8 +4632,10 @@ class MusicProvider extends ChangeNotifier {
         _isDucked = false;
         if (audioPlayer.audioSource != null) {
           try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
+            if (source != 'system') {
+              final session = await AudioSession.instance;
+              await session.setActive(true);
+            }
           } catch (_) {}
           // If we are sitting on a completed source, seek to zero first.
           if (audioPlayer.processingState == ProcessingState.completed) {
