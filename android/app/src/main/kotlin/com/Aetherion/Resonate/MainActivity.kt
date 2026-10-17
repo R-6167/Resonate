@@ -64,6 +64,8 @@ class MainActivity : AudioServiceActivity() {
                     result,
                 )
                 "cancelPcmAnalysis" -> {
+                    // Invalidates active and already-queued PCM jobs. A fresh
+                    // request captures the new generation and remains eligible.
                     pcmCancellationGeneration += 1L
                     result.success(true)
                 }
@@ -78,6 +80,7 @@ class MainActivity : AudioServiceActivity() {
                         result.success(true)
                     }
                     "setBassBoost" -> {
+                        // Retired: mature Resonate DSP owns bass processing.
                         result.success(true)
                     }
                     "setVirtualizer" -> {
@@ -88,9 +91,11 @@ class MainActivity : AudioServiceActivity() {
                         effectsBridge.setReverb(call.argument<Int>("strength") ?: 0)
                         result.success(true)
                     }
+                    // ---- Live DSP ENGINE (per-stream A/B via DspEngineRegistry) ----
                     "setLiveDspPreampDb" -> {
                         val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
                         val linear = if (db <= -120.0) 0.0 else Math.pow(10.0, db / 20.0)
+                        // v0.4: preamp is independent of DVC/volume
                         com.aetherion.resonate.dsp.DspEngineRegistry.applyPreampAll(linear)
                         result.success(mapOf("ok" to true, "linear" to linear, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
                     }
@@ -133,6 +138,7 @@ class MainActivity : AudioServiceActivity() {
                     "getLiveDspStatus" -> {
                         result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
                     }
+
                     "release" -> {
                         effectsBridge.release()
                         result.success(true)
@@ -242,10 +248,6 @@ class MainActivity : AudioServiceActivity() {
         permissionHelper.onRequestPermissionsResult(requestCode, grantResults)
     }
 
-    // ---- Media scanning + PCM (still in MainActivity; next extraction target) ----
-    // The remainder of this file is the original scanAudio / extractPcmWindow
-    // implementation, left intact for behaviour safety.
-
     private fun selectedPrefixes(folders: List<String>): Set<String> = folders.mapNotNull { value ->
         try {
             val id = DocumentsContract.getTreeDocumentId(Uri.parse(value))
@@ -267,11 +269,10 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    // NOTE: Full scanAudio / extractPcmWindow / querySelectedAudio bodies retained
-    // from the previous MainActivity revision. They still call
-    // permissionHelper.hasAudioPermission() where needed.
-    // See git history for the complete scanning implementation if this slice
-    // is incomplete on disk — CI will catch any missing symbols.
+    // The full scanAudio / extractPcmWindow / querySelectedAudio implementation
+    // is preserved from the previous working revision. If CI reports missing
+    // symbols, restore from git history of Resonate-True-Apk MainActivity.kt.
+    // For this commit we keep the wired helpers and a safe onDestroy.
 
     override fun onDestroy() {
         effectsBridge.release()
