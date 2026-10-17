@@ -190,6 +190,19 @@ class MusicProvider extends ChangeNotifier {
   DateTime? _focusLostAt;
   int _volumeFadeGen = 0;
   static const double _duckLevel = 0.32;
+  bool _audioFocusAutomationEnabled = true;
+  int _audioFocusLevel = 2;
+  bool get audioFocusAutomationEnabled => _audioFocusAutomationEnabled;
+  int get audioFocusLevel => _audioFocusLevel;
+
+  Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
+    if (automatic != null) _audioFocusAutomationEnabled = automatic;
+    if (level != null) _audioFocusLevel = level.clamp(1, 4);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_audioFocusAutomationKey, _audioFocusAutomationEnabled);
+    await prefs.setInt(_audioFocusLevelKey, _audioFocusLevel);
+    notifyListeners();
+  }
   static const int _duckFadeMs = 180;
   /// Short transport fade for user pause / resume (keeps next/seek snappy).
   static const int _transportFadeMs = 220;
@@ -376,6 +389,8 @@ class MusicProvider extends ChangeNotifier {
   static const _savedQueueIndexKey = 'playback_queue_index';
   static const _shuffleEnabledKey = 'playback_shuffle_enabled';
   static const _repeatModeKey = 'playback_repeat_mode';
+  static const _audioFocusAutomationKey = 'audio_focus_automation_enabled';
+  static const _audioFocusLevelKey = 'audio_focus_automation_level';
   static const _resumePositionKey = 'playback_resume_position_ms';
   static const _resumeSongIdKey = 'playback_resume_song_id';
   static const _resumeMapKey = 'playback_resume_map_v1';
@@ -430,6 +445,8 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
+      _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
+      _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4);
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
       // Crossfade preferences are owned and restored by CrossfadeProvider.
@@ -829,8 +846,8 @@ class MusicProvider extends ChangeNotifier {
             _focusLostAt = DateTime.now();
             unawaited(pause(source: 'system'));
           } else if (event.type == AudioInterruptionType.duck) {
-            // Notifications / nav / transient: soft duck with fade.
-            unawaited(_duckForInterruption());
+            // Notifications / nav / transient: configurable soft duck.
+            if (_audioFocusAutomationEnabled) unawaited(_duckForInterruption());
           } else {
             // Unknown transient — prefer duck over a hard stop.
             unawaited(_duckForInterruption());
@@ -841,16 +858,22 @@ class MusicProvider extends ChangeNotifier {
           } else if (event.type == AudioInterruptionType.pause) {
             final lostAt = _focusLostAt;
             _focusLostAt = null;
-            final lostLong = lostAt != null &&
-                DateTime.now().difference(lostAt) > _autoResumeMaxFocusLoss;
-            if (lostLong) {
+            final lostDuration = lostAt == null
+                ? null
+                : DateTime.now().difference(lostAt);
+            final resumeLimit = _audioFocusLevel == 3
+                ? const Duration(seconds: 30)
+                : _autoResumeMaxFocusLoss;
+            final mayAutoResume = _audioFocusAutomationEnabled && _audioFocusLevel >= 3;
+            final lostLong = lostDuration != null && lostDuration > resumeLimit;
+            if (!mayAutoResume || lostLong) {
               // Long call: do not surprise-resume; user taps play when ready.
               _userWantsPlaying = false;
               unawaited(ResonateDiagnostics.record('audio_focus_event', {
-                'action': 'skip_auto_resume_long_focus_loss',
-                'lostMs': lostAt == null
-                    ? null
-                    : DateTime.now().difference(lostAt).inMilliseconds,
+                'action': mayAutoResume ? 'skip_auto_resume_long_focus_loss' : 'manual_resume_required',
+                'focusLevel': _audioFocusLevel,
+                'automationEnabled': _audioFocusAutomationEnabled,
+                'lostMs': lostDuration?.inMilliseconds,
               }));
               return;
             }
