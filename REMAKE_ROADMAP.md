@@ -3,7 +3,7 @@
 Branch: `Resonate_Remake` (from `Companion_Features_Diagnostics`)
 
 ## Goal
-Musicolet-like reliability for normal play, with Intelligence as an optional layer (not removed).
+Maximum reliability for normal play, with Intelligence as an optional layer (not removed).
 
 ## Engine policy
 - **Engine A** — primary player for normal listening
