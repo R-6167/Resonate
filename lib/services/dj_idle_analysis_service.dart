@@ -98,30 +98,54 @@ class DjIdleAnalysisService {
             song,
             force: needsFullProfile,
           );
-          _lastProfileAttemptAt[song.id] = DateTime.now();
-          final gained =
-              (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
-              (after.hasUsableKey && !(before?.hasUsableKey ?? false));
-          if (gained) _updated++;
-          await ResonateDiagnostics.recordDj(
-            stage: 'idle_scan_song',
-            songId: song.id,
-            outcome: gained ? 'updated' : 'no_tags',
-            extra: {
-              'bpm': after.bpm,
-              'hasKey': after.hasUsableKey,
-              'stopRequestedDuringAnalysis': _stopRequested,
-            },
-          );
+
+          // Cancellation is not a completed analysis attempt. The analyzer may
+          // return an empty placeholder when its generation is invalidated;
+          // do not mislabel that as missing tags or suppress a later retry.
+          if (_stopRequested) {
+            await ResonateDiagnostics.recordDj(
+              stage: 'idle_scan_song',
+              songId: song.id,
+              outcome: 'cancelled',
+              extra: {'stopRequestedDuringAnalysis': true},
+            );
+          } else {
+            _lastProfileAttemptAt[song.id] = DateTime.now();
+            final gained =
+                (after.hasUsableBpm && !(before?.hasUsableBpm ?? false)) ||
+                (after.hasUsableKey && !(before?.hasUsableKey ?? false));
+            if (gained) _updated++;
+            await ResonateDiagnostics.recordDj(
+              stage: 'idle_scan_song',
+              songId: song.id,
+              outcome: gained ? 'updated' : 'no_tags',
+              extra: {
+                'bpm': after.bpm,
+                'hasKey': after.hasUsableKey,
+                'stopRequestedDuringAnalysis': false,
+              },
+            );
+          }
         } catch (e) {
-          _failed++;
-          _lastProfileAttemptAt[song.id] = DateTime.now();
-          await ResonateDiagnostics.recordDj(
-            stage: 'idle_scan_error',
-            songId: song.id,
-            outcome: 'failed',
-            reason: e.toString(),
-          );
+          if (_stopRequested) {
+            // A stop racing with a thrown platform error is still a
+            // cancellation, not a failed analysis and not a retry cooldown.
+            await ResonateDiagnostics.recordDj(
+              stage: 'idle_scan_song',
+              songId: song.id,
+              outcome: 'cancelled',
+              extra: {'stopRequestedDuringAnalysis': true},
+            );
+          } else {
+            _failed++;
+            _lastProfileAttemptAt[song.id] = DateTime.now();
+            await ResonateDiagnostics.recordDj(
+              stage: 'idle_scan_error',
+              songId: song.id,
+              outcome: 'failed',
+              reason: e.toString(),
+            );
+          }
         }
         // Yield to the UI and re-check stop state before the next song.
         await Future<void>.delayed(const Duration(milliseconds: 120));
