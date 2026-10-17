@@ -1,1 +1,606 @@
-PLACEHOLDER_WILL_REPLACE
+package com.Aetherion.Resonate
+
+import android.app.Activity
+import android.content.ContentUris
+import android.content.Intent
+import android.media.AudioManager
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaMetadataRetriever
+import android.media.MediaFormat
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.MediaStore
+import com.Aetherion.Resonate.effects.AndroidEffectsBridge
+import com.Aetherion.Resonate.media.PermissionHelper
+import com.ryanheise.audioservice.AudioServiceActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import kotlin.math.roundToInt
+import java.util.concurrent.Executors
+
+class MainActivity : AudioServiceActivity() {
+    // Compile-time keep: audio_service looks up the FGS small icon by string.
+    // Referencing R.drawable here forces AAPT2 to emit a real resource id.
+    @Suppress("unused")
+    private val mediaNotificationIconId = R.drawable.ic_stat_resonate
+
+    private val channelName = "com.aetherion.resonate/media_store"
+    private val effectsChannelName = "com.aetherion.resonate/audio_effects"
+    private val folderRequestCode = 6168
+    private val diagnosticFileRequestCode = 6170
+    private var folderResult: MethodChannel.Result? = null
+    private var diagnosticFileResult: MethodChannel.Result? = null
+    private var pendingDiagnosticBytes: ByteArray? = null
+    private var pendingDiagnosticMime: String = "application/json"
+    private val permissionHelper by lazy { PermissionHelper(this) }
+    private val effectsBridge = AndroidEffectsBridge()
+    private val pcmExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var pcmCancellationGeneration: Long = 0L
+    private val folderScanExecutor = Executors.newSingleThreadExecutor()
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
+                "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
+                "getSystemVolume" -> getSystemVolume(result)
+                "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)
+                "pickFolder" -> pickFolder(result)
+                "saveDiagnosticReport" -> saveDiagnosticReport(call.argument<String>("fileName") ?: "resonate-diagnostics.json", call.argument<ByteArray>("bytes") ?: ByteArray(0), result)
+                "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000, call.argument<Boolean>("includeNonMusic") ?: false))
+                "scanModeFolder" -> scanModeFolderAsync(call.argument<String>("folderUri") ?: "", result)
+                "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
+                "readMediaHead" -> readMediaHead(
+                    call.argument<String>("uri") ?: "",
+                    call.argument<Int>("maxBytes") ?: (512 * 1024),
+                    result,
+                )
+                "extractPcmWindow" -> extractPcmWindow(
+                    call.argument<String>("uri") ?: "",
+                    (call.argument<Number>("maxSeconds") ?: 12.0).toDouble(),
+                    (call.argument<Number>("startMs") ?: 0).toLong(),
+                    result,
+                )
+                "cancelPcmAnalysis" -> {
+                    // Invalidates active and already-queued PCM jobs. A fresh
+                    // request captures the new generation and remains eligible.
+                    pcmCancellationGeneration += 1L
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "attachToSession" -> {
+                        effectsBridge.attachToSession(call.argument<Int>("sessionId") ?: 0)
+                        result.success(true)
+                    }
+                    "setBassBoost" -> {
+                        // Retired: mature Resonate DSP owns bass processing.
+                        result.success(true)
+                    }
+                    "setVirtualizer" -> {
+                        effectsBridge.setVirtualizer(call.argument<Int>("strength") ?: 0)
+                        result.success(true)
+                    }
+                    "setReverb" -> {
+                        effectsBridge.setReverb(call.argument<Int>("strength") ?: 0)
+                        result.success(true)
+                    }
+                    // ---- Live DSP ENGINE (per-stream A/B via DspEngineRegistry) ----
+                    "setLiveDspPreampDb" -> {
+                        val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
+                        val linear = if (db <= -120.0) 0.0 else Math.pow(10.0, db / 20.0)
+                        // v0.4: preamp is independent of DVC/volume
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyPreampAll(linear)
+                        result.success(mapOf("ok" to true, "linear" to linear, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
+                    }
+                    "setLiveDspLimiterCeiling" -> {
+                        val high = (call.argument<Number>("highDb") ?: -0.5).toFloat()
+                        val low = (call.argument<Number>("lowDb") ?: -0.2).toFloat()
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyLimiterCeilingAll(high, low)
+                        result.success(mapOf("ok" to true, "highDb" to high, "lowDb" to low))
+                    }
+                    "setLiveDspCrossoverHz" -> {
+                        val hz = (call.argument<Number>("hz") ?: 120.0).toFloat()
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyCrossoverHzAll(hz)
+                        result.success(mapOf("ok" to true, "hz" to hz))
+                    }
+                    "setLiveDspEqBands" -> {
+                        val centers = (call.argument<List<Double>>("centersHz") ?: emptyList()).toDoubleArray()
+                        val gains = (call.argument<List<Double>>("gainsDb") ?: emptyList()).toDoubleArray()
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyEqBandsAll(
+                            if (centers.isEmpty()) null else centers,
+                            gains,
+                            enabled,
+                        )
+                        result.success(mapOf("ok" to true, "bands" to gains.size, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
+                    }
+                    "setLiveDspSpeakerMode" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applySpeakerModeAll(enabled)
+                        result.success(mapOf(
+                            "ok" to true,
+                            "enabled" to enabled,
+                            "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount(),
+                        ))
+                    }
+                    "setLiveDspVirtualBass" -> {
+                        val amount = (call.argument<Number>("amount") ?: 0.55).toDouble().coerceIn(0.0, 1.0)
+                        com.aetherion.resonate.dsp.DspEngineRegistry.applyVirtualBassAll(amount)
+                        result.success(mapOf("ok" to true, "amount" to amount))
+                    }
+                    "getLiveDspStatus" -> {
+                        result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
+                    }
+                    "release" -> {
+                        effectsBridge.release()
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
+        }
+    }
+
+    private fun getSystemVolume(result: MethodChannel.Result) {
+        try { val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; result.success(mapOf("current" to audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), "max" to audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC))) }
+        catch (e: Exception) { result.error("SYSTEM_VOLUME_ERROR", e.message, null) }
+    }
+
+    private fun setSystemVolume(value: Double, result: MethodChannel.Result) {
+        try { val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager; val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC); audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (value.coerceIn(0.0,1.0)*max).roundToInt(), 0); result.success(true) }
+        catch (e: Exception) { result.error("SYSTEM_VOLUME_ERROR", e.message, null) }
+    }
+
+    private fun pickFolder(result: MethodChannel.Result) {
+        folderResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+        }
+        startActivityForResult(intent, folderRequestCode)
+    }
+
+    private fun saveDiagnosticReport(fileName: String, bytes: ByteArray, result: MethodChannel.Result) {
+        if (bytes.isEmpty()) { result.error("EMPTY_REPORT", "Diagnostic report is empty.", null); return }
+        diagnosticFileResult = result
+        pendingDiagnosticBytes = bytes
+        pendingDiagnosticMime = "application/json"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = pendingDiagnosticMime
+            putExtra(Intent.EXTRA_TITLE, if (fileName.endsWith(".json")) fileName else "$fileName.json")
+        }
+        try { startActivityForResult(intent, diagnosticFileRequestCode) } catch (e: Exception) {
+            diagnosticFileResult = null
+            pendingDiagnosticBytes = null
+            result.error("DOCUMENT_PICKER_FAILED", e.message, null)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == diagnosticFileRequestCode) {
+            val result = diagnosticFileResult
+            diagnosticFileResult = null
+            val bytes = pendingDiagnosticBytes
+            pendingDiagnosticBytes = null
+            if (result == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null || bytes == null) { result.success(null); return }
+            try {
+                contentResolver.openOutputStream(data.data!!)?.use { it.write(bytes); it.flush() }
+                    ?: throw IllegalStateException("Could not open selected document.")
+                result.success(data.data!!.toString())
+            } catch (e: Exception) { result.error("SAVE_FAILED", e.message, null) }
+            return
+        }
+        if (requestCode != folderRequestCode) return
+        val result = folderResult ?: return; folderResult = null
+        if (resultCode != Activity.RESULT_OK || data?.data == null) { result.success(null); return }
+        val uri = data.data!!
+        val grantFlags = data.flags and
+            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        if (grantFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION == 0) {
+            result.error(
+                "FOLDER_READ_PERMISSION_MISSING",
+                "Android did not grant read access to the selected folder. Please choose it again.",
+                null,
+            )
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(uri, grantFlags)
+        } catch (e: Exception) {
+            android.util.Log.w("ResonateModes", "Could not persist selected folder access", e)
+            result.error(
+                "FOLDER_PERMISSION_PERSIST_FAILED",
+                "Could not keep access to the selected folder. Please choose it again. ${e.message ?: ""}".trim(),
+                null,
+            )
+            return
+        }
+        val hasReadGrant = contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
+        }
+        if (!hasReadGrant) {
+            result.error(
+                "FOLDER_PERMISSION_NOT_PERSISTED",
+                "Android did not retain access to the selected folder. Please choose it again.",
+                null,
+            )
+            return
+        }
+        val documentId = DocumentsContract.getTreeDocumentId(uri)
+        val name = documentId.substringAfter(':').trim('/').substringAfterLast('/').ifBlank { "Device storage" }
+        result.success(mapOf("uri" to uri.toString(), "name" to name))
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionHelper.onRequestPermissionsResult(requestCode, grantResults)
+    }
+
+    private fun selectedPrefixes(folders: List<String>): Set<String> = folders.mapNotNull { value ->
+        try {
+            val id = DocumentsContract.getTreeDocumentId(Uri.parse(value))
+            val path = id.substringAfter(':', "").trim('/')
+            if (path.isEmpty()) "" else "$path/"
+        } catch (_: Exception) { null }
+    }.toSet()
+
+    private fun isInSelectedFolder(relativePath: String?, dataPath: String?, prefixes: Set<String>): Boolean {
+        if (prefixes.isEmpty()) return false
+        if (prefixes.contains("")) return true
+        val relative = (relativePath ?: "").trim('/') + "/"
+        if (prefixes.any { relative.startsWith(it) || it.startsWith(relative) }) return true
+        val absolute = dataPath ?: return false
+        val normalized = absolute.replace('\\', '/').trim('/') + "/"
+        return prefixes.any { p ->
+            val needle = p.trim('/')
+            needle.isNotEmpty() && (normalized.contains("/$needle/") || normalized.endsWith("/$needle") || normalized.contains(needle))
+        }
+    }
+
+    private fun querySelectedAudio(folders: List<String>, minimumDurationMs: Int = 0, includeSize: Boolean = false, includeNonMusic: Boolean = false): Any {
+        if (!permissionHelper.hasAudioPermission()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
+        val prefixes = selectedPrefixes(folders)
+        if (prefixes.isEmpty() && folders.isNotEmpty()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.RELATIVE_PATH,
+        )
+        val selection = StringBuilder(if (includeNonMusic && folders.isNotEmpty()) "1=1" else "${MediaStore.Audio.Media.IS_MUSIC} != 0")
+        if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
+        val selectionArgs = if (minimumDurationMs > 0) arrayOf(minimumDurationMs.toString()) else null
+        val songs = mutableListOf<Map<String, Any?>>()
+        var totalSize = 0L
+        contentResolver.query(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selection.toString(),
+            selectionArgs,
+            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+        )?.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val relativeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+            while (cursor.moveToNext()) {
+                val relativePath = cursor.getString(relativeCol)
+                val dataPath = cursor.getString(dataCol)
+                if (folders.isNotEmpty() && !isInSelectedFolder(relativePath, dataPath, prefixes)) continue
+                val size = cursor.getLong(sizeCol)
+                if (includeSize) { totalSize += size; continue }
+                val id = cursor.getLong(idCol)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
+                songs.add(
+                    mapOf(
+                        "filePath" to contentUri,
+                        "title" to (cursor.getString(titleCol) ?: "Unknown Title"),
+                        "artist" to (cursor.getString(artistCol) ?: "Unknown Artist"),
+                        "album" to (cursor.getString(albumCol) ?: "Unknown Album"),
+                        "duration" to cursor.getLong(durationCol),
+                        "dateAdded" to cursor.getLong(dateCol),
+                        "size" to size,
+                    )
+                )
+            }
+        }
+        return if (includeSize) totalSize else songs
+    }
+
+    /**
+     * Scan the selected SAF tree directly. MediaStore can omit audiobook formats
+     * (notably .m4b) or files that have not been indexed yet, so Mode folders must
+     * not depend on READ_MEDIA_AUDIO or IS_MUSIC classification.
+     */
+    private fun scanModeFolderAsync(folderUri: String, result: MethodChannel.Result) {
+        folderScanExecutor.execute {
+            try {
+                val songs = scanModeFolder(folderUri)
+                runOnUiThread { result.success(songs) }
+            } catch (e: Exception) {
+                android.util.Log.w("ResonateModes", "Mode folder scan failed", e)
+                runOnUiThread {
+                    result.error("MODE_FOLDER_SCAN_FAILED", e.message ?: "Unable to scan selected folder", null)
+                }
+            }
+        }
+    }
+
+    private fun scanModeFolder(folderUri: String): List<Map<String, Any?>> {
+        if (folderUri.isBlank()) return emptyList()
+        val treeUri = Uri.parse(folderUri)
+        val hasReadGrant = contentResolver.persistedUriPermissions.any {
+            it.uri == treeUri && it.isReadPermission
+        }
+        if (!hasReadGrant) {
+            throw SecurityException(
+                "Saved access to this folder has expired. Remove it and select the folder again."
+            )
+        }
+        val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val results = mutableListOf<Map<String, Any?>>()
+        val visited = mutableSetOf<String>()
+        val audioExtensions = setOf(
+            "aac", "aif", "aiff", "alac", "amr", "ape", "flac", "m4a",
+            "m4b", "m4p", "mid", "midi", "mp3", "oga", "ogg", "opus",
+            "wav", "wma", "3ga"
+        )
+        fun visit(documentId: String, depth: Int) {
+            if (depth > 32 || !visited.add(documentId)) return
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+            val cursor = contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                ),
+                null,
+                null,
+                null,
+            ) ?: throw IllegalStateException(
+                "Storage provider returned no listing for selected folder: $documentId"
+            )
+            cursor.use {
+                val idColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (idColumn < 0 || nameColumn < 0 || mimeColumn < 0) {
+                    throw IllegalStateException("Storage provider returned an unreadable folder listing")
+                }
+                while (cursor.moveToNext()) {
+                    val childId = cursor.getString(idColumn) ?: continue
+                    val name = cursor.getString(nameColumn) ?: "Unknown Title"
+                    val mime = cursor.getString(mimeColumn) ?: ""
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        visit(childId, depth + 1)
+                        continue
+                    }
+                    val extension = name.substringAfterLast('.', "").lowercase()
+                    if (!mime.startsWith("audio/") && extension !in audioExtensions) continue
+                    val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                    var title = name.substringBeforeLast('.', name).ifBlank { "Unknown Title" }
+                    var artist = "Unknown Artist"
+                    var album = "Unknown Album"
+                    var durationMs = 0L
+                    val metadata = MediaMetadataRetriever()
+                    try {
+                        metadata.setDataSource(this@MainActivity, fileUri)
+                        title = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            ?.takeIf { it.isNotBlank() } ?: title
+                        artist = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                            ?.takeIf { it.isNotBlank() } ?: artist
+                        album = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                            ?.takeIf { it.isNotBlank() } ?: album
+                        durationMs = metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toLongOrNull() ?: 0L
+                    } catch (e: Exception) {
+                        android.util.Log.d("ResonateModes", "Metadata unavailable for $name", e)
+                    } finally {
+                        try { metadata.release() } catch (_: Exception) {}
+                    }
+                    results.add(
+                        mapOf(
+                            "filePath" to fileUri.toString(),
+                            "title" to title,
+                            "artist" to artist,
+                            "album" to album,
+                            "duration" to durationMs,
+                            "dateAdded" to 0L,
+                        )
+                    )
+                }
+            }
+        }
+        visit(rootDocumentId, 0)
+        return results
+    }
+
+    private fun scanAudio(folders: List<String>, minimumDurationMs: Int, includeNonMusic: Boolean = false): List<Map<String, Any?>> =
+        @Suppress("UNCHECKED_CAST")
+        (querySelectedAudio(folders, minimumDurationMs, includeSize = false, includeNonMusic = includeNonMusic) as List<Map<String, Any?>>)
+
+    private fun getAudioSize(folders: List<String>): Long =
+        querySelectedAudio(folders, includeSize = true) as Long
+
+    /** Read first N bytes of a content:// or file path (ID3 head scan). */
+    private fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
+        if (uriString.isBlank()) { result.success(null); return }
+        pcmExecutor.execute {
+            try {
+                val uri = Uri.parse(uriString)
+                val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val buf = ByteArray(limit)
+                    var off = 0
+                    while (off < limit) {
+                        val n = input.read(buf, off, limit - off)
+                        if (n <= 0) break
+                        off += n
+                    }
+                    if (off <= 0) null else buf.copyOf(off)
+                }
+                runOnUiThread { result.success(bytes) }
+            } catch (e: Exception) {
+                try {
+                    val file = java.io.File(uriString)
+                    if (file.exists() && file.canRead()) {
+                        val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
+                        val len = minOf(limit.toLong(), file.length()).toInt()
+                        val bytes = file.inputStream().use { stream ->
+                            val b = stream.readBytes()
+                            if (b.size > len) b.copyOf(len) else b
+                        }
+                        runOnUiThread { result.success(bytes) }
+                        return@execute
+                    }
+                } catch (_: Exception) {}
+                runOnUiThread { result.success(null) }
+            }
+        }
+    }
+
+    /** Decode a short PCM window via MediaExtractor/MediaCodec (MP3/M4A/content://). */
+    private fun extractPcmWindow(uriString: String, maxSeconds: Double, startMs: Long, result: MethodChannel.Result) {
+        if (uriString.isBlank()) { result.success(null); return }
+        val requestGeneration = pcmCancellationGeneration
+        pcmExecutor.execute {
+            var extractor: MediaExtractor? = null
+            var codec: MediaCodec? = null
+            try {
+                extractor = MediaExtractor()
+                val uri = Uri.parse(uriString)
+                var opened = false
+                try {
+                    if (uriString.startsWith("content://") || uriString.startsWith("file://")) {
+                        extractor.setDataSource(this@MainActivity, uri, null)
+                        opened = true
+                    }
+                } catch (_: Exception) {}
+                if (!opened) {
+                    try {
+                        contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                            extractor.setDataSource(pfd.fileDescriptor)
+                            opened = true
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (!opened) {
+                    try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
+                }
+                if (!opened) { runOnUiThread { result.success(null) }; return@execute }
+                var audioTrack = -1
+                var format: MediaFormat? = null
+                for (i in 0 until extractor.trackCount) {
+                    val f = extractor.getTrackFormat(i)
+                    val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("audio/")) { audioTrack = i; format = f; break }
+                }
+                if (audioTrack < 0 || format == null) { runOnUiThread { result.success(null) }; return@execute }
+                extractor.selectTrack(audioTrack)
+                if (startMs > 0L) {
+                    try {
+                        extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    } catch (_: Exception) {}
+                }
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
+                    runOnUiThread { result.success(null) }; return@execute
+                }
+                val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
+                val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+                codec = MediaCodec.createDecoderByType(mime)
+                codec.configure(format, null, null, 0)
+                codec.start()
+                val maxUs = (maxSeconds.coerceIn(4.0, 25.0) * 1_000_000L).toLong()
+                val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 3 * 1024 * 1024)
+                val outBytes = java.io.ByteArrayOutputStream(maxPcmBytes.coerceAtMost(512 * 1024))
+                val info = MediaCodec.BufferInfo()
+                var inputDone = false
+                var outputDone = false
+                var safety = 0
+                while (!outputDone &&
+                    safety < 800 &&
+                    outBytes.size() < maxPcmBytes &&
+                    requestGeneration == pcmCancellationGeneration
+                ) {
+                    safety++
+                    if (!inputDone) {
+                        val inIndex = codec.dequeueInputBuffer(100)
+                        if (inIndex >= 0) {
+                            val inBuf = codec.getInputBuffer(inIndex)
+                            if (inBuf != null) {
+                                inBuf.clear()
+                                val sampleSize = extractor.readSampleData(inBuf, 0)
+                                if (sampleSize < 0 || extractor.sampleTime < 0L || extractor.sampleTime > startMs * 1000L + maxUs) {
+                                    codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                    inputDone = true
+                                } else {
+                                    codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime.coerceAtLeast(0), 0)
+                                    extractor.advance()
+                                }
+                            }
+                        }
+                    }
+                    val outIndex = codec.dequeueOutputBuffer(info, 100)
+                    if (outIndex >= 0) {
+                        if (info.size > 0 && info.presentationTimeUs <= maxUs) {
+                            val outBuf = codec.getOutputBuffer(outIndex)
+                            if (outBuf != null) {
+                                outBuf.position(info.offset)
+                                outBuf.limit(info.offset + info.size)
+                                val chunk = ByteArray(info.size)
+                                outBuf.get(chunk)
+                                val room = maxPcmBytes - outBytes.size()
+                                if (room > 0) outBytes.write(chunk, 0, minOf(chunk.size, room))
+                            }
+                        }
+                        codec.releaseOutputBuffer(outIndex, false)
+                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
+                        if (outBytes.size() >= maxPcmBytes) outputDone = true
+                    }
+                }
+                if (requestGeneration != pcmCancellationGeneration) {
+                    runOnUiThread { result.success(null) }
+                    return@execute
+                }
+                val pcm = outBytes.toByteArray()
+                if (pcm.size < sampleRate) { runOnUiThread { result.success(null) }; return@execute }
+                runOnUiThread {
+                    result.success(hashMapOf("sampleRate" to sampleRate, "channels" to channelCount, "pcm" to pcm))
+                }
+            } catch (e: Exception) {
+                runOnUiThread { result.success(null) }
+            } finally {
+                try { codec?.stop() } catch (_: Exception) {}
+                try { codec?.release() } catch (_: Exception) {}
+                try { extractor?.release() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        effectsBridge.release()
+        super.onDestroy()
+    }
+}
