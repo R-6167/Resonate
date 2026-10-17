@@ -3953,7 +3953,29 @@ class MusicProvider extends ChangeNotifier {
       try {
         await outgoing.setVolume(base);
       } catch (_) {}
+      // Volume writes are asynchronous; the user may have selected another
+      // track while the outgoing engine was applying its level.
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'initial_outgoing_volume',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       await incoming.setVolume(0.0);
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'initial_incoming_volume',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
 
       // DJ Mode: long fades (8–12s) + stretch/SFX feel mushy and raise static risk.
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
