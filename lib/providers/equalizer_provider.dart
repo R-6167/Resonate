@@ -609,13 +609,13 @@ class EqualizerProvider extends ChangeNotifier {
     // Android LoudnessEnhancer, otherwise the same gain is applied twice.
     final peakBandBoost = studioBands.isEmpty
         ? 0.0
-        : studioBands.map((band) => band.gainDb).fold<double>(0.0, (peak, gain) => math.max(peak, gain));
+        : studioBands.map((band) => band.gainDb).fold<double>(0.0, (peak, gain) => math.max(peak, gain).toDouble());
     final requestedPreamp = autoEqHeadroom
         ? math.min(preamp, preamp - math.max(0.0, peakBandBoost))
         : preamp;
     // Conservative estimate based on the largest positive studio-band gain;
     // bounded by the DSP's supported -6 dB preamp floor.
-    final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0) : 0.0;
+    final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0).toDouble() : 0.0;
     try {
       syncPreampToDvc(effective, enabled: isEnabled);
     } catch (e) {
