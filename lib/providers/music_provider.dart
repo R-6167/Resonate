@@ -188,6 +188,7 @@ class MusicProvider extends ChangeNotifier {
   bool _isDucked = false;
   /// When exclusive focus was lost (call / other media) — used for long-call gate.
   DateTime? _focusLostAt;
+  int _focusResumeGeneration = 0;
   int _volumeFadeGen = 0;
   static const double _duckLevel = 0.32;
   bool _audioFocusAutomationEnabled = true;
@@ -197,7 +198,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
     if (automatic != null) _audioFocusAutomationEnabled = automatic;
-    if (level != null) _audioFocusLevel = level.clamp(1, 4);
+    if (level != null) _audioFocusLevel = level.clamp(1, 4).toInt();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_audioFocusAutomationKey, _audioFocusAutomationEnabled);
     await prefs.setInt(_audioFocusLevelKey, _audioFocusLevel);
@@ -446,7 +447,7 @@ class MusicProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
       _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
-      _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4);
+      _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4).toInt();
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
       // Crossfade preferences are owned and restored by CrossfadeProvider.
@@ -842,7 +843,8 @@ class MusicProvider extends ChangeNotifier {
         }));
         if (event.begin) {
           if (event.type == AudioInterruptionType.pause) {
-            // Calls / exclusive media: pause, keep intent, stamp focus-loss time.
+            // Calls / exclusive media: pause and invalidate any pending auto-resume.
+            _focusResumeGeneration++;
             _focusLostAt = DateTime.now();
             unawaited(pause(source: 'system'));
           } else if (event.type == AudioInterruptionType.duck) {
@@ -878,7 +880,8 @@ class MusicProvider extends ChangeNotifier {
               return;
             }
             if (_userWantsPlaying) {
-              unawaited(_resumeAfterSystemFocus());
+              final generation = ++_focusResumeGeneration;
+              unawaited(_resumeAfterSystemFocus(generation: generation));
             }
           } else if (_userWantsPlaying && _isDucked) {
             unawaited(_unduckAfterInterruption());
@@ -994,7 +997,8 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     _isDucked = true;
-    final target = (_duckLevel * _eqPreampScale).clamp(0.05, 0.45);
+    final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
+    final target = (duck * _eqPreampScale).clamp(0.05, 0.45);
     try {
       final aVol = _playerA.volume;
       final bVol = _playerB.volume;
@@ -1050,22 +1054,19 @@ class MusicProvider extends ChangeNotifier {
   }
 
   /// Re-claim session then resume after a call / exclusive focus loss.
-  Future<void> _resumeAfterSystemFocus() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.setActive(true);
-    } catch (_) {}
-    // Brief settle for OEM audio policy after a call.
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (!_userWantsPlaying) return;
+  Future<void> _resumeAfterSystemFocus({required int generation}) async {
+    // Let Android settle before resuming. Do not setActive(true) here: doing so
+    // can reclaim focus from another music app that has just taken ownership.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
     _isDucked = false;
     try {
       await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
     } catch (_) {}
     await resumePlayback(source: 'system');
-    // Nudge volume again — some devices stay muted one tick after setActive.
+    // Nudge volume again only if no newer focus event superseded this recovery.
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    if (_userWantsPlaying && !_crossfadeInProgress) {
+    if (generation == _focusResumeGeneration && _userWantsPlaying && !_crossfadeInProgress) {
       try {
         await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
         if (!audioPlayer.playing) {
@@ -4631,8 +4632,10 @@ class MusicProvider extends ChangeNotifier {
         _isDucked = false;
         if (audioPlayer.audioSource != null) {
           try {
-            final session = await AudioSession.instance;
-            await session.setActive(true);
+            if (source != 'system') {
+              final session = await AudioSession.instance;
+              await session.setActive(true);
+            }
           } catch (_) {}
           // If we are sitting on a completed source, seek to zero first.
           if (audioPlayer.processingState == ProcessingState.completed) {
