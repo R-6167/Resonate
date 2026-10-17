@@ -8,6 +8,7 @@ import '../providers/intelligence_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/playback_authority.dart';
+import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
@@ -187,7 +188,15 @@ class _HomeDashboard extends StatelessWidget {
         ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(
           leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
           title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              const DjModeStatusChip(dense: true),
+            ],
+          ),
           trailing: FilledButton.tonalIcon(
             style: FilledButton.styleFrom(
               minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
