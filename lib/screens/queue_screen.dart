@@ -111,18 +111,28 @@ class QueueScreen extends StatelessWidget {
                             : Icon(
                                 isCurrent
                                     ? Icons.play_circle_fill_rounded
-                                    : (isPast ? Icons.replay_rounded : Icons.queue_music_rounded),
+                                    : (isPast
+                                        ? Icons.history_rounded
+                                        : Icons.queue_music_rounded),
                               ),
                         title: Text(
                           song.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500),
+                          style: TextStyle(
+                            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+                            // Slightly de-emphasise past tracks without claiming they were "played".
+                            color: isPast
+                                ? Theme.of(context).colorScheme.onSurfaceVariant
+                                : null,
+                          ),
                         ),
+                        // Past tracks show only the artist. Listening History is the
+                        // source of truth for what was actually listened to / skipped.
                         subtitle: Text(
                           isCurrent
                               ? 'Now playing • ${song.artist}'
-                              : (isPast ? 'Played • ${song.artist}' : song.artist),
+                              : song.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
