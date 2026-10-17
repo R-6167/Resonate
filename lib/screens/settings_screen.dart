@@ -35,6 +35,7 @@ class SettingsScreen extends StatelessWidget {
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
               _item(context, 'Crossfade', 'Transitions + seamless Repeat one loop', Icons.compare_arrows_rounded, const CrossfadeScreen()),
+              _item(context, 'Audio automation', 'Audio focus, interruption response and EQ headroom', Icons.settings_suggest_rounded, const AudioAutomationSettingsScreen()),
               _item(context, 'Modes', 'Listening context — Driving, Podcast, Running, Work', Icons.tune_rounded, ModesScreen(folderPicker: const ResonateModeFolderPickerPort())),
               _item(context, 'DJ Mode', 'Optional beat, tempo and harmonic blending', Icons.headphones_rounded, const DjModeSettingsScreen()),
               // Effects moved into Equalizer. Loudness retired.
