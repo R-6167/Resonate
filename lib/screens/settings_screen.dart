@@ -13,6 +13,7 @@ import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
 import 'diagnostics_screen.dart';
+import 'audio_automation_settings_screen.dart';
 import 'equalizer_screen.dart';
 import 'intelligence_settings_screen.dart';
 import 'library_management_screen.dart';
@@ -30,30 +31,6 @@ class SettingsScreen extends StatelessWidget {
         body: ListView(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 28),
           children: [
-            Card(
-              elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('Audio tools are always available'),
-                subtitle: const Text(
-                  'Equalizer, Crossfade, DJ Mode, and Effects work from Settings even before you play a song. Open Playback to find DJ Mode.',
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Card(
-              elevation: 0,
-              child: ListTile(
-                leading: const Icon(Icons.volume_down_rounded),
-                title: const Text('Interruptions are automatic'),
-                subtitle: const Text(
-                  'Calls pause Resonate and resume when they end if you were listening. '
-                  'Notifications briefly lower the music, then restore it. '
-                  'Unplugging headphones always pauses. Long calls do not auto-resume.',
-                ),
-                isThreeLine: true,
-              ),
-            ),
             const SizedBox(height: 10),
             _section(context, 'Playback', Icons.play_circle_outline, [
               _item(context, 'Queue', 'View and manage upcoming songs', Icons.queue_music_rounded, const QueueScreen()),
@@ -120,6 +97,7 @@ class SettingsScreen extends StatelessWidget {
         title: title,
         icon: icon,
         initiallyExpanded: initiallyExpanded,
+        lightweight: true,
         children: children,
       );
 
