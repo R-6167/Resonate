@@ -76,3 +76,30 @@ active engine, song ID, and playback intent. Use sequences of these events to
 identify a stale speed or gain across consecutive transitions. The event is
 observability only; it does not assert native audio is audible and does not
 replace real-device testing.
+
+
+## Settings performance and audio-focus controls
+
+Settings sections can use a lightweight translucent surface without a live
+BackdropFilter. The Settings hub opts into this mode to reduce repeated blur
+work while scrolling, while other screens retain the existing glass-card style.
+The two explanatory banners were removed from the top of Settings; the About
+entry remains the home for product guidance and further information.
+
+Audio automation now exposes persisted automatic/manual behavior and four focus
+levels. All full focus-loss events still pause playback. Levels 1–2 require
+manual resume; level 1 ducks notification audio more deeply. Level 3 resumes
+only when focus returns after an interruption lasting at most 30 seconds; level
+4 permits up to three minutes. Manual mode disables automatic ducking and resume
+but retains pausing on full focus loss. Automatic system resume waits for a
+stable 1.2-second window, is invalidated by a newer focus event, and no longer
+calls setActive(true) as part of resume; that call could reclaim focus from
+another music app. The source of an Android focus-loss event is not reliably
+identified as a call versus another player, so levels 3–4 cannot guarantee
+call-only resume. Level 2 is the conservative choice when yielding to other
+players matters most.
+
+EQ-aware automatic gain compensation is not enabled by this change. The current
+preamp path is attenuation-oriented; deriving safe positive compensation from
+hardware-dependent EQ bands needs a separate per-engine calculation and native
+clipping/device validation before it can offer automatic boosts.
