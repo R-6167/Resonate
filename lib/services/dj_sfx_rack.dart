@@ -39,7 +39,8 @@ class DjSfxRack {
   final Map<DjSfxPreset, int> _usageCounts = <DjSfxPreset, int>{};
   DjSfxPreset? activePreset;
   bool engaged = false;
-  List<double>? _savedEqGains;
+  List<double>? _savedEqGainsA;
+  List<double>? _savedEqGainsB;
   bool _eqTouched = false;
   double _savedOutgoingSpeed = 1.0;
   AudioPlayer? _outgoing;
@@ -196,7 +197,9 @@ class DjSfxRack {
     } catch (_) {}
 
     try {
-      await _snapshotEq(equalizerA);
+      _savedEqGainsA = await _snapshotEq(equalizerA);
+      if (generation != _engageGen || !engaged) return;
+      _savedEqGainsB = await _snapshotEq(equalizerB);
       if (generation != _engageGen || !engaged) return;
       await AudioEffectsBridge.setBassBoost(0.0);
       if (generation != _engageGen || !engaged) return;
@@ -312,8 +315,8 @@ class DjSfxRack {
       await AudioEffectsBridge.setReverb(effectsEnabled ? reverb : 0.0);
       await AudioEffectsBridge.setVirtualizer(effectsEnabled ? virt : 0.0);
       if (_eqTouched) {
-        await _restoreEq(equalizerA);
-        await _restoreEq(equalizerB);
+        await _restoreEq(equalizerA, _savedEqGainsA);
+        await _restoreEq(equalizerB, _savedEqGainsB);
       }
     } catch (e) {
       debugPrint('DjSfxRack.restore: $e');
@@ -321,7 +324,8 @@ class DjSfxRack {
       engaged = false;
       _eqTouched = false;
       activePreset = null;
-      _savedEqGains = null;
+      _savedEqGainsA = null;
+      _savedEqGainsB = null;
       _outgoing = null;
       _savedOutgoingSpeed = 1.0;
       _beatMs = const <int>[];
@@ -755,13 +759,13 @@ class DjSfxRack {
     }
   }
 
-  Future<void> _snapshotEq(AndroidEqualizer? eq) async {
-    if (eq == null) return;
+  Future<List<double>?> _snapshotEq(AndroidEqualizer? eq) async {
+    if (eq == null) return null;
     try {
       final p = await eq.parameters;
-      _savedEqGains = [for (final b in p.bands) b.gain];
+      return [for (final b in p.bands) b.gain];
     } catch (_) {
-      _savedEqGains = null;
+      return null;
     }
   }
 
@@ -804,7 +808,10 @@ class DjSfxRack {
     } catch (_) {}
   }
 
-  Future<void> _restoreEq(AndroidEqualizer? eq) async {
+  Future<void> _restoreEq(
+    AndroidEqualizer? eq,
+    List<double>? savedGains,
+  ) async {
     if (eq == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -813,8 +820,8 @@ class DjSfxRack {
       final bands = p.bands;
       for (var i = 0; i < bands.length; i++) {
         double g = 0.0;
-        if (_savedEqGains != null && i < _savedEqGains!.length) {
-          g = _savedEqGains![i];
+        if (savedGains != null && i < savedGains.length) {
+          g = savedGains[i];
         } else {
           g = prefs.getDouble('eq_band_${bands[i].index}') ?? 0.0;
         }
