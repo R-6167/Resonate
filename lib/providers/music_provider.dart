@@ -4415,6 +4415,25 @@ class MusicProvider extends ChangeNotifier {
             });
           }
         } catch (_) {}
+        // Capture the final state of both reusable engines after transition
+        // cleanup. A volume value alone is insufficient: a player can report
+        // volume 1.0 while stopped, or retain a DJ stretch speed after handoff.
+        try {
+          final active = audioPlayer;
+          final inactive = inactivePlayer;
+          await ResonateDiagnostics.record('crossfade_final_engine_state', {
+            'activeEngine': _activeIsA ? 'A' : 'B',
+            'activeSongId': currentSong?.id,
+            'activeVolume': active.volume,
+            'activeSpeed': active.speed,
+            'activePlaying': active.playing,
+            'inactiveVolume': inactive.volume,
+            'inactiveSpeed': inactive.speed,
+            'inactivePlaying': inactive.playing,
+            'userWantsPlaying': _userWantsPlaying,
+            'crossfadeInProgress': _crossfadeInProgress,
+          });
+        } catch (_) {}
       }
       notifyListeners();
 
