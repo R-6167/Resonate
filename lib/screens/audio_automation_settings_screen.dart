@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/music_provider.dart';
+import '../providers/equalizer_provider.dart';
 import '../ui/resonate_glass.dart';
 import 'equalizer_screen.dart';
 
@@ -93,27 +94,39 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              ResonateGlassCard(
-                blurEnabled: false,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('EQ and output level', style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'The equalizer preamp currently provides digital attenuation to reduce clipping risk. '
-                      'Automatic gain compensation based on active EQ bands needs its own measured, per-engine implementation before it can safely boost or lower output.',
-                    ),
-                    const SizedBox(height: 8),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.equalizer_rounded),
-                      title: const Text('Equalizer and preamp'),
-                      subtitle: const Text('Adjust the current tone and output headroom'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen())),
-                    ),
-                  ],
+              Consumer<EqualizerProvider>(
+                builder: (context, eq, _) => ResonateGlassCard(
+                  blurEnabled: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('EQ and output level', style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Estimate headroom from the largest positive software EQ band and lower the effective preamp to reduce clipping risk. '
+                        'This is a conservative estimate, not a measurement of the device output; compensation is bounded by the DSP preamp floor.',
+                      ),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Automatic EQ headroom'),
+                        subtitle: Text(
+                          eq.autoEqHeadroom
+                              ? 'Enabled: positive EQ boosts lower the effective preamp automatically.'
+                              : 'Disabled: use the preamp value you set manually.',
+                        ),
+                        value: eq.autoEqHeadroom,
+                        onChanged: eq.setAutoEqHeadroom,
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.equalizer_rounded),
+                        title: const Text('Equalizer and preamp'),
+                        subtitle: const Text('Adjust the current tone and manual preamp'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EqualizerScreen())),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
