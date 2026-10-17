@@ -3918,7 +3918,29 @@ class MusicProvider extends ChangeNotifier {
         throw StateError('crossfade incoming engine failed to start');
       }
       await Future<void>.delayed(const Duration(milliseconds: 60));
+      // The selected track may have changed during the settle delay. Never let
+      // this stale transition issue play/volume commands against a reused engine.
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'incoming_start_settle',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       try { if (!incoming.playing) incoming.play(); } catch (_) {}
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'incoming_start_settle_play',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       // Start from the *current* outgoing level — never boost to master mid-track
       // (that was the pre-crossfade "bump" on some files).
       double startOut = master;
@@ -3931,7 +3953,29 @@ class MusicProvider extends ChangeNotifier {
       try {
         await outgoing.setVolume(base);
       } catch (_) {}
+      // Volume writes are asynchronous; the user may have selected another
+      // track while the outgoing engine was applying its level.
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'initial_outgoing_volume',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
       await incoming.setVolume(0.0);
+      if (transitionWasPreempted()) {
+        await ResonateDiagnostics.record('crossfade_cancelled', {
+          'stage': 'initial_incoming_volume',
+          'preempted': _userTransportEpoch != transportEpoch,
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+          'intentToken': intentToken,
+        });
+        return false;
+      }
 
       // DJ Mode: long fades (8–12s) + stretch/SFX feel mushy and raise static risk.
       final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
