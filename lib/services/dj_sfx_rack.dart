@@ -203,9 +203,13 @@ class DjSfxRack {
       await _applyFxAt(0.0, score);
       if (generation != _engageGen || !engaged) return;
       if (_usesEq(activePreset!)) {
-        await _applyEqAt(equalizerA, 0.0);
-        await _applyEqAt(equalizerB, 0.0);
+        // Mark EQ as touched before the first await so restore can recover even
+        // if cancellation arrives between applying the two engine equalizers.
         _eqTouched = true;
+        await _applyEqAt(equalizerA, 0.0);
+        if (generation != _engageGen || !engaged) return;
+        await _applyEqAt(equalizerB, 0.0);
+        if (generation != _engageGen || !engaged) return;
       }
       // Fire one-shot early so it sits over the outgoing fade.
       if (_isSample(activePreset!)) {
