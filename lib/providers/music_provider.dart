@@ -187,6 +187,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// True while system asked us to duck (notification / nav / transient).
   bool _isDucked = false;
+  /// Focus returned during a crossfade; defer gain restoration until its handoff ends.
+  bool _unduckPendingAfterCrossfade = false;
   /// When exclusive focus was lost (call / other media) — used for long-call gate.
   DateTime? _focusLostAt;
   int _focusResumeGeneration = 0;
@@ -991,7 +993,15 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+  double get _effectiveCrossfadeMaster {
+    final preamp = _eqPreampScale.clamp(0.0, 1.0).toDouble();
+    if (!_isDucked) return preamp;
+    final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
+    return (duck * preamp).clamp(0.0, 0.45).toDouble();
+  }
+
   Future<void> _duckForInterruption() async {
+    _unduckPendingAfterCrossfade = false;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
       // Let the crossfade own volumes; mark ducked so we restore after.
       _isDucked = true;
@@ -1028,13 +1038,17 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _unduckAfterInterruption() async {
     if (!_isDucked && audioPlayer.volume >= _eqPreampScale * 0.9) {
+      _unduckPendingAfterCrossfade = false;
       return;
     }
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
+      // Keep both engines at the ducked gain until the handoff has committed.
+      // Clearing _isDucked here would make the incoming engine jump to full gain.
+      _unduckPendingAfterCrossfade = true;
+      return;
+    }
+    _unduckPendingAfterCrossfade = false;
     try {
-      if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
-        _isDucked = false;
-        return;
-      }
       final restored = _eqPreampScale.clamp(0.0, 1.0);
       final from = audioPlayer.volume;
       await _fadePlayerVolume(audioPlayer, from, restored);
@@ -1561,7 +1575,7 @@ class MusicProvider extends ChangeNotifier {
     final incoming = inactivePlayer;
     final incomingEq = inactiveEqualizer;
     final incomingLoud = inactiveLoudnessEnhancer;
-    final master = _eqPreampScale.clamp(0.05, 1.0);
+    final master = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
     final ms = milliseconds.clamp(1200, 4000);
     try {
       try {
@@ -3758,7 +3772,7 @@ class MusicProvider extends ChangeNotifier {
     final nextIndex = _crossfadeTargetIndex;
     final nextSong = _crossfadeTargetSong;
     if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _eqPreampScale.clamp(0.05, 1.0);
+    _crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
     try {
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       await outgoing.setLoopMode(LoopMode.off);
@@ -3780,7 +3794,7 @@ class MusicProvider extends ChangeNotifier {
             await outgoing.seek(holdPos);
           } catch (_) {}
           try {
-            await outgoing.setVolume(master);
+            await outgoing.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
           } catch (_) {}
           if (wasPlaying) {
             try {
@@ -3970,7 +3984,8 @@ class MusicProvider extends ChangeNotifier {
       } catch (_) {}
       if (startOut > master) startOut = master;
       // Cap base to master so we never fade from above user volume.
-      final base = startOut <= 0.01 ? master : startOut;
+      // Preserve intentional silence/ducking; a near-zero level is not permission to jump to master.
+      final base = startOut;
       try {
         await outgoing.setVolume(base);
       } catch (_) {}
@@ -4077,8 +4092,12 @@ class MusicProvider extends ChangeNotifier {
         final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);
         final outGain = math.cos(outT * (math.pi / 2.0));
         final inGain = math.sin(inT * (math.pi / 2.0));
-        final outVol = (base * outGain).clamp(0.0, 1.0);
-        final inVol = (master * inGain).clamp(0.0, 1.0);
+        // If focus is lost mid-fade, scale both engines down together. If focus
+        // returns, _unduckAfterInterruption defers restoration until this fade ends.
+        final frameMaster = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
+        final gainScale = (frameMaster / master).clamp(0.0, 1.0);
+        final outVol = (base * outGain * gainScale).clamp(0.0, 1.0);
+        final inVol = (frameMaster * inGain).clamp(0.0, 1.0);
         lastOut = outVol;
         final stepStarted = DateTime.now();
         try {
@@ -4274,19 +4293,19 @@ class MusicProvider extends ChangeNotifier {
       if (transitionWasPreempted()) return false;
       try { await incoming.setLoopMode(LoopMode.off); } catch (_) {}
       if (transitionWasPreempted()) return false;
-      try { await incoming.setVolume(master); } catch (_) {}
+      try { await incoming.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0)); } catch (_) {}
       if (transitionWasPreempted()) return false;
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       if (transitionWasPreempted()) return false;
       try {
-        if (incoming.volume < 0.05) await incoming.setVolume(master);
+        if (incoming.volume < 0.05) await incoming.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
       } catch (_) {}
       if (transitionWasPreempted()) return false;
       // Hard guarantee: incoming must be audible before we flip active engine.
       try {
         await incoming.setSpeed(1.0);
         if (transitionWasPreempted()) return false;
-        await incoming.setVolume(master);
+        await incoming.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
         if (transitionWasPreempted()) return false;
         if (!incoming.playing) {
           try { incoming.play(); } catch (_) {}
@@ -4317,7 +4336,7 @@ class MusicProvider extends ChangeNotifier {
       try {
         await incoming.setSpeed(1.0);
         if (transitionWasPreempted()) return false;
-        await incoming.setVolume(master);
+        await incoming.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
         if (transitionWasPreempted()) return false;
         if (_userWantsPlaying && !incoming.playing) {
           try {
@@ -4357,7 +4376,7 @@ class MusicProvider extends ChangeNotifier {
       try { await outgoing.stop(); } catch (_) {}
       if (transitionWasPreempted()) return false;
       // Restore volume on the now-idle engine so the next time it is used it is not stuck at 0.
-      try { await outgoing.setVolume(master); } catch (_) {}
+      try { await outgoing.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0)); } catch (_) {}
       _preloadedNextSongId = null;
       await ResonateDiagnostics.record('crossfade_committed', {
         'outgoingSongId': outgoingSong?.id,
@@ -4390,10 +4409,10 @@ class MusicProvider extends ChangeNotifier {
       try { await incoming.stop(); } catch (_) {}
       try { await outgoing.setSpeed(1.0); } catch (_) {}
       try { await incoming.setSpeed(1.0); } catch (_) {}
-      try { await outgoing.setVolume(master); } catch (_) {}
+      try { await outgoing.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0)); } catch (_) {}
       try {
         if (outgoing.playing && outgoing.volume < 0.02) {
-          await outgoing.setVolume(master);
+          await outgoing.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
         }
       } catch (_) {}
       await ResonateDiagnostics.record('crossfade_failed', {'outgoingSongId': outgoingSong?.id, 'incomingSongId': nextSong.id, 'error': e.toString(), 'intentToken': intentToken});
@@ -4493,7 +4512,7 @@ class MusicProvider extends ChangeNotifier {
       if (ownsTransition) {
         try {
           final active = audioPlayer;
-          final vol = _eqPreampScale.clamp(0.05, 1.0).toDouble();
+          final vol = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
           if ((_userWantsPlaying || active.playing) && active.volume < 0.05) {
             await active.setSpeed(1.0);
             await active.setVolume(vol);
@@ -4523,6 +4542,11 @@ class MusicProvider extends ChangeNotifier {
             'crossfadeInProgress': _crossfadeInProgress,
           });
         } catch (_) {}
+      }
+      if (!_crossfadeInProgress && _unduckPendingAfterCrossfade) {
+        // The transition (or a newer transport that cancelled it) no longer owns
+        // the engines, so finish the deferred focus-gain restoration safely.
+        unawaited(_unduckAfterInterruption());
       }
       notifyListeners();
 
