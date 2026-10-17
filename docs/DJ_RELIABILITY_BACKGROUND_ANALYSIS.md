@@ -5,10 +5,15 @@ Target branch: `Resonate-True-Apk`
 ## Implemented in this pass
 
 - DJ transition SFX tracks session-local usage by preset. When the preferred effect has already been used twice, the rack rotates to a least-used eligible effect in the same aggressiveness pool when an alternative remains under the two-use threshold.
+- Follow-up hardening invalidates in-flight one-shot sample startup when a transition restores, prevents a delayed sample/track echo from starting after cancellation, and serializes overlapping SFX engagement by restoring the prior effect first. Restore also reopens the track-manipulation gate immediately, so a cancelled repeat/stutter/brake action cannot leave later SFX permanently blocked.
 - Idle DJ analysis is event-driven from app startup/resume, Bluetooth/audio-route changes, playback becoming idle, library scan/import changes, and a low-frequency foreground opportunity.
 - Event bursts are debounced and rate-limited. Event-triggered batches are limited to 12 songs; manual/settings scans retain their larger cap.
 - Cached usable profiles are skipped. Missing section profiles can be refreshed even when partial BPM/key data exists. Failed and empty results receive a six-hour retry cooldown.
 - Idle analysis no longer uses `Future.timeout` to abandon a slow song and advance to the next one. Dart timeout does not cancel native decoding, so that pattern could leave work running in the background while later songs began. The service now awaits one song at a time and checks stop requests between songs.
+
+## SFX lifecycle regression found in the 2026-10-17 diagnostics review
+
+The new diagnostic session recorded 60 SFX events (5 delayed engagements, 1 immediate engagement, and 49 restore events). The event count alone cannot prove that every sound was audible. Code review found two lifecycle hazards worth fixing: an asynchronous one-shot could finish loading after restore and start late, and cancellation could leave the shared track-manipulation running flag set after the old action had unwound. The rack now uses a generation guard around engagement and sample startup, invalidates one-shots during restore, and clears the action gate on cancellation. Verify on-device that samples remain audible but quiet, restore occurs after every transition/interruption, and repeat/stutter/brake effects still work on subsequent transitions.
 
 ## Remaining analysis hardening
 
