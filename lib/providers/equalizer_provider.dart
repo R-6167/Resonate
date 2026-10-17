@@ -93,6 +93,7 @@ class EqualizerProvider extends ChangeNotifier {
   bool isEnabled = true;
   String preset = 'Flat';
   double preamp = 0.0;
+  bool autoEqHeadroom = false;
   String? activeSongId;
   List<EqualizerPreset> customPresets = [];
 
@@ -444,6 +445,7 @@ class EqualizerProvider extends ChangeNotifier {
       await _loadBtProfiles();
       _nativeDspEnabled = prefs.getBool('equalizer_native_dsp') ?? false;
       preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
+      autoEqHeadroom = prefs.getBool('equalizer_auto_headroom') ?? false;
       await _loadCustomPresets(prefs);
 
       // Restore studio curve from prefs if present.
@@ -605,7 +607,15 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _applyPreamp() async {
     // Mature DSP owns EQ preamp/DVC. Do not mirror it into player volume or
     // Android LoudnessEnhancer, otherwise the same gain is applied twice.
-    final effective = isEnabled ? preamp.clamp(-6.0, 6.0) : 0.0;
+    final peakBandBoost = studioBands.isEmpty
+        ? 0.0
+        : studioBands.map((band) => band.gainDb).fold<double>(0.0, (peak, gain) => math.max(peak, gain));
+    final requestedPreamp = autoEqHeadroom
+        ? math.min(preamp, preamp - math.max(0.0, peakBandBoost))
+        : preamp;
+    // Conservative estimate based on the largest positive studio-band gain;
+    // bounded by the DSP's supported -6 dB preamp floor.
+    final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0) : 0.0;
     try {
       syncPreampToDvc(effective, enabled: isEnabled);
     } catch (e) {
@@ -657,6 +667,7 @@ class EqualizerProvider extends ChangeNotifier {
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
     await _pushToHardware();
+    await _applyPreamp();
     await _save();
     notifyListeners();
   }
@@ -707,6 +718,16 @@ class EqualizerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setAutoEqHeadroom(bool value) async {
+    autoEqHeadroom = value;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('equalizer_auto_headroom', value);
+    } catch (_) {}
+    await _applyPreamp();
+    notifyListeners();
+  }
+
   Future<void> applyPreset(String name, {bool persistSelection = true}) async {
     EqualizerPreset? found;
     for (final p in allPresets) {
@@ -721,6 +742,7 @@ class EqualizerProvider extends ChangeNotifier {
       await _save();
     }
     await _pushToHardware();
+    await _applyPreamp();
     notifyListeners();
   }
 
