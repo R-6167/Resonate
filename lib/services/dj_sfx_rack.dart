@@ -48,6 +48,7 @@ class DjSfxRack {
   double _oneshotBaseVolume = 0.0;
   int _delayedSfxGen = 0;
   int _trackFxGen = 0;
+  int _engageGen = 0;
   bool _trackActionRunning = false;
   List<int> _beatMs = const <int>[];
   List<int> _phraseAnchors = const <int>[];
@@ -165,6 +166,11 @@ class DjSfxRack {
     DjTransitionKind? transitionKind,
     DjAggressiveness aggressiveness = DjAggressiveness.balanced,
   }) async {
+    // Do not let two transition effects mutate the same player/EQ at once.
+    if (engaged || _eqTouched) {
+      await restore(equalizerA: equalizerA, equalizerB: equalizerB);
+    }
+    final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
     final preferred = preset ??
@@ -191,8 +197,11 @@ class DjSfxRack {
 
     try {
       await _snapshotEq(equalizerA);
+      if (generation != _engageGen || !engaged) return;
       await AudioEffectsBridge.setBassBoost(0.0);
+      if (generation != _engageGen || !engaged) return;
       await _applyFxAt(0.0, score);
+      if (generation != _engageGen || !engaged) return;
       if (_usesEq(activePreset!)) {
         await _applyEqAt(equalizerA, 0.0);
         await _applyEqAt(equalizerB, 0.0);
@@ -251,7 +260,16 @@ class DjSfxRack {
   }) async {
     ++_delayedSfxGen;
     ++_trackFxGen;
-    if (!engaged && !_eqTouched) return;
+    ++_oneshotGen;
+    ++_engageGen;
+    // A cancelled track action may still be unwinding an awaited seek/delay.
+    // Clear the gate now; its stale finally block must not clear a newer action.
+    _trackActionRunning = false;
+    final hadActiveEffects = engaged || _eqTouched;
+    if (!hadActiveEffects) {
+      await _stopOneshot();
+      return;
+    }
     try {
       final out = _outgoing;
       if (out != null) {
@@ -332,6 +350,7 @@ class DjSfxRack {
     final gen = ++_oneshotGen;
     try {
       await _stopOneshot();
+      if (gen != _oneshotGen || !engaged) return;
       final player = AudioPlayer();
       _oneshot = player;
       // Keep one-shots under the music — never dominate.
@@ -367,6 +386,7 @@ class DjSfxRack {
       if (endMs <= startMs + 80) return;
 
       await _stopOneshot();
+      if (gen != _oneshotGen || !engaged) return;
       final player = AudioPlayer();
       _oneshot = player;
       // Keep samples under the music so they colour the fade, not dominate it.
