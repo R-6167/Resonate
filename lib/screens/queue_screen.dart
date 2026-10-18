@@ -109,7 +109,7 @@ class _QueueScreenState extends State<QueueScreen> {
       }
       return;
     }
-    final start = snap.index.clamp(0, restored.length - 1);
+    final start = snap.index.clamp(0, restored.length - 1).toInt();
     final ok = await music.playSong(
       restored[start],
       queue: restored,
