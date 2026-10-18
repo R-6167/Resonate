@@ -17,6 +17,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Timer? _sleepTimer;
   String? _lastSongId;
   String? _lastEngine;
+  int _sleepGeneration = 0;
 
   PlaybackFeaturesProvider({required this.music}) {
     music.addListener(_syncEngineIfNeeded);
@@ -38,14 +39,22 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> setSpeed(double value) async {
     speed = value.clamp(0.25, 2.0).toDouble();
-    try { await player.setSpeed(speed); } catch (e) { debugPrint('Playback speed failed: $e'); }
+    try {
+      await player.setSpeed(speed);
+    } catch (e) {
+      debugPrint('Playback speed failed: $e');
+    }
     await _save();
     notifyListeners();
   }
 
   Future<void> setPitch(double value) async {
     pitch = value.clamp(0.5, 2.0).toDouble();
-    try { await player.setPitch(pitch); } catch (e) { debugPrint('Playback pitch failed: $e'); }
+    try {
+      await player.setPitch(pitch);
+    } catch (e) {
+      debugPrint('Playback pitch failed: $e');
+    }
     await _save();
     notifyListeners();
   }
@@ -70,78 +79,90 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
     try {
       await loudnessEnhancer.setTargetGain((gainDb * 100.0).clamp(-1000.0, 1000.0));
       await loudnessEnhancer.setEnabled(true);
-    } catch (e) { debugPrint('Track normalization failed: $e'); }
+    } catch (e) {
+      debugPrint('Track normalization failed: $e');
+    }
     notifyListeners();
   }
 
   Future<void> _applyNormalization() async {
     try {
-      // LoudnessEnhancer has no per-track LUFS measurement. Keep the target as a
-      // user preference, but never pretend that -14 LUFS itself is a gain value.
-      // Track-specific gain is applied through applyTrackGain() when metadata is available.
       final gainDb = 0.0;
       await loudnessEnhancer.setTargetGain(gainDb * 100.0);
       await loudnessEnhancer.setEnabled(normalizationEnabled);
-    } catch (e) { debugPrint('Volume normalization failed: $e'); }
+    } catch (e) {
+      debugPrint('Volume normalization failed: $e');
+    }
   }
 
   Future<void> applyToActiveEngine() async {
     try {
       await player.setSpeed(speed);
       await player.setPitch(pitch);
-      if (normalizationEnabled) await _applyNormalization();
-      else await loudnessEnhancer.setEnabled(false);
-    } catch (e) { debugPrint('Active playback feature sync failed: $e'); }
+      if (normalizationEnabled) {
+        await _applyNormalization();
+      } else {
+        await loudnessEnhancer.setEnabled(false);
+      }
+    } catch (e) {
+      debugPrint('Active playback feature sync failed: $e');
+    }
   }
 
   static const int _fadeOutSeconds = 45;
-  double? _volumeBeforeSleepFade;
 
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
-    // Restore volume if a previous fade was interrupted.
-    await _restoreVolumeAfterSleep();
+    final gen = ++_sleepGeneration;
+    try {
+      await music.clearSleepFade();
+    } catch (_) {}
     sleepRemainingSeconds = duration.inSeconds.clamp(1, 24 * 60 * 60);
-    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (sleepRemainingSeconds <= 1) {
+    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (gen != _sleepGeneration) {
         timer.cancel();
-        sleepRemainingSeconds = 0;
-        try {
-          await player.pause();
-        } catch (_) {}
-        await _restoreVolumeAfterSleep();
-        notifyListeners();
         return;
       }
-      sleepRemainingSeconds--;
-      // Last N seconds: linear fade-out on the active engine.
-      if (sleepRemainingSeconds <= _fadeOutSeconds) {
-        try {
-          _volumeBeforeSleepFade ??= player.volume;
-          final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
-          final base = _volumeBeforeSleepFade ?? 1.0;
-          await player.setVolume((base * t).clamp(0.0, 1.0));
-        } catch (_) {}
-      }
-      notifyListeners();
+      unawaited(_onSleepTick(timer, gen));
     });
     notifyListeners();
   }
 
-  Future<void> _restoreVolumeAfterSleep() async {
-    final restore = _volumeBeforeSleepFade;
-    _volumeBeforeSleepFade = null;
-    if (restore == null) return;
-    try {
-      await player.setVolume(restore.clamp(0.0, 1.0));
-    } catch (_) {}
+  Future<void> _onSleepTick(Timer timer, int gen) async {
+    if (gen != _sleepGeneration) return;
+    if (sleepRemainingSeconds <= 1) {
+      timer.cancel();
+      sleepRemainingSeconds = 0;
+      try {
+        // Must go through MusicProvider so _userWantsPlaying is cleared.
+        await music.pause(source: 'sleep_timer');
+      } catch (e) {
+        debugPrint('Sleep timer pause failed: $e');
+      }
+      try {
+        await music.clearSleepFade();
+      } catch (_) {}
+      if (gen == _sleepGeneration) notifyListeners();
+      return;
+    }
+    sleepRemainingSeconds--;
+    if (sleepRemainingSeconds <= _fadeOutSeconds) {
+      final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
+      try {
+        await music.setSleepFadeScale(t);
+      } catch (e) {
+        debugPrint('Sleep fade failed: $e');
+      }
+    }
+    if (gen == _sleepGeneration) notifyListeners();
   }
 
   void cancelSleepTimer() {
+    _sleepGeneration++;
     _sleepTimer?.cancel();
     _sleepTimer = null;
     sleepRemainingSeconds = 0;
-    unawaited(_restoreVolumeAfterSleep());
+    unawaited(music.clearSleepFade());
     notifyListeners();
   }
 
@@ -165,7 +186,9 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       await applyToActiveEngine();
       _lastSongId = music.currentSong?.id;
       _lastEngine = music.activeEngineLabel;
-    } catch (e) { debugPrint('Playback settings load failed: $e'); }
+    } catch (e) {
+      debugPrint('Playback settings load failed: $e');
+    }
     notifyListeners();
   }
 
@@ -176,9 +199,15 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       await prefs.setDouble('playback_pitch', pitch);
       await prefs.setBool('normalization_enabled', normalizationEnabled);
       await prefs.setDouble('target_loudness', targetLoudness);
-    } catch (e) { debugPrint('Playback settings save failed: $e'); }
+    } catch (e) {
+      debugPrint('Playback settings save failed: $e');
+    }
   }
 
   @override
-  void dispose() { music.removeListener(_syncEngineIfNeeded); _sleepTimer?.cancel(); super.dispose(); }
+  void dispose() {
+    music.removeListener(_syncEngineIfNeeded);
+    _sleepTimer?.cancel();
+    super.dispose();
+  }
 }
