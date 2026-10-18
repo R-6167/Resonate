@@ -416,6 +416,65 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           Consumer<LibraryProvider>(
             builder: (_, library, __) {
+              final q = library.searchQuery.trim().toLowerCase();
+              if (q.isEmpty) return const SizedBox.shrink();
+              final artists = <String>{};
+              final albums = <String>{};
+              for (final s in library.filteredSongs.isNotEmpty
+                  ? library.filteredSongs
+                  : library.allSongs) {
+                if (s.artist.toLowerCase().contains(q)) artists.add(s.artist);
+                if (s.album.toLowerCase().contains(q)) albums.add(s.album);
+                if (artists.length >= 8 && albums.length >= 8) break;
+              }
+              if (artists.isEmpty && albums.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  children: [
+                    for (final a in artists.take(6))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.person_rounded, size: 16),
+                          label: Text(a, overflow: TextOverflow.ellipsis),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ArtistScreen(artist: a),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    for (final al in albums.take(6))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          avatar: const Icon(Icons.album_rounded, size: 16),
+                          label: Text(al, overflow: TextOverflow.ellipsis),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AlbumScreen(album: al),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Consumer<LibraryProvider>(
+            builder: (_, library, __) {
               final songs = library.filteredSongs.isNotEmpty ||
                       library.searchQuery.isNotEmpty ||
                       library.filterBy != 'all'
