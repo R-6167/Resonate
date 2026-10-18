@@ -83,6 +83,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
   }
 
+
+  Future<void> _batchPlayNext(List<Song> songs) async {
+    final music = context.read<MusicProvider>();
+    final picked = songs.where((s) => _selectedIds.contains(s.id)).toList();
+    var added = 0;
+    for (final s in picked.reversed) {
+      if (await music.playNext(s)) added++;
+    }
+    if (!mounted) return;
+    _toggleSelectMode(false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Queued $added track${added == 1 ? '' : 's'} to play next')),
+    );
+  }
+
   Future<void> _batchAddToQueue(List<Song> songs) async {
     final music = context.read<MusicProvider>();
     final picked = songs.where((s) => _selectedIds.contains(s.id)).toList();
@@ -433,6 +448,73 @@ class _LibraryScreenState extends State<LibraryScreen> {
               );
             },
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final library = context.read<LibraryProvider>();
+                      final songs = library.filteredSongs.isNotEmpty ||
+                              library.searchQuery.isNotEmpty ||
+                              library.filterBy != 'all'
+                          ? library.filteredSongs
+                          : library.allSongs;
+                      if (songs.isEmpty) return;
+                      final music = context.read<MusicProvider>();
+                      await music.setShuffleEnabled(false);
+                      await music.playSong(
+                        songs.first,
+                        queue: List.from(songs),
+                        startIndex: 0,
+                      );
+                      if (mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: const Text('Play all'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: () async {
+                      final library = context.read<LibraryProvider>();
+                      final songs = List.of(
+                        library.filteredSongs.isNotEmpty ||
+                                library.searchQuery.isNotEmpty ||
+                                library.filterBy != 'all'
+                            ? library.filteredSongs
+                            : library.allSongs,
+                      );
+                      if (songs.isEmpty) return;
+                      songs.shuffle();
+                      final music = context.read<MusicProvider>();
+                      await music.setShuffleEnabled(true);
+                      await music.playSong(
+                        songs.first,
+                        queue: songs,
+                        startIndex: 0,
+                      );
+                      if (mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.shuffle_rounded),
+                    label: const Text('Shuffle'),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Divider(),
           if (_selectMode)
             Material(
@@ -462,6 +544,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       child: const Text('All'),
                     ),
                     const Spacer(),
+                    TextButton.icon(
+                      onPressed: _selectedIds.isEmpty
+                          ? null
+                          : () {
+                              final library = context.read<LibraryProvider>();
+                              final songs = library.filteredSongs.isNotEmpty ||
+                                      library.searchQuery.isNotEmpty ||
+                                      library.filterBy != 'all'
+                                  ? library.filteredSongs
+                                  : library.allSongs;
+                              _batchPlayNext(songs);
+                            },
+                      icon: const Icon(Icons.playlist_play_rounded),
+                      label: const Text('Next'),
+                    ),
                     TextButton.icon(
                       onPressed: _selectedIds.isEmpty
                           ? null

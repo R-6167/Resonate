@@ -49,6 +49,7 @@ class AlbumScreen extends StatelessWidget {
                           const SizedBox(width: 8),
                           FilledButton.tonalIcon(
                             onPressed: () async {
+                              await music.setShuffleEnabled(false);
                               await music.playSong(
                                 songs.first,
                                 queue: List<Song>.from(songs),
@@ -64,7 +65,29 @@ class AlbumScreen extends StatelessWidget {
                               }
                             },
                             icon: const Icon(Icons.play_arrow_rounded),
-                            label: const Text('Play all'),
+                            label: const Text('Play'),
+                          ),
+                          const SizedBox(width: 6),
+                          IconButton.filledTonal(
+                            tooltip: 'Shuffle album',
+                            onPressed: () async {
+                              final shuffled = List<Song>.from(songs)..shuffle();
+                              await music.setShuffleEnabled(true);
+                              await music.playSong(
+                                shuffled.first,
+                                queue: shuffled,
+                                startIndex: 0,
+                              );
+                              if (context.mounted) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const PlayerScreen(),
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.shuffle_rounded),
                           ),
                         ],
                       ),
