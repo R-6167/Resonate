@@ -103,7 +103,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final provider = context.read<PlaylistProvider>();
     if (provider.playlists.isEmpty) await provider.loadPlaylists();
     if (!mounted) return;
-    final selected = await showModalBottomSheet(
+    final selected = await showModalBottomSheet<Playlist>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -652,7 +652,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                         ? Theme.of(context).colorScheme.primary
                                         : null,
                                   ),
-                                  onPressed: () => library.toggleFavorite(song.id),
+                                  onPressed: () => library.toggleFavorite(song),
                                 ),
                               ],
                             ),
