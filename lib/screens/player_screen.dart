@@ -27,6 +27,8 @@ import '../modes/providers/mode_provider.dart';
 import '../widgets/autopilot_takeover_card.dart';
 import 'equalizer_screen.dart';
 import 'queue_screen.dart';
+import 'album_screen.dart';
+import 'artist_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -185,17 +187,46 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               const SizedBox(height: 18),
               _MarqueeSongTitle(title: song.title),
               const SizedBox(height: 5),
-              Text(
-                song.artist,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ArtistScreen(artist: song.artist),
+                    ),
+                  );
+                },
+                child: Text(
+                  song.artist,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
               ),
-              Text(
-                song.album,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AlbumScreen(
+                        album: song.album,
+                        artistHint: song.artist,
+                      ),
+                    ),
+                  );
+                },
+                child: Text(
+                  song.album,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
               const Wrap(
                 alignment: WrapAlignment.center,
