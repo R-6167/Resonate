@@ -78,6 +78,17 @@ class SettingsScreen extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _showTheme(context),
               ),
+              Consumer<ThemeProvider>(
+                builder: (_, theme, __) => SwitchListTile(
+                  secondary: const Icon(Icons.contrast_rounded),
+                  title: const Text('Pure black (OLED)'),
+                  subtitle: const Text('True black backgrounds in dark mode'),
+                  value: theme.pureBlack,
+                  onChanged: (theme.isDarkMode || theme.useSystemTheme)
+                      ? (v) => theme.setPureBlack(v)
+                      : null,
+                ),
+              ),
               _item(context, 'Visualization', 'Audio spectrum and waveform display', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
             ]),
             _section(context, 'Privacy', Icons.lock_outline_rounded, [

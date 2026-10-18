@@ -40,7 +40,7 @@ class ResonateBrand {
   static const mist = Color(0xFFF5F2FF);
 }
 
-ThemeData _theme(Brightness brightness) {
+ThemeData _theme(Brightness brightness, {bool pureBlack = false}) {
   final dark = brightness == Brightness.dark;
   final seed = dark ? ResonateBrand.violet : ResonateBrand.blue;
 
@@ -73,7 +73,24 @@ ThemeData _theme(Brightness brightness) {
     outlineVariant: dark ? const Color(0xFF3A3650) : const Color(0xFFCDC4E4),
   );
 
-  final base = ThemeData(brightness: brightness, useMaterial3: true);
+  if (pureBlack && dark) {
+    scheme = scheme.copyWith(
+      surface: const Color(0xFF000000),
+      onSurface: const Color(0xFFE8E8E8),
+      surfaceContainerLowest: const Color(0xFF000000),
+      surfaceContainerLow: const Color(0xFF0A0A0A),
+      surfaceContainer: const Color(0xFF121212),
+      surfaceContainerHigh: const Color(0xFF1A1A1A),
+      surfaceContainerHighest: const Color(0xFF222222),
+    );
+  }
+
+  final base = ThemeData(
+    brightness: brightness,
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: pureBlack && dark ? const Color(0xFF000000) : null,
+  );
   final onSurface = scheme.onSurface;
   final muted = scheme.onSurfaceVariant;
   final text = base.textTheme.copyWith(
@@ -126,7 +143,8 @@ ThemeData _theme(Brightness brightness) {
   return base.copyWith(
     colorScheme: scheme,
     textTheme: text,
-    scaffoldBackgroundColor: scheme.surface,
+    scaffoldBackgroundColor:
+        pureBlack && dark ? const Color(0xFF000000) : scheme.surface,
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface.withValues(alpha: 0.92),
       foregroundColor: onSurface,
@@ -354,7 +372,10 @@ class ResonateApp extends StatelessWidget {
           title: 'Resonate',
           debugShowCheckedModeBanner: false,
           theme: _theme(Brightness.light),
-          darkTheme: _theme(Brightness.dark),
+          darkTheme: _theme(
+            Brightness.dark,
+            pureBlack: themeProvider.pureBlack,
+          ),
           themeMode: themeProvider.useSystemTheme
               ? ThemeMode.system
               : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light),

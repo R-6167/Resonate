@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
@@ -554,6 +555,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final playback = context.read<PlaybackFeaturesProvider>();
     final eq = context.read<EqualizerProvider>();
     final modes = context.read<ModeProvider>();
+    final music = context.read<MusicProvider>();
+    final song = music.currentSong;
     final density = ModePlayerDensity.fromMode(modes);
     await showBlurredModalBottomSheet<void>(
       context: context,
@@ -565,6 +568,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
           onTap: () { Navigator.pop(context); _showSpeed(context, playback); },
         );
+                final shareTile = song == null
+            ? const SizedBox.shrink()
+            : ListTile(
+                leading: const Icon(Icons.share_rounded),
+                title: const Text('Share track'),
+                subtitle: Text(
+                  '${song.title} · ${song.artist}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final albumPart =
+                      song.album.isNotEmpty ? ' · ${song.album}' : '';
+                  final text =
+                      '${song.title} — ${song.artist}$albumPart';
+                  await Share.share(text, subject: song.title);
+                },
+              );
         final replayTile = ListTile(
           leading: const Icon(Icons.replay_rounded),
           title: const Text('Replay from start'),
@@ -582,6 +604,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             if (density.speedControlsEmphasized) speedTile,
+            shareTile,
             replayTile,
             if (density.sleepTimerSuggested) sleepTile,
             ListTile(
