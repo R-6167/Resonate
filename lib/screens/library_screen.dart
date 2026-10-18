@@ -593,8 +593,23 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   PopupMenuButton<String>(
                                     tooltip: 'More',
                                     icon: const Icon(Icons.more_vert_rounded, size: 20),
-                                    onSelected: (value) {
-                                      if (value == 'artist') {
+                                    onSelected: (value) async {
+                                      if (value == 'play_next') {
+                                        final music = context.read<MusicProvider>();
+                                        final ok = await music.playNext(song);
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              ok
+                                                  ? 'Playing next: ${song.title}'
+                                                  : 'Could not queue next',
+                                            ),
+                                          ),
+                                        );
+                                      } else if (value == 'queue') {
+                                        await _addToQueueWithHaptic(song);
+                                      } else if (value == 'artist') {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
@@ -617,6 +632,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                       }
                                     },
                                     itemBuilder: (_) => const [
+                                      PopupMenuItem(
+                                        value: 'play_next',
+                                        child: Text('Play next'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'queue',
+                                        child: Text('Add to queue'),
+                                      ),
                                       PopupMenuItem(
                                         value: 'artist',
                                         child: Text('Go to artist'),
