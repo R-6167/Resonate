@@ -81,6 +81,8 @@ class MusicProvider extends ChangeNotifier {
   double _volume = 1.0;
   /// Digital gain from EQ preamp (1.0 = 0 dB). Attenuation only via this path.
   double _eqPreampScale = 1.0;
+  /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
+  double _sleepFadeScale = 1.0;
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
@@ -791,8 +793,10 @@ class MusicProvider extends ChangeNotifier {
     try {
       if (_recentlyUserPaused) return;
       if (!_userWantsPlaying) return;
+      // Do not fight an active sleep-timer fade-out.
+      if (_sleepFadeScale < 0.999) return;
       await _claimAudioFocus(reason: 'ensure_audible');
-      final vol = volume.clamp(0.05, 1.0);
+      final vol = (_eqPreampScale * _sleepFadeScale).clamp(0.05, 1.0);
       if (audioPlayer.volume < vol * 0.85) {
         await audioPlayer.setVolume(vol);
       }
@@ -994,10 +998,28 @@ class MusicProvider extends ChangeNotifier {
   }
 
   double get _effectiveCrossfadeMaster {
-    final preamp = _eqPreampScale.clamp(0.0, 1.0).toDouble();
+    final preamp = (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0).toDouble();
     if (!_isDucked) return preamp;
     final duck = _audioFocusLevel == 1 ? 0.18 : _duckLevel;
     return (duck * preamp).clamp(0.0, 0.45).toDouble();
+  }
+
+  /// Sleep-timer fade (1.0 = no fade). Does not change system volume.
+  Future<void> setSleepFadeScale(double scale) async {
+    _sleepFadeScale = scale.clamp(0.0, 1.0).toDouble();
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
+      // Crossfade path reads _effectiveCrossfadeMaster on each step.
+      return;
+    }
+    try {
+      final target = (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0);
+      await audioPlayer.setVolume(target);
+    } catch (_) {}
+  }
+
+  Future<void> clearSleepFade() async {
+    if (_sleepFadeScale >= 0.999) return;
+    await setSleepFadeScale(1.0);
   }
 
   Future<void> _duckForInterruption() async {
@@ -5152,9 +5174,9 @@ class MusicProvider extends ChangeNotifier {
     _volume = volume.clamp(0.0, 1.0).toDouble();
     try {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
-      // Keep EQ preamp digital attenuation; system volume is separate.
+      // Keep EQ preamp + sleep-fade digital attenuation; system volume is separate.
       if (!_crossfadeInProgress) {
-        await audioPlayer.setVolume(_eqPreampScale);
+        await audioPlayer.setVolume((_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0));
       }
     } catch (_) {}
     notifyListeners();
@@ -5168,7 +5190,7 @@ class MusicProvider extends ChangeNotifier {
       return;
     }
     try {
-      await audioPlayer.setVolume(_eqPreampScale);
+      await audioPlayer.setVolume((_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0));
     } catch (_) {}
     notifyListeners();
   }
