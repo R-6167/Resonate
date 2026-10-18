@@ -7,6 +7,7 @@ import '../models/song.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
+import '../providers/listening_history_provider.dart';
 import '../services/playback_authority.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/evolving_mix_card.dart';
@@ -169,6 +170,67 @@ class _HomeDashboard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: LinearProgressIndicator(value: progress, minHeight: 3),
           ),
+      ]);
+    }
+
+    // Recently played from local listening history
+    final history = context.watch<ListeningHistoryProvider>();
+    final recentSongs = <Song>[];
+    final seen = <String>{};
+    for (final item in history.items) {
+      final s = item.song;
+      if (s == null || seen.contains(s.id)) continue;
+      seen.add(s.id);
+      recentSongs.add(s);
+      if (recentSongs.length >= 12) break;
+    }
+    if (recentSongs.isNotEmpty) {
+      children.addAll([
+        const SizedBox(height: 16),
+        _sectionTitle(context, 'Recently played'),
+        SizedBox(
+          height: 96,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: recentSongs.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final song = recentSongs[i];
+              return SizedBox(
+                width: 200,
+                child: ResonateGlassCard(
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
+                    dense: true,
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.history_rounded, size: 18),
+                    ),
+                    title: Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () async {
+                      await music.playSong(song);
+                      if (context.mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                        );
+                      }
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
       ]);
     }
 
