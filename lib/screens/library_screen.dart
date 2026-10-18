@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../modes/providers/mode_provider.dart';
-import '../providers/intelligence_provider.dart';
 import '../models/song.dart';
-import '../services/mode_shelf_builder.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
@@ -500,8 +497,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           Expanded(
-            child: Consumer3<LibraryProvider, MusicProvider, ModeProvider>(
-              builder: (context, library, music, modes, _) {
+            child: Consumer2<LibraryProvider, MusicProvider>(
+              builder: (context, library, music, _) {
                 final songs =
                     library.filteredSongs.isNotEmpty ||
                         library.searchQuery.isNotEmpty ||
