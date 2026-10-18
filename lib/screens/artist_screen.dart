@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/song.dart';
@@ -149,6 +150,20 @@ class ArtistScreen extends StatelessWidget {
                                   ),
                                 );
                               }
+                            },
+                            onLongPress: () async {
+                              await HapticFeedback.mediumImpact();
+                              final ok = await music.playNext(song);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    ok
+                                        ? 'Playing next: ${song.title}'
+                                        : 'Could not queue next',
+                                  ),
+                                ),
+                              );
                             },
                           );
                         },
