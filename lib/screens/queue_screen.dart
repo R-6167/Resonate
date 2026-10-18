@@ -161,6 +161,25 @@ class _QueueScreenState extends State<QueueScreen> {
                       ),
                     );
                     if (ok == true) music.clearUpcomingQueue();
+                  case 'clear_all':
+                    if (music.queue.isEmpty) return;
+                    final okAll = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear entire queue?'),
+                        content: const Text(
+                          'Stops playback and removes all tracks from the queue.',
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear all')),
+                        ],
+                      ),
+                    );
+                    if (okAll == true) {
+                      await music.stop();
+                      await music.setQueue(const []);
+                    }
                 }
               },
               itemBuilder: (_) => [
@@ -184,6 +203,11 @@ class _QueueScreenState extends State<QueueScreen> {
                   value: 'clear_upcoming',
                   enabled: music.queue.length - music.queueIndex - 1 > 0,
                   child: const Text('Clear upcoming'),
+                ),
+                PopupMenuItem(
+                  value: 'clear_all',
+                  enabled: music.queue.isNotEmpty,
+                  child: const Text('Clear entire queue'),
                 ),
               ],
             );
