@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
+
+import '../models/song.dart';
 import '../providers/listening_history_provider.dart';
 import '../providers/music_provider.dart';
-import '../models/song.dart';
+import '../ui/resonate_glass.dart';
 import 'player_screen.dart';
 
 class ListeningHistoryScreen extends StatelessWidget {
@@ -24,76 +25,220 @@ class ListeningHistoryScreen extends StatelessWidget {
       resumeAtMs: resumeAtMs,
     );
     if (ok && context.mounted) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PlayerScreen()),
+      );
     }
+  }
+
+  Future<void> _playNext(BuildContext context, Song song) async {
+    final music = context.read<MusicProvider>();
+    final ok = await music.playNext(song);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Playing next: ${song.title}' : 'Could not queue next',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addToQueue(BuildContext context, Song song) async {
+    final music = context.read<MusicProvider>();
+    final ok = await music.addToQueue(song);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? 'Added to queue: ${song.title}' : 'Already in the queue',
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) => ResonateGlassScaffold(
-      title: const Text('Listening History'),
-      actions: [
-        Consumer<ListeningHistoryProvider>(builder: (context, provider, _) => IconButton(
-          tooltip: 'Clear history',
-          onPressed: provider.items.isEmpty ? null : () async {
-            final confirmed = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
-              title: const Text('Clear listening history?'),
-              content: const Text('This removes listening events used by Intelligence. Your music, favorites and playlists stay untouched.'),
-              actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Clear'))],
-            ));
-            if (confirmed == true && context.mounted) await context.read<ListeningHistoryProvider>().clearHistory();
-          },
-          icon: const Icon(Icons.delete_sweep_rounded),
-        )),
-      ],
-      body: Consumer<ListeningHistoryProvider>(builder: (context, provider, _) {
-      if (provider.isLoading && provider.items.isEmpty) return const Center(child: CircularProgressIndicator());
-      final stats = provider.stats;
-      return RefreshIndicator(
-        onRefresh: provider.load,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            ResonateGlassCard(padding: EdgeInsets.zero, child: Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-              _Stat(label: 'Plays', value: '${stats['events'] ?? 0}'),
-              _Stat(label: 'Completed', value: '${stats['completed'] ?? 0}'),
-              _Stat(label: 'Skipped', value: '${stats['skipped'] ?? 0}'),
-              _Stat(label: 'Time', value: _formatDuration((stats['playedMs'] as num?)?.toInt() ?? 0)),
-            ]))),
-            const SizedBox(height: 14),
-            Text('Recent listening', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            if (provider.items.isEmpty)
-              const Padding(padding: EdgeInsets.all(28), child: Center(child: Text('Nothing here yet. Start listening and Resonate will build your local history.'))),
-            ...provider.items.map((item) {
-              final song = item.song;
-              final event = item.event;
-              final title = song?.title ?? 'Song no longer in library';
-              final artist = song?.artist ?? 'Unavailable';
-              final status = event.completed ? 'Completed' : event.skipped ? 'Skipped' : 'Played';
-              final when = _relative(event.startedAt);
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                leading: CircleAvatar(child: Icon(event.completed ? Icons.check_rounded : event.skipped ? Icons.fast_forward_rounded : Icons.music_note_rounded)),
-                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text('$artist • $status • $when', maxLines: 2, overflow: TextOverflow.ellipsis),
-                trailing: song == null
-                    ? null
-                    : IconButton(
-                        icon: Icon(event.completed ? Icons.replay_rounded : Icons.play_arrow_rounded),
-                        tooltip: event.completed ? 'Play from start' : 'Resume',
-                        onPressed: () => _play(
-                          context,
-                          song,
-                          resumeAtMs: event.completed ? null : event.durationPlayedMs,
+        title: const Text('Listening History'),
+        actions: [
+          Consumer<ListeningHistoryProvider>(
+            builder: (context, provider, _) => IconButton(
+              tooltip: 'Clear history',
+              onPressed: provider.items.isEmpty
+                  ? null
+                  : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('Clear listening history?'),
+                          content: const Text(
+                            'This removes listening events used by Intelligence. Your music, favorites and playlists stay untouched.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Clear'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && context.mounted) {
+                        await context
+                            .read<ListeningHistoryProvider>()
+                            .clearHistory();
+                      }
+                    },
+              icon: const Icon(Icons.delete_sweep_rounded),
+            ),
+          ),
+        ],
+        body: Consumer<ListeningHistoryProvider>(
+          builder: (context, provider, _) {
+            if (provider.isLoading && provider.items.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final stats = provider.stats;
+            return RefreshIndicator(
+              onRefresh: provider.load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  ResonateGlassCard(
+                    padding: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _Stat(
+                            label: 'Events',
+                            value: '${stats['events'] ?? provider.items.length}',
+                          ),
+                          _Stat(
+                            label: 'Completed',
+                            value: '${stats['completed'] ?? 0}',
+                          ),
+                          _Stat(
+                            label: 'Skipped',
+                            value: '${stats['skipped'] ?? 0}',
+                          ),
+                          _Stat(
+                            label: 'Time',
+                            value: _formatDuration(
+                              (stats['playedMs'] as int?) ?? 0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (provider.items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(28),
+                      child: Center(
+                        child: Text(
+                          'Nothing here yet. Start listening and Resonate will build your local history.',
                         ),
                       ),
-              );
-            }),
-          ],
+                    ),
+                  ...provider.items.map((item) {
+                    final song = item.song;
+                    final event = item.event;
+                    final title = song?.title ?? 'Song no longer in library';
+                    final artist = song?.artist ?? 'Unavailable';
+                    final status = event.completed
+                        ? 'Completed'
+                        : event.skipped
+                            ? 'Skipped'
+                            : 'Played';
+                    final when = _relative(event.startedAt);
+                    return ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 2),
+                      leading: CircleAvatar(
+                        child: Icon(
+                          event.completed
+                              ? Icons.check_rounded
+                              : event.skipped
+                                  ? Icons.fast_forward_rounded
+                                  : Icons.music_note_rounded,
+                        ),
+                      ),
+                      title: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '$artist • $status • $when',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: song == null
+                          ? null
+                          : PopupMenuButton<String>(
+                              tooltip: 'Actions',
+                              onSelected: (value) async {
+                                switch (value) {
+                                  case 'play':
+                                    await _play(
+                                      context,
+                                      song,
+                                      resumeAtMs: event.completed
+                                          ? null
+                                          : event.durationPlayedMs,
+                                    );
+                                  case 'play_next':
+                                    await _playNext(context, song);
+                                  case 'queue':
+                                    await _addToQueue(context, song);
+                                }
+                              },
+                              itemBuilder: (_) => [
+                                PopupMenuItem(
+                                  value: 'play',
+                                  child: Text(
+                                    event.completed
+                                        ? 'Play from start'
+                                        : 'Resume',
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'play_next',
+                                  child: Text('Play next'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'queue',
+                                  child: Text('Add to queue'),
+                                ),
+                              ],
+                            ),
+                      onTap: song == null
+                          ? null
+                          : () => _play(
+                                context,
+                                song,
+                                resumeAtMs: event.completed
+                                    ? null
+                                    : event.durationPlayedMs,
+                              ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
         ),
       );
-    }),
-    );
 
   static String _relative(DateTime value) {
     final delta = DateTime.now().difference(value);
@@ -109,5 +254,12 @@ class _Stat extends StatelessWidget {
   final String label;
   final String value;
   const _Stat({required this.label, required this.value});
-  @override Widget build(BuildContext context) => Column(children: [Text(value, style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 2), Text(label, style: Theme.of(context).textTheme.bodySmall)]);
+  @override
+  Widget build(BuildContext context) => Column(
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
 }
