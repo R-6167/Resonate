@@ -565,6 +565,14 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           trailing: Text('${playback.speed.toStringAsFixed(2)}×'),
           onTap: () { Navigator.pop(context); _showSpeed(context, playback); },
         );
+        final replayTile = ListTile(
+          leading: const Icon(Icons.replay_rounded),
+          title: const Text('Replay from start'),
+          onTap: () async {
+            Navigator.pop(context);
+            await context.read<MusicProvider>().seek(Duration.zero);
+          },
+        );
         final sleepTile = ListTile(
           leading: Icon(Icons.timer_outlined, color: density.sleepTimerSuggested ? Theme.of(context).colorScheme.primary : null),
           title: Text(density.sleepTimerSuggested ? 'Sleep timer · Suggested' : 'Sleep timer', style: density.sleepTimerSuggested ? const TextStyle(fontWeight: FontWeight.w700) : null),
@@ -574,6 +582,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             if (density.speedControlsEmphasized) speedTile,
+            replayTile,
             if (density.sleepTimerSuggested) sleepTile,
             ListTile(
               leading: const Icon(Icons.equalizer_rounded),
