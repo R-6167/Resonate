@@ -87,9 +87,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
 
   Future<void> _applyNormalization() async {
     try {
-      // LoudnessEnhancer has no per-track LUFS measurement. Keep the target as a
-      // user preference, but never pretend that -14 LUFS itself is a gain value.
-      // Track-specific gain is applied through applyTrackGain() when metadata is available.
       final gainDb = 0.0;
       await loudnessEnhancer.setTargetGain(gainDb * 100.0);
       await loudnessEnhancer.setEnabled(normalizationEnabled);
@@ -117,7 +114,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
   Future<void> startSleepTimer(Duration duration) async {
     _sleepTimer?.cancel();
     final gen = ++_sleepGeneration;
-    // Clear any previous fade so we start from full digital level.
     try {
       await music.clearSleepFade();
     } catch (_) {}
@@ -138,8 +134,7 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       timer.cancel();
       sleepRemainingSeconds = 0;
       try {
-        // Must go through MusicProvider so _userWantsPlaying is cleared and
-        // ensureAudiblePlayback / stream recovery cannot restart playback.
+        // Must go through MusicProvider so _userWantsPlaying is cleared.
         await music.pause(source: 'sleep_timer');
       } catch (e) {
         debugPrint('Sleep timer pause failed: $e');
@@ -151,7 +146,6 @@ class PlaybackFeaturesProvider extends ChangeNotifier {
       return;
     }
     sleepRemainingSeconds--;
-    // Last N seconds: linear fade-out via MusicProvider (survives engine volume resets).
     if (sleepRemainingSeconds <= _fadeOutSeconds) {
       final t = (sleepRemainingSeconds / _fadeOutSeconds).clamp(0.0, 1.0);
       try {
