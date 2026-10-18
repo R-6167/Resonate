@@ -16,7 +16,7 @@ class QueueSnapshotStore {
         _idsKey,
         queue.map((s) => s.id).toList(growable: false),
       );
-      await prefs.setInt(_indexKey, index.clamp(0, queue.length - 1));
+      await prefs.setInt(_indexKey, index.clamp(0, queue.length - 1).toInt());
       await prefs.setString(_savedAtKey, DateTime.now().toIso8601String());
     } catch (_) {}
   }
