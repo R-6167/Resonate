@@ -76,8 +76,36 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   @override void initState() { super.initState(); _songs = context.read<PlaylistProvider>().songsFor(widget.playlist.id); }
   Future<void> _refresh() async { setState(() => _songs = context.read<PlaylistProvider>().songsFor(widget.playlist.id)); }
   Future<void> _addSongs() async { final library = context.read<LibraryProvider>(); final songs = await showDialog<List<Song>>(context: context, builder: (_) => _SongPicker(songs: library.allSongs, initiallySelected: widget.playlist.songIds.toSet())); if (songs == null || !mounted) return; await context.read<PlaylistProvider>().addSongs(widget.playlist.id, songs); await _refresh(); }
-  Future<void> _playAll(List<Song> songs) async { if (songs.isEmpty) return; await context.read<MusicProvider>().playSong(songs.first, queue: songs, startIndex: 0); if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())); }
-  Future<void> _addAllToQueue(List<Song> songs) async { if (songs.isEmpty) return; final music = context.read<MusicProvider>(); var added = 0; for (final song in songs) { if (await music.addToQueue(song)) added++; } if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(added == 0 ? 'All playlist songs are already in the queue.' : 'Added $added songs to the queue.'))); }
+  Future<void> _playAll(List<Song> songs) async {
+    if (songs.isEmpty) return;
+    final music = context.read<MusicProvider>();
+    await music.setShuffleEnabled(false);
+    await music.playSong(songs.first, queue: List<Song>.from(songs), startIndex: 0);
+    if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+  }
+  Future<void> _shuffleAll(List<Song> songs) async {
+    if (songs.isEmpty) return;
+    final shuffled = List<Song>.from(songs)..shuffle();
+    final music = context.read<MusicProvider>();
+    await music.setShuffleEnabled(true);
+    await music.playSong(shuffled.first, queue: shuffled, startIndex: 0);
+    if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen()));
+  }
+  Future<void> _addAllToQueue(List<Song> songs) async {
+    if (songs.isEmpty) return;
+    final music = context.read<MusicProvider>();
+    var added = 0;
+    for (final song in songs) {
+      if (await music.addToQueue(song)) added++;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(added == 0
+            ? 'All playlist songs are already in the queue.'
+            : 'Added $added songs to the queue.'),
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) => ResonateGlassScaffold(
@@ -88,7 +116,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       final songs = snapshot.data ?? const <Song>[];
       if (songs.isEmpty) return const Center(child: Text('No songs yet. Tap + to add songs.'));
       return Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: Row(children: [Expanded(child: Text('${songs.length} songs', style: Theme.of(context).textTheme.bodyMedium)), IconButton(onPressed: () => _addAllToQueue(songs), tooltip: 'Add all to queue', icon: const Icon(Icons.playlist_add_rounded)), const SizedBox(width: 4), FilledButton.icon(onPressed: () => _playAll(songs), icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play all'))])),
+        Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: Row(children: [Expanded(child: Text('${songs.length} songs', style: Theme.of(context).textTheme.bodyMedium)), IconButton(onPressed: () => _addAllToQueue(songs), tooltip: 'Add all to queue', icon: const Icon(Icons.playlist_add_rounded)), const SizedBox(width: 4), FilledButton.tonalIcon(onPressed: () => _shuffleAll(songs), icon: const Icon(Icons.shuffle_rounded), label: const Text('Shuffle')), const SizedBox(width: 6), FilledButton.icon(onPressed: () => _playAll(songs), icon: const Icon(Icons.play_arrow_rounded), label: const Text('Play'))])),
         Expanded(child: ReorderableListView.builder(itemCount: songs.length, onReorder: (oldIndex, newIndex) async { if (newIndex > oldIndex) newIndex--; await context.read<PlaylistProvider>().reorderSong(widget.playlist.id, songs[oldIndex].id, newIndex); await _refresh(); }, itemBuilder: (context, index) { final song = songs[index]; return ListTile(key: ValueKey(song.id), leading: const Icon(Icons.music_note_rounded), title: Text(song.title), subtitle: Text(song.artist), trailing: IconButton(icon: const Icon(Icons.remove_circle_outline), tooltip: 'Remove', onPressed: () async { await context.read<PlaylistProvider>().removeSong(widget.playlist.id, song.id); await _refresh(); }), onTap: () async { await context.read<MusicProvider>().playSong(song, queue: songs, startIndex: index); if (context.mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())); }); }))
       ]);
     }),
