@@ -351,7 +351,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           PopupMenuButton<String>(
             onSelected: (value) {
               final library = context.read<LibraryProvider>();
-              if (const ['title', 'artist', 'album', 'date_added'].contains(value)) {
+              if (const ['title', 'artist', 'album', 'date_added', 'duration'].contains(value)) {
                 library.setSortBy(value);
               }
               if (const ['all', 'favorites', 'recent'].contains(value)) {
@@ -365,6 +365,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               PopupMenuItem(
                 value: 'date_added',
                 child: Text('Sort by Date Added'),
+              ),
+              PopupMenuItem(
+                value: 'duration',
+                child: Text('Sort by Duration'),
               ),
               PopupMenuDivider(),
               PopupMenuItem(value: 'all', child: Text('Filter: All')),
