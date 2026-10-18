@@ -4,10 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ThemeProvider extends ChangeNotifier {
   bool _isDarkMode = false;
   bool _useSystemTheme = false;
+  bool _pureBlack = false;
 
   bool get isDarkMode => _isDarkMode;
-
   bool get useSystemTheme => _useSystemTheme;
+  bool get pureBlack => _pureBlack;
 
   ThemeProvider() {
     loadFromPrefs();
@@ -18,6 +19,7 @@ class ThemeProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
 
       _useSystemTheme = prefs.getBool('useSystemTheme') ?? false;
+      _pureBlack = prefs.getBool('pureBlack') ?? false;
 
       if (_useSystemTheme) {
         _isDarkMode =
@@ -69,6 +71,17 @@ class ThemeProvider extends ChangeNotifier {
 
       await prefs.setBool('useSystemTheme', _useSystemTheme);
       await prefs.setBool('isDarkMode', _isDarkMode);
+    } catch (e) {
+      // Ignore preference save errors.
+    }
+  }
+
+  Future<void> setPureBlack(bool value) async {
+    _pureBlack = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('pureBlack', _pureBlack);
     } catch (e) {
       // Ignore preference save errors.
     }
