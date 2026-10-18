@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../modes/providers/mode_provider.dart';
-import '../providers/intelligence_provider.dart';
 import '../models/song.dart';
-import '../services/mode_shelf_builder.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../models/playlist.dart';
@@ -15,8 +12,9 @@ import 'liked_songs_screen.dart';
 import 'library_management_screen.dart';
 import 'player_screen.dart';
 import 'playlists_screen.dart';
+import 'album_screen.dart';
+import 'artist_screen.dart';
 
-/// Formats a Duration for library display (m:ss or h:mm:ss).
 String _formatDuration(Duration d) {
   if (d.inMilliseconds <= 0) return '—';
   final h = d.inHours;
@@ -28,7 +26,6 @@ String _formatDuration(Duration d) {
   return '$m:${s.toString().padLeft(2, '0')}';
 }
 
-/// Sums durations of a song list for the total library duration chip.
 Duration _totalDuration(List<Song> songs) {
   var total = Duration.zero;
   for (final s in songs) {
@@ -47,6 +44,8 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
   bool _hasSelectedFolders = false;
+  bool _selectMode = false;
+  final Set<String> _selectedIds = <String>{};
 
   @override
   void initState() {
@@ -67,13 +66,75 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() {});
   }
 
+  void _toggleSelectMode([bool? on]) {
+    setState(() {
+      _selectMode = on ?? !_selectMode;
+      if (!_selectMode) _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  Future<void> _batchAddToQueue(List<Song> songs) async {
+    final music = context.read<MusicProvider>();
+    final picked = songs.where((s) => _selectedIds.contains(s.id)).toList();
+    var added = 0;
+    for (final s in picked) {
+      if (await music.addToQueue(s)) added++;
+    }
+    if (!mounted) return;
+    _toggleSelectMode(false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added $added track${added == 1 ? '' : 's'} to queue')),
+    );
+  }
+
+  Future<void> _batchAddToPlaylist(List<Song> songs) async {
+    final picked = songs.where((s) => _selectedIds.contains(s.id)).toList();
+    if (picked.isEmpty) return;
+    final provider = context.read<PlaylistProvider>();
+    if (provider.playlists.isEmpty) await provider.loadPlaylists();
+    if (!mounted) return;
+    final selected = await showModalBottomSheet<Playlist>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(title: Text('Add selection to playlist')),
+            ...provider.playlists.map(
+              (p) => ListTile(
+                leading: const Icon(Icons.queue_music_rounded),
+                title: Text(p.name),
+                onTap: () => Navigator.pop(sheetContext, p),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await provider.addSongs(selected.id, picked);
+    if (!mounted) return;
+    _toggleSelectMode(false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added ${picked.length} tracks to ${selected.name}')),
+    );
+  }
+
   Future<void> _playSong(List<Song> songs, int index) async {
     final music = context.read<MusicProvider>();
     final library = context.read<LibraryProvider>();
     final song = songs[index];
-
-    // Queue = from this song through the rest of the list (not songs above).
-    // Avoids treating every prior library row as "already played".
     final fromHere = songs.sublist(index);
     final resumeAt = music.resumePositionFor(song.id);
     final playback = music.playSong(
@@ -83,17 +144,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
       resumeIfPossible: resumeAt != null,
       resumeAtMs: resumeAt,
     );
-
     if (mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const PlayerScreen()),
       );
     }
-
     final ok = await playback;
     if (!mounted) return;
-
     if (ok) {
       await library.updatePlayCount(song.id);
     } else {
@@ -107,7 +165,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  /// Long-press → add to end of queue + haptic feedback.
   Future<void> _addToQueueWithHaptic(Song song) async {
     final music = context.read<MusicProvider>();
     await HapticFeedback.mediumImpact();
@@ -129,7 +186,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
       await provider.loadPlaylists();
     }
     if (!mounted) return;
-
     final selected = await showModalBottomSheet<Playlist>(
       context: context,
       showDragHandle: true,
@@ -211,7 +267,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
       ),
     );
-
     if (selected == null || !mounted) return;
     await provider.addSong(selected.id, song);
     if (mounted) {
@@ -234,65 +289,78 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     return ResonateGlassScaffold(
-      title: const Text('Library'),
+      title: Text(_selectMode ? '${_selectedIds.length} selected' : 'Library'),
       actions: [
-        IconButton(
-          tooltip: 'Liked Songs',
-          icon: const Icon(Icons.favorite_rounded),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
+        if (_selectMode) ...[
+          IconButton(
+            tooltip: 'Cancel selection',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => _toggleSelectMode(false),
           ),
-        ),
-        IconButton(
-          tooltip: 'Playlists',
-          icon: const Icon(Icons.queue_music_rounded),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
+        ] else ...[
+          IconButton(
+            tooltip: 'Select',
+            icon: const Icon(Icons.checklist_rounded),
+            onPressed: () => _toggleSelectMode(true),
           ),
-        ),
-        IconButton(
-          tooltip: 'Refresh',
-          icon: const Icon(Icons.refresh_rounded),
-          onPressed: () async {
-            final library = context.read<LibraryProvider>();
-            await library.loadAllSongs();
-            await library.loadFavoriteSongs();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Library refreshed')),
-              );
-            }
-          },
-        ),
-        PopupMenuButton<String>(
-          onSelected: (value) {
-            final library = context.read<LibraryProvider>();
-            if (const ['title', 'artist', 'album', 'date_added'].contains(value)) {
-              library.setSortBy(value);
-            }
-            if (const ['all', 'favorites', 'recent'].contains(value)) {
-              library.setFilterBy(value);
-            }
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'title', child: Text('Sort by Title')),
-            PopupMenuItem(value: 'artist', child: Text('Sort by Artist')),
-            PopupMenuItem(value: 'album', child: Text('Sort by Album')),
-            PopupMenuItem(
-              value: 'date_added',
-              child: Text('Sort by Date Added'),
+          IconButton(
+            tooltip: 'Liked Songs',
+            icon: const Icon(Icons.favorite_rounded),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LikedSongsScreen()),
             ),
-            PopupMenuDivider(),
-            PopupMenuItem(value: 'all', child: Text('Filter: All')),
-            PopupMenuItem(
-              value: 'favorites',
-              child: Text('Filter: Favorites'),
+          ),
+          IconButton(
+            tooltip: 'Playlists',
+            icon: const Icon(Icons.queue_music_rounded),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
             ),
-            PopupMenuItem(value: 'recent', child: Text('Filter: Recent')),
-          ],
-        ),
+          ),
+          IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () async {
+              final library = context.read<LibraryProvider>();
+              await library.loadAllSongs();
+              await library.loadFavoriteSongs();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Library refreshed')),
+                );
+              }
+            },
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              final library = context.read<LibraryProvider>();
+              if (const ['title', 'artist', 'album', 'date_added'].contains(value)) {
+                library.setSortBy(value);
+              }
+              if (const ['all', 'favorites', 'recent'].contains(value)) {
+                library.setFilterBy(value);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'title', child: Text('Sort by Title')),
+              PopupMenuItem(value: 'artist', child: Text('Sort by Artist')),
+              PopupMenuItem(value: 'album', child: Text('Sort by Album')),
+              PopupMenuItem(
+                value: 'date_added',
+                child: Text('Sort by Date Added'),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'all', child: Text('Filter: All')),
+              PopupMenuItem(
+                value: 'favorites',
+                child: Text('Filter: Favorites'),
+              ),
+              PopupMenuItem(value: 'recent', child: Text('Filter: Recent')),
+            ],
+          ),
+        ],
       ],
       body: Column(
         children: [
@@ -339,7 +407,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ? library.filteredSongs
                   : library.allSongs;
               final total = _totalDuration(songs);
-
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -367,16 +434,77 @@ class _LibraryScreenState extends State<LibraryScreen> {
             },
           ),
           const Divider(),
+          if (_selectMode)
+            Material(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        final library = context.read<LibraryProvider>();
+                        final songs = library.filteredSongs.isNotEmpty ||
+                                library.searchQuery.isNotEmpty ||
+                                library.filterBy != 'all'
+                            ? library.filteredSongs
+                            : library.allSongs;
+                        setState(() {
+                          if (_selectedIds.length == songs.length) {
+                            _selectedIds.clear();
+                          } else {
+                            _selectedIds
+                              ..clear()
+                              ..addAll(songs.map((s) => s.id));
+                          }
+                        });
+                      },
+                      child: const Text('All'),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: _selectedIds.isEmpty
+                          ? null
+                          : () {
+                              final library = context.read<LibraryProvider>();
+                              final songs = library.filteredSongs.isNotEmpty ||
+                                      library.searchQuery.isNotEmpty ||
+                                      library.filterBy != 'all'
+                                  ? library.filteredSongs
+                                  : library.allSongs;
+                              _batchAddToQueue(songs);
+                            },
+                      icon: const Icon(Icons.playlist_add_rounded),
+                      label: const Text('Queue'),
+                    ),
+                    TextButton.icon(
+                      onPressed: _selectedIds.isEmpty
+                          ? null
+                          : () {
+                              final library = context.read<LibraryProvider>();
+                              final songs = library.filteredSongs.isNotEmpty ||
+                                      library.searchQuery.isNotEmpty ||
+                                      library.filterBy != 'all'
+                                  ? library.filteredSongs
+                                  : library.allSongs;
+                              _batchAddToPlaylist(songs);
+                            },
+                      icon: const Icon(Icons.queue_music_rounded),
+                      label: const Text('Playlist'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Expanded(
-            child: Consumer3<LibraryProvider, MusicProvider, ModeProvider>(
-              builder: (context, library, music, modes, _) {
+            child: Consumer2<LibraryProvider, MusicProvider>(
+              builder: (context, library, music, _) {
                 final songs =
                     library.filteredSongs.isNotEmpty ||
                         library.searchQuery.isNotEmpty ||
                         library.filterBy != 'all'
                     ? library.filteredSongs
                     : library.allSongs;
-
                 if (songs.isEmpty) {
                   return const Center(
                     child: Text(
@@ -384,9 +512,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   );
                 }
-
                 final nowPlaying = music.currentSong;
-
                 return Column(
                   children: [
                     if (nowPlaying != null)
@@ -434,59 +560,77 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           final song = songs[index];
                           final current = music.currentSong?.id == song.id;
                           final liked = library.isFavoriteSync(song.id);
-
                           return ListTile(
-                            selected: current,
-                            leading: Icon(
-                              current && music.isPlaying
-                                  ? Icons.equalizer_rounded
-                                  : Icons.music_note_rounded,
-                              color: current
-                                  ? Theme.of(context).colorScheme.primary
-                                  : null,
-                            ),
+                            selected: current ||
+                                (_selectMode && _selectedIds.contains(song.id)),
+                            leading: _selectMode
+                                ? Checkbox(
+                                    value: _selectedIds.contains(song.id),
+                                    onChanged: (_) => _toggleSelected(song.id),
+                                  )
+                                : Icon(
+                                    current && music.isPlaying
+                                        ? Icons.equalizer_rounded
+                                        : Icons.music_note_rounded,
+                                    color: current
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
+                                  ),
                             title: Text(
                               song.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            subtitle: Builder(
-                              builder: (context) {
-                                final intel =
-                                    context.watch<IntelligenceProvider>();
-                                final intelSongs = intel.isEnabled
-                                    ? intel.recommendations
-                                        .map((r) => r.song)
-                                        .toList()
-                                    : const <Song>[];
-                                final badge =
-                                    ModeShelfBuilder.membershipBadge(
-                                  modes: modes,
-                                  song: song,
-                                  library: library.allSongs,
-                                  intelligenceSongs: intelSongs,
-                                );
-                                final text = badge == null
-                                    ? song.artist
-                                    : '${song.artist} · $badge';
-                                return Text(
-                                  text,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: badge == null
-                                      ? null
-                                      : TextStyle(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .tertiary,
-                                        ),
-                                );
-                              },
+                            subtitle: Text(
+                              song.artist,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Track duration — small depth detail
+                                if (!_selectMode)
+                                  PopupMenuButton<String>(
+                                    tooltip: 'More',
+                                    icon: const Icon(Icons.more_vert_rounded, size: 20),
+                                    onSelected: (value) {
+                                      if (value == 'artist') {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                ArtistScreen(artist: song.artist),
+                                          ),
+                                        );
+                                      } else if (value == 'album') {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => AlbumScreen(
+                                              album: song.album,
+                                              artistHint: song.artist,
+                                            ),
+                                          ),
+                                        );
+                                      } else if (value == 'playlist') {
+                                        _addToPlaylist(song);
+                                      }
+                                    },
+                                    itemBuilder: (_) => const [
+                                      PopupMenuItem(
+                                        value: 'artist',
+                                        child: Text('Go to artist'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'album',
+                                        child: Text('Go to album'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'playlist',
+                                        child: Text('Add to playlist'),
+                                      ),
+                                    ],
+                                  ),
                                 Text(
                                   _formatDuration(song.duration),
                                   style: Theme.of(context)
@@ -498,78 +642,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                             .onSurfaceVariant,
                                       ),
                                 ),
-                                const SizedBox(width: 4),
                                 IconButton(
                                   tooltip: liked ? 'Unlike' : 'Like',
                                   icon: Icon(
                                     liked
                                         ? Icons.favorite_rounded
                                         : Icons.favorite_border_rounded,
+                                    color: liked
+                                        ? Theme.of(context).colorScheme.primary
+                                        : null,
                                   ),
-                                  onPressed: () =>
-                                      library.toggleFavorite(song),
-                                ),
-                                PopupMenuButton<String>(
-                                  onSelected: (value) async {
-                                    if (value == 'next') {
-                                      final added =
-                                          await music.playNext(song);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              added
-                                                  ? 'Playing next: ${song.title}'
-                                                  : 'Song is already in the queue',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } else if (value == 'queue') {
-                                      final added =
-                                          await music.addToQueue(song);
-                                      if (mounted) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              added
-                                                  ? 'Added to queue'
-                                                  : 'Song is already in the queue',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                    } else if (value == 'playlist') {
-                                      await _addToPlaylist(song);
-                                    } else if (value == 'delete') {
-                                      await library.deleteSong(song.id);
-                                    }
-                                  },
-                                  itemBuilder: (_) => const [
-                                    PopupMenuItem(
-                                      value: 'next',
-                                      child: Text('Play next'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'queue',
-                                      child: Text('Add to queue'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'playlist',
-                                      child: Text('Add to playlist'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'delete',
-                                      child: Text('Remove from library'),
-                                    ),
-                                  ],
+                                  onPressed: () => library.toggleFavorite(song),
                                 ),
                               ],
                             ),
-                            onTap: () => _playSong(songs, index),
-                            onLongPress: () => _addToQueueWithHaptic(song),
+                            onTap: () {
+                              if (_selectMode) {
+                                _toggleSelected(song.id);
+                                return;
+                              }
+                              _playSong(songs, index);
+                            },
+                            onLongPress: () {
+                              if (_selectMode) {
+                                _toggleSelected(song.id);
+                                return;
+                              }
+                              _addToQueueWithHaptic(song);
+                            },
                           );
                         },
                       ),
@@ -599,10 +699,12 @@ class _StatItem extends StatelessWidget {
   const _StatItem({required this.value, required this.label});
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value, style: Theme.of(context).textTheme.titleMedium),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
 }
