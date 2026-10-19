@@ -25,6 +25,11 @@ class DuplicateDetection {
     return '${_norm(s.title)}|${_norm(s.artist)}';
   }
 
+  static Duration _absDiff(Duration a, Duration b) {
+    final us = (a.inMicroseconds - b.inMicroseconds).abs();
+    return Duration(microseconds: us);
+  }
+
   /// Returns groups with 2+ songs sharing title+artist.
   static List<DuplicateGroup> findGroups(
     List<Song> songs, {
@@ -38,7 +43,7 @@ class DuplicateDetection {
 
     final groups = <DuplicateGroup>[];
     for (final entry in byKey.entries) {
-      var list = entry.value;
+      final list = entry.value;
       if (list.length < 2) continue;
 
       if (matchDuration) {
@@ -49,7 +54,7 @@ class DuplicateDetection {
           used.add(i);
           for (var j = i + 1; j < list.length; j++) {
             if (used.contains(j)) continue;
-            final d = (list[i].duration - list[j].duration).abs();
+            final d = _absDiff(list[i].duration, list[j].duration);
             if (d <= durationTolerance) {
               cluster.add(list[j]);
               used.add(j);
