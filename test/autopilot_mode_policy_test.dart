@@ -7,22 +7,22 @@ import 'package:resonate/services/autopilot_mode_policy.dart';
 
 void main() {
   group('Autopilot playback mutation consent gate', () {
-    test('requires consent, enabled Intelligence, and Autopilot together', () {
-      expect(AutopilotModePolicy.mayMutatePlayback(
-        consentGranted: true,
-        intelligenceEnabled: true,
-        autopilotEnabled: true,
-      ), isTrue);
-      for (final gate in [
-        (consent: false, intelligence: true, autopilot: true),
-        (consent: true, intelligence: false, autopilot: true),
-        (consent: true, intelligence: true, autopilot: false),
-      ]) {
-        expect(AutopilotModePolicy.mayMutatePlayback(
-          consentGranted: gate.consent,
-          intelligenceEnabled: gate.intelligence,
-          autopilotEnabled: gate.autopilot,
-        ), isFalse);
+    test('allows mutation only when all three independent gates are open', () {
+      for (var mask = 0; mask < 8; mask++) {
+        final consent = (mask & 1) != 0;
+        final intelligence = (mask & 2) != 0;
+        final autopilot = (mask & 4) != 0;
+        final expected = consent && intelligence && autopilot;
+
+        expect(
+          AutopilotModePolicy.mayMutatePlayback(
+            consentGranted: consent,
+            intelligenceEnabled: intelligence,
+            autopilotEnabled: autopilot,
+          ),
+          expected,
+          reason: 'consent=$consent, intelligence=$intelligence, autopilot=$autopilot',
+        );
       }
     });
   });
