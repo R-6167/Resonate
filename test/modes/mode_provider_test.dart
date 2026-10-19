@@ -84,6 +84,24 @@ void main() {
     provider.dispose();
   });
 
+  test('Workout and Sleep switches publish policy through existing playback boundary', () async {
+    final playback = FakePlayback();
+    final provider = ModeProvider();
+    await provider.ready;
+    provider.attachPlayback(playback);
+
+    await provider.setMode(ResonateMode.workout);
+    expect(playback.crossfade, isTrue);
+    expect(playback.shuffle, isTrue);
+    expect(playback.preciseResume, isFalse);
+
+    await provider.setMode(ResonateMode.sleep);
+    expect(playback.crossfade, isFalse);
+    expect(playback.shuffle, isFalse);
+    expect(playback.preciseResume, isTrue);
+    provider.dispose();
+  });
+
   test('car context offers Driving without touching playback directly', () async {
     final provider = ModeProvider();
     final context = FakeContext();

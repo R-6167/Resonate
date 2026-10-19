@@ -26,6 +26,17 @@ class ModePolicyCatalog {
           avoidedMediaTypes: {MediaType.podcast, MediaType.audiobook},
           automationElevated: true, preferLongSessions: false,
         );
+      case ResonateMode.workout:
+        return const PlaybackPolicy(
+          mode: ResonateMode.workout, crossfadeAllowed: true, preferCrossfade: true,
+          autoNextPreferred: true, shuffleAllowed: true, preciseResume: false,
+          speedControlsEmphasized: false, sleepTimerSuggested: false,
+          chapterAwareNavigation: false, uiDensity: UiDensity.reduced,
+          hideAdvancedSettingsEntry: true, preferredMediaTypes: {MediaType.music},
+          avoidedMediaTypes: {MediaType.podcast, MediaType.audiobook},
+          automationElevated: false, preferLongSessions: false,
+          bpmTargetMin: 120, bpmTargetMax: 160,
+        );
       case ResonateMode.driving:
         return const PlaybackPolicy(
           mode: ResonateMode.driving, crossfadeAllowed: true, preferCrossfade: true,
@@ -64,6 +75,16 @@ class ModePolicyCatalog {
           hideAdvancedSettingsEntry: false,
           preferredMediaTypes: {MediaType.motivation, MediaType.music},
           avoidedMediaTypes: {}, automationElevated: false, preferLongSessions: false,
+        );
+      case ResonateMode.sleep:
+        return const PlaybackPolicy(
+          mode: ResonateMode.sleep, crossfadeAllowed: false, preferCrossfade: false,
+          autoNextPreferred: true, shuffleAllowed: false, preciseResume: true,
+          speedControlsEmphasized: true, sleepTimerSuggested: true,
+          chapterAwareNavigation: true, uiDensity: UiDensity.reduced,
+          hideAdvancedSettingsEntry: false,
+          preferredMediaTypes: {MediaType.music, MediaType.audiobook, MediaType.podcast},
+          avoidedMediaTypes: {}, automationElevated: false, preferLongSessions: true,
         );
       case ResonateMode.audiobook:
         return const PlaybackPolicy(

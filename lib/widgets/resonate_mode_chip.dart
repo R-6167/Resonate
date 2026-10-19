@@ -84,6 +84,8 @@ class ResonateModeChip extends StatelessWidget {
   static IconData _iconFor(ResonateMode mode) => switch (mode) {
         ResonateMode.normal => Icons.music_note_rounded,
         ResonateMode.running => Icons.directions_run_rounded,
+        ResonateMode.workout => Icons.fitness_center_rounded,
+        ResonateMode.sleep => Icons.nightlight_round,
         ResonateMode.driving => Icons.directions_car_rounded,
         ResonateMode.work => Icons.work_outline_rounded,
         ResonateMode.podcast => Icons.podcasts_rounded,
