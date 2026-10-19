@@ -22,6 +22,9 @@ class PlaybackPolicy {
   final Set<MediaType> avoidedMediaTypes;
   final bool automationElevated;
   final bool preferLongSessions;
+  /// Optional UI-only tempo guidance; never changes playback or DJ behavior.
+  final int? bpmTargetMin;
+  final int? bpmTargetMax;
 
   const PlaybackPolicy({
     required this.mode,
@@ -39,6 +42,8 @@ class PlaybackPolicy {
     required this.avoidedMediaTypes,
     required this.automationElevated,
     required this.preferLongSessions,
+    this.bpmTargetMin,
+    this.bpmTargetMax,
   });
 
   bool allowsMediaType(MediaType type, {bool userExplicit = false}) =>
