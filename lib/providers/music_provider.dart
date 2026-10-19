@@ -282,7 +282,14 @@ class MusicProvider extends ChangeNotifier {
     if (_audioLevelingEnabled && song != null) {
       final cached = await _loudnessService.getCached(song);
       if (generation != _trackLevelingGeneration ||
-          currentSong?.id != song.id) {
+          currentSong?.id != song.id ||
+          _crossfadeInProgress ||
+          _automaticCrossfadeInFlight ||
+          _repeatSelfHandoffInFlight ||
+          _transportInFlight ||
+          _loadingSource) {
+        // A transition may have started while the cached result was loading.
+        // Its finalizer will refresh the newly committed track.
         return;
       }
       if (cached != null &&
