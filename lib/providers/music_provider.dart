@@ -831,7 +831,7 @@ class MusicProvider extends ChangeNotifier {
     try { await active.setLoopMode(activeLoop); } catch (_) {}
     if (!ownsBoundary()) return;
     if (!_isDucked) {
-      try { await active.setVolume(_eqPreampScale.clamp(0.0, 1.0)); } catch (_) {}
+      try { await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0)); } catch (_) {}
     }
     if (!ownsBoundary()) return;
     _bindActivePlayerStreams();
@@ -1101,17 +1101,52 @@ class MusicProvider extends ChangeNotifier {
     return (duck * preamp).clamp(0.0, 0.45).toDouble();
   }
 
+  bool get _transitionLive =>
+      _crossfadeInProgress ||
+      _automaticCrossfadeInFlight ||
+      _repeatSelfHandoffInFlight;
+
+  /// Apply current master gain (preamp × sleep fade × duck) to the active engine.
+  Future<void> _applyActiveMasterVolume() async {
+    try {
+      await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+    } catch (_) {}
+  }
+
+  /// Silence the idle (non-active) engine. Safe during transitions.
+  Future<void> _silenceIdleEngine() async {
+    try {
+      await inactivePlayer.setVolume(0.0);
+    } catch (_) {}
+  }
+
+  void _clearTransitionFlags({bool clearRepeatSelf = true}) {
+    _automaticCrossfadeInFlight = false;
+    _crossfadeInProgress = false;
+    _completionAdvanceInProgress = false;
+    _completionObservedDuringCrossfade = false;
+    _completionObservedSongId = null;
+    _preloadedNextSongId = null;
+    _crossfadePreloadInFlight = false;
+    if (clearRepeatSelf) {
+      _repeatSelfHandoffArmed = false;
+      _repeatSelfHandoffInFlight = false;
+      _repeatSelfTargetSongId = null;
+    }
+    _endOfTrackWatchdog?.cancel();
+    _endOfTrackWatchdog = null;
+    _transitionArmedAt = null;
+  }
+
+
   /// Sleep-timer fade (1.0 = no fade). Does not change system volume.
   Future<void> setSleepFadeScale(double scale) async {
     _sleepFadeScale = scale.clamp(0.0, 1.0).toDouble();
-    if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
-      // Crossfade path reads _effectiveCrossfadeMaster on each step.
+    if (_transitionLive) {
+      // Crossfade / handoff path reads _effectiveCrossfadeMaster on each step.
       return;
     }
-    try {
-      final target = (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0);
-      await audioPlayer.setVolume(target);
-    } catch (_) {}
+    await _applyActiveMasterVolume();
   }
 
   Future<void> clearSleepFade() async {
@@ -1182,7 +1217,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {
       _isDucked = false;
       try {
-        await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+        await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       } catch (_) {}
     }
   }
@@ -1195,14 +1230,14 @@ class MusicProvider extends ChangeNotifier {
     if (generation != _focusResumeGeneration || !_userWantsPlaying) return;
     _isDucked = false;
     try {
-      await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+      await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
     } catch (_) {}
     await resumePlayback(source: 'system');
     // Nudge volume again only if no newer focus event superseded this recovery.
     await Future<void>.delayed(const Duration(milliseconds: 200));
     if (generation == _focusResumeGeneration && _userWantsPlaying && !_crossfadeInProgress) {
       try {
-        await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+        await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
         if (!audioPlayer.playing) {
           try {
             audioPlayer.play();
@@ -1837,7 +1872,7 @@ class MusicProvider extends ChangeNotifier {
     try { await idle.setVolume(0.0); } catch (_) {}
     try {
       if (identical(active, audioPlayer)) {
-        await active.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+        await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
       }
     } catch (_) {}
   }
@@ -2477,7 +2512,7 @@ class MusicProvider extends ChangeNotifier {
             await inactivePlayer.setVolume(0.0);
           } catch (_) {}
           try {
-            await audioPlayer.setVolume(_eqPreampScale.clamp(0.05, 1.0));
+            await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
           } catch (_) {}
         }());
       }
@@ -2645,7 +2680,7 @@ class MusicProvider extends ChangeNotifier {
           _resumeBySongId.remove(currentSong!.id);
         }
         try {
-          await audioPlayer.setVolume(_eqPreampScale.clamp(0.05, 1.0));
+          await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0));
         } catch (_) {}
         await audioPlayer.seek(Duration.zero);
         try {
@@ -3142,7 +3177,7 @@ class MusicProvider extends ChangeNotifier {
         await timed('seek_zero', target.seek(Duration.zero), ms: 3000);
       }
 
-      await timed('setVolume', target.setVolume(_eqPreampScale.clamp(0.05, 1.0)), ms: 2000);
+      await timed('setVolume', target.setVolume(_effectiveCrossfadeMaster.clamp(0.05, 1.0)), ms: 2000);
       try { await target.setSpeed(1.0); } catch (_) {}
 
       // Effects after source is up — never block play on effects failure/slowness.
@@ -4728,15 +4763,17 @@ class MusicProvider extends ChangeNotifier {
     // A resume/duck/route-recovery fade must not keep writing volume after
     // a newer manual transport command takes ownership.
     _volumeFadeGen++;
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
-    _completionAdvanceInProgress = false;
-    _completionObservedDuringCrossfade = false;
-    _completionObservedSongId = null;
-    _preloadedNextSongId = null;
-    _crossfadePreloadInFlight = false;
-    // Silence the *idle* engine only. Hardcoding Engine B used to mute playback
-    // after a committed A→B handoff when the user paused/skipped (active was B).
+    _clearTransitionFlags(clearRepeatSelf: false);
+    if (hadRepeatSelfHandoff) {
+      unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
+        'reason': 'transport_cancel',
+        'songId': _repeatSelfTargetSongId,
+      }));
+    }
+    _repeatSelfHandoffArmed = false;
+    _repeatSelfHandoffInFlight = false;
+    _repeatSelfTargetSongId = null;
+    unawaited(_restoreDjTransitionSfx());
     unawaited(() async {
       try {
         final idle = inactivePlayer;
@@ -4755,37 +4792,12 @@ class MusicProvider extends ChangeNotifier {
           await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
         } catch (_) {}
         if (!stillOwnsCancellation()) return;
-        // A cancelled repeat-one ramp may have attenuated the active engine.
-        // Restore it only if no newer transport command has taken ownership.
-        if (hadRepeatSelfHandoff &&
-            stillOwnsCancellation() &&
-            identical(active, audioPlayer)) {
+        // Always re-clamp active master after cancel (sleep fade + duck aware).
+        if (stillOwnsCancellation() && identical(active, audioPlayer)) {
           try {
-            await active.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+            await active.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
           } catch (_) {}
         }
-      } catch (_) {}
-    }());
-    if (_repeatSelfHandoffArmed || _repeatSelfHandoffInFlight) {
-      unawaited(ResonateDiagnostics.record('repeat_self_cancel', {
-        'reason': 'transport_cancel',
-        'songId': _repeatSelfTargetSongId,
-      }));
-    }
-    _repeatSelfHandoffArmed = false;
-    _repeatSelfHandoffInFlight = false;
-    _repeatSelfTargetSongId = null;
-    // Keep gapless window; transport may seek inside it.
-    _endOfTrackWatchdog?.cancel();
-    _endOfTrackWatchdog = null;
-    _transitionArmedAt = null;
-    unawaited(_restoreDjTransitionSfx());
-    unawaited(() async {
-      try {
-        final idle = inactivePlayer;
-        await idle.pause();
-        if (!stillOwnsCancellation()) return;
-        await idle.setVolume(0.0);
       } catch (_) {}
     }());
   }
@@ -4974,7 +4986,7 @@ class MusicProvider extends ChangeNotifier {
         } catch (_) {}
         if (!midTransition) {
           try {
-            await audioPlayer.setVolume(_eqPreampScale.clamp(0.0, 1.0));
+            await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
           } catch (_) {}
           try {
             await inactivePlayer.setVolume(0.0);
@@ -5292,8 +5304,8 @@ class MusicProvider extends ChangeNotifier {
     try {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
       // Keep EQ preamp + sleep-fade digital attenuation; system volume is separate.
-      if (!_crossfadeInProgress) {
-        await audioPlayer.setVolume((_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0));
+      if (!_transitionLive) {
+        await _applyActiveMasterVolume();
       }
     } catch (_) {}
     notifyListeners();
@@ -5303,13 +5315,11 @@ class MusicProvider extends ChangeNotifier {
   Future<void> setEqPreampScale(double scale) async {
     _eqPreampUserScale = scale.clamp(0.25, 1.0).toDouble();
     _eqPreampScale = (_eqPreampUserScale * _trackLevelingScale).clamp(0.0, 1.0).toDouble();
-    if (_crossfadeInProgress) {
+    if (_transitionLive) {
       notifyListeners();
       return;
     }
-    try {
-      await audioPlayer.setVolume((_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0));
-    } catch (_) {}
+    await _applyActiveMasterVolume();
     notifyListeners();
   }
 
