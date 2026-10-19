@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/song.dart';
 import '../providers/music_provider.dart';
+import '../screens/lyrics_screen.dart';
 
 /// Lightweight, persistent playback controls shared by the main app surfaces.
 /// It observes only the playback fields it renders, so position ticks rebuild
@@ -89,6 +90,14 @@ class MiniPlayerBar extends StatelessWidget {
                       ),
                     ),
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Lyrics',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => LyricsScreen(song: song)),
+                  ),
+                  icon: const Icon(Icons.lyrics_outlined, size: 22),
                 ),
                 IconButton(
                   tooltip: isPlaying ? 'Pause' : 'Play',
