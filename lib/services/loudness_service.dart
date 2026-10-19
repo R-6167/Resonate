@@ -50,7 +50,7 @@ class LoudnessService {
     if (durationMs > windowMs) {
       for (final fraction in const <double>[0.2, 0.4, 0.6, 0.8]) {
         positions.add((durationMs * fraction).round()
-            .clamp(0, durationMs - 1000));
+            .clamp(0, durationMs - 1000).toInt());
       }
       positions.add((durationMs - windowMs).clamp(0, durationMs - 1000));
     }
