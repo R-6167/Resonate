@@ -23,6 +23,7 @@ import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
+import '../navigation/shell_nav.dart';
 
 String _homeFormatClock(int ms) {
   final totalSec = (ms / 1000).floor().clamp(0, 24 * 3600);
@@ -48,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   bool _navigationVisible = true;
   late final PageController _pageController;
+  ShellNav? _shellNav;
 
   final List<Widget> _screens = const [
     _HomeDashboard(),
@@ -60,10 +62,16 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _shellNav = context.read<ShellNav>();
+      _shellNav?.bind(_selectPage);
+    });
   }
 
   @override
   void dispose() {
+    _shellNav?.unbind();
     _pageController.dispose();
     super.dispose();
   }
@@ -289,10 +297,7 @@ class _HomeDashboard extends StatelessWidget {
                     onTap: () async {
                       await music.playSong(song);
                       if (context.mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                        );
+                        openShellPlayer(context);
                       }
                     },
                   ),
@@ -344,7 +349,7 @@ class _HomeDashboard extends StatelessWidget {
             ),
             label: Text(isPlaying ? 'Pause' : 'Play'),
           ),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PlayerScreen())),
+          onTap: () => openShellPlayer(context),
         )),
       ]);
     }

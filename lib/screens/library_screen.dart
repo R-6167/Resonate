@@ -11,6 +11,7 @@ import '../services/audio_file_service.dart';
 import 'liked_songs_screen.dart';
 import 'library_management_screen.dart';
 import 'player_screen.dart';
+import '../navigation/shell_nav.dart';
 import 'playlists_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
@@ -163,10 +164,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       resumeAtMs: resumeAt,
     );
     if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const PlayerScreen()),
-      );
+      openShellPlayer(context);
     }
     final ok = await playback;
     if (!mounted) return;
@@ -369,10 +367,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         final music = context.read<MusicProvider>();
                         await music.playSong(s);
                         if (mounted) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                          );
+                          openShellPlayer(context);
                         }
                       },
                     ),
@@ -665,10 +660,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         startIndex: 0,
                       );
                       if (mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                        );
+                        openShellPlayer(context);
                       }
                     },
                     icon: const Icon(Icons.play_arrow_rounded),
@@ -697,10 +689,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         startIndex: 0,
                       );
                       if (mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                        );
+                        openShellPlayer(context);
                       }
                     },
                     icon: const Icon(Icons.shuffle_rounded),

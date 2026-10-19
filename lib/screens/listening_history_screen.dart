@@ -6,6 +6,7 @@ import '../providers/listening_history_provider.dart';
 import '../providers/music_provider.dart';
 import '../ui/resonate_glass.dart';
 import 'player_screen.dart';
+import '../navigation/shell_nav.dart';
 
 class ListeningHistoryScreen extends StatelessWidget {
   const ListeningHistoryScreen({super.key});
@@ -25,10 +26,7 @@ class ListeningHistoryScreen extends StatelessWidget {
       resumeAtMs: resumeAtMs,
     );
     if (ok && context.mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const PlayerScreen()),
-      );
+      openShellPlayer(context);
     }
   }
 

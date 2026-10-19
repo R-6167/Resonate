@@ -9,6 +9,7 @@ import '../services/queue_snapshot_store.dart';
 import '../ui/resonate_glass.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import 'player_screen.dart';
+import '../navigation/shell_nav.dart';
 
 class QueueScreen extends StatefulWidget {
   const QueueScreen({super.key});
@@ -268,10 +269,7 @@ class _QueueScreenState extends State<QueueScreen> {
                     trailing: IconButton(
                       tooltip: 'Open player',
                       icon: const Icon(Icons.open_in_new_rounded),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const PlayerScreen()),
-                      ),
+                      onPressed: () => openShellPlayer(context),
                     ),
                   ),
                 ),
@@ -339,23 +337,13 @@ class _QueueScreenState extends State<QueueScreen> {
                               ),
                         onTap: () async {
                           if (isCurrent) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PlayerScreen(),
-                              ),
-                            );
+                            openShellPlayer(context);
                             return;
                           }
                           final ok = await music.playQueueIndex(index);
                           if (!context.mounted) return;
                           if (ok) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PlayerScreen(),
-                              ),
-                            );
+                            openShellPlayer(context);
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
