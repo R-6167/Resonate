@@ -6,6 +6,7 @@ on:
     branches: [wire/music-provider-queuestore]
     paths:
       - "tool/patches/queue_store_wire.patch"
+      - "tool/patches/queue_store_wire.b64.*"
       - "tool/apply_queue_store_wire.sh"
       - ".github/workflows/apply-queue-store-wire.yml"
 
