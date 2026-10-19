@@ -773,6 +773,113 @@ class EqualizerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Portable, versioned JSON backup for user EQ presets.
+  String exportPresetsJson() {
+    final presetsToExport = List<EqualizerPreset>.from(customPresets);
+    if (presetsToExport.isEmpty) {
+      presetsToExport.add(EqualizerPreset(
+        name: preset.trim().isEmpty ? 'My EQ' : preset,
+        category: 'Imported',
+        gains: studioBands.map((band) => band.gainDb).toList(),
+        isCustom: true,
+      ));
+    }
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': 'resonate-eq-presets',
+      'version': 1,
+      'exportedAt': DateTime.now().toUtc().toIso8601String(),
+      'presets': presetsToExport.map((item) => item.toJson()).toList(),
+    });
+  }
+
+  /// Validates the complete bundle before changing saved presets.
+  /// Returns the number of presets imported.
+  Future<int> importPresetsJson(String source) async {
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(source);
+    } on FormatException {
+      throw const FormatException('This file is not valid JSON.');
+    }
+    if (decoded is! Map) {
+      throw const FormatException('Expected a Resonate EQ preset bundle.');
+    }
+    final bundle = Map<String, dynamic>.from(decoded);
+    if (bundle['format'] != 'resonate-eq-presets' ||
+        bundle['version'] != 1 ||
+        bundle['presets'] is! List) {
+      throw const FormatException(
+        'Unsupported preset file. Choose a Resonate EQ preset JSON export.',
+      );
+    }
+
+    final incoming = <EqualizerPreset>[];
+    for (final item in bundle['presets'] as List) {
+      if (item is! Map) {
+        throw const FormatException('A preset entry is malformed.');
+      }
+      final raw = Map<String, dynamic>.from(item);
+      final name = raw['name'];
+      final category = raw['category'];
+      final rawGains = raw['gains'];
+      if (name is! String || name.trim().isEmpty || name.length > 64 ||
+          category is! String || category.trim().isEmpty ||
+          rawGains is! List || rawGains.length != studioBands.length) {
+        throw const FormatException(
+          'Each preset needs a name, category, and all 10 EQ bands.',
+        );
+      }
+      final gains = <double>[];
+      for (final value in rawGains) {
+        if (value is! num || !value.toDouble().isFinite) {
+          throw const FormatException('Preset gains must be finite numbers.');
+        }
+        final gain = value.toDouble();
+        if (gain < studioMinDb || gain > studioMaxDb) {
+          throw FormatException(
+            'Preset "$name" contains a gain outside '
+            '${studioMinDb.toStringAsFixed(0)} to ${studioMaxDb.toStringAsFixed(0)} dB.',
+          );
+        }
+        gains.add(gain);
+      }
+      incoming.add(EqualizerPreset(
+        name: name.trim(),
+        category: 'Custom',
+        gains: gains,
+        isCustom: true,
+      ));
+    }
+    if (incoming.isEmpty) {
+      throw const FormatException('The file contains no presets to import.');
+    }
+
+    final occupied = <String>{
+      ...builtInPresets.map((p) => p.name.toLowerCase()),
+      ...customPresets.map((p) => p.name.toLowerCase()),
+    };
+    var imported = 0;
+    for (final item in incoming) {
+      var candidate = item.name;
+      var suffix = 2;
+      while (occupied.contains(candidate.toLowerCase())) {
+        candidate = '${item.name} (Imported${suffix == 2 ? '' : ' $suffix'})';
+        suffix++;
+      }
+      occupied.add(candidate.toLowerCase());
+      customPresets.add(EqualizerPreset(
+        name: candidate,
+        category: 'Custom',
+        gains: List<double>.from(item.gains),
+        isCustom: true,
+      ));
+      imported++;
+    }
+    await _saveCustomPresets();
+    notifyListeners();
+    return imported;
+  }
+
   Future<void> _loadCustomPresets(SharedPreferences prefs) async {
     try {
       final raw = prefs.getString('equalizer_custom_presets_v1');
