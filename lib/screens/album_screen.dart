@@ -7,6 +7,7 @@ import '../providers/library_provider.dart';
 import '../providers/music_provider.dart';
 import '../ui/resonate_glass.dart';
 import 'player_screen.dart';
+import '../navigation/shell_nav.dart';
 
 class AlbumScreen extends StatelessWidget {
   final String album;
@@ -57,12 +58,7 @@ class AlbumScreen extends StatelessWidget {
                                 startIndex: 0,
                               );
                               if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PlayerScreen(),
-                                  ),
-                                );
+                                openShellPlayer(context);
                               }
                             },
                             icon: const Icon(Icons.play_arrow_rounded),
@@ -80,12 +76,7 @@ class AlbumScreen extends StatelessWidget {
                                 startIndex: 0,
                               );
                               if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PlayerScreen(),
-                                  ),
-                                );
+                                openShellPlayer(context);
                               }
                             },
                             icon: const Icon(Icons.shuffle_rounded),
@@ -113,12 +104,7 @@ class AlbumScreen extends StatelessWidget {
                                 startIndex: i,
                               );
                               if (context.mounted) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PlayerScreen(),
-                                  ),
-                                );
+                                openShellPlayer(context);
                               }
                             },
                             onLongPress: () async {
