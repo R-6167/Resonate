@@ -19,6 +19,7 @@ import '../widgets/mode_player_density.dart';
 import '../modes/providers/mode_provider.dart';
 import '../widgets/mode_shelf_card.dart';
 import '../widgets/driving_suggestion_banner.dart';
+import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
@@ -45,6 +46,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  bool _navigationVisible = true;
   late final PageController _pageController;
 
   final List<Widget> _screens = const [
@@ -75,28 +77,68 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _handleScroll(ScrollNotification notification) {
+    if (notification.depth == 0 || notification.metrics.axis != Axis.vertical) return;
+
+    final delta = notification is ScrollUpdateNotification
+        ? notification.scrollDelta
+        : notification is OverscrollNotification
+            ? notification.overscroll
+            : null;
+    if (delta == null || delta.abs() < 2) return;
+
+    // Scrolling deeper into a list tucks the bar away; reversing the gesture
+    // brings it back. The mini-player remains available above the nav bar.
+    final shouldShow = delta < 0;
+    if (shouldShow != _navigationVisible && mounted) {
+      setState(() => _navigationVisible = shouldShow);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // FAB on For You (0), Library (1), Player (2) — not Settings (3).
     final showAsk = _selectedIndex <= 2;
 
     return Scaffold(
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: _screens.length,
-        onPageChanged: (index) => setState(() => _selectedIndex = index),
-        itemBuilder: (_, index) => _screens[index],
+      body: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          _handleScroll(notification);
+          return false;
+        },
+        child: PageView.builder(
+          controller: _pageController,
+          itemCount: _screens.length,
+          onPageChanged: (index) => setState(() => _selectedIndex = index),
+          itemBuilder: (_, index) => _screens[index],
+        ),
       ),
       floatingActionButton: showAsk ? const AskResonateFab() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _selectPage,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
-          NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
-          NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MiniPlayerBar(onOpenPlayer: () => _selectPage(2)),
+          ClipRect(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              height: _navigationVisible ? 80 : 0,
+              child: IgnorePointer(
+                ignoring: !_navigationVisible,
+                child: NavigationBar(
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: _selectPage,
+                  destinations: const [
+                    NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
+                    NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
+                    NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
+                    NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
