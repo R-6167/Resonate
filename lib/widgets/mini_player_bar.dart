@@ -23,7 +23,7 @@ class MiniPlayerBar extends StatelessWidget {
 
     final totalMs = (duration ?? song.duration).inMilliseconds;
     final progress = totalMs > 0
-        ? (position.inMilliseconds / totalMs).clamp(0.0, 1.0)
+        ? (position.inMilliseconds / totalMs).clamp(0.0, 1.0).toDouble()
         : 0.0;
     final colors = Theme.of(context).colorScheme;
 
