@@ -198,6 +198,8 @@ class ModesScreen extends StatelessWidget {
       density,
       if (p.automationElevated) 'Elevated automation',
       if (p.preferLongSessions) 'Long sessions',
+      if (p.bpmTargetMin != null && p.bpmTargetMax != null)
+        'Workout BPM guidance: ${p.bpmTargetMin}–${p.bpmTargetMax} (advisory only)',
     ].join(' · ');
   }
 }
