@@ -11,7 +11,6 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import com.Aetherion.Resonate.effects.AndroidEffectsBridge
 import com.Aetherion.Resonate.media.PermissionHelper
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -26,7 +25,6 @@ class MainActivity : AudioServiceActivity() {
     private val mediaNotificationIconId = R.drawable.ic_stat_resonate
 
     private val channelName = "com.aetherion.resonate/media_store"
-    private val effectsChannelName = "com.aetherion.resonate/audio_effects"
     private val folderRequestCode = 6168
     private val diagnosticFileRequestCode = 6170
     private var folderResult: MethodChannel.Result? = null
@@ -34,7 +32,7 @@ class MainActivity : AudioServiceActivity() {
     private var pendingDiagnosticBytes: ByteArray? = null
     private var pendingDiagnosticMime: String = "application/json"
     private val permissionHelper by lazy { PermissionHelper(this) }
-    private val effectsBridge = AndroidEffectsBridge()
+    private val effectsChannelHandler = AudioEffectsChannelHandler()
     private val pcmExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var pcmCancellationGeneration: Long = 0L
     private val folderScanExecutor = Executors.newSingleThreadExecutor()
@@ -72,80 +70,7 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, effectsChannelName).setMethodCallHandler { call, result ->
-            try {
-                when (call.method) {
-                    "attachToSession" -> {
-                        effectsBridge.attachToSession(call.argument<Int>("sessionId") ?: 0)
-                        result.success(true)
-                    }
-                    "setBassBoost" -> {
-                        // Retired: mature Resonate DSP owns bass processing.
-                        result.success(true)
-                    }
-                    "setVirtualizer" -> {
-                        effectsBridge.setVirtualizer(call.argument<Int>("strength") ?: 0)
-                        result.success(true)
-                    }
-                    "setReverb" -> {
-                        effectsBridge.setReverb(call.argument<Int>("strength") ?: 0)
-                        result.success(true)
-                    }
-                    // ---- Live DSP ENGINE (per-stream A/B via DspEngineRegistry) ----
-                    "setLiveDspPreampDb" -> {
-                        val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
-                        val linear = if (db <= -120.0) 0.0 else Math.pow(10.0, db / 20.0)
-                        // v0.4: preamp is independent of DVC/volume
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyPreampAll(linear)
-                        result.success(mapOf("ok" to true, "linear" to linear, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
-                    }
-                    "setLiveDspLimiterCeiling" -> {
-                        val high = (call.argument<Number>("highDb") ?: -0.5).toFloat()
-                        val low = (call.argument<Number>("lowDb") ?: -0.2).toFloat()
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyLimiterCeilingAll(high, low)
-                        result.success(mapOf("ok" to true, "highDb" to high, "lowDb" to low))
-                    }
-                    "setLiveDspCrossoverHz" -> {
-                        val hz = (call.argument<Number>("hz") ?: 120.0).toFloat()
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyCrossoverHzAll(hz)
-                        result.success(mapOf("ok" to true, "hz" to hz))
-                    }
-                    "setLiveDspEqBands" -> {
-                        val centers = (call.argument<List<Double>>("centersHz") ?: emptyList()).toDoubleArray()
-                        val gains = (call.argument<List<Double>>("gainsDb") ?: emptyList()).toDoubleArray()
-                        val enabled = call.argument<Boolean>("enabled") ?: true
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyEqBandsAll(
-                            if (centers.isEmpty()) null else centers,
-                            gains,
-                            enabled,
-                        )
-                        result.success(mapOf("ok" to true, "bands" to gains.size, "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount()))
-                    }
-                    "setLiveDspSpeakerMode" -> {
-                        val enabled = call.argument<Boolean>("enabled") ?: false
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applySpeakerModeAll(enabled)
-                        result.success(mapOf(
-                            "ok" to true,
-                            "enabled" to enabled,
-                            "active" to com.aetherion.resonate.dsp.DspEngineRegistry.activeCount(),
-                        ))
-                    }
-                    "setLiveDspVirtualBass" -> {
-                        val amount = (call.argument<Number>("amount") ?: 0.55).toDouble().coerceIn(0.0, 1.0)
-                        com.aetherion.resonate.dsp.DspEngineRegistry.applyVirtualBassAll(amount)
-                        result.success(mapOf("ok" to true, "amount" to amount))
-                    }
-                    "getLiveDspStatus" -> {
-                        result.success(com.aetherion.resonate.dsp.DspEngineRegistry.statusMap())
-                    }
-                    "release" -> {
-                        effectsBridge.release()
-                        result.success(true)
-                    }
-                    else -> result.notImplemented()
-                }
-            } catch (e: Exception) { result.error("AUDIO_EFFECT_ERROR", e.message, null) }
-        }
+        effectsChannelHandler.register(flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun getSystemVolume(result: MethodChannel.Result) {
@@ -600,7 +525,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
-        effectsBridge.release()
+        effectsChannelHandler.release()
         super.onDestroy()
     }
 }
