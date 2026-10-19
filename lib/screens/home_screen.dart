@@ -133,20 +133,38 @@ class _HomeScreenState extends State<HomeScreen> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
-              height: _navigationVisible ? 80 : 0,
-              child: IgnorePointer(
-                ignoring: !_navigationVisible,
-                child: NavigationBar(
-                  selectedIndex: _selectedIndex,
-                  onDestinationSelected: _selectPage,
-                  destinations: const [
-                    NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
-                    NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
-                    NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
-                    NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
-                  ],
-                ),
-              ),
+              height: _navigationVisible ? 80 : 20,
+              child: _navigationVisible
+                  ? NavigationBar(
+                      selectedIndex: _selectedIndex,
+                      onDestinationSelected: _selectPage,
+                      destinations: const [
+                        NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'For You'),
+                        NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
+                        NavigationDestination(icon: Icon(Icons.music_note_outlined), selectedIcon: Icon(Icons.music_note), label: 'Player'),
+                        NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+                      ],
+                    )
+                  : GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _navigationVisible = true),
+                      onVerticalDragUpdate: (details) {
+                        if (details.delta.dy > 1) {
+                          setState(() => _navigationVisible = true);
+                        }
+                      },
+                      child: Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ),
         ],
