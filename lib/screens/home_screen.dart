@@ -69,7 +69,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPage(int index) {
-    setState(() => _selectedIndex = index);
+    setState(() {
+      _selectedIndex = index;
+      _navigationVisible = true;
+    });
     _pageController.animateToPage(
       index,
       duration: const Duration(milliseconds: 280),
@@ -78,7 +81,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleScroll(ScrollNotification notification) {
-    if (notification.depth == 0 || notification.metrics.axis != Axis.vertical) return;
+    // A vertical list inside the horizontal PageView commonly arrives at depth 1.
+    // Ignore only deeply nested scrollables to avoid unrelated inner gestures
+    // controlling the app-level navigation.
+    if (notification.depth > 1 || notification.metrics.axis != Axis.vertical) return;
 
     final delta = notification is ScrollUpdateNotification
         ? notification.scrollDelta
@@ -109,7 +115,10 @@ class _HomeScreenState extends State<HomeScreen> {
         child: PageView.builder(
           controller: _pageController,
           itemCount: _screens.length,
-          onPageChanged: (index) => setState(() => _selectedIndex = index),
+          onPageChanged: (index) => setState(() {
+          _selectedIndex = index;
+          _navigationVisible = true;
+        }),
           itemBuilder: (_, index) => _screens[index],
         ),
       ),
@@ -118,7 +127,8 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          MiniPlayerBar(onOpenPlayer: () => _selectPage(2)),
+          if (_selectedIndex != 2)
+            MiniPlayerBar(onOpenPlayer: () => _selectPage(2)),
           ClipRect(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
