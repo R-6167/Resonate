@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -39,18 +41,19 @@ class MiniPlayerBar extends StatelessWidget {
                 InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: onOpenPlayer,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [colors.primary, colors.tertiary],
-                      ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: song.albumArt != null && song.albumArt!.trim().isNotEmpty
+                          ? Image.file(
+                              File(song.albumArt!),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _ArtworkFallback(colors: colors),
+                            )
+                          : _ArtworkFallback(colors: colors),
                     ),
-                    child: const Icon(Icons.music_note_rounded, color: Colors.white),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -111,6 +114,29 @@ class MiniPlayerBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+class _ArtworkFallback extends StatelessWidget {
+  const _ArtworkFallback({required this.colors});
+
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [colors.primary, colors.tertiary],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.music_note_rounded, color: Colors.white),
       ),
     );
   }
