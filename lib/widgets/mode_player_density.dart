@@ -90,6 +90,8 @@ class ModePlayerDensity {
       hintLabel: switch (modes.mode) {
         ResonateMode.driving => 'Driving · larger controls',
         ResonateMode.running => 'Running · two-finger transport',
+        ResonateMode.workout => 'Workout · music-first',
+        ResonateMode.sleep => 'Sleep · gentle listening',
         ResonateMode.podcast => 'Podcast · precise resume',
         ResonateMode.audiobook => 'Audiobook · reduced chrome',
         ResonateMode.work => 'Work · calm layout',
