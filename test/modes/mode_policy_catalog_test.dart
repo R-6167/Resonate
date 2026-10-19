@@ -38,6 +38,23 @@ Future<ModeProvider> _mode(
 }
 
 void main() {
+  test('Workout and Sleep policies extend modes without duplicating existing profiles', () {
+    final workout = ModePolicyCatalog.policyFor(ResonateMode.workout);
+    expect(workout.preferredMediaTypes, contains(MediaType.music));
+    expect(workout.avoidedMediaTypes, contains(MediaType.podcast));
+    expect(workout.bpmTargetMin, 120);
+    expect(workout.bpmTargetMax, 160);
+    expect(workout.crossfadeAllowed, isTrue);
+
+    final sleep = ModePolicyCatalog.policyFor(ResonateMode.sleep);
+    expect(sleep.crossfadeAllowed, isFalse);
+    expect(sleep.shuffleAllowed, isFalse);
+    expect(sleep.preciseResume, isTrue);
+    expect(sleep.sleepTimerSuggested, isTrue);
+    expect(sleep.preferLongSessions, isTrue);
+    expect(sleep.autoNextPreferred, isTrue);
+  });
+
   test('speech modes disable music-style transitions', () {
     expect(ModePolicyCatalog.policyFor(ResonateMode.podcast).crossfadeAllowed, isFalse);
     expect(ModePolicyCatalog.policyFor(ResonateMode.audiobook).crossfadeAllowed, isFalse);
@@ -80,10 +97,11 @@ void main() {
   });
 
   test('DJ handoff authority follows the Mode crossfade capability matrix', () {
-    final blocked = [ResonateMode.podcast, ResonateMode.audiobook];
+    final blocked = [ResonateMode.podcast, ResonateMode.audiobook, ResonateMode.sleep];
     final enabled = [
       ResonateMode.normal,
       ResonateMode.running,
+      ResonateMode.workout,
       ResonateMode.driving,
       ResonateMode.work,
       ResonateMode.motivation,
