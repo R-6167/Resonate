@@ -58,15 +58,16 @@ Public APIs only: `playSong`, `playQueueIndex`, `nextSong`, `previousSong`, tran
 - [x] Remove committed `android/.gradle/` cache files (PR #56).
 - [x] Extract Android effects channel handling (PR #58), PCM analysis (PR #59), and folder scanning (PR #60).
 - [x] Isolate live DSP channel argument/response translation from system audio effects (PR #61); `MainActivity` retains activity-result/permission lifecycle work.
-- [ ] Device smoke: normal play, seek, next/prev, kill+restore, Bluetooth route change, crossfade on/off, Intelligence off/on.
-- [ ] Confirm no engine thrashing in logs when Intelligence is disabled.
+- [x] Device smoke on target Android hardware: normal playback, seeking, next/previous, force-stop and restore, Bluetooth connect/disconnect and route changes, crossfade on/off, and Intelligence on/off (user-reported pass, 2026-10-19).
+- [x] Check logs for engine thrashing with Intelligence disabled (user-reported pass, 2026-10-19).
 
 ## Verification status
 - PR #55 synchronous consent gate is merged; its full CI run passed.
 - PR #56 removed tracked Gradle cache files; post-merge CI run #39233913866 passed.
 - PR #58 effects-channel extraction and PR #59 PCM extraction were merged with passing CI; PR #60 folder-scan extraction is merged after green CI run #39240960122.
-- PR #61 keeps live DSP channel translation separate from Android system effects without changing channel names, arguments, defaults, response maps, or registry ownership.
-- Device-only smoke checks cannot be completed by CI alone and remain open until exercised on target Android hardware.
+- PR #61 live DSP channel translation is isolated from Android system effects without changing channel names, arguments, defaults, response maps, or registry ownership. PR #61 CI passed before merge.
+- Post-merge CI for PR #61 passed: run #39243034607 on `Resonate-True-Apk`, merge commit `b997f74fecf1f8090e9e33577967a0677f528cdf`.
+- Phase 6 device smoke checklist and the Intelligence-disabled engine-thrashing log check were reported as passing on target Android hardware on 2026-10-19. These are user-reported device results, separate from CI verification.
 
 ## Historical local cleanup instructions
 The repository previously contained committed Gradle caches. PR #56 removes the tracked files; the existing `.gitignore` should keep local cache files out of future commits.
