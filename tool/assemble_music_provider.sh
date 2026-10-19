@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# Assembles lib/providers/music_provider.dart from tool/queue_store_chunks/gz_part_*.b64
-# (concatenated base64 of gzip-compressed source).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/lib/providers/music_provider.dart"
 DIR="$ROOT/tool/queue_store_chunks"
-if [[ ! -d "$DIR" ]]; then
-  echo "Missing $DIR" >&2
-  exit 1
-fi
 TMP_B64="$(mktemp)"
 TMP_GZ="$(mktemp)"
 trap 'rm -f "$TMP_B64" "$TMP_GZ"' EXIT
