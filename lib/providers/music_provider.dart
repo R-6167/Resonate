@@ -274,7 +274,11 @@ class MusicProvider extends ChangeNotifier {
       return; // The current transition/transport retains volume ownership.
     }
 
-    var nextScale = 1.0;
+    // If the next track has not been scanned for this target, retain the
+    // current conservative trim rather than suddenly restoring full level.
+    var nextScale = _audioLevelingEnabled && song != null
+        ? _trackLevelingScale
+        : 1.0;
     if (_audioLevelingEnabled && song != null) {
       final cached = await _loudnessService.getCached(song);
       if (generation != _trackLevelingGeneration ||
