@@ -90,7 +90,6 @@ class MusicProvider extends ChangeNotifier {
   bool _audioLevelingEnabled = false;
   double _audioLevelingTargetRmsDbfs = LoudnessService.defaultTargetRmsDbfs;
   double _trackLevelingScale = 1.0;
-  String? _trackLevelingSongId;
   int _trackLevelingGeneration = 0;
   final LoudnessService _loudnessService = LoudnessService();
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
@@ -292,7 +291,6 @@ class MusicProvider extends ChangeNotifier {
     }
     if (generation != _trackLevelingGeneration) return;
     _trackLevelingScale = nextScale;
-    _trackLevelingSongId = song?.id;
     _eqPreampScale =
         (_eqPreampUserScale * _trackLevelingScale).clamp(0.0, 1.0).toDouble();
     try {
@@ -301,9 +299,7 @@ class MusicProvider extends ChangeNotifier {
           !_repeatSelfHandoffInFlight &&
           !_transportInFlight &&
           !_loadingSource) {
-        await audioPlayer.setVolume(
-          (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0).toDouble(),
-        );
+        await audioPlayer.setVolume(_effectiveCrossfadeMaster);
       }
     } catch (_) {}
   }
@@ -5160,6 +5156,7 @@ class MusicProvider extends ChangeNotifier {
           }
         } finally {
           _transportInFlight = false;
+          unawaited(_refreshTrackLevelingFor(currentSong));
           if (_pendingNextSteps > 0) {
             final again = _pendingNextSteps;
             _pendingNextSteps = 0;
@@ -5206,6 +5203,7 @@ class MusicProvider extends ChangeNotifier {
           }
         } finally {
           _transportInFlight = false;
+          unawaited(_refreshTrackLevelingFor(currentSong));
         }
       },
       command: 'previous',
