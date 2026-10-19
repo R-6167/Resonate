@@ -58,15 +58,16 @@ Public APIs only: `playSong`, `playQueueIndex`, `nextSong`, `previousSong`, tran
 - [x] Remove committed `android/.gradle/` cache files (PR #56).
 - [x] Extract Android effects channel handling (PR #58), PCM analysis (PR #59), and folder scanning (PR #60).
 - [x] Isolate live DSP channel argument/response translation from system audio effects (PR #61); `MainActivity` retains activity-result/permission lifecycle work.
-- [ ] Device smoke: normal play, seek, next/prev, kill+restore, Bluetooth route change, crossfade on/off, Intelligence off/on.
-- [ ] Confirm no engine thrashing in logs when Intelligence is disabled.
+- [x] Device smoke: normal playback and seeking, next/previous, force-stop and restore, Bluetooth connect/disconnect and route changes, crossfade on/off, and Intelligence on/off (user-reported device verification, 2026-10-19).
+- [x] Confirm no engine thrashing in logs with Intelligence disabled (user-reported log check, 2026-10-19).
 
 ## Verification status
 - PR #55 synchronous consent gate is merged; its full CI run passed.
 - PR #56 removed tracked Gradle cache files; post-merge CI run #39233913866 passed.
 - PR #58 effects-channel extraction and PR #59 PCM extraction were merged with passing CI; PR #60 folder-scan extraction is merged after green CI run #39240960122.
-- PR #61 keeps live DSP channel translation separate from Android system effects without changing channel names, arguments, defaults, response maps, or registry ownership.
-- Device-only smoke checks cannot be completed by CI alone and remain open until exercised on target Android hardware.
+- PR #61 keeps live DSP channel translation separate from Android system effects without changing channel names, arguments, defaults, response maps, or registry ownership. PR #61 was merged at `b997f74fecf1f8090e9e33577967a0677f528cdf`; its post-merge CI run #39243034607 completed successfully.
+- The user reported passing all seven Phase 6 device smoke checks on 2026-10-19, including normal playback/seeking, next/previous, force-stop/restore, Bluetooth route changes, crossfade toggling, Intelligence toggling, and checking logs for engine thrashing while Intelligence is disabled.
+- **Phase 6 is complete** based on the merged cleanup, successful post-merge CI, and the user-reported device smoke results.
 
 ## Historical local cleanup instructions
 The repository previously contained committed Gradle caches. PR #56 removes the tracked files; the existing `.gitignore` should keep local cache files out of future commits.
