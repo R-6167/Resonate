@@ -52,7 +52,7 @@ class LoudnessService {
         positions.add((durationMs * fraction).round()
             .clamp(0, durationMs - 1000).toInt());
       }
-      positions.add((durationMs - windowMs).clamp(0, durationMs - 1000));
+      positions.add((durationMs - windowMs).clamp(0, durationMs - 1000).toInt());
     }
 
     var squaredSum = 0.0;
@@ -71,7 +71,7 @@ class LoudnessService {
       if (stats.samples == 0) continue;
       squaredSum += stats.meanSquare * stats.samples;
       sampleCount += stats.samples;
-      peak = math.max(peak, stats.peak);
+      peak = math.max(peak, stats.peak).toDouble();
     }
     if (sampleCount == 0 || !squaredSum.isFinite) return null;
 
