@@ -1,0 +1,33 @@
+name: Apply QueueStore MusicProvider wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [wire/music-provider-queuestore]
+    paths:
+      - "tool/patches/queue_store_wire.patch"
+      - "tool/apply_queue_store_wire.sh"
+      - ".github/workflows/apply-queue-store-wire.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wire/music-provider-queuestore
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply patch
+        run: bash tool/apply_queue_store_wire.sh
+
+      - name: Commit wired music_provider.dart
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to QueueStore"
+          file_pattern: lib/providers/music_provider.dart
+          branch: wire/music-provider-queuestore
