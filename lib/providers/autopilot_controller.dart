@@ -267,6 +267,11 @@ class AutopilotController extends ChangeNotifier {
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
 
+    // Capture user intent before any diagnostic await. Otherwise a manual
+    // command arriving during logging could be mistaken for the current intent.
+    final userGeneration = _authority.userGeneration;
+    final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
+
     await ResonateDiagnostics.record('intelligence_transition', {
       'stage': 'started',
       'mode': intelligence.autonomyLabel,
@@ -275,9 +280,6 @@ class AutopilotController extends ChangeNotifier {
       'confidence': recommendation?.confidence ?? 0,
       'reason': recommendation?.reason ?? 'graduated_autopilot',
     });
-
-    final userGeneration = _authority.userGeneration;
-    final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
 
     try {
       if (!await _requirePlaybackMutationPermission('transition_start')) return;
