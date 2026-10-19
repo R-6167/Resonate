@@ -10,6 +10,16 @@ import '../dj_engine/core/dj_types.dart';
 import '../dj_engine/core/dj_policy.dart';
 
 /// Transition SFX — engine FX + optional one-shot sample packs.
+/// Conservative base gain for one-shot DJ samples, before transition ducking.
+/// Scores outside the expected range (or non-finite scores) are normalized safely.
+@visibleForTesting
+double djSfxOneShotVolumeForEnergy(double score) {
+  final normalized = score.isFinite ? score.clamp(0.0, 1.0).toDouble() : 0.5;
+  if (normalized >= 0.85) return 0.08;
+  if (normalized >= 0.70) return 0.10;
+  return 0.12;
+}
+
 enum DjSfxPreset {
   echo,
   vinylStop,
@@ -378,10 +388,10 @@ class DjSfxRack {
       if (gen != _oneshotGen || !engaged) return;
       final player = AudioPlayer();
       _oneshot = player;
-      // Keep one-shots under the music — never dominate.
-      final vol = (score >= 0.85 ? 0.28 : (score >= 0.7 ? 0.34 : 0.40))
-          .clamp(0.2, 0.45);
-      await player.setVolume(vol);
+      // Start quietly and let tick() duck the sample further as the
+      // incoming track rises. Never allow a sample to dominate the music.
+      _oneshotBaseVolume = djSfxOneShotVolumeForEnergy(score);
+      await player.setVolume(_oneshotBaseVolume);
       await player.setAudioSource(AudioSource.asset(asset));
       if (gen != _oneshotGen) return;
       await player.play();
@@ -447,6 +457,7 @@ class DjSfxRack {
   Future<void> _stopOneshot() async {
     final p = _oneshot;
     _oneshot = null;
+    _oneshotBaseVolume = 0.0;
     if (p == null) return;
     try {
       await p.stop();

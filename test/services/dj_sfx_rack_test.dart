@@ -25,6 +25,21 @@ void main() {
     return selected;
   }
 
+  group('DJ one-shot sample gain', () {
+    test('uses a conservative base gain and reduces it for higher energy', () {
+      expect(djSfxOneShotVolumeForEnergy(0.2), 0.12);
+      expect(djSfxOneShotVolumeForEnergy(0.7), 0.10);
+      expect(djSfxOneShotVolumeForEnergy(0.9), 0.08);
+    });
+
+    test('normalizes out-of-range and non-finite energy scores', () {
+      expect(djSfxOneShotVolumeForEnergy(double.nan), 0.10);
+      expect(djSfxOneShotVolumeForEnergy(double.infinity), 0.10);
+      expect(djSfxOneShotVolumeForEnergy(-1), 0.12);
+      expect(djSfxOneShotVolumeForEnergy(2), 0.08);
+    });
+  });
+
   group('DjSfxRack usage fairness', () {
     test('rotates after two uses and exhausts the eligible pool fairly', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
