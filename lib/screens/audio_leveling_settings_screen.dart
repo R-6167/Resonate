@@ -24,12 +24,18 @@ class _AudioLevelingSettingsScreenState
   LoudnessScanResult? _result;
   String? _resultSongId;
   bool _scanning = false;
+  bool _targetInitialized = false;
   String? _message;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final song = context.read<MusicProvider>().currentSong;
+    final music = context.read<MusicProvider>();
+    if (!_targetInitialized) {
+      _targetRmsDbfs = music.audioLevelingTargetRmsDbfs;
+      _targetInitialized = true;
+    }
+    final song = music.currentSong;
     if (song != null && song.id != _resultSongId) {
       _result = null;
       _resultSongId = null;
@@ -69,6 +75,8 @@ class _AudioLevelingSettingsScreenState
         targetRmsDbfs: _targetRmsDbfs,
         force: true,
       );
+      if (!mounted) return;
+      await context.read<MusicProvider>().refreshTrackLevelingFor(song);
       if (!mounted) return;
       setState(() {
         _result = result;
@@ -113,20 +121,30 @@ class _AudioLevelingSettingsScreenState
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       const SizedBox(height: 12),
-                      Text('Target sampled RMS: ${_targetRmsDbfs.toStringAsFixed(0)} dBFS'),
+                      SwitchListTile.adaptive(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Apply conservative leveling'),
+                        subtitle: const Text('Attenuates tracks measured louder than the target; does not boost quiet tracks.'),
+                        value: music.audioLevelingEnabled,
+                        onChanged: (enabled) => music.setAudioLevelingEnabled(enabled),
+                      ),
+                      Text('Target sampled RMS: ${music.audioLevelingTargetRmsDbfs.toStringAsFixed(0)} dBFS'),
                       Slider(
-                        value: _targetRmsDbfs,
+                        value: music.audioLevelingTargetRmsDbfs,
                         min: -24,
                         max: -12,
                         divisions: 12,
                         label: '${_targetRmsDbfs.toStringAsFixed(0)} dBFS',
                         onChanged: _scanning
                             ? null
-                            : (value) => setState(() {
+                            : (value) {
+                                setState(() {
                                   _targetRmsDbfs = value;
                                   _result = null;
                                   _resultSongId = null;
-                                }),
+                                });
+                                music.setAudioLevelingTargetRmsDbfs(value);
+                              },
                       ),
                       const SizedBox(height: 4),
                       FilledButton.icon(
@@ -181,9 +199,9 @@ class _AudioLevelingSettingsScreenState
                 const ResonateGlassCard(
                   blurEnabled: false,
                   child: Text(
-                    'Safety note: this stage analyzes and caches a gain recommendation only. '
-                    'It does not alter playback volume yet, so it cannot disturb EQ, sleep fades, audio focus, or crossfades. '
-                    'Playback-gain integration and transition testing remain the next step of Phase A.',
+                    'Safety note: leveling applies attenuation only, bounded to −12 dB, and never boosts above the existing EQ/preamp master. '
+                    'Positive gain recommendations remain informational until a peak-safe boost stage is available. '
+                    'Measurements are sampled RMS, not LUFS or true-peak metering. The trim follows the existing EQ, sleep-fade, focus and crossfade volume paths.',
                   ),
                 ),
               ],
