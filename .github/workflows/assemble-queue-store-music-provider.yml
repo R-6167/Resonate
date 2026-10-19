@@ -1,0 +1,33 @@
+name: Assemble QueueStore-wired MusicProvider
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [wire/music-provider-queuestore]
+    paths:
+      - "tool/queue_store_chunks/**"
+      - "tool/assemble_music_provider.sh"
+      - ".github/workflows/assemble-queue-store-music-provider.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: wire/music-provider-queuestore
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble music_provider.dart
+        run: bash tool/assemble_music_provider.sh
+
+      - name: Commit assembled file
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to QueueStore"
+          file_pattern: lib/providers/music_provider.dart
+          branch: wire/music-provider-queuestore
