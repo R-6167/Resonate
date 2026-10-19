@@ -30,6 +30,7 @@ import '../services/dj_sfx_rack.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
+import '../playback/queue_store.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -98,9 +99,15 @@ class MusicProvider extends ChangeNotifier {
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
   StreamSubscription<int?>? _sessionBSub;
-  List<Song> _queue = <Song>[];
-  int _queueIndex = 0;
-  bool _shuffleEnabled = false;
+  final QueueStore _queueStore = QueueStore();
+  /// Compatibility aliases — queue state lives in [_queueStore].
+  List<Song> get _queue => _queueStore.songs;
+  set _queue(List<Song> value) =>
+      _queueStore.replace(value, index: _queueStore.index);
+  int get _queueIndex => _queueStore.index;
+  set _queueIndex(int value) => _queueStore.index = value;
+  bool get _shuffleEnabled => _queueStore.shuffleEnabled;
+  set _shuffleEnabled(bool value) => _queueStore.shuffleEnabled = value;
   /// Mode soft-gates (from ModeProvider). Defaults preserve legacy behavior.
   bool _modeCrossfadeAllowed = true;
   bool _modeShuffleAllowed = true;
@@ -111,7 +118,8 @@ class MusicProvider extends ChangeNotifier {
   bool _completionAdvanceInProgress = false;
   bool _completionObservedDuringCrossfade = false;
   String? _completionObservedSongId;
-  bool _queueRestoreInProgress = false;
+  bool get _queueRestoreInProgress => _queueStore.restoreInProgress;
+  set _queueRestoreInProgress(bool value) => _queueStore.restoreInProgress = value;
   bool _crossfadeEnabled = false;
   int _crossfadeDurationMs = 3000;
   String _crossfadeFadeType = 'linear';
@@ -314,10 +322,10 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (_) {}
   }
-  List<Song> get queue => List.unmodifiable(_queue);
-  int get queueIndex => _queueIndex;
-  List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
-  bool get shuffleEnabled => _shuffleEnabled;
+  List<Song> get queue => _queueStore.unmodifiable;
+  int get queueIndex => _queueStore.index;
+  List<Song> get upcomingQueue => _queueStore.upcoming;
+  bool get shuffleEnabled => _queueStore.shuffleEnabled;
   bool get modeCrossfadeAllowed => _modeCrossfadeAllowed;
   bool get modeShuffleAllowed => _modeShuffleAllowed;
   bool get modePreciseResume => _modePreciseResume;
