@@ -4721,6 +4721,10 @@ class MusicProvider extends ChangeNotifier {
     _userTransportEpoch++;
     final cancellationEpoch = _userTransportEpoch;
     _automaticTransitionGeneration++;
+    final cancellationGeneration = _automaticTransitionGeneration;
+    bool stillOwnsCancellation() =>
+        _userTransportEpoch == cancellationEpoch &&
+        _automaticTransitionGeneration == cancellationGeneration;
     // A resume/duck/route-recovery fade must not keep writing volume after
     // a newer manual transport command takes ownership.
     _volumeFadeGen++;
@@ -4740,16 +4744,21 @@ class MusicProvider extends ChangeNotifier {
         try {
           await idle.pause();
         } catch (_) {}
+        // The idle engine can become active while pause() is awaiting. Never
+        // let this stale cleanup mute an engine claimed by a newer transition.
+        if (!stillOwnsCancellation()) return;
         try {
           await idle.setVolume(0.0);
         } catch (_) {}
+        if (!stillOwnsCancellation()) return;
         try {
           await _clearDjStretchSpeeds(outgoing: active, incoming: idle);
         } catch (_) {}
+        if (!stillOwnsCancellation()) return;
         // A cancelled repeat-one ramp may have attenuated the active engine.
         // Restore it only if no newer transport command has taken ownership.
         if (hadRepeatSelfHandoff &&
-            _userTransportEpoch == cancellationEpoch &&
+            stillOwnsCancellation() &&
             identical(active, audioPlayer)) {
           try {
             await active.setVolume(_eqPreampScale.clamp(0.0, 1.0));
@@ -4775,6 +4784,7 @@ class MusicProvider extends ChangeNotifier {
       try {
         final idle = inactivePlayer;
         await idle.pause();
+        if (!stillOwnsCancellation()) return;
         await idle.setVolume(0.0);
       } catch (_) {}
     }());
