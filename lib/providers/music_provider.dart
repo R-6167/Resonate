@@ -3249,6 +3249,7 @@ class MusicProvider extends ChangeNotifier {
       return false;
     } finally {
       _loadingSource = false;
+      unawaited(_refreshTrackLevelingFor(currentSong));
     }
   }
 
