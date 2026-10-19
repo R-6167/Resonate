@@ -30,6 +30,7 @@ import 'equalizer_screen.dart';
 import 'queue_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
+import 'lyrics_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -227,6 +228,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.center,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => LyricsScreen(song: song)),
+                  ),
+                  icon: const Icon(Icons.lyrics_outlined, size: 18),
+                  label: const Text('Lyrics'),
                 ),
               ),
               const Wrap(
