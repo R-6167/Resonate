@@ -20,6 +20,28 @@ class ModeInteractionCatalog {
               .where((action) => action.isPlaybackAction)
               .toSet(),
         );
+      case ResonateMode.workout:
+        return InteractionPolicy(
+          mode: mode,
+          minimumTapPointers: 1,
+          maximumTapDuration: const Duration(milliseconds: 500),
+          largeControls: true,
+          reducedControlCount: true,
+          accidentalTapProtection: true,
+          allowHorizontalSwipeNavigation: false,
+          twoFingerOnlyActions: const {},
+        );
+      case ResonateMode.sleep:
+        return InteractionPolicy(
+          mode: mode,
+          minimumTapPointers: 1,
+          maximumTapDuration: const Duration(milliseconds: 600),
+          largeControls: false,
+          reducedControlCount: true,
+          accidentalTapProtection: true,
+          allowHorizontalSwipeNavigation: false,
+          twoFingerOnlyActions: const {},
+        );
       case ResonateMode.driving:
         return InteractionPolicy(
           mode: mode,
