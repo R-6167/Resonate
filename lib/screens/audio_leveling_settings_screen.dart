@@ -8,7 +8,7 @@ import '../ui/resonate_glass.dart';
 
 /// User-facing analysis controls for Phase A audio leveling.
 /// This screen reports sampled RMS only; it does not label the estimate LUFS
-/// and does not change playback gain until the playback integration is enabled.
+/// Playback applies only cached, conservative attenuation when explicitly enabled.
 class AudioLevelingSettingsScreen extends StatefulWidget {
   const AudioLevelingSettingsScreen({super.key});
 
