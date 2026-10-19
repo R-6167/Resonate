@@ -14,6 +14,7 @@ import 'player_screen.dart';
 import 'playlists_screen.dart';
 import 'album_screen.dart';
 import 'artist_screen.dart';
+import '../services/duplicate_detection.dart';
 
 String _formatDuration(Duration d) {
   if (d.inMilliseconds <= 0) return '—';
@@ -46,6 +47,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _hasSelectedFolders = false;
   bool _selectMode = false;
   final Set<String> _selectedIds = <String>{};
+  /// 0 = Songs, 1 = Albums, 2 = Artists
+  int _browseTab = 0;
 
   @override
   void initState() {
@@ -301,6 +304,88 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await _refreshFolderVisibility();
   }
 
+
+  Future<void> _showDuplicates(List<Song> songs) async {
+    final groups = DuplicateDetection.findGroups(songs);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (_, controller) {
+            if (groups.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Text('No duplicate title + artist groups found.'),
+                ),
+              );
+            }
+            return ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              children: [
+                Text(
+                  'Possible duplicates',
+                  style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${groups.length} group${groups.length == 1 ? '' : 's'} with the same title and artist. Open a track to listen; remove copies from Library management if needed.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                for (final g in groups) ...[
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(g.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      '${g.artist} · ${g.songs.length} copies',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    leading: CircleAvatar(child: Text('${g.songs.length}')),
+                  ),
+                  for (final s in g.songs)
+                    ListTile(
+                      dense: true,
+                      title: Text(s.album, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(
+                        s.filePath,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Text(_formatDuration(s.duration)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        final music = context.read<MusicProvider>();
+                        await music.playSong(s);
+                        if (mounted) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                          );
+                        }
+                      },
+                    ),
+                  const Divider(),
+                ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ResonateGlassScaffold(
@@ -349,13 +434,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
             },
           ),
           PopupMenuButton<String>(
-            onSelected: (value) {
+            onSelected: (value) async {
               final library = context.read<LibraryProvider>();
               if (const ['title', 'artist', 'album', 'date_added', 'duration'].contains(value)) {
                 library.setSortBy(value);
               }
               if (const ['all', 'favorites', 'recent'].contains(value)) {
                 library.setFilterBy(value);
+              }
+              if (value == 'duplicates') {
+                final songs = library.filteredSongs.isNotEmpty ||
+                        library.searchQuery.isNotEmpty ||
+                        library.filterBy != 'all'
+                    ? library.filteredSongs
+                    : library.allSongs;
+                await _showDuplicates(songs);
               }
             },
             itemBuilder: (_) => const [
@@ -377,6 +470,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: Text('Filter: Favorites'),
               ),
               PopupMenuItem(value: 'recent', child: Text('Filter: Recent')),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'duplicates',
+                child: Text('Find duplicates'),
+              ),
             ],
           ),
         ],
@@ -416,6 +514,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(
+                  value: 0,
+                  label: Text('Songs'),
+                  icon: Icon(Icons.music_note_rounded, size: 18),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  label: Text('Albums'),
+                  icon: Icon(Icons.album_rounded, size: 18),
+                ),
+                ButtonSegment(
+                  value: 2,
+                  label: Text('Artists'),
+                  icon: Icon(Icons.person_rounded, size: 18),
+                ),
+              ],
+              selected: {_browseTab},
+              onSelectionChanged: (s) {
+                setState(() {
+                  _browseTab = s.first;
+                  if (_browseTab != 0) _toggleSelectMode(false);
+                });
+              },
             ),
           ),
           Consumer<LibraryProvider>(
@@ -665,6 +792,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         library.filterBy != 'all'
                     ? library.filteredSongs
                     : library.allSongs;
+
+                if (_browseTab == 1) {
+                  return _AlbumsBrowseList(songs: songs);
+                }
+                if (_browseTab == 2) {
+                  return _ArtistsBrowseList(songs: songs);
+                }
+
                 if (songs.isEmpty) {
                   return const Center(
                     child: Text(
