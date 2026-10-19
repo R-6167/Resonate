@@ -6,6 +6,27 @@ import 'package:resonate/modes/services/mode_policy_catalog.dart';
 import 'package:resonate/services/autopilot_mode_policy.dart';
 
 void main() {
+  group('Autopilot playback mutation consent gate', () {
+    test('requires consent, enabled Intelligence, and Autopilot together', () {
+      expect(AutopilotModePolicy.mayMutatePlayback(
+        consentGranted: true,
+        intelligenceEnabled: true,
+        autopilotEnabled: true,
+      ), isTrue);
+      for (final gate in [
+        (consent: false, intelligence: true, autopilot: true),
+        (consent: true, intelligence: false, autopilot: true),
+        (consent: true, intelligence: true, autopilot: false),
+      ]) {
+        expect(AutopilotModePolicy.mayMutatePlayback(
+          consentGranted: gate.consent,
+          intelligenceEnabled: gate.intelligence,
+          autopilotEnabled: gate.autopilot,
+        ), isFalse);
+      }
+    });
+  });
+
   test('Autopilot keeps automatic next enabled for every current mode', () {
     for (final mode in ResonateMode.values) {
       final policy = ModePolicyCatalog.policyFor(mode);

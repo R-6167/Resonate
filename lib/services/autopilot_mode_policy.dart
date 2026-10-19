@@ -7,6 +7,15 @@ import '../modes/models/playback_policy.dart';
 class AutopilotModePolicy {
   const AutopilotModePolicy._();
 
+  /// Playback mutation is allowed only while all three independent gates are
+  /// still open. Keep this pure so consent races can be regression-tested.
+  static bool mayMutatePlayback({
+    required bool consentGranted,
+    required bool intelligenceEnabled,
+    required bool autopilotEnabled,
+  }) =>
+      consentGranted && intelligenceEnabled && autopilotEnabled;
+
   static bool allowsAutomaticNext(PlaybackPolicy? policy) =>
       policy?.autoNextPreferred != false;
 
