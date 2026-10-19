@@ -1031,3 +1031,94 @@ class _StatItem extends StatelessWidget {
     );
   }
 }
+
+/// Lightweight browse entry point that reuses the existing album detail screen.
+class _AlbumsBrowseList extends StatelessWidget {
+  final List<Song> songs;
+
+  const _AlbumsBrowseList({required this.songs});
+
+  @override
+  Widget build(BuildContext context) {
+    final albums = <String, List<Song>>{};
+    for (final song in songs) {
+      final name = song.album.trim().isEmpty ? 'Unknown Album' : song.album;
+      albums.putIfAbsent(name, () => <Song>[]).add(song);
+    }
+    final names = albums.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    if (names.isEmpty) {
+      return const Center(child: Text('No albums found.'));
+    }
+
+    return ListView.builder(
+      itemCount: names.length,
+      itemBuilder: (context, index) {
+        final album = names[index];
+        final tracks = albums[album]!;
+        final artist = tracks.first.artist;
+        return ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.album_rounded)),
+          title: Text(album, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '${artist.isEmpty ? 'Unknown Artist' : artist} · ${tracks.length} track${tracks.length == 1 ? '' : 's'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AlbumScreen(album: album, artistHint: artist),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Lightweight browse entry point that reuses the existing artist detail screen.
+class _ArtistsBrowseList extends StatelessWidget {
+  final List<Song> songs;
+
+  const _ArtistsBrowseList({required this.songs});
+
+  @override
+  Widget build(BuildContext context) {
+    final artists = <String, List<Song>>{};
+    for (final song in songs) {
+      final name = song.artist.trim().isEmpty ? 'Unknown Artist' : song.artist;
+      artists.putIfAbsent(name, () => <Song>[]).add(song);
+    }
+    final names = artists.keys.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    if (names.isEmpty) {
+      return const Center(child: Text('No artists found.'));
+    }
+
+    return ListView.builder(
+      itemCount: names.length,
+      itemBuilder: (context, index) {
+        final artist = names[index];
+        final tracks = artists[artist]!;
+        final albums = tracks.map((song) => song.album).toSet().length;
+        return ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
+          title: Text(artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(
+            '$albums album${albums == 1 ? '' : 's'} · ${tracks.length} track${tracks.length == 1 ? '' : 's'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ArtistScreen(artist: artist)),
+          ),
+        );
+      },
+    );
+  }
+}
+
