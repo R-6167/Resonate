@@ -55,6 +55,25 @@ class AutopilotController extends ChangeNotifier {
   String? get pendingSongId => _pendingSongId;
   bool get consentGranted => _consentGranted;
 
+  bool get _mayMutatePlayback => AutopilotModePolicy.mayMutatePlayback(
+        consentGranted: _consentGranted,
+        intelligenceEnabled: intelligence.isEnabled,
+        autopilotEnabled: intelligence.isAutopilot,
+      );
+
+  /// Re-check authority after every asynchronous boundary before a playback
+  /// mutation. A setting change can happen while a decision is awaiting I/O.
+  Future<bool> _requirePlaybackMutationPermission(String stage) async {
+    if (_mayMutatePlayback) return true;
+    await ResonateDiagnostics.record('intelligence_playback_mutation_blocked', {
+      'stage': stage,
+      'consentGranted': _consentGranted,
+      'intelligenceEnabled': intelligence.isEnabled,
+      'autopilotEnabled': intelligence.isAutopilot,
+    });
+    return false;
+  }
+
   /// Home card / settings — user explicitly allows or revokes track control.
   Future<void> setConsent(bool value) async {
     _consentGranted = value;
@@ -161,6 +180,7 @@ class AutopilotController extends ChangeNotifier {
 
     final automaticQueue = await IntelligenceSettingsStore.automaticQueue();
     final threshold = await IntelligenceSettingsStore.confidenceThreshold();
+    if (!intelligence.isEnabled || !intelligence.isAutopilot) return;
     final modePolicy = modes?.policy;
     final useCrossfade = AutopilotModePolicy.shouldUseCrossfade(
       userCrossfadeEnabled: await IntelligenceSettingsStore.autopilotCrossfade(),
@@ -177,6 +197,7 @@ class AutopilotController extends ChangeNotifier {
     if (_consentGranted && automaticQueue && (remaining == null || remaining <= const Duration(seconds: 30))) {
       await _ensurePredictedQueue(threshold);
     }
+    if (!intelligence.isEnabled || !intelligence.isAutopilot) return;
 
     if (_transitionInFlight) return;
 
@@ -207,8 +228,9 @@ class AutopilotController extends ChangeNotifier {
         if (modeSafe.isNotEmpty) {
           nextSong = modeSafe.first;
         }
-      } else if (_consentGranted) {
+      } else if (_mayMutatePlayback) {
         await _ensurePredictedQueue(threshold);
+        if (!await _requirePlaybackMutationPermission('fallback_enqueue')) return;
         final top = intelligence.anticipatedNext?.song;
         if (top != null && top.id != music.currentSong?.id) {
           await music.enqueueSongs([top]);
@@ -245,6 +267,11 @@ class AutopilotController extends ChangeNotifier {
     _transitionSongId = music.currentSong?.id;
     _transitionInFlight = true;
 
+    // Capture user intent before any diagnostic await. Otherwise a manual
+    // command arriving during logging could be mistaken for the current intent.
+    final userGeneration = _authority.userGeneration;
+    final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
+
     await ResonateDiagnostics.record('intelligence_transition', {
       'stage': 'started',
       'mode': intelligence.autonomyLabel,
@@ -254,10 +281,8 @@ class AutopilotController extends ChangeNotifier {
       'reason': recommendation?.reason ?? 'graduated_autopilot',
     });
 
-    final userGeneration = _authority.userGeneration;
-    final automaticGeneration = _authority.beginAutomatic('intelligence_transition');
-
     try {
+      if (!await _requirePlaybackMutationPermission('transition_start')) return;
       if (_authority.isStale(automaticGeneration) ||
           userGeneration != _authority.userGeneration) {
         return;
@@ -267,15 +292,22 @@ class AutopilotController extends ChangeNotifier {
       final upcoming = music.queue.skip(music.queueIndex + 1).toList();
       final alreadyNext = upcoming.isNotEmpty && upcoming.first.id == nextSong.id;
       if (!alreadyNext) {
+        if (!await _requirePlaybackMutationPermission('play_next_enqueue')) return;
         await music.playNext(nextSong);
       }
+      if (!await _requirePlaybackMutationPermission('transition_after_queue_update')) return;
 
       if (useCrossfade && music.canCrossfadeNext && music.isPlaying) {
         final ms = await IntelligenceSettingsStore.autopilotCrossfadeMs();
+        if (!await _requirePlaybackMutationPermission('crossfade_start')) return;
         if (_authority.isStale(automaticGeneration)) return;
         final ok = await music.performTrueCrossfade(milliseconds: ms, fadeType: 'ease_in_out');
-        if (!ok) await music.nextSong(source: 'intelligence');
+        if (!ok) {
+          if (!await _requirePlaybackMutationPermission('crossfade_fallback_next')) return;
+          await music.nextSong(source: 'intelligence');
+        }
       } else {
+        if (!await _requirePlaybackMutationPermission('next_song')) return;
         if (_authority.isStale(automaticGeneration)) return;
         await music.nextSong(source: 'intelligence');
       }
@@ -315,12 +347,13 @@ class AutopilotController extends ChangeNotifier {
   }
 
   Future<void> _ensurePredictedQueue(double threshold) async {
-    // Phase 5: queue mutation is a playback API — require consent + autopilot.
-    if (!_consentGranted || !intelligence.isEnabled || !intelligence.isAutopilot) return;
+    // Queue mutation is a playback API — require consent + Autopilot.
+    if (!await _requirePlaybackMutationPermission('queue_decision_start')) return;
     if (_queueDecisionInFlight) return;
     _queueDecisionInFlight = true;
     try {
       await intelligence.refreshRecommendations(notify: false);
+      if (!await _requirePlaybackMutationPermission('queue_after_refresh')) return;
       final futureQueued = music.queue.skip(music.queueIndex + 1).map((song) => song.id).toSet();
       final modePolicy = modes?.policy;
       final sequenceCount = AutopilotModePolicy.predictedSequenceCount(modePolicy);
@@ -334,8 +367,10 @@ class AutopilotController extends ChangeNotifier {
         sessionArtistCounts: intelligence.sessionArtistCounts,
         count: sequenceCount,
       );
+      if (!await _requirePlaybackMutationPermission('queue_after_decision')) return;
       final biased = _applyModeBias(candidates);
       if (biased.isNotEmpty) {
+        if (!await _requirePlaybackMutationPermission('queue_enqueue')) return;
         final added = await music.enqueueSongs(biased);
         await ResonateDiagnostics.record('intelligence_queue_decision', {
           'mode': intelligence.autonomyLabel,
