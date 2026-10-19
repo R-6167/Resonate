@@ -43,9 +43,11 @@ class _AudioLevelingSettingsScreenState
     if (!mounted || context.read<MusicProvider>().currentSong?.id != song.id) {
       return;
     }
+    final matchesTarget = cached != null &&
+        (cached.targetRmsDbfs - _targetRmsDbfs).abs() < 0.001;
     setState(() {
-      _result = cached;
-      _resultSongId = cached == null ? null : song.id;
+      _result = matchesTarget ? cached : null;
+      _resultSongId = matchesTarget ? song.id : null;
     });
   }
 
