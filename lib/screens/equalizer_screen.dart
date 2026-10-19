@@ -1,12 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/bluetooth_provider.dart';
@@ -52,20 +50,22 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
 
   Future<void> _exportPresets(EqualizerProvider eq) async {
     try {
-      final directory = await getTemporaryDirectory();
       final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final file = File('${directory.path}/resonate-eq-presets-$stamp.json');
-      await file.writeAsString(eq.exportPresetsJson(), flush: true);
-      if (!mounted) return;
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/json')],
-        subject: 'Resonate EQ presets',
-        text: 'EQ presets exported from Resonate.',
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save Resonate EQ presets',
+        fileName: 'resonate-eq-presets-$stamp.json',
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        bytes: Uint8List.fromList(utf8.encode(eq.exportPresetsJson())),
+      );
+      if (path == null || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('EQ presets saved to the selected location.')),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not export presets: $error')),
+        SnackBar(content: Text('Could not save presets: $error')),
       );
     }
   }
@@ -77,7 +77,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
         allowedExtensions: const ['json'],
         withData: true,
       );
-      if (result == null || result.files.isEmpty) return;
+      if (result == null || result.files.isEmpty || !mounted) return;
       final file = result.files.single;
       final bytes = file.bytes ??
           (file.path == null ? null : await File(file.path!).readAsBytes());
@@ -432,10 +432,10 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                 icon: const Icon(Icons.file_open_rounded),
                               ),
                               IconButton(
-                                tooltip: 'Export presets as JSON',
+                                tooltip: 'Save presets to a JSON file',
                                 visualDensity: VisualDensity.compact,
                                 onPressed: () => _exportPresets(eq),
-                                icon: const Icon(Icons.ios_share_rounded),
+                                icon: const Icon(Icons.save_alt_rounded),
                               ),
                             ],
                           ),
