@@ -28,6 +28,7 @@ import '../services/library_visibility_store.dart';
 import '../services/audio_effects_bridge.dart';
 import '../services/dj_sfx_rack.dart';
 import '../services/audio_effects_controller.dart';
+import '../services/loudness_service.dart';
 import '../services/playback_coordinator.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
@@ -79,8 +80,19 @@ class MusicProvider extends ChangeNotifier {
   Duration currentPosition = Duration.zero;
   Duration? currentDuration;
   double _volume = 1.0;
-  /// Digital gain from EQ preamp (1.0 = 0 dB). Attenuation only via this path.
+  /// User-selected EQ preamp, kept separate from the track leveling trim.
+  double _eqPreampUserScale = 1.0;
+  /// Effective preamp scale (user preamp multiplied by conservative track trim).
+  /// Existing recovery, ducking and crossfade paths all consume this value.
   double _eqPreampScale = 1.0;
+  static const String _audioLevelingEnabledKey = 'audio_leveling_enabled_v1';
+  static const String _audioLevelingTargetKey = 'audio_leveling_target_rms_dbfs_v1';
+  bool _audioLevelingEnabled = false;
+  double _audioLevelingTargetRmsDbfs = LoudnessService.defaultTargetRmsDbfs;
+  double _trackLevelingScale = 1.0;
+  String? _trackLevelingSongId;
+  int _trackLevelingGeneration = 0;
+  final LoudnessService _loudnessService = LoudnessService();
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
   double _sleepFadeScale = 1.0;
   /// Optional listener for Android audio session (Resonate native DSP).
@@ -220,6 +232,81 @@ class MusicProvider extends ChangeNotifier {
   bool _historyOperationActive = false;
 
   double get volume => _volume;
+  bool get audioLevelingEnabled => _audioLevelingEnabled;
+  double get audioLevelingTargetRmsDbfs => _audioLevelingTargetRmsDbfs;
+
+  Future<void> setAudioLevelingEnabled(bool enabled) async {
+    if (_audioLevelingEnabled == enabled) return;
+    _audioLevelingEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_audioLevelingEnabledKey, enabled);
+    } catch (_) {}
+    await _refreshTrackLevelingFor(currentSong);
+    notifyListeners();
+  }
+
+  Future<void> setAudioLevelingTargetRmsDbfs(double target) async {
+    if (!target.isFinite) return;
+    final safeTarget = target.clamp(-24.0, -12.0).toDouble();
+    if ((_audioLevelingTargetRmsDbfs - safeTarget).abs() < 0.001) return;
+    _audioLevelingTargetRmsDbfs = safeTarget;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_audioLevelingTargetKey, safeTarget);
+    } catch (_) {}
+    await _refreshTrackLevelingFor(currentSong);
+    notifyListeners();
+  }
+
+  /// Refresh the current song's cached leveling trim after a scan or track change.
+  /// This phase only attenuates loud tracks; it never boosts above the existing
+  /// EQ/preamp master, so cached analysis cannot introduce a new clipping spike.
+  Future<void> refreshTrackLevelingFor(Song? song) =>
+      _refreshTrackLevelingFor(song);
+
+  Future<void> _refreshTrackLevelingFor(Song? song) async {
+    final generation = ++_trackLevelingGeneration;
+    if (_crossfadeInProgress ||
+        _automaticCrossfadeInFlight ||
+        _repeatSelfHandoffInFlight ||
+        _transportInFlight ||
+        _loadingSource) {
+      return; // The current transition/transport retains volume ownership.
+    }
+
+    var nextScale = 1.0;
+    if (_audioLevelingEnabled && song != null) {
+      final cached = await _loudnessService.getCached(song);
+      if (generation != _trackLevelingGeneration ||
+          currentSong?.id != song.id) {
+        return;
+      }
+      if (cached != null &&
+          (cached.targetRmsDbfs - _audioLevelingTargetRmsDbfs).abs() < 0.001) {
+        // Deliberately apply cuts only. Positive gain recommendations are
+        // shown to the user but not applied until a peak-safe gain stage exists.
+        final safeGainDb = cached.gainDb.clamp(-12.0, 0.0).toDouble();
+        nextScale = math.pow(10.0, safeGainDb / 20.0).toDouble();
+      }
+    }
+    if (generation != _trackLevelingGeneration) return;
+    _trackLevelingScale = nextScale;
+    _trackLevelingSongId = song?.id;
+    _eqPreampScale =
+        (_eqPreampUserScale * _trackLevelingScale).clamp(0.0, 1.0).toDouble();
+    try {
+      if (!_crossfadeInProgress &&
+          !_automaticCrossfadeInFlight &&
+          !_repeatSelfHandoffInFlight &&
+          !_transportInFlight &&
+          !_loadingSource) {
+        await audioPlayer.setVolume(
+          (_eqPreampScale * _sleepFadeScale).clamp(0.0, 1.0).toDouble(),
+        );
+      }
+    } catch (_) {}
+  }
   List<Song> get queue => List.unmodifiable(_queue);
   int get queueIndex => _queueIndex;
   List<Song> get upcomingQueue => List.unmodifiable(_queue.skip(_queueIndex + 1));
@@ -451,6 +538,8 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
+      _audioLevelingEnabled = prefs.getBool(_audioLevelingEnabledKey) ?? false;
+      _audioLevelingTargetRmsDbfs = (prefs.getDouble(_audioLevelingTargetKey) ?? LoudnessService.defaultTargetRmsDbfs).clamp(-24.0, -12.0).toDouble();
       _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
       _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4).toInt();
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
@@ -462,6 +551,7 @@ class MusicProvider extends ChangeNotifier {
       _resumeSongId = prefs.getString(_resumeSongIdKey);
       await _loadResumeMap(prefs);
       await _syncSystemVolume();
+      if (currentSong != null) unawaited(_refreshTrackLevelingFor(currentSong));
       // Skip syncSavedAudioEffects at startup — it awaits eq.parameters and
       // then fires during the first play, crashing the Activity.
 
@@ -1135,6 +1225,7 @@ class MusicProvider extends ChangeNotifier {
       _queue = restored;
       _queueIndex = savedIndex.clamp(0, restored.length - 1).toInt();
       currentSong = _queue[_queueIndex];
+      unawaited(_refreshTrackLevelingFor(currentSong));
       currentDuration = currentSong!.duration;
       // Restore last known position for the current song (if any).
       if (_modePreciseResume &&
@@ -1299,6 +1390,7 @@ class MusicProvider extends ChangeNotifier {
       if (globalIndex == _queueIndex && currentSong?.id == songId) return;
       _queueIndex = globalIndex;
       currentSong = _queue[globalIndex];
+      unawaited(_refreshTrackLevelingFor(currentSong));
       currentDuration = currentSong?.duration ?? player.duration;
       currentPosition = player.position;
       isPlaying = player.playing || _userWantsPlaying;
@@ -2920,6 +3012,7 @@ class MusicProvider extends ChangeNotifier {
 
       // Pin UI to the song we intend to play before any native load races.
       currentSong = selectedSong;
+      unawaited(_refreshTrackLevelingFor(currentSong));
       _podcastSession.onSongStarted(
         modes: _modes,
         song: selectedSong,
@@ -3023,6 +3116,7 @@ class MusicProvider extends ChangeNotifier {
       _queue = nextQueue;
       _queueIndex = nextIndex;
       currentSong = _queue[_queueIndex];
+      unawaited(_refreshTrackLevelingFor(currentSong));
       _activeIsA = true;
       _lastCompletionSongId = null;
       currentDuration = durationFromSource ?? currentSong!.duration;
@@ -4343,6 +4437,7 @@ class MusicProvider extends ChangeNotifier {
       _activeIsA = !_activeIsA; // Phase 2: only crossfade may leave Engine B active
       _queueIndex = nextIndex;
       currentSong = nextSong;
+      // Apply the incoming track's cached trim after this crossfade releases volume ownership.
       _lastCompletionSongId = null;
       currentDuration = nextSong.duration;
       currentPosition = incoming.position;
@@ -4489,6 +4584,7 @@ class MusicProvider extends ChangeNotifier {
         _crossfadeInProgress = false;
         _automaticCrossfadeInFlight = false;
         _transitionArmedAt = null;
+        unawaited(_refreshTrackLevelingFor(currentSong));
         try {
           await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
         } catch (_) {}
@@ -4924,6 +5020,7 @@ class MusicProvider extends ChangeNotifier {
       await audioPlayer.seek(Duration.zero, index: local);
       _queueIndex = queueIndex;
       currentSong = song;
+      unawaited(_refreshTrackLevelingFor(currentSong));
       currentDuration = song.duration ?? audioPlayer.duration;
       currentPosition = Duration.zero;
       isPlaying = true;
@@ -5184,7 +5281,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// Called by EqualizerProvider for preamp (−6 dB → ~0.5 scale, 0 dB → 1.0).
   Future<void> setEqPreampScale(double scale) async {
-    _eqPreampScale = scale.clamp(0.25, 1.0);
+    _eqPreampUserScale = scale.clamp(0.25, 1.0).toDouble();
+    _eqPreampScale = (_eqPreampUserScale * _trackLevelingScale).clamp(0.0, 1.0).toDouble();
     if (_crossfadeInProgress) {
       notifyListeners();
       return;
