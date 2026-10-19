@@ -1355,7 +1355,7 @@ class MusicProvider extends ChangeNotifier {
           isPlaying = true;
           unawaited(() async {
             // Do not re-claim focus mid-crossfade — it can reset OEM volume/routing mid-ramp.
-            if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+            if (_transitionLive) return;
             try {
               final session = await AudioSession.instance;
               await session.setActive(true);
@@ -1416,6 +1416,9 @@ class MusicProvider extends ChangeNotifier {
             // Do not treat as "need to go to next queue item".
             _lastCompletionSongId = completedSongId;
           }
+          // Screen-off / background: keep idle engine silent so completion on
+          // the outgoing does not leave two audible sources.
+          unawaited(_silenceIdleEngine());
         } else if (!_completionAdvanceInProgress) {
           unawaited(onTrackEnded(completedSongId));
         }
@@ -2543,7 +2546,7 @@ class MusicProvider extends ChangeNotifier {
     if (_repeatMode == PlaybackRepeatMode.one) {
       _completionObservedDuringCrossfade = false;
       try {
-        final vol = _eqPreampScale.clamp(0.05, 1.0);
+        final vol = _effectiveCrossfadeMaster.clamp(0.05, 1.0);
         if (audioPlayer.volume < vol * 0.85) {
           await audioPlayer.setVolume(vol);
         }
@@ -2590,6 +2593,7 @@ class MusicProvider extends ChangeNotifier {
           }
         }
         if (audioPlayer.playing) {
+          await _applyActiveMasterVolume();
           isPlaying = true;
           _publishServiceState();
           notifyListeners();
@@ -4880,9 +4884,8 @@ class MusicProvider extends ChangeNotifier {
               await audioPlayer.seek(Duration.zero);
             } catch (_) {}
           }
-          final midTransition =
-              _crossfadeInProgress || _repeatSelfHandoffInFlight;
-          final target = _eqPreampScale.clamp(0.0, 1.0);
+          final midTransition = _transitionLive;
+          final target = _effectiveCrossfadeMaster.clamp(0.0, 1.0);
           // Start quiet then fade in (skip only during a real ramp).
           if (!midTransition) {
             try {
