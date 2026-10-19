@@ -1,6 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/bluetooth_provider.dart';
@@ -42,6 +47,56 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
       }
     }
     _categorySynced = true;
+  }
+
+  Future<void> _exportPresets(EqualizerProvider eq) async {
+    try {
+      final directory = await getTemporaryDirectory();
+      final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+      final file = File('${directory.path}/resonate-eq-presets-$stamp.json');
+      await file.writeAsString(eq.exportPresetsJson(), flush: true);
+      if (!mounted) return;
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: 'Resonate EQ presets',
+        text: 'EQ presets exported from Resonate.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export presets: $error')),
+      );
+    }
+  }
+
+  Future<void> _importPresets() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.single;
+      final bytes = file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) {
+        throw const FormatException('The selected file could not be read.');
+      }
+      final source = utf8.decode(bytes);
+      final count = await context.read<EqualizerProvider>().importPresetsJson(source);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Imported $count EQ preset${count == 1 ? '' : 's'}.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preset import failed: $error')),
+      );
+    }
   }
 
   Future<void> _refreshLiveStatus() async {
@@ -254,6 +309,57 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 14),
 
+                    // Honest EQ gain meters: these display the curve, not audio signal level.
+                    _GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Band gain meters',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Boost / cut by frequency band. These are EQ gain readings, not RMS, loudness, or true-peak measurements.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 118,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                for (final band in eq.studioBands)
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                                      child: _BandGainMeter(
+                                        label: band.label,
+                                        gainDb: band.gainDb,
+                                        enabled: eq.isEnabled,
+                                        color: band.gainDb >= 0 ? _cBlue : _cPink,
+                                        baselineColor: scheme.outlineVariant,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Signal loudness and true peak need native DSP telemetry; no audio level is inferred here.',
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: scheme.outline,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
                     // —— Preamp ——
                     _GlassCard(
                       child: Column(
@@ -307,12 +413,34 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Presets',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Import presets from JSON',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: _importPresets,
+                                icon: const Icon(Icons.file_open_rounded),
+                              ),
+                              IconButton(
+                                tooltip: 'Export presets as JSON',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () => _exportPresets(eq),
+                                icon: const Icon(Icons.ios_share_rounded),
+                              ),
+                            ],
+                          ),
                           Text(
-                            'Presets',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            'Back up custom presets as JSON or import a Resonate preset file.',
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                           const SizedBox(height: 10),
                           SingleChildScrollView(
@@ -1208,4 +1336,76 @@ class _ResponseCurvePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ResponseCurvePainter old) =>
       old.points != points || old.enabled != enabled || old.color != color;
+}
+
+
+class _BandGainMeter extends StatelessWidget {
+  final String label;
+  final double gainDb;
+  final bool enabled;
+  final Color color;
+  final Color baselineColor;
+
+  const _BandGainMeter({
+    required this.label,
+    required this.gainDb,
+    required this.enabled,
+    required this.color,
+    required this.baselineColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final value = enabled ? gainDb.clamp(-12.0, 12.0).toDouble() : 0.0;
+    final extent = (value.abs() / 12.0) * 42.0;
+    return Column(
+      children: [
+        Text(
+          '${gainDb >= 0 ? '+' : ''}${gainDb.toStringAsFixed(0)}',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: enabled ? color : Theme.of(context).colorScheme.outline,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final center = constraints.maxHeight / 2;
+              final top = value >= 0 ? center - extent : center;
+              return Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: center,
+                    child: Container(height: 1, color: baselineColor),
+                  ),
+                  Positioned(
+                    left: 2,
+                    right: 2,
+                    top: top.clamp(0.0, constraints.maxHeight),
+                    height: extent.clamp(0.0, constraints.maxHeight / 2),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: enabled ? color : baselineColor,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: Theme.of(context).textTheme.labelSmall,
+        ),
+      ],
+    );
+  }
 }
