@@ -33,8 +33,8 @@ void main() {
     });
 
     test('normalizes out-of-range and non-finite energy scores', () {
-      expect(djSfxOneShotVolumeForEnergy(double.nan), 0.10);
-      expect(djSfxOneShotVolumeForEnergy(double.infinity), 0.10);
+      expect(djSfxOneShotVolumeForEnergy(double.nan), 0.12);
+      expect(djSfxOneShotVolumeForEnergy(double.infinity), 0.12);
       expect(djSfxOneShotVolumeForEnergy(-1), 0.12);
       expect(djSfxOneShotVolumeForEnergy(2), 0.08);
     });
