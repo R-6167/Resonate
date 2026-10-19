@@ -4,10 +4,7 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
 import android.media.AudioManager
-import android.media.MediaCodec
-import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
-import android.media.MediaFormat
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
@@ -33,8 +30,7 @@ class MainActivity : AudioServiceActivity() {
     private var pendingDiagnosticMime: String = "application/json"
     private val permissionHelper by lazy { PermissionHelper(this) }
     private val effectsChannelHandler = AudioEffectsChannelHandler()
-    private val pcmExecutor = Executors.newSingleThreadExecutor()
-    @Volatile private var pcmCancellationGeneration: Long = 0L
+    private val pcmAnalysisHandler = PcmAnalysisHandler(this)
     private val folderScanExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -50,23 +46,18 @@ class MainActivity : AudioServiceActivity() {
                 "scanAudio" -> result.success(scanAudio(call.argument<List<String>>("folders") ?: emptyList(), call.argument<Int>("minimumDurationMs") ?: 30000, call.argument<Boolean>("includeNonMusic") ?: false))
                 "scanModeFolder" -> scanModeFolderAsync(call.argument<String>("folderUri") ?: "", result)
                 "getAudioSize" -> result.success(getAudioSize(call.argument<List<String>>("folders") ?: emptyList()))
-                "readMediaHead" -> readMediaHead(
+                "readMediaHead" -> pcmAnalysisHandler.readMediaHead(
                     call.argument<String>("uri") ?: "",
                     call.argument<Int>("maxBytes") ?: (512 * 1024),
                     result,
                 )
-                "extractPcmWindow" -> extractPcmWindow(
+                "extractPcmWindow" -> pcmAnalysisHandler.extractPcmWindow(
                     call.argument<String>("uri") ?: "",
                     (call.argument<Number>("maxSeconds") ?: 12.0).toDouble(),
                     (call.argument<Number>("startMs") ?: 0).toLong(),
                     result,
                 )
-                "cancelPcmAnalysis" -> {
-                    // Invalidates active and already-queued PCM jobs. A fresh
-                    // request captures the new generation and remains eligible.
-                    pcmCancellationGeneration += 1L
-                    result.success(true)
-                }
+                "cancelPcmAnalysis" -> pcmAnalysisHandler.cancel(result)
                 else -> result.notImplemented()
             }
         }
@@ -369,163 +360,9 @@ class MainActivity : AudioServiceActivity() {
     private fun getAudioSize(folders: List<String>): Long =
         querySelectedAudio(folders, includeSize = true) as Long
 
-    /** Read first N bytes of a content:// or file path (ID3 head scan). */
-    private fun readMediaHead(uriString: String, maxBytes: Int, result: MethodChannel.Result) {
-        if (uriString.isBlank()) { result.success(null); return }
-        pcmExecutor.execute {
-            try {
-                val uri = Uri.parse(uriString)
-                val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
-                val bytes = contentResolver.openInputStream(uri)?.use { input ->
-                    val buf = ByteArray(limit)
-                    var off = 0
-                    while (off < limit) {
-                        val n = input.read(buf, off, limit - off)
-                        if (n <= 0) break
-                        off += n
-                    }
-                    if (off <= 0) null else buf.copyOf(off)
-                }
-                runOnUiThread { result.success(bytes) }
-            } catch (e: Exception) {
-                try {
-                    val file = java.io.File(uriString)
-                    if (file.exists() && file.canRead()) {
-                        val limit = maxBytes.coerceIn(1024, 2 * 1024 * 1024)
-                        val len = minOf(limit.toLong(), file.length()).toInt()
-                        val bytes = file.inputStream().use { stream ->
-                            val b = stream.readBytes()
-                            if (b.size > len) b.copyOf(len) else b
-                        }
-                        runOnUiThread { result.success(bytes) }
-                        return@execute
-                    }
-                } catch (_: Exception) {}
-                runOnUiThread { result.success(null) }
-            }
-        }
-    }
-
-    /** Decode a short PCM window via MediaExtractor/MediaCodec (MP3/M4A/content://). */
-    private fun extractPcmWindow(uriString: String, maxSeconds: Double, startMs: Long, result: MethodChannel.Result) {
-        if (uriString.isBlank()) { result.success(null); return }
-        val requestGeneration = pcmCancellationGeneration
-        pcmExecutor.execute {
-            var extractor: MediaExtractor? = null
-            var codec: MediaCodec? = null
-            try {
-                extractor = MediaExtractor()
-                val uri = Uri.parse(uriString)
-                var opened = false
-                try {
-                    if (uriString.startsWith("content://") || uriString.startsWith("file://")) {
-                        extractor.setDataSource(this@MainActivity, uri, null)
-                        opened = true
-                    }
-                } catch (_: Exception) {}
-                if (!opened) {
-                    try {
-                        contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                            extractor.setDataSource(pfd.fileDescriptor)
-                            opened = true
-                        }
-                    } catch (_: Exception) {}
-                }
-                if (!opened) {
-                    try { extractor.setDataSource(uriString); opened = true } catch (_: Exception) {}
-                }
-                if (!opened) { runOnUiThread { result.success(null) }; return@execute }
-                var audioTrack = -1
-                var format: MediaFormat? = null
-                for (i in 0 until extractor.trackCount) {
-                    val f = extractor.getTrackFormat(i)
-                    val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
-                    if (mime.startsWith("audio/")) { audioTrack = i; format = f; break }
-                }
-                if (audioTrack < 0 || format == null) { runOnUiThread { result.success(null) }; return@execute }
-                extractor.selectTrack(audioTrack)
-                if (startMs > 0L) {
-                    try {
-                        extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                    } catch (_: Exception) {}
-                }
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: run {
-                    runOnUiThread { result.success(null) }; return@execute
-                }
-                val sampleRate = if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) format.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
-                val channelCount = if (format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
-                codec = MediaCodec.createDecoderByType(mime)
-                codec.configure(format, null, null, 0)
-                codec.start()
-                val maxUs = (maxSeconds.coerceIn(4.0, 25.0) * 1_000_000L).toLong()
-                val maxPcmBytes = (sampleRate * channelCount * 2 * maxSeconds.coerceIn(4.0, 25.0)).toInt().coerceIn(64 * 1024, 3 * 1024 * 1024)
-                val outBytes = java.io.ByteArrayOutputStream(maxPcmBytes.coerceAtMost(512 * 1024))
-                val info = MediaCodec.BufferInfo()
-                var inputDone = false
-                var outputDone = false
-                var safety = 0
-                while (!outputDone &&
-                    safety < 800 &&
-                    outBytes.size() < maxPcmBytes &&
-                    requestGeneration == pcmCancellationGeneration
-                ) {
-                    safety++
-                    if (!inputDone) {
-                        val inIndex = codec.dequeueInputBuffer(100)
-                        if (inIndex >= 0) {
-                            val inBuf = codec.getInputBuffer(inIndex)
-                            if (inBuf != null) {
-                                inBuf.clear()
-                                val sampleSize = extractor.readSampleData(inBuf, 0)
-                                if (sampleSize < 0 || extractor.sampleTime < 0L || extractor.sampleTime > startMs * 1000L + maxUs) {
-                                    codec.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                                    inputDone = true
-                                } else {
-                                    codec.queueInputBuffer(inIndex, 0, sampleSize, extractor.sampleTime.coerceAtLeast(0), 0)
-                                    extractor.advance()
-                                }
-                            }
-                        }
-                    }
-                    val outIndex = codec.dequeueOutputBuffer(info, 100)
-                    if (outIndex >= 0) {
-                        if (info.size > 0 && info.presentationTimeUs <= maxUs) {
-                            val outBuf = codec.getOutputBuffer(outIndex)
-                            if (outBuf != null) {
-                                outBuf.position(info.offset)
-                                outBuf.limit(info.offset + info.size)
-                                val chunk = ByteArray(info.size)
-                                outBuf.get(chunk)
-                                val room = maxPcmBytes - outBytes.size()
-                                if (room > 0) outBytes.write(chunk, 0, minOf(chunk.size, room))
-                            }
-                        }
-                        codec.releaseOutputBuffer(outIndex, false)
-                        if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) outputDone = true
-                        if (outBytes.size() >= maxPcmBytes) outputDone = true
-                    }
-                }
-                if (requestGeneration != pcmCancellationGeneration) {
-                    runOnUiThread { result.success(null) }
-                    return@execute
-                }
-                val pcm = outBytes.toByteArray()
-                if (pcm.size < sampleRate) { runOnUiThread { result.success(null) }; return@execute }
-                runOnUiThread {
-                    result.success(hashMapOf("sampleRate" to sampleRate, "channels" to channelCount, "pcm" to pcm))
-                }
-            } catch (e: Exception) {
-                runOnUiThread { result.success(null) }
-            } finally {
-                try { codec?.stop() } catch (_: Exception) {}
-                try { codec?.release() } catch (_: Exception) {}
-                try { extractor?.release() } catch (_: Exception) {}
-            }
-        }
-    }
-
     override fun onDestroy() {
         effectsChannelHandler.release()
+        pcmAnalysisHandler.release()
         super.onDestroy()
     }
 }
