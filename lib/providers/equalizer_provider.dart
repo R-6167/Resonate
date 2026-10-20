@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/dsp_settings.dart';
 import '../services/eq_lean_store.dart';
 import '../services/resonate_dsp_pipeline.dart';
 import 'music_provider.dart';
@@ -919,6 +920,16 @@ class EqualizerProvider extends ChangeNotifier {
       for (final band in bandStates) {
         await prefs.setDouble('eq_band_${band.index}', band.gain);
       }
+      // Keep the versioned canonical snapshot aligned while legacy keys are
+      // retained for compatibility during the staged migration.
+      final canonical = await DspSettings.load();
+      await DspSettings.save(canonical.copyWith(
+        eqEnabled: isEnabled,
+        preset: preset,
+        eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
+        preampDb: preamp,
+        autoEqHeadroom: autoEqHeadroom,
+      ));
     } catch (e) {
       debugPrint('equalizer save failed: $e');
     }
