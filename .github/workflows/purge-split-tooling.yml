@@ -1,0 +1,45 @@
+name: Purge split temp tooling
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/purge-split-tooling]
+    paths:
+      - ".github/workflows/purge-split-tooling.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/purge-split-tooling
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove temporary split patches and apply workflows
+        run: |
+          set -euo pipefail
+          # One-shot apply/wire tooling from MusicProvider splits
+          rm -rf tool/patches
+          rm -f \
+            .github/workflows/apply-audio-focus-settings.yml \
+            .github/workflows/apply-crossfade-runtime.yml \
+            .github/workflows/apply-queue-store-complete.yml \
+            .github/workflows/apply-resume-position-store.yml \
+            .github/workflows/apply-transport-epoch.yml \
+            .github/workflows/purge-queue-store-temp.yml \
+            .github/workflows/purge-split-tooling.yml
+          # Keep production CI
+          test -f .github/workflows/android-apk.yml
+          echo "Remaining workflows:"
+          ls -la .github/workflows/
+          echo "tool/ after purge:"
+          ls -la tool 2>/dev/null || echo "(no tool dir)"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: purge MusicProvider split patch/CI tooling"
+          branch: chore/purge-split-tooling
