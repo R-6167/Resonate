@@ -1,44 +1,30 @@
 # MusicProvider structural splits
 
 Goal: shrink `lib/providers/music_provider.dart` by extracting pure data and
-bounded collaborators while keeping the Phase 0 public contract:
-
-`playSong` / `playQueueIndex` / `nextSong` / `previousSong` /
-`enqueueSongs` / `playNext` / `removeFromQueue` / `reorderQueue` /
-`togglePlayPause` / `pause` / `seek` / `stop`.
+bounded collaborators while keeping the Phase 0 public contract.
 
 ## Done
 
-### 1. QueueStore (`lib/playback/queue_store.dart`)
-- Owns: songs list, index, shuffle flag, ID persistence keys
-- MusicProvider keeps thin `_queue` / `_queueIndex` / `_shuffleEnabled` aliases
+### 1. QueueStore
+### 2. CrossfadeSettings (value object file; prefs may still live with CrossfadeProvider)
+### 3. ResumePositionStore
+### 4. AudioFocusSettings
 
-### 2. CrossfadeSettings (`lib/playback/crossfade_settings.dart`)
-- Owns: enabled, durationMs, fadeType (+ optional prefs keys)
-- Runtime transition flags stay on MusicProvider / CrossfadeProvider
+## In progress
 
-### 3. ResumePositionStore (`lib/playback/resume_position_store.dart`)
-- Owns: per-song map, last-session song/position, prefs keys, throttle
+### 5. CrossfadeRuntime (`lib/playback/crossfade_runtime.dart`)
+- In-flight flags, automatic + repeat-self generations, preload ids
+- `clearFlags`, `isLive`, `hasAutomaticWork`
+- **Not moved:** `_performTrueCrossfade`, preload loaders, engine swap
+- User settings (`_crossfadeEnabled` / duration / fade) and `_userTransportEpoch` stay on MusicProvider
 
-### 4. AudioFocusSettings (`lib/playback/audio_focus_settings.dart`)
-- Owns: automation enabled + level (1–4) + prefs keys
-- Duck/unduck, focus-loss timers, interruption streams stay on MusicProvider
-
-## Planned (higher risk)
-
-### 5. CrossfadeRuntime
-- In-flight flags, automatic generations, preload state
+## Planned
 
 ### 6. TransportEpoch / command gate
-- User transport epoch, pending counts, generation tokens
-
 ### 7. EnginePair ownership
-- A/B players, equalizers, loudness enhancers
-
 ### 8. DJ handoff surface
 
-## Rules for each split
+## Rules
 1. Public API unchanged
-2. Generation / epoch ownership stays with transport authority
-3. Prefer pure data + persist first; runtime engines last
-4. Prefer small patches over full-file rewrites when shipping via GitHub only
+2. Generation ownership stays with transport authority (`_userTransportEpoch` on provider)
+3. Prefer state bags first; move async engine methods only after flags are isolated
