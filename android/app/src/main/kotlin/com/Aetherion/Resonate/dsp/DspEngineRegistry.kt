@@ -6,8 +6,10 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Live native engine handles for dual-player (A/B) sinks.
  *
- * Sticky volume/EQ/speaker: when player B is created mid-session, [register] reapplies
- * the last UI settings so both engines stay in sync during crossfade.
+ * Sticky DSP settings: when player B is created mid-session, [register] reapplies
+ * the last UI settings so both engines stay in sync during crossfade. Registration,
+ * unregistration, and updates share the object monitor: otherwise an update can race
+ * between sticky-state capture and handle publication and leave the new engine stale.
  */
 object DspEngineRegistry {
     private const val TAG = "DspEngineRegistry"
@@ -82,6 +84,7 @@ object DspEngineRegistry {
         return true
     }
 
+    @Synchronized
     internal fun resetForTests() {
         handles.clear()
         stickyState = StickyState()
@@ -89,6 +92,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun unregister(processorId: Int) {
         val h = handles.remove(processorId)
         Log.i(TAG, "unregister id=$processorId handle=$h active=${handles.size}")
@@ -102,6 +106,7 @@ object DspEngineRegistry {
 
     /** Phone-speaker delivery: HPF + virtual bass + tighter limiter. */
     @JvmStatic
+    @Synchronized
     fun applySpeakerModeAll(enabled: Boolean) {
         stickyState = stickyState.copy(speakerMode = enabled)
         val list = snapshotHandles()
@@ -117,6 +122,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyVirtualBassAll(amount: Double) {
         stickyState = stickyState.copy(virtualBass = amount.coerceIn(0.0, 1.0))
         if (!stickyState.speakerMode) return
@@ -185,6 +191,7 @@ object DspEngineRegistry {
 
     /** True preamp (v0.4) — separate from DVC/volume. */
     @JvmStatic
+    @Synchronized
     fun applyPreampAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(preamp = g)
@@ -200,6 +207,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyLimiterCeilingAll(highDb: Float, lowDb: Float) {
         stickyState = stickyState.copy(limiterHigh = highDb.coerceIn(-6f, -0.1f), limiterLow = lowDb.coerceIn(-6f, -0.1f))
         val list = snapshotHandles()
@@ -213,6 +221,7 @@ object DspEngineRegistry {
     }
 
     @JvmStatic
+    @Synchronized
     fun applyCrossoverHzAll(hz: Float) {
         stickyState = stickyState.copy(crossoverHz = hz.coerceIn(80f, 200f))
         val list = snapshotHandles()
@@ -227,6 +236,7 @@ object DspEngineRegistry {
 
     /** Preamp / DVC — linear gain (1.0 = unity). Call off the audio thread. */
     @JvmStatic
+    @Synchronized
     fun applyVolumeAll(linearGain: Double) {
         val g = linearGain.coerceIn(0.0, 4.0)
         stickyState = stickyState.copy(linearGain = g)
@@ -243,6 +253,7 @@ object DspEngineRegistry {
 
     /** Studio curve → all live engines. */
     @JvmStatic
+    @Synchronized
     fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
         stickyState = stickyState.copy(eqEnabled = enabled, centersHz = centersHz?.copyOf(), gainsDb = gainsDb.copyOf())
         val list = snapshotHandles()

@@ -3,6 +3,8 @@ package com.aetherion.resonate.dsp
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -111,4 +113,53 @@ class DspEngineRegistryTest {
             fake.calls.filter { it.startsWith("preamp:") }.toSet()
         )
     }
+    @Test
+    fun setting_update_cannot_miss_engine_being_registered() {
+        val enteredRegister = CountDownLatch(1)
+        val releaseRegister = CountDownLatch(1)
+        val blocking = object : FakeApi() {
+            override fun setVolume(handle: Long, linearGain: Double) {
+                if (handle == 2002L && enteredRegister.count > 0) {
+                    enteredRegister.countDown()
+                    check(releaseRegister.await(2, TimeUnit.SECONDS)) {
+                        "test timed out waiting to release registration"
+                    }
+                }
+                super.setVolume(handle, linearGain)
+            }
+        }
+        DspEngineRegistry.nativeApi = blocking
+
+        val registerThread = Thread {
+            check(DspEngineRegistry.register(2, 2002L))
+        }
+        registerThread.start()
+        assertTrue(enteredRegister.await(2, TimeUnit.SECONDS))
+
+        val updateDone = CountDownLatch(1)
+        val updateThread = Thread {
+            try {
+                DspEngineRegistry.applyVolumeAll(0.42)
+            } finally {
+                updateDone.countDown()
+            }
+        }
+        updateThread.start()
+
+        // The update must block while registration is applying its sticky snapshot.
+        // Without the shared lock, it can finish now and miss the unpublished handle.
+        val updateWasBlocked = !updateDone.await(100, TimeUnit.MILLISECONDS)
+        releaseRegister.countDown()
+        registerThread.join(2000)
+        updateThread.join(2000)
+        assertFalse(registerThread.isAlive)
+        assertFalse(updateThread.isAlive)
+        assertTrue(updateWasBlocked)
+
+        assertTrue(blocking.calls.any { it == "volume:2002:0.42" })
+        blocking.calls.clear()
+        assertTrue(DspEngineRegistry.register(3, 3003L))
+        assertTrue(blocking.calls.any { it == "volume:3003:0.42" })
+    }
+
 }
