@@ -348,6 +348,7 @@ enum class ControlType : uint8_t {
     Volume,
     Preamp,
     EqEnabled,
+    ProcessingEnabled,
     EqBands,
     EqBand,
     SpeakerMode,
@@ -398,12 +399,14 @@ struct Engine {
     double preamp = 1.0;
     float headroom_gain = 1.0f;
     bool eq_enabled = true;
+    bool processing_enabled = true;
     bool speaker_mode = false;
     double virtual_bass = 0.55;
     float ceiling_db_high = -0.5f;
     float ceiling_db_low  = -0.2f;
     float xover_hz = kXoverHz;
     DcBlocker dc[kMaxCh];
+    Smoothed sm_dsp;
     Smoothed sm_vol;
     Smoothed sm_hr;
     Smoothed sm_vb;
@@ -528,6 +531,10 @@ struct Engine {
                     preamp = cmd.value0;
                     sm_pre.set_target((float)cmd.value0);
                     break;
+                case ControlType::ProcessingEnabled:
+                    processing_enabled = cmd.enabled;
+                    sm_dsp.set_target(cmd.enabled ? 1.0f : 0.0f);
+                    break;
                 case ControlType::EqEnabled:
                     eq_enabled = cmd.enabled;
                     rebuildEq();
@@ -579,6 +586,8 @@ struct Engine {
     void configureSmoothersAndDc() {
         for (int c = 0; c < channels; ++c)
             dc[c].configure(sample_rate, 8.0f);
+        sm_dsp.configure(sample_rate, 8.0f);
+        sm_dsp.set_target(processing_enabled ? 1.0f : 0.0f);
         sm_vol.configure(sample_rate, 8.0f);
         sm_hr.configure(sample_rate, 12.0f);
         sm_vb.configure(sample_rate, 15.0f);
@@ -795,6 +804,8 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
     const float knee = speaker ? 0.86f : 0.93f;
 
     for (int i = 0; i < frames; ++i) {
+        const float dsp_mix = e->sm_dsp.next();
+        float dry[kMaxCh] = {};
         const float vol = e->sm_vol.next();
         const float hr = e->sm_hr.next();
         const float vb = e->sm_vb.next();
@@ -806,7 +817,8 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
         float peaks_hi[kMaxCh] = {};
 
         for (int c = 0; c < ch; ++c) {
-            float s = e->dc[c].process(in[i * ch + c]);
+            dry[c] = in[i * ch + c];
+            float s = e->dc[c].process(dry[c]);
 
             if (eq) {
                 for (int b = 0; b < e->band_count; ++b)
@@ -847,15 +859,15 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
             const float sum1 = delayed_lo[1] * gr_lo + delayed_hi[1] * gr_hi;
             float o0, o1;
             soft_clip_stereo(sum0, sum1, knee, &o0, &o1);
-            out[i * 2] = o0;
-            out[i * 2 + 1] = o1;
+            out[i * 2] = dry[0] + (o0 - dry[0]) * dsp_mix;
+            out[i * 2 + 1] = dry[1] + (o1 - dry[1]) * dsp_mix;
 #else
             for (int c = 0; c < 2; ++c) {
                 float s = sanitize(delayed_lo[c] * gr_lo + delayed_hi[c] * gr_hi);
                 s = soft_clip(s, knee);
                 if (s > 1.0f) s = 1.0f;
                 if (s < -1.0f) s = -1.0f;
-                out[i * 2 + c] = s;
+                out[i * 2 + c] = dry[c] + (s - dry[c]) * dsp_mix;
             }
 #endif
         } else {
@@ -864,7 +876,7 @@ void dsp_process(void* handle, const float* in, float* out, int32_t frames) {
                 s = soft_clip(s, knee);
                 if (s > 1.0f) s = 1.0f;
                 if (s < -1.0f) s = -1.0f;
-                out[i * ch + c] = s;
+                out[i * ch + c] = dry[c] + (s - dry[c]) * dsp_mix;
             }
         }
     }
