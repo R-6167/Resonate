@@ -39,6 +39,7 @@ import '../playback/crossfade_frame_volumes.dart';
 import '../playback/crossfade_frame_progress.dart';
 import '../playback/crossfade_transition_guard.dart';
 import '../playback/crossfade_fallback_target.dart';
+import '../playback/transport_command_policy.dart';
 import '../playback/crossfade_fallback_fade.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
@@ -2923,9 +2924,8 @@ class MusicProvider extends ChangeNotifier {
     // Mark transport intent synchronously, before the diagnostic write or
     // coordinator await. Otherwise a near-end position callback can launch a
     // fresh automatic crossfade in the gap before a tapped track starts.
-    final transportPriority = userInitiated && const {
-      'toggle', 'pause', 'stop', 'seek', 'play', 'next', 'previous',
-    }.contains(command);
+    final transportPriority = userInitiated &&
+        TransportCommandPolicy.hasTransportPriority(command);
     if (transportPriority) _pendingUserTransportCount++;
     try {
       final effectiveIntent = intentToken ??
@@ -2952,7 +2952,7 @@ class MusicProvider extends ChangeNotifier {
         operation,
         command: command,
         supersedePending: userInitiated &&
-            const {'play', 'next', 'previous'}.contains(command),
+            TransportCommandPolicy.supersedesPendingSource(command),
         onSuperseded: onSuperseded,
       );
     } finally {
