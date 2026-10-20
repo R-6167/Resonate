@@ -1,0 +1,133 @@
+  Future<void> _clearDjStretchSpeeds({
+    AudioPlayer? outgoing,
+    AudioPlayer? incoming,
+  }) async {
+    _djStretchSpeedOut = null;
+    _djStretchSpeedIn = null;
+    try {
+      if (outgoing != null) await outgoing.setSpeed(1.0);
+    } catch (_) {}
+    try {
+      if (incoming != null) await incoming.setSpeed(1.0);
+    } catch (_) {}
+  }
+
+  /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
+  Future<void> _prepareDjHandoff({
+    required AudioPlayer outgoing,
+    required AudioPlayer incoming,
+    required Song? outgoingSong,
+    required Song incomingSong,
+  }) async {
+    if ((!_djBeatAlignActive && !_djTempoMatchActive) || _djAnalysis == null) {
+      return;
+    }
+    if (outgoingSong == null) return;
+    try {
+      final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
+      final bFuture = _djAnalysis!.analyzeSong(incomingSong);
+      final results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
+        const Duration(milliseconds: 400),
+        onTimeout: () => <DjAnalysis>[],
+      );
+      if (results.length < 2) return;
+      final analysisA = results[0];
+      final analysisB = results[1];
+      if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
+        await ResonateDiagnostics.record('dj_handoff_skipped', {
+          'reason': 'missing_bpm',
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+        });
+        return;
+      }
+
+      final bpmA = analysisA.bpm!;
+      final bpmB = analysisB.bpm!;
+      DjTempoStretchPlan? stretch;
+      if (_djTempoMatchActive) {
+        stretch = computeTempoStretch(
+          bpmA: bpmA,
+          bpmB: bpmB,
+          maxStretchPercent: _djMaxStretchPercent,
+        );
+        if (stretch == null) {
+          await ResonateDiagnostics.record('dj_tempo_match_skipped', {
+            'reason': 'stretch_budget',
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'maxPercent': _djMaxStretchPercent,
+          });
+        }
+      }
+
+      final effectiveBpmB = stretch?.effectiveBpm ?? bpmB;
+      final beatOffsetB = analysisB.beatOffsetMs ?? 0;
+      final beatOffsetA = analysisA.beatOffsetMs ?? 0;
+
+      if (_djBeatAlignActive) {
+        final posMs = outgoing.position.inMilliseconds;
+        final seek = computeBeatAlignedSeekMs(
+          bpmA: stretch != null ? stretch.effectiveBpm : bpmA,
+          beatOffsetMsA: beatOffsetA,
+          bpmB: effectiveBpmB,
+          beatOffsetMsB: beatOffsetB,
+          outgoingPositionMs: posMs,
+          maxRelativeDelta: stretch != null ? 0.25 : 0.08,
+        );
+        if (seek == null) {
+          await ResonateDiagnostics.record('dj_beat_align_skipped', {
+            'reason': 'bpm_delta',
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'stretched': stretch != null,
+          });
+        } else {
+          final dur = incoming.duration ?? incomingSong.duration;
+          var target = seek;
+          if (dur > Duration.zero && target >= dur) {
+            final periodMs = (60000.0 / effectiveBpmB).round();
+            if (periodMs > 0) {
+              target = Duration(milliseconds: target.inMilliseconds % periodMs);
+            } else {
+              target = Duration.zero;
+            }
+          }
+          await incoming.seek(target);
+          await ResonateDiagnostics.record('dj_beat_align_applied', {
+            'outgoingSongId': outgoingSong.id,
+            'incomingSongId': incomingSong.id,
+            'bpmA': bpmA,
+            'bpmB': bpmB,
+            'seekMs': target.inMilliseconds,
+            'outgoingPosMs': posMs,
+            'stretched': stretch != null,
+          });
+        }
+      }
+
+      if (stretch != null) {
+        try {
+          await outgoing.setSpeed(stretch.speedOutgoing);
+        } catch (_) {}
+        try {
+          await incoming.setSpeed(stretch.speedIncoming);
+        } catch (_) {}
+        _djStretchSpeedOut = stretch.speedOutgoing;
+        _djStretchSpeedIn = stretch.speedIncoming;
+        await ResonateDiagnostics.record('dj_tempo_match_applied', {
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': bpmA,
+          'bpmB': bpmB,
+          'speedOut': stretch.speedOutgoing,
+          'speedIn': stretch.speedIncoming,
+          'mode': stretch.mode,
+          'effectiveBpm': stretch.effectiveBpm,
+        });
+      }
+    } catch (e) {
+      debugPrint('DJ handoff prepare skipped: $e');
+    }
+  }
+

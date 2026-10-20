@@ -1,0 +1,22 @@
+  void _maybeStartAutomaticCrossfade(Duration position) {
+    if (!_crossfadeEnabled || !canCrossfadeNext || !audioPlayer.playing) return;
+    if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
+    final duration = audioPlayer.duration ?? currentDuration;
+    if (duration == null || duration <= Duration.zero) return;
+    final remaining = duration - position;
+    if (remaining <= Duration.zero) return;
+
+    final preloadMs = (_crossfadeDurationMs + 10000).clamp(10000, 28000);
+    final fadeArmMs = _crossfadeDurationMs + 2000;
+    if (remaining <= Duration(milliseconds: preloadMs) &&
+        remaining > Duration(milliseconds: fadeArmMs)) {
+      unawaited(_preloadNextForCrossfade());
+    }
+
+    final startMarginMs = (1200 + (_crossfadeDurationMs ~/ 10)).clamp(1500, 3000);
+    final triggerMs = (_crossfadeDurationMs + startMarginMs).clamp(2000, 16000);
+    if (remaining > Duration(milliseconds: triggerMs)) return;
+    if (remaining < const Duration(milliseconds: 1200)) return;
+    _automaticCrossfadeInFlight = true;
+    unawaited(_runAutomaticCrossfade());
+  }

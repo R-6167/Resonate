@@ -1,0 +1,43 @@
+      var incomingStarted = incoming.playing;
+      for (var i = 0; i < 15 && !incomingStarted; i++) {
+        if (incoming.playing) {
+          incomingStarted = true;
+          break;
+        }
+        if (i == 4 || i == 9) {
+          try {
+            await incoming.seek(Duration.zero);
+          } catch (_) {}
+          try {
+            incoming.play();
+          } catch (_) {}
+        }
+        await Future<void>.delayed(Duration(milliseconds: 50 + i * 20));
+        incomingStarted = incoming.playing;
+      }
+      if (!incomingStarted) {
+        _preloadedNextSongId = null;
+        throw StateError('crossfade incoming engine failed to start');
+      }
+---SPLIT---
+      var incomingStarted = incoming.playing;
+      for (var i = 0; i < 25 && !incomingStarted; i++) {
+        if (incoming.playing) {
+          incomingStarted = true;
+          break;
+        }
+        if (i == 5 || i == 12 || i == 18) {
+          try { await incoming.seek(Duration.zero); } catch (_) {}
+          try { incoming.play(); } catch (_) {}
+        }
+        await Future<void>.delayed(Duration(milliseconds: 40 + i * 15));
+        incomingStarted = incoming.playing;
+      }
+      if (!incomingStarted) {
+        _preloadedNextSongId = null;
+        await ResonateDiagnostics.record('crossfade_incoming_start_failed', {
+          'outgoingSongId': outgoingSong?.id,
+          'incomingSongId': nextSong.id,
+        });
+        throw StateError('crossfade incoming engine failed to start');
+      }

@@ -1,0 +1,39 @@
+name: Apply FocusInterruptionRuntime wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/focus-interruption-runtime]
+    paths:
+      - "tool/patches/focus_interruption_runtime_wire.patch"
+      - ".github/workflows/apply-focus-interruption-runtime.yml"
+      - "lib/playback/focus_interruption_runtime.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/focus-interruption-runtime
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply wire patch
+        run: |
+          set -euo pipefail
+          if grep -q "FocusInterruptionRuntime _focusInterruption" lib/providers/music_provider.dart; then
+            echo "Already wired"
+            exit 0
+          fi
+          patch -p1 --batch --forward < tool/patches/focus_interruption_runtime_wire.patch
+          grep -q "FocusInterruptionRuntime _focusInterruption" lib/providers/music_provider.dart
+          echo "FocusInterruptionRuntime wire applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to FocusInterruptionRuntime"
+          file_pattern: lib/providers/music_provider.dart
+          branch: refactor/focus-interruption-runtime

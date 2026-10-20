@@ -1,0 +1,98 @@
+  static Future<String?> exportReport() async {
+    final report = await snapshot();
+    late final String json;
+    try {
+      json = const JsonEncoder.withIndent('  ').convert(_jsonSafe(report));
+    } catch (e) {
+      await record('report_encode_failed', {'error': e.toString()});
+      json = jsonEncode(_jsonSafe(report));
+    }
+
+    final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
+    final fileName = 'resonate-diagnostics-$stamp.json';
+
+    String? localPath;
+    try {
+      final directory = await _documentsDirectory();
+      if (directory != null) {
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(json, flush: true);
+        localPath = file.path;
+      }
+    } catch (e) {
+      await record('report_local_write_failed', {'error': e.toString()});
+    }
+
+    if (!Platform.isAndroid) {
+      if (localPath == null) {
+        throw StateError('Could not write diagnostic report to local storage.');
+      }
+      await record('report_exported_local', {
+        'eventCount': (report['events'] as List?)?.length ?? 0,
+        'crashCount': (report['crashes'] as List?)?.length ?? 0,
+        'feedbackCount': (report['feedback'] as List?)?.length ?? 0,
+        'path': localPath,
+      });
+      return localPath;
+    }
+
+    try {
+      final savedUri = await _mediaStoreChannel.invokeMethod<String>(
+        'saveDiagnosticReport',
+        {
+          'fileName': fileName,
+          'bytes': Uint8List.fromList(utf8.encode(json)),
+        },
+      );
+      if (savedUri == null || savedUri.isEmpty) {
+        await record('report_save_cancelled', {
+          'fileName': fileName,
+          if (localPath != null) 'localFallback': localPath,
+        });
+        return localPath;
+      }
+      await record('report_saved_to_device', {
+        'uri': savedUri,
+        'suggestedFileName': fileName,
+        'eventCount': (report['events'] as List?)?.length ?? 0,
+        'crashCount': (report['crashes'] as List?)?.length ?? 0,
+        'feedbackCount': (report['feedback'] as List?)?.length ?? 0,
+      });
+      return savedUri;
+    } on PlatformException catch (e) {
+      await record('report_device_save_failed', {
+        'code': e.code,
+        'message': e.message,
+        if (localPath != null) 'localFallback': localPath,
+      });
+      if (localPath != null) return localPath;
+      throw StateError('Could not open Save As (${e.code}). Local export also failed.');
+    } catch (e) {
+      await record('report_device_save_failed', {
+        'error': e.toString(),
+        if (localPath != null) 'localFallback': localPath,
+      });
+      if (localPath != null) return localPath;
+      rethrow;
+    }
+  }
+
+  static dynamic _jsonSafe(dynamic value) {
+    if (value == null || value is String || value is bool || value is int) {
+      return value;
+    }
+    if (value is double) {
+      if (value.isNaN || value.isInfinite) return null;
+      return value;
+    }
+    if (value is Map) {
+      return <String, dynamic>{
+        for (final e in value.entries)
+          e.key.toString(): _jsonSafe(e.value),
+      };
+    }
+    if (value is Iterable) {
+      return value.map(_jsonSafe).toList();
+    }
+    return value.toString();
+  }

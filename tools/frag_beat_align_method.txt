@@ -1,0 +1,74 @@
+
+  /// When DJ Mode beat-align is active, seek the incoming engine so the next
+  /// beat of A lines up with a beat of B. No-ops when off, analysis missing,
+  /// or BPMs differ by more than ~8% (stretch is Step 3).
+  Future<void> _maybeBeatAlignIncoming({
+    required AudioPlayer outgoing,
+    required AudioPlayer incoming,
+    required Song? outgoingSong,
+    required Song incomingSong,
+  }) async {
+    if (!_djBeatAlignActive || _djAnalysis == null) return;
+    if (outgoingSong == null) return;
+    try {
+      final aFuture = _djAnalysis!.analyzeSong(outgoingSong);
+      final bFuture = _djAnalysis!.analyzeSong(incomingSong);
+      final results = await Future.wait<DjAnalysis>([aFuture, bFuture]).timeout(
+        const Duration(milliseconds: 350),
+        onTimeout: () => <DjAnalysis>[],
+      );
+      if (results.length < 2) return;
+      final analysisA = results[0];
+      final analysisB = results[1];
+      if (!analysisA.hasUsableBpm || !analysisB.hasUsableBpm) {
+        await ResonateDiagnostics.record('dj_beat_align_skipped', {
+          'reason': 'missing_bpm',
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': analysisA.bpm,
+          'bpmB': analysisB.bpm,
+        });
+        return;
+      }
+      final posMs = outgoing.position.inMilliseconds;
+      final seek = computeBeatAlignedSeekMs(
+        bpmA: analysisA.bpm!,
+        beatOffsetMsA: analysisA.beatOffsetMs ?? 0,
+        bpmB: analysisB.bpm!,
+        beatOffsetMsB: analysisB.beatOffsetMs ?? 0,
+        outgoingPositionMs: posMs,
+      );
+      if (seek == null) {
+        await ResonateDiagnostics.record('dj_beat_align_skipped', {
+          'reason': 'bpm_delta',
+          'outgoingSongId': outgoingSong.id,
+          'incomingSongId': incomingSong.id,
+          'bpmA': analysisA.bpm,
+          'bpmB': analysisB.bpm,
+        });
+        return;
+      }
+      final dur = incoming.duration ?? incomingSong.duration;
+      var target = seek;
+      if (dur > Duration.zero && target >= dur) {
+        final periodMs = (60000.0 / analysisB.bpm!).round();
+        if (periodMs > 0) {
+          target = Duration(milliseconds: target.inMilliseconds % periodMs);
+        } else {
+          target = Duration.zero;
+        }
+      }
+      await incoming.seek(target);
+      await ResonateDiagnostics.record('dj_beat_align_applied', {
+        'outgoingSongId': outgoingSong.id,
+        'incomingSongId': incomingSong.id,
+        'bpmA': analysisA.bpm,
+        'bpmB': analysisB.bpm,
+        'seekMs': target.inMilliseconds,
+        'outgoingPosMs': posMs,
+      });
+    } catch (e) {
+      debugPrint('beat align skipped: $e');
+    }
+  }
+
