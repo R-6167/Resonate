@@ -118,6 +118,20 @@ class DspEngineRegistryTest {
         )
     }
     @Test
+    fun dvc_gain_is_clamped_and_inherited_by_new_engines() {
+        DspEngineRegistry.applyVolumeAll(99.0)
+        assertTrue(fake.calls.contains("volume:0:4.0") || fake.calls.none { it.startsWith("volume:") })
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(7, 7007L))
+        assertTrue(fake.calls.contains("volume:7007:4.0"))
+
+        fake.calls.clear()
+        DspEngineRegistry.applyVolumeAll(-2.0)
+        assertTrue(fake.calls.contains("volume:7007:0.0"))
+    }
+
+    @Test
     fun setting_update_cannot_miss_engine_being_registered() {
         val enteredRegister = CountDownLatch(1)
         val releaseRegister = CountDownLatch(1)
