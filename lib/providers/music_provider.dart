@@ -34,6 +34,7 @@ import '../playback/queue_store.dart';
 import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
+import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
@@ -151,9 +152,15 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeRuntime.completionObservedSongId = value;
   bool get _queueRestoreInProgress => _queueStore.restoreInProgress;
   set _queueRestoreInProgress(bool value) => _queueStore.restoreInProgress = value;
-  bool _crossfadeEnabled = false;
-  int _crossfadeDurationMs = 3000;
-  String _crossfadeFadeType = 'linear';
+  /// Runtime view of crossfade preferences; CrossfadeProvider remains the
+  /// persistence/UI owner, while MusicProvider enforces playback behavior.
+  final CrossfadeSettings _crossfadeSettings = CrossfadeSettings();
+  bool get _crossfadeEnabled => _crossfadeSettings.enabled;
+  set _crossfadeEnabled(bool value) => _crossfadeSettings.setEnabled(value);
+  int get _crossfadeDurationMs => _crossfadeSettings.clampedDurationMs;
+  set _crossfadeDurationMs(int value) => _crossfadeSettings.setDurationMs(value);
+  String get _crossfadeFadeType => _crossfadeSettings.fadeType;
+  set _crossfadeFadeType(String value) => _crossfadeSettings.setFadeType(value);
   bool get _automaticCrossfadeInFlight => _crossfadeRuntime.automaticInFlight;
   set _automaticCrossfadeInFlight(bool value) =>
       _crossfadeRuntime.automaticInFlight = value;
@@ -921,8 +928,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setCrossfadeEnabled(bool enabled) async {
     final wasEnabled = _crossfadeEnabled;
-    _crossfadeEnabled = enabled;
-    if (enabled && _crossfadeDurationMs <= 0) _crossfadeDurationMs = 3000;
+    _crossfadeSettings.setEnabled(enabled);
 
     // The user's crossfade switch is a playback authority boundary too.
     // Turning it off while automatic A/B/DJ work is active must invalidate
@@ -950,14 +956,12 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> setCrossfadeDuration(int milliseconds) async {
-    _crossfadeDurationMs = milliseconds.clamp(500, 12000).toInt();
-    _crossfadeEnabled = true;
+    _crossfadeSettings.setDurationMs(milliseconds);
     notifyListeners();
   }
 
   Future<void> setCrossfadeFadeType(String value) async {
-    if (!const ['linear', 'ease_in', 'ease_out', 'ease_in_out'].contains(value)) return;
-    _crossfadeFadeType = value;
+    if (!_crossfadeSettings.setFadeType(value)) return;
     notifyListeners();
   }
 
