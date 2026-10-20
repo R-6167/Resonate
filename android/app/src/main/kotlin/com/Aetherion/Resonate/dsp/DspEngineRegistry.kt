@@ -52,6 +52,7 @@ object DspEngineRegistry {
     private data class StickyState(
         val linearGain: Double = 1.0,
         val eqEnabled: Boolean = true,
+        val dspEnabled: Boolean = true,
         val centersHz: DoubleArray? = null,
         val gainsDb: DoubleArray? = null,
         val speakerMode: Boolean = false,
@@ -180,6 +181,7 @@ object DspEngineRegistry {
             "nativeAllowed" to DspSessionGate.isNativeAllowed(),
             "linearGain" to stickyState.linearGain,
             "eqEnabled" to stickyState.eqEnabled,
+            "dspEnabled" to stickyState.dspEnabled,
             "eqBands" to (stickyState.gainsDb?.size ?: 0),
             "speakerMode" to stickyState.speakerMode,
             "virtualBass" to stickyState.virtualBass,
@@ -188,6 +190,22 @@ object DspEngineRegistry {
         return base
     }
 
+
+    /** Master native DSP enable; independent from EQ-band enable and DVC gain. */
+    @JvmStatic
+    @Synchronized
+    fun applyEnabledAll(enabled: Boolean) {
+        stickyState = stickyState.copy(dspEnabled = enabled)
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                nativeApi.setEnabled(h, enabled)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setEnabled failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applyEnabledAll enabled=$enabled targets=${list.size}")
+    }
 
     /** True preamp (v0.4) — separate from DVC/volume. */
     @JvmStatic
@@ -275,7 +293,7 @@ object DspEngineRegistry {
             if (gains != null && gains.isNotEmpty()) {
                 nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)
             } else {
-                nativeApi.setEnabled(handle, state.eqEnabled)
+                nativeApi.setEnabled(handle, state.dspEnabled)
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
