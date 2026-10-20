@@ -1,30 +1,28 @@
 # MusicProvider structural splits
 
-Goal: shrink `lib/providers/music_provider.dart` by extracting pure data and
-bounded collaborators while keeping the Phase 0 public contract.
+Goal: shrink `lib/providers/music_provider.dart` while keeping the Phase 0 public contract.
 
 ## Done
 
-### 1. QueueStore
-### 2. CrossfadeSettings (value object file; prefs may still live with CrossfadeProvider)
-### 3. ResumePositionStore
-### 4. AudioFocusSettings
+1. QueueStore
+2. CrossfadeSettings (value object)
+3. ResumePositionStore
+4. AudioFocusSettings
+5. CrossfadeRuntime (in-flight flags + generations)
 
 ## In progress
 
-### 5. CrossfadeRuntime (`lib/playback/crossfade_runtime.dart`)
-- In-flight flags, automatic + repeat-self generations, preload ids
-- `clearFlags`, `isLive`, `hasAutomaticWork`
-- **Not moved:** `_performTrueCrossfade`, preload loaders, engine swap
-- User settings (`_crossfadeEnabled` / duration / fade) and `_userTransportEpoch` stay on MusicProvider
+### 6. TransportEpoch (`lib/playback/transport_epoch.dart`)
+- User transport epoch, in-flight / pending counts, `userWantsPlaying`, `loadingSource`
+- Complements CrossfadeRuntime: transport always wins via epoch preemption
+- **Not moved:** next/prev/play implementations, serializePlayback body
 
 ## Planned
 
-### 6. TransportEpoch / command gate
-### 7. EnginePair ownership
+### 7. EnginePair ownership (A/B players, EQ, loudness)
 ### 8. DJ handoff surface
 
 ## Rules
 1. Public API unchanged
-2. Generation ownership stays with transport authority (`_userTransportEpoch` on provider)
-3. Prefer state bags first; move async engine methods only after flags are isolated
+2. Prefer state bags first; move async methods later
+3. Small patches + CI apply when shipping GitHub-only
