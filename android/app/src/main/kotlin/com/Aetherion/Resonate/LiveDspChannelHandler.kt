@@ -26,7 +26,14 @@ internal class LiveDspChannelHandler {
                 val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
                 val linear = Math.pow(10.0, db / 20.0)
                 DspEngineRegistry.applyPreampAll(linear)
-                result.success(mapOf("ok" to true, "linear" to linear, "active" to DspEngineRegistry.activeCount()))
+                result.success(mapOf("ok" to true, "db" to db, "linear" to linear, "active" to DspEngineRegistry.activeCount()))
+            }
+            "setLiveDspDvcDb" -> {
+                // DVC is its own smoothed native gain stage, not EQ preamp or crossfade gain.
+                val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-24.0, 6.0)
+                val linear = Math.pow(10.0, db / 20.0).coerceIn(0.0, 4.0)
+                DspEngineRegistry.applyVolumeAll(linear)
+                result.success(mapOf("ok" to true, "db" to db, "linear" to linear, "active" to DspEngineRegistry.activeCount()))
             }
             "setLiveDspLimiterCeiling" -> {
                 val high = (call.argument<Number>("highDb") ?: -0.5).toFloat()
