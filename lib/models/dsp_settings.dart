@@ -137,11 +137,12 @@ class DspSettings {
         // Invalid/future schema falls through to legacy migration and safe defaults.
       }
     }
-    final bandGains = <double>[];
-    for (var i = 0; i < 31; i++) {
-      final gain = prefs.getDouble('eq_studio_band_$i');
-      if (gain != null) bandGains.add(gain);
-    }
+    final hasLegacyBands = List<int>.generate(31, (i) => i)
+        .any((i) => prefs.containsKey('eq_studio_band_$i'));
+    final bandGains = hasLegacyBands
+        ? List<double>.generate(
+            31, (i) => prefs.getDouble('eq_studio_band_$i') ?? 0.0)
+        : <double>[];
     final migrated = DspSettings(
       masterEnabled: prefs.getBool('equalizer_native_dsp') ?? false,
       eqEnabled: prefs.getBool('equalizer_enabled') ?? true,
