@@ -4276,20 +4276,15 @@ class MusicProvider extends ChangeNotifier {
           return false;
         }
         final elapsed = DateTime.now().difference(fadeStartedAt).inMilliseconds;
+        // The runtime monitor and DJ FX sweep also use normalized progress.
         final linear = (elapsed / total).clamp(0.0, 1.0);
-        final t = switch (fadeType) {
-          'ease_in' => linear * linear,
-          'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
-          'ease_in_out' => linear < 0.5
-              ? 2.0 * linear * linear
-              : 1.0 - ((-2.0 * linear + 2.0) * (-2.0 * linear + 2.0)) / 2.0,
-          _ => linear,
-        };
-        // Equal-power: cos out / sin in — smooth energy, no mid-fade dip.
-        final outT = math.pow(t, 1.28).toDouble().clamp(0.0, 1.0);
-        final inT = math.pow(t, 0.92).toDouble().clamp(0.0, 1.0);
-        final outGain = math.cos(outT * (math.pi / 2.0));
-        final inGain = math.sin(inT * (math.pi / 2.0));
+        final gains = CrossfadeOrchestrator.gains(
+          elapsedMs: elapsed,
+          totalMs: total,
+          fadeType: fadeType,
+        );
+        final outGain = gains.outgoing;
+        final inGain = gains.incoming;
         // If focus is lost mid-fade, scale both engines down together. If focus
         // returns, _unduckAfterInterruption defers restoration until this fade ends.
         final frameMaster = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();

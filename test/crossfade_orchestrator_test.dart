@@ -38,4 +38,65 @@ void main() {
       expect(timing.triggerWindowMs, 14400);
     });
   });
+
+
+  group('CrossfadeOrchestrator gains', () {
+    test('starts with outgoing audio only and ends with incoming audio only', () {
+      final start = CrossfadeOrchestrator.gains(
+        elapsedMs: 0,
+        totalMs: 3000,
+        fadeType: 'linear',
+      );
+      final end = CrossfadeOrchestrator.gains(
+        elapsedMs: 3000,
+        totalMs: 3000,
+        fadeType: 'linear',
+      );
+
+      expect(start.outgoing, closeTo(1.0, 1e-9));
+      expect(start.incoming, closeTo(0.0, 1e-9));
+      expect(end.outgoing, closeTo(0.0, 1e-9));
+      expect(end.incoming, closeTo(1.0, 1e-9));
+    });
+
+    test('keeps every supported curve bounded and progresses monotonically', () {
+      for (final fadeType in ['linear', 'ease_in', 'ease_out', 'ease_in_out']) {
+        final early = CrossfadeOrchestrator.gains(
+          elapsedMs: 750,
+          totalMs: 3000,
+          fadeType: fadeType,
+        );
+        final late = CrossfadeOrchestrator.gains(
+          elapsedMs: 2250,
+          totalMs: 3000,
+          fadeType: fadeType,
+        );
+
+        expect(early.outgoing, inInclusiveRange(0.0, 1.0));
+        expect(early.incoming, inInclusiveRange(0.0, 1.0));
+        expect(late.outgoing, inInclusiveRange(0.0, 1.0));
+        expect(late.incoming, inInclusiveRange(0.0, 1.0));
+        expect(late.outgoing, lessThan(early.outgoing));
+        expect(late.incoming, greaterThan(early.incoming));
+      }
+    });
+
+    test('clamps elapsed time to the fade boundaries', () {
+      final before = CrossfadeOrchestrator.gains(
+        elapsedMs: -100,
+        totalMs: 3000,
+        fadeType: 'linear',
+      );
+      final after = CrossfadeOrchestrator.gains(
+        elapsedMs: 4000,
+        totalMs: 3000,
+        fadeType: 'linear',
+      );
+
+      expect(before.outgoing, closeTo(1.0, 1e-9));
+      expect(before.incoming, closeTo(0.0, 1e-9));
+      expect(after.outgoing, closeTo(0.0, 1e-9));
+      expect(after.incoming, closeTo(1.0, 1e-9));
+    });
+  });
 }
