@@ -1,9 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:resonate/models/dsp_settings.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('DspSettings', () {
     test('round trips a versioned independent DSP snapshot', () {
       final settings = DspSettings(
@@ -41,6 +46,24 @@ void main() {
         () => DspSettings.fromJson({'version': 999}),
         throwsFormatException,
       );
+    });
+
+    test('migrates legacy DVC and EQ values to the versioned document', () async {
+      SharedPreferences.setMockInitialValues({
+        'live_dsp_dvc_db_v1': 3.0,
+        'equalizer_enabled': false,
+        'equalizer_preamp': -2.0,
+        'eq_studio_band_1': 4.0,
+      });
+      final settings = await DspSettings.load();
+      expect(settings.dvcDb, 3);
+      expect(settings.eqEnabled, isFalse);
+      expect(settings.preampDb, -2);
+      expect(settings.eqBandGainsDb.length, 31);
+      expect(settings.eqBandGainsDb[0], 0);
+      expect(settings.eqBandGainsDb[1], 4);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(DspSettings.preferenceKey), isNotNull);
     });
 
     test('non-finite EQ band values fall back safely', () {
