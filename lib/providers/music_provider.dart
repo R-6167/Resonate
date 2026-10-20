@@ -38,6 +38,7 @@ import '../playback/crossfade_orchestrator.dart';
 import '../playback/crossfade_frame_volumes.dart';
 import '../playback/crossfade_frame_progress.dart';
 import '../playback/crossfade_transition_guard.dart';
+import '../playback/crossfade_fallback_target.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
@@ -2437,9 +2438,11 @@ class MusicProvider extends ChangeNotifier {
         });
         return;
       }
-      final nextIdx = fromIndex < _queue.length - 1
-          ? fromIndex + 1
-          : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1);
+      final nextIdx = CrossfadeFallbackTarget.nextIndex(
+        currentIndex: fromIndex,
+        queueLength: _queue.length,
+        repeatAll: _repeatMode == PlaybackRepeatMode.all,
+      );
       if (nextIdx >= 0) {
         final next = _queue[nextIdx];
         final token = _playbackIntentGate.issue();
@@ -2460,9 +2463,11 @@ class MusicProvider extends ChangeNotifier {
         try {
           await _softFadeOutActive(milliseconds: 400);
         } catch (_) {}
-        final nextIdx = fromIndex < _queue.length - 1
-            ? fromIndex + 1
-            : (_repeatMode == PlaybackRepeatMode.all && _queue.isNotEmpty ? 0 : -1);
+        final nextIdx = CrossfadeFallbackTarget.nextIndex(
+          currentIndex: fromIndex,
+          queueLength: _queue.length,
+          repeatAll: _repeatMode == PlaybackRepeatMode.all,
+        );
         if (nextIdx >= 0) {
           try {
             final next = _queue[nextIdx];
