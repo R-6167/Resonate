@@ -3,15 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'audio_effects_bridge.dart';
 import 'audio_output_route.dart';
 
-/// Keeps live DSP ENGINE Direct Volume Control aligned with EQ preamp.
+/// Sends the independent EQ preamp value to the live native DSP preamp stage.
 ///
 /// Live path only (MethodChannel → DspEngineRegistry on A/B sinks).
 /// Offline FFI package is optional and not required on dj_Mode.
-void syncPreampToDvc(double preampDb, {bool enabled = true}) {
+void syncPreampToNativeDsp(double preampDb, {bool enabled = true}) {
   final db = enabled ? preampDb.clamp(-12.0, 12.0) : 0.0;
   AudioEffectsBridge.setLiveDspPreampDb(db.toDouble()).then((r) {
     if (r != null) {
-      debugPrint('live DVC preamp db=$db active=${r['active']}');
+      debugPrint('live DSP preamp db=$db active=${r['active']}');
     }
   }).catchError((_) {});
 }
