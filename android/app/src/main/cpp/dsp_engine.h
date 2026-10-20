@@ -110,6 +110,9 @@ int   dsp_run_bass_stress(DspStressResult* out);
 /** Sustained dual-engine stress: rapid control updates + interleaved A/B processing. */
 int   dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t* overrun_calls);
 
+/** DVC gain-ramp, peak-safety, and identical-profile dual-engine regression. */
+int   dsp_run_dvc_transition_stress(int32_t iterations, int32_t* failures, float* max_peak, float* max_step, float* max_ab_error);
+
 #ifdef __cplusplus
 }
 #endif

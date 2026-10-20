@@ -92,6 +92,21 @@ jobs:
           g++ -std=c++17 -O3 -I. /tmp/dsp_ab_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_ab_stress
           /tmp/dsp_ab_stress
 
+          cat > /tmp/dsp_dvc_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            int failures = 0;
+            float peak = 0.0f, step = 0.0f, ab_error = 0.0f;
+            const int rc = dsp_run_dvc_transition_stress(1600, &failures, &peak, &step, &ab_error);
+            std::printf("DSP DVC transition stress: rc=%d, failures=%d, peak=%f, max_step=%f, A/B_error=%g\n",
+                        rc, failures, peak, step, ab_error);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_dvc_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_dvc_stress
+          /tmp/dsp_dvc_stress
+
       - name: Android DSP unit tests
         working-directory: android
         run: ./gradlew app:testDebugUnitTest --no-daemon

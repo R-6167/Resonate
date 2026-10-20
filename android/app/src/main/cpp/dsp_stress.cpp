@@ -3,6 +3,7 @@
  */
 #include "dsp_engine.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -161,7 +162,7 @@ extern "C" int dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t*
     const int sr = 48000;
     const int ch = 2;
     const int frames = 256;
-    const int64_t max_abs_limit = 1.001;
+    const double max_abs_limit = 1.001;
 
     DspConfig cfg{};
     cfg.sample_rate = sr;
@@ -284,5 +285,121 @@ extern "C" int dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t*
 
     if (failures) *failures = fail_count;
     if (overrun_calls) *overrun_calls = overruns;
+    return fail_count == 0 ? 0 : 1;
+}
+
+
+extern "C" int dsp_run_dvc_transition_stress(
+        int32_t iterations, int32_t* failures, float* max_peak_out,
+        float* max_step_out, float* max_ab_error_out) {
+    if (failures) *failures = 0;
+    if (max_peak_out) *max_peak_out = 0.f;
+    if (max_step_out) *max_step_out = 0.f;
+    if (max_ab_error_out) *max_ab_error_out = 0.f;
+    if (iterations < 16) return -1;
+
+    constexpr int sr = 48000;
+    constexpr int ch = 2;
+    constexpr int frames = 256;
+    constexpr float peak_limit = 1.001f;
+    constexpr float max_step_limit = 0.40f;
+    constexpr float ab_error_limit = 1.0e-6f;
+
+    DspConfig cfg{};
+    cfg.sample_rate = sr;
+    cfg.channels = ch;
+    cfg.buffer_frames = frames;
+    cfg.exclusive_mode = false;
+    cfg.bit_perfect = true;
+    cfg.realtime_priority = 0;
+
+    void* a = dsp_create(&cfg);
+    void* b = dsp_create(&cfg);
+    if (!a || !b) {
+        if (a) dsp_destroy(a);
+        if (b) dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+    if (dsp_start(a) != 0 || dsp_start(b) != 0) {
+        dsp_stop(a); dsp_stop(b);
+        dsp_destroy(a); dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+
+    float* in = static_cast<float*>(std::malloc(sizeof(float) * frames * ch));
+    float* out_a = static_cast<float*>(std::malloc(sizeof(float) * frames * ch));
+    float* out_b = static_cast<float*>(std::malloc(sizeof(float) * frames * ch));
+    if (!in || !out_a || !out_b) {
+        std::free(in); std::free(out_a); std::free(out_b);
+        dsp_stop(a); dsp_stop(b);
+        dsp_destroy(a); dsp_destroy(b);
+        if (failures) *failures = 1;
+        return 1;
+    }
+
+    int fail_count = 0;
+    float max_peak = 0.f;
+    float max_step = 0.f;
+    float max_ab_error = 0.f;
+    float phase = 0.f;
+    const float omega = static_cast<float>(2.0 * M_PI * 997.0 / sr);
+    const double gains[] = {1.0, 0.25, 0.0, 1.5, 0.5, 1.0, 0.1, 1.0};
+    const int gain_count = static_cast<int>(sizeof(gains) / sizeof(gains[0]));
+
+    for (int32_t i = 0; i < iterations; ++i) {
+        // Move the DVC target periodically while preserving continuous input.
+        const double gain = gains[(i / 4) % gain_count];
+        dsp_set_volume(a, gain);
+        dsp_set_volume(b, gain);
+        for (int f = 0; f < frames; ++f) {
+            const float sample = 0.15f * std::sin(phase);
+            phase += omega;
+            if (phase >= static_cast<float>(2.0 * M_PI))
+                phase -= static_cast<float>(2.0 * M_PI);
+            in[f * ch] = sample;
+            in[f * ch + 1] = sample;
+        }
+
+        if ((i & 1) == 0) {
+            dsp_process(a, in, out_a, frames);
+            dsp_process(b, in, out_b, frames);
+        } else {
+            dsp_process(b, in, out_b, frames);
+            dsp_process(a, in, out_a, frames);
+        }
+
+        for (int j = 0; j < frames * ch; ++j) {
+            const float xa = out_a[j];
+            const float xb = out_b[j];
+            if (!std::isfinite(xa) || !std::isfinite(xb)) {
+                ++fail_count;
+                continue;
+            }
+            const float peak_a = std::fabs(xa);
+            const float peak_b = std::fabs(xb);
+            max_peak = std::max(max_peak, std::max(peak_a, peak_b));
+            max_ab_error = std::max(max_ab_error, std::fabs(xa - xb));
+            if (j >= ch) {
+                max_step = std::max(max_step, std::fabs(xa - out_a[j - ch]));
+                max_step = std::max(max_step, std::fabs(xb - out_b[j - ch]));
+            }
+            if (peak_a > peak_limit || peak_b > peak_limit)
+                ++fail_count;
+        }
+    }
+
+    if (max_step > max_step_limit || max_ab_error > ab_error_limit)
+        ++fail_count;
+
+    std::free(in); std::free(out_a); std::free(out_b);
+    dsp_stop(a); dsp_stop(b);
+    dsp_destroy(a); dsp_destroy(b);
+
+    if (failures) *failures = fail_count;
+    if (max_peak_out) *max_peak_out = max_peak;
+    if (max_step_out) *max_step_out = max_step;
+    if (max_ab_error_out) *max_ab_error_out = max_ab_error;
     return fail_count == 0 ? 0 : 1;
 }

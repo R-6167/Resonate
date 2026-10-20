@@ -1,6 +1,6 @@
 # Advanced DSP and DVC implementation plan
 
-Status: native DSP bridge and independent DVC control are implemented and merged; CI has passed. Live sink injection is now being hardened so upstream `just_audio` changes cannot silently disable native DSP. On-device audibility, clipping, transition, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
+Status: native DSP bridge, independent DVC control, and fail-closed sink-injection CI validation are merged. User has confirmed that moving the DVC slider changes dB as expected. Automated DVC transition/A-B regression checks are being added; on-device clipping, crossfade, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
 
 ## Summary
 
@@ -35,7 +35,7 @@ Resonate already has a substantial in-house native DSP path. The intended live r
 - DVC remains separate from EQ preamp, Android system media volume, player volume, and crossfade envelope gain. The native processing chain applies DVC before the crossover/limiter stage, so positive gain is subject to downstream peak protection; on-device clipping and transition checks are still required.
 - `syncPreampToDvc` is a legacy helper name: it currently sends a preamp command, not DVC. Rename it and its call sites to `syncPreampToNativeDsp` as a cleanup; never use it for the dedicated DVC control.
 - The old `ResonateNativeDspBridge` should continue to use live-DSP status/EQ/master-enable APIs rather than resurrecting the obsolete session-attach contract.
-- The sink patch script may still warn and exit successfully if upstream `just_audio` injection markers change. A green APK build alone does not prove sink injection; keep explicit patch-marker validation and safe PCM pass-through behavior in the CI hardening backlog.
+- The sink patch script fails the build if the expected upstream patch location changes and CI separately verifies the processor-injection markers. Runtime reflection failure still logs a warning and uses the default sink, preserving playback in pass-through mode.
 
 ## Supported architecture for advanced controls
 
@@ -96,11 +96,11 @@ When native injection is unavailable, keep playback alive and explain that the a
 - Verify status reporting with playback stopped, one engine active, two engines active, and native DSP disabled/failing.
 - Keep the current playback path and defaults unchanged.
 
-### Phase B — DVC as a distinct control
+### Phase B — DVC as a distinct control (implemented; verification continues)
 - Add the separate bridge/channel/registry call and versioned persisted setting.
-- Add native unit tests for clamp, unity gain, mute/attenuation, and ramp behavior.
-- Verify DVC and preamp independently and together, including EQ boosts and limiter behavior.
-- Verify A/B engines receive the same setting after engine creation and during crossfade.
+- Registry tests cover clamping and sticky gain inheritance; the native DVC transition stress test now exercises repeated target changes, peak bounds, finite output, and identical-profile A/B output consistency.
+- Verify DVC and preamp independently and together, including EQ boosts and limiter behavior, on a physical device; the automated transition stress test does not replace listening/clipping checks.
+- Verify A/B engines receive the same setting after engine creation and during crossfade. CI now exercises identical-profile dual-engine processing under rapid DVC target changes; actual music crossfade and screen-off behavior still require device verification.
 
 ### Phase C — Advanced DSP control surface
 - Wire Audio Lab to the canonical settings model.
@@ -116,9 +116,9 @@ When native injection is unavailable, keep playback alive and explain that the a
 
 ## Implementation order
 
-1. Finish the registry race hardening and verify CI.
+1. Finish the registry race hardening and verify CI (completed).
 2. Repair or retire the disconnected `ResonateNativeDspBridge` session/toggle calls and verify that the UI reflects real sink processing.
-3. Add explicit sink-injection verification/status. (Build-time patch application and marker verification are now enforced; runtime capability reporting and device checks remain.)
+3. Add explicit sink-injection verification/status. (Build-time patch application and marker verification are enforced; runtime capability reporting and device checks remain.)
 4. Correct the preamp/DVC naming mismatch.
 5. Implement DVC as a separate end-to-end control.
 6. Build Audio Lab UI over the typed settings model.
