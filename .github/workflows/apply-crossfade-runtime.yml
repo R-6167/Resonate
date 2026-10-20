@@ -1,0 +1,40 @@
+name: Apply CrossfadeRuntime wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/crossfade-runtime]
+    paths:
+      - "tool/patches/crossfade_runtime_wire.patch"
+      - ".github/workflows/apply-crossfade-runtime.yml"
+      - "lib/playback/crossfade_runtime.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/crossfade-runtime
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply wire patch
+        run: |
+          set -euo pipefail
+          if grep -q "CrossfadeRuntime _crossfadeRuntime" lib/providers/music_provider.dart; then
+            echo "Already wired"
+            exit 0
+          fi
+          patch -p1 --batch --forward < tool/patches/crossfade_runtime_wire.patch
+          grep -q "CrossfadeRuntime _crossfadeRuntime" lib/providers/music_provider.dart
+          grep -q "_crossfadeRuntime.clearFlags" lib/providers/music_provider.dart
+          echo "CrossfadeRuntime wire applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to CrossfadeRuntime"
+          file_pattern: lib/providers/music_provider.dart
+          branch: refactor/crossfade-runtime
