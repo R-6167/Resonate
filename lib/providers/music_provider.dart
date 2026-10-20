@@ -36,6 +36,7 @@ import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
+import '../playback/dj_handoff_state.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -179,39 +180,75 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeRuntime.repeatSelfTargetSongId;
   set _repeatSelfTargetSongId(String? value) =>
       _crossfadeRuntime.repeatSelfTargetSongId = value;
-  /// DJ Mode Step 2 — only true when DjModeProvider master + beat-align are on.
-  bool _djBeatAlignActive = false;
-  bool _djTempoMatchActive = false;
-  int _djMaxStretchPercent = 14;
-  bool _djSfxActive = false;
-  DjPolicy _djPolicy = DjPolicy.balanced;
-  bool _djSfxEngaged = false;
+  /// DJ Mode Step 2 — feature flags + last handoff snapshot in [DjHandoffState].
+  final DjHandoffState _djHandoff = DjHandoffState();
+  bool get _djBeatAlignActive => _djHandoff.beatAlignActive;
+  set _djBeatAlignActive(bool value) => _djHandoff.beatAlignActive = value;
+  bool get _djTempoMatchActive => _djHandoff.tempoMatchActive;
+  set _djTempoMatchActive(bool value) => _djHandoff.tempoMatchActive = value;
+  int get _djMaxStretchPercent => _djHandoff.maxStretchPercent;
+  set _djMaxStretchPercent(int value) => _djHandoff.maxStretchPercent = value;
+  bool get _djSfxActive => _djHandoff.sfxActive;
+  set _djSfxActive(bool value) => _djHandoff.sfxActive = value;
+  DjPolicy get _djPolicy => _djHandoff.policy;
+  set _djPolicy(DjPolicy value) => _djHandoff.policy = value;
+  bool get _djSfxEngaged => _djHandoff.sfxEngaged;
+  set _djSfxEngaged(bool value) => _djHandoff.sfxEngaged = value;
   final DjSfxRack _djSfxRack = DjSfxRack();
   DjAnalysisService? _djAnalysis;
   final DjEngine _djEngine = const DjEngine();
   final DjAutopilotPlanner _djAutopilotPlanner = const DjAutopilotPlanner();
   DjExecutionPlan? _activeDjExecutionPlan;
-  double? _djStretchSpeedOut;
-  double? _djStretchSpeedIn;
-  DateTime? _lastDjHandoffAt;
-  String? _lastDjFromId;
-  String? _lastDjToId;
-  String? _lastDjStrategy;
-  double? _lastDjTransitionScore;
-  double? _lastDjTransitionConfidence;
-  List<String> _lastDjTransitionRisks = const <String>[];
-  int? _lastDjTransitionDurationMs;
-  int _lastDjRecoveryAttempts = 0;
-  /// Soft energy-bridge bias applied to the next crossfade length (ms).
-  int _lastDjCrossfadeBiasMs = 0;
-  double _lastDjEnergyScore = 0.5;
-  bool _lastDjBassDuckNeeded = false;
-  /// Track-wide beat grid used only for conservative runtime phase correction.
-  List<int> _lastDjIncomingBeatMs = const <int>[];
-  double? _lastDjIncomingBpm;
-  int _djBeatCorrectionAttempts = 0;
-  double _djRuntimeCorrectionBaseSpeed = 1.0;
-  DateTime? _djRuntimeCorrectionUntil;
+  double? get _djStretchSpeedOut => _djHandoff.stretchSpeedOut;
+  set _djStretchSpeedOut(double? value) => _djHandoff.stretchSpeedOut = value;
+  double? get _djStretchSpeedIn => _djHandoff.stretchSpeedIn;
+  set _djStretchSpeedIn(double? value) => _djHandoff.stretchSpeedIn = value;
+  DateTime? get _lastDjHandoffAt => _djHandoff.lastHandoffAt;
+  set _lastDjHandoffAt(DateTime? value) => _djHandoff.lastHandoffAt = value;
+  String? get _lastDjFromId => _djHandoff.lastFromId;
+  set _lastDjFromId(String? value) => _djHandoff.lastFromId = value;
+  String? get _lastDjToId => _djHandoff.lastToId;
+  set _lastDjToId(String? value) => _djHandoff.lastToId = value;
+  String? get _lastDjStrategy => _djHandoff.lastStrategy;
+  set _lastDjStrategy(String? value) => _djHandoff.lastStrategy = value;
+  double? get _lastDjTransitionScore => _djHandoff.lastTransitionScore;
+  set _lastDjTransitionScore(double? value) =>
+      _djHandoff.lastTransitionScore = value;
+  double? get _lastDjTransitionConfidence => _djHandoff.lastTransitionConfidence;
+  set _lastDjTransitionConfidence(double? value) =>
+      _djHandoff.lastTransitionConfidence = value;
+  List<String> get _lastDjTransitionRisks => _djHandoff.lastTransitionRisks;
+  set _lastDjTransitionRisks(List<String> value) =>
+      _djHandoff.lastTransitionRisks = value;
+  int? get _lastDjTransitionDurationMs => _djHandoff.lastTransitionDurationMs;
+  set _lastDjTransitionDurationMs(int? value) =>
+      _djHandoff.lastTransitionDurationMs = value;
+  int get _lastDjRecoveryAttempts => _djHandoff.lastRecoveryAttempts;
+  set _lastDjRecoveryAttempts(int value) =>
+      _djHandoff.lastRecoveryAttempts = value;
+  int get _lastDjCrossfadeBiasMs => _djHandoff.lastCrossfadeBiasMs;
+  set _lastDjCrossfadeBiasMs(int value) =>
+      _djHandoff.lastCrossfadeBiasMs = value;
+  double get _lastDjEnergyScore => _djHandoff.lastEnergyScore;
+  set _lastDjEnergyScore(double value) => _djHandoff.lastEnergyScore = value;
+  bool get _lastDjBassDuckNeeded => _djHandoff.lastBassDuckNeeded;
+  set _lastDjBassDuckNeeded(bool value) =>
+      _djHandoff.lastBassDuckNeeded = value;
+  List<int> get _lastDjIncomingBeatMs => _djHandoff.lastIncomingBeatMs;
+  set _lastDjIncomingBeatMs(List<int> value) =>
+      _djHandoff.lastIncomingBeatMs = value;
+  double? get _lastDjIncomingBpm => _djHandoff.lastIncomingBpm;
+  set _lastDjIncomingBpm(double? value) => _djHandoff.lastIncomingBpm = value;
+  int get _djBeatCorrectionAttempts => _djHandoff.beatCorrectionAttempts;
+  set _djBeatCorrectionAttempts(int value) =>
+      _djHandoff.beatCorrectionAttempts = value;
+  double get _djRuntimeCorrectionBaseSpeed =>
+      _djHandoff.runtimeCorrectionBaseSpeed;
+  set _djRuntimeCorrectionBaseSpeed(double value) =>
+      _djHandoff.runtimeCorrectionBaseSpeed = value;
+  DateTime? get _djRuntimeCorrectionUntil => _djHandoff.runtimeCorrectionUntil;
+  set _djRuntimeCorrectionUntil(DateTime? value) =>
+      _djHandoff.runtimeCorrectionUntil = value;
   final DjBeatDriftCorrector _djBeatDriftCorrector = const DjBeatDriftCorrector();
 
   int? _androidSdkInt;
@@ -414,8 +451,7 @@ class MusicProvider extends ChangeNotifier {
   /// DJ handoffs are live only when DJ has an active transition feature
   /// and the current Mode still permits crossfade-style handoffs.
   bool get _djHandoffsLive =>
-      _modeCrossfadeAllowed &&
-      (_djBeatAlignActive || _djTempoMatchActive || _djSfxActive);
+      _modeCrossfadeAllowed && _djHandoff.anyFeatureActive;
   bool get effectiveShuffleEnabled =>
       _shuffleEnabled && _modeShuffleAllowed;
 
@@ -472,11 +508,7 @@ class MusicProvider extends ChangeNotifier {
       List<String>.unmodifiable(_lastDjTransitionRisks);
 
   /// True for a short window after a DJ plan was applied (UI chip visibility).
-  bool get hasRecentDjTransition {
-    final at = _lastDjHandoffAt;
-    if (at == null || _lastDjStrategy == null) return false;
-    return DateTime.now().difference(at) <= const Duration(seconds: 50);
-  }
+  bool get hasRecentDjTransition => _djHandoff.hasRecentHandoff;
   bool get transitionInProgress => _crossfadeRuntime.isLive;
 
   /// Phase 2: normal listening is always Engine A. Engine B is only for an
