@@ -609,6 +609,7 @@ class MusicProvider extends ChangeNotifier {
     }());
   }
 
+
   static const _repeatModeKey = 'playback_repeat_mode';
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
@@ -709,6 +710,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (e) { debugPrint('Playback mode save failed: $e'); }
   }
 
+
   /// Called by [DjModeProvider]. When [beatAlignActive] is false, crossfade
   /// ignores BPM and behaves exactly as before.
   void configureDjMode({
@@ -734,6 +736,7 @@ class MusicProvider extends ChangeNotifier {
       unawaited(_recoverDjEngineState(reason: 'dj_mode_disabled'));
     }
   }
+
 
   /// If UI says playing but engine volume is near zero outside a crossfade, unstick.
   void _maybeRecoverSilentPlayback() {
@@ -799,6 +802,7 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
   }
   /// Restore normal speed + audible volume after DJ handoff mistakes.
+
 
   /// Called by Modes via [ModePlaybackPort]. Soft gates only — never forces play.
   void applyModePlaybackPolicy({
@@ -928,6 +932,7 @@ class MusicProvider extends ChangeNotifier {
     try { await _audioEffectsController.syncAll(); } catch (e) { debugPrint('Saved audio effects sync failed: $e'); }
   }
 
+
   /// Public: re-claim focus and restore volume if playback went silent while UI moved.
   Future<void> ensureAudiblePlayback() async {
     try {
@@ -1054,6 +1059,7 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
+
   /// BT/headset route change: re-claim session and force audible volume.
   /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
   Future<void> _onAudioRouteChanged() async {
@@ -1167,6 +1173,7 @@ class MusicProvider extends ChangeNotifier {
     _endOfTrackWatchdog?.cancel();
     _endOfTrackWatchdog = null;
   }
+
 
   /// Sleep-timer fade (1.0 = no fade). Does not change system volume.
   Future<void> setSleepFadeScale(double scale) async {
@@ -1601,6 +1608,7 @@ class MusicProvider extends ChangeNotifier {
     _transitionArmedAt = DateTime.now();
     unawaited(this._runAutomaticCrossfade());
   }
+
 
   Future<void> _preloadRepeatSelf(Song song) async {
     if (_repeatSelfHandoffInFlight) return;
@@ -2991,6 +2999,7 @@ class MusicProvider extends ChangeNotifier {
 
   Future<bool> performTrueCrossfade({required int milliseconds, String fadeType = 'linear'}) => _serializePlayback(() => this._performTrueCrossfade(milliseconds: milliseconds, fadeType: fadeType, generation: _authority.beginAutomatic('crossfade')), command: 'crossfade', source: 'automatic_transition');
 
+
   Future<void> _clearDjStretchSpeeds({
     AudioPlayer? outgoing,
     AudioPlayer? incoming,
@@ -3004,6 +3013,7 @@ class MusicProvider extends ChangeNotifier {
       if (incoming != null) await incoming.setSpeed(1.0);
     } catch (_) {}
   }
+
 
   /// Soft transition SFX: mild reverb glue, always restored after crossfade.
   DjTransitionKind? _djTransitionKindFromName(String? name) {
