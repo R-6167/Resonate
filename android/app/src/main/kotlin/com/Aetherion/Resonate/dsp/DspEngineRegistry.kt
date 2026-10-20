@@ -291,11 +291,12 @@ object DspEngineRegistry {
         val state = stickyState
         try {
             nativeApi.setVolume(handle, state.linearGain)
+            nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
                 nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)
             } else {
-                nativeApi.setEnabled(handle, state.dspEnabled)
+                nativeApi.setEnabled(handle, state.eqEnabled)
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
