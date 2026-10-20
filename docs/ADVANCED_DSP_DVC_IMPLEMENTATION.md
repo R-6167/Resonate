@@ -1,6 +1,6 @@
 # Advanced DSP and DVC implementation plan
 
-Status: native DSP bridge, independent DVC control, and fail-closed sink-injection CI validation are merged. User has confirmed that moving the DVC slider changes dB as expected. Automated DVC transition/A-B regression checks are being added; on-device clipping, crossfade, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
+Status: native DSP bridge, independent DVC control, fail-closed sink-injection CI validation, and automated DVC transition/A-B regression checks are merged. User has confirmed that moving the DVC slider changes dB as expected. Item 3 is underway: a typed versioned DSP settings document now migrates legacy EQ/DVC preferences and is being adopted by DVC and EQ persistence. Physical-device clipping, crossfade, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
 
 ## Summary
 
@@ -31,9 +31,9 @@ Resonate already has a substantial in-house native DSP path. The intended live r
 
 - The native engine already has a smoothed DVC gain stage separate from EQ preamp. The registry's sticky `linearGain` is applied to every newly registered A/B engine.
 - PR follow-up `feat/dvc-control-end-to-end` adds `setLiveDspDvcDb` through the Flutter bridge and Android method channel to `DspEngineRegistry.applyVolumeAll`. The channel clamps requests to −24 dB through +6 dB and converts dB to linear gain; the native stage owns the gain ramp.
-- Audio automation settings now includes a persistent DVC slider and reset-to-unity action. The preference is stored in SharedPreferences and re-applied to the registry, including when no sink is currently active. A green build is still required before this is considered validated.
+- Audio automation settings includes a persistent DVC slider and reset-to-unity action. DVC is stored in the canonical versioned DSP settings document and re-applied to the registry, including when no sink is currently active. Legacy DVC/EQ preferences are read during migration; compatibility keys remain while the staged migration proceeds.
 - DVC remains separate from EQ preamp, Android system media volume, player volume, and crossfade envelope gain. The native processing chain applies DVC before the crossover/limiter stage, so positive gain is subject to downstream peak protection; on-device clipping and transition checks are still required.
-- `syncPreampToDvc` is a legacy helper name: it currently sends a preamp command, not DVC. Rename it and its call sites to `syncPreampToNativeDsp` as a cleanup; never use it for the dedicated DVC control.
+- The misleading `syncPreampToDvc` helper has been renamed to `syncPreampToNativeDsp`; it sends only the preamp command, never DVC.
 - The old `ResonateNativeDspBridge` should continue to use live-DSP status/EQ/master-enable APIs rather than resurrecting the obsolete session-attach contract.
 - The sink patch script fails the build if the expected upstream patch location changes and CI separately verifies the processor-injection markers. Runtime reflection failure still logs a warning and uses the default sink, preserving playback in pass-through mode.
 
@@ -102,7 +102,11 @@ When native injection is unavailable, keep playback alive and explain that the a
 - Verify DVC and preamp independently and together, including EQ boosts and limiter behavior, on a physical device; the automated transition stress test does not replace listening/clipping checks.
 - Verify A/B engines receive the same setting after engine creation and during crossfade. CI now exercises identical-profile dual-engine processing under rapid DVC target changes; actual music crossfade and screen-off behavior still require device verification.
 
-### Phase C — Advanced DSP control surface
+### Phase C — Canonical DSP settings and advanced control surface
+- Introduce a typed versioned DSP settings document with independent fields for master enable, EQ state/preset/bands, preamp, DVC, limiter ceiling, speaker protection, virtual bass, and supported auxiliary effects.
+- Validate ranges and reject unsupported schema versions; migrate existing SharedPreferences keys without changing defaults.
+- Serialize canonical document writes so asynchronous setting updates do not race each other.
+- Continue migrating every settings owner to this document; avoid letting providers overwrite each other's fields from stale snapshots.
 - Wire Audio Lab to the canonical settings model.
 - Expose only effects that have a working native implementation and observable status.
 - Save/load custom profiles; reset and bypass must restore predictable values.
