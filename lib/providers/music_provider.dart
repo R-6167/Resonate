@@ -36,6 +36,7 @@ import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
 import '../playback/crossfade_orchestrator.dart';
 import '../playback/crossfade_frame_volumes.dart';
+import '../playback/crossfade_frame_progress.dart';
 import '../playback/crossfade_transition_guard.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
@@ -4278,7 +4279,10 @@ class MusicProvider extends ChangeNotifier {
         }
         final elapsed = DateTime.now().difference(fadeStartedAt).inMilliseconds;
         // The runtime monitor and DJ FX sweep also use normalized progress.
-        final linear = (elapsed / total).clamp(0.0, 1.0);
+        final linear = CrossfadeFrameProgress.calculate(
+          elapsedMs: elapsed,
+          totalMs: total,
+        ).fraction;
         final gains = CrossfadeOrchestrator.gains(
           elapsedMs: elapsed,
           totalMs: total,
