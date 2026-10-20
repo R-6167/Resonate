@@ -60,6 +60,13 @@ Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetEnabled(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetProcessingEnabled(
+        JNIEnv*, jclass, jlong handle, jboolean enabled) {
+    if (!handle) return;
+    dsp_set_processing_enabled(reinterpret_cast<void*>(handle), enabled == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_aetherion_resonate_dsp_DspEngineJni_nativeSetVolume(
         JNIEnv*, jclass, jlong handle, jdouble linearGain) {
     if (!handle) return;
