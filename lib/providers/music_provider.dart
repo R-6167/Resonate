@@ -802,61 +802,6 @@ class MusicProvider extends ChangeNotifier {
     } catch (_) {}
   }
   /// Restore normal speed + audible volume after DJ handoff mistakes.
-  Future<void> _recoverDjEngineState({String reason = 'recover'}) async {
-    // Recovery is asynchronous and may overlap a manual track selection. It
-    // must never restore master volume on an engine captured before that
-    // selection, or it can make the old track audible again.
-    final recoveryTransportEpoch = _userTransportEpoch;
-    bool wasPreempted() => recoveryTransportEpoch != _userTransportEpoch;
-    try {
-      await _clearDjStretchSpeeds(outgoing: _playerA, incoming: _playerB);
-      if (wasPreempted()) return;
-    } catch (_) {}
-    try {
-      await _restoreDjTransitionSfx();
-      if (wasPreempted()) return;
-    } catch (_) {}
-    try {
-      final active = audioPlayer;
-      final inactive = inactivePlayer;
-      final vol = _eqPreampScale.clamp(0.05, 1.0);
-      try {
-        await active.setSpeed(1.0);
-      } catch (_) {}
-      if (wasPreempted()) return;
-      try {
-        await inactive.setSpeed(1.0);
-      } catch (_) {}
-      if (wasPreempted()) return;
-      try {
-        if ((_userWantsPlaying || active.playing) && active.volume < vol * 0.85) {
-          await active.setVolume(vol);
-        }
-      } catch (_) {}
-      if (wasPreempted()) return;
-      try {
-        await inactive.setVolume(0.0);
-      } catch (_) {}
-      if (wasPreempted()) return;
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(true);
-      } catch (_) {}
-      if (wasPreempted()) return;
-      await ResonateDiagnostics.recordDj(
-        stage: 'engine_recover',
-        outcome: 'applied',
-        reason: reason,
-        extra: {
-          'activeVolume': active.volume,
-          'activePlaying': active.playing,
-          'activeEngine': _activeIsA ? 'A' : 'B',
-        },
-      );
-    } catch (e) {
-      debugPrint('DJ engine recover failed: $e');
-    }
-  }
 
 
   /// Called by Modes via [ModePlaybackPort]. Soft gates only — never forces play.
