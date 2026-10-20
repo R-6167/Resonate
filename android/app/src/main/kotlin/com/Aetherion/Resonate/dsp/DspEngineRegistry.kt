@@ -19,6 +19,7 @@ object DspEngineRegistry {
     /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
     internal interface NativeDspApi {
         fun setEnabled(handle: Long, enabled: Boolean)
+        fun setProcessingEnabled(handle: Long, enabled: Boolean)
         fun setVolume(handle: Long, linearGain: Double)
         fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean)
         fun setSpeakerMode(handle: Long, enabled: Boolean)
@@ -30,6 +31,7 @@ object DspEngineRegistry {
 
     private val jniApi = object : NativeDspApi {
         override fun setEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetEnabled(handle, enabled)
+        override fun setProcessingEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetProcessingEnabled(handle, enabled)
         override fun setVolume(handle: Long, linearGain: Double) = DspEngineJni.nativeSetVolume(handle, linearGain)
         override fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) =
             DspEngineJni.nativeSetEqBands(handle, centersHz, gainsDb, enabled)
@@ -199,7 +201,7 @@ object DspEngineRegistry {
         val list = snapshotHandles()
         for (h in list) {
             try {
-                nativeApi.setEnabled(h, enabled)
+                nativeApi.setProcessingEnabled(h, enabled)
             } catch (t: Throwable) {
                 Log.w(TAG, "setEnabled failed handle=$h", t)
             }
