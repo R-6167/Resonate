@@ -38,6 +38,7 @@ import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
+import '../playback/focus_interruption_runtime.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -301,15 +302,21 @@ class MusicProvider extends ChangeNotifier {
   set _lastCrossfadeDurationUnavailableSongId(String? value) =>
       _crossfadeRuntime.lastDurationUnavailableSongId = value;
 
-  /// True while system asked us to duck (notification / nav / transient).
-  bool _isDucked = false;
-  /// Focus returned during a crossfade; defer gain restoration until its handoff ends.
-  bool _unduckPendingAfterCrossfade = false;
-  /// When exclusive focus was lost (call / other media) — used for long-call gate.
-  DateTime? _focusLostAt;
-  int _focusResumeGeneration = 0;
+  final FocusInterruptionRuntime _focusInterruption = FocusInterruptionRuntime();
+  /// Compatibility aliases — duck / focus-loss state lives in [_focusInterruption].
+  bool get _isDucked => _focusInterruption.isDucked;
+  set _isDucked(bool value) => _focusInterruption.isDucked = value;
+  bool get _unduckPendingAfterCrossfade =>
+      _focusInterruption.unduckPendingAfterCrossfade;
+  set _unduckPendingAfterCrossfade(bool value) =>
+      _focusInterruption.unduckPendingAfterCrossfade = value;
+  DateTime? get _focusLostAt => _focusInterruption.focusLostAt;
+  set _focusLostAt(DateTime? value) => _focusInterruption.focusLostAt = value;
+  int get _focusResumeGeneration => _focusInterruption.resumeGeneration;
+  set _focusResumeGeneration(int value) =>
+      _focusInterruption.resumeGeneration = value;
   int _volumeFadeGen = 0;
-  static const double _duckLevel = 0.32;
+  static const double _duckLevel = FocusInterruptionRuntime.duckLevel;
   final AudioFocusSettings _audioFocusSettings = AudioFocusSettings();
   /// Compatibility aliases — focus prefs live in [_audioFocusSettings].
   bool get _audioFocusAutomationEnabled =>
@@ -328,10 +335,11 @@ class MusicProvider extends ChangeNotifier {
     await _audioFocusSettings.persist();
     notifyListeners();
   }
-  static const int _duckFadeMs = 180;
+  static const int _duckFadeMs = FocusInterruptionRuntime.duckFadeMs;
   /// Short transport fade for user pause / resume (keeps next/seek snappy).
   static const int _transportFadeMs = 220;
-  static const Duration _autoResumeMaxFocusLoss = Duration(minutes: 3);
+  static const Duration _autoResumeMaxFocusLoss =
+      FocusInterruptionRuntime.autoResumeMaxFocusLoss;
 
   ListeningEvent? _activeHistoryEvent;
   int _activeHistoryPositionMs = 0;
