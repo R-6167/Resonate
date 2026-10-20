@@ -3,7 +3,7 @@ part of 'music_provider.dart';
 /// Crossfade lifecycle operations kept in the provider library so they can
 /// share its private playback state while staying out of the core provider file.
 extension CrossfadeOrchestration on MusicProvider {
-Future<void> this._preloadNextForCrossfade() async {
+Future<void> _preloadNextForCrossfade() async {
     if (!effectiveCrossfadeEnabled || _crossfadePreloadInFlight || !canCrossfadeNext) return;
     final next = _crossfadeTargetSong;
     if (next == null || _preloadedNextSongId == next.id) return;
@@ -130,7 +130,7 @@ Future<void> this._preloadNextForCrossfade() async {
     }
   }
 
-Future<void> this._runAutomaticCrossfade() async {
+Future<void> _runAutomaticCrossfade() async {
     // Do not even register automatic ownership if a user transport is queued.
     if (_transportInFlight || _loadingSource || _userTransportPending) {
       _automaticCrossfadeInFlight = false;
@@ -317,7 +317,7 @@ Future<void> this._runAutomaticCrossfade() async {
     }
   }
 
-Future<void> this._softFadeOutActive({int milliseconds = 500}) async {
+Future<void> _softFadeOutActive({int milliseconds = 500}) async {
     final player = audioPlayer;
     final steps = (milliseconds / 40).round().clamp(4, 40);
     double start = _eqPreampScale;
@@ -346,7 +346,7 @@ Future<void> this._softFadeOutActive({int milliseconds = 500}) async {
     } catch (_) {}
   }
 
-Future<bool> this._performTrueCrossfade({required int milliseconds, String fadeType = 'linear', required int generation, int? playbackIntentToken}) async {
+Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType = 'linear', required int generation, int? playbackIntentToken}) async {
     final intentToken = playbackIntentToken ?? _playbackIntentGate.currentToken;
     final transitionGeneration = ++_automaticTransitionGeneration;
     final transportEpoch = _userTransportEpoch;
