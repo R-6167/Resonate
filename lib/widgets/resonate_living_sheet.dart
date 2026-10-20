@@ -4,6 +4,18 @@ import 'package:flutter/material.dart';
 
 /// Soft living bottom/center sheet used app-wide for volume, overflow menus,
 /// library actions, and similar panels — same motion language as Ask Resonate.
+///
+/// Usage:
+/// ```dart
+/// await showResonateLivingSheet(
+///   context: context,
+///   semanticLabel: 'Volume',
+///   builder: (ctx) => YourContent(),
+/// );
+/// ```
+///
+/// Player volume / more options / speed / pitch / sleep and library sort menus
+/// should call this instead of [showModalBottomSheet] or [PopupMenuButton].
 Future<T?> showResonateLivingSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
