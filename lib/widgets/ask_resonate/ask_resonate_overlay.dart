@@ -1,18 +1,26 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/audio_visualization_provider.dart';
 import '../../providers/intelligence_mix_controller.dart';
 import '../../providers/intelligence_provider.dart';
 import '../../providers/music_provider.dart';
 import '../../services/companion_command_executor.dart';
 import '../../services/local_intent_parser.dart';
 import 'ask_resonate_controller.dart';
-import 'organic_blob_clipper.dart';
+import 'shape_clippers.dart';
 
 /// Full-screen living overlay driven by [AskResonateController].
+///
+/// Supports:
+/// - Organic blob / semicircle / capsule / orbital shapes
+/// - Origin morph from the Orb’s global position
+/// - Audio-reactive edge energy from [AudioVisualizationProvider]
+/// - Reduced-motion path via [MediaQuery.disableAnimations]
 class AskResonateOverlay extends StatefulWidget {
   const AskResonateOverlay({super.key});
 
@@ -36,7 +44,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
     _breatheCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3400),
-    )..repeat(reverse: true);
+    );
 
     _progress = CurvedAnimation(
       parent: _openCtrl,
@@ -45,7 +53,15 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openCtrl.forward();
+      if (!mounted) return;
+      final reduce =
+          MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+      if (reduce) {
+        _openCtrl.value = 1;
+      } else {
+        _openCtrl.forward();
+        _breatheCtrl.repeat(reverse: true);
+      }
     });
   }
 
@@ -57,15 +73,79 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
   }
 
   Future<void> _close() async {
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduce) {
+      if (mounted) context.read<AskResonateController>().close();
+      return;
+    }
     await _openCtrl.reverse();
     if (mounted) context.read<AskResonateController>().close();
+  }
+
+  /// Average of low-band frequencies as 0–1 energy (bass-biased).
+  double _audioEnergy(AudioVisualizationProvider viz) {
+    if (!viz.enabled || viz.frequencies.isEmpty) return 0;
+    final n = math.min(8, viz.frequencies.length);
+    var sum = 0.0;
+    for (var i = 0; i < n; i++) {
+      sum += viz.frequencies[i];
+    }
+    return (sum / n * viz.sensitivity).clamp(0.0, 1.0);
+  }
+
+  /// Panel size depends on active shape.
+  Size _panelSize(Size screen, AskResonateShape shape) {
+    switch (shape) {
+      case AskResonateShape.blob:
+        return Size(screen.width * 0.94, screen.height * 0.64);
+      case AskResonateShape.semicircle:
+        return Size(screen.width * 0.72, screen.height * 0.78);
+      case AskResonateShape.capsule:
+        return Size(screen.width * 0.92, screen.height * 0.48);
+      case AskResonateShape.orbital:
+        final side = math.min(screen.width, screen.height) * 0.78;
+        return Size(side, side);
+    }
+  }
+
+  Alignment _panelAlignment(AskResonateShape shape) {
+    switch (shape) {
+      case AskResonateShape.semicircle:
+        return Alignment.centerRight;
+      case AskResonateShape.capsule:
+        return const Alignment(0, 0.15);
+      case AskResonateShape.blob:
+      case AskResonateShape.orbital:
+        return Alignment.center;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<AskResonateController>();
+    final viz = context.watch<AudioVisualizationProvider>();
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.sizeOf(context);
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context);
+    final energy = reduceMotion ? 0.0 : _audioEnergy(viz);
+
+    final panel = _panelSize(size, ctrl.shape);
+    final align = _panelAlignment(ctrl.shape);
+
+    // Origin morph: translate from Orb global position toward panel center.
+    final orb = ctrl.orbGlobalPosition;
+    final screenCenter = Offset(size.width / 2, size.height / 2);
+    Offset originOffset(double p) {
+      if (orb == null || reduceMotion) return Offset.zero;
+      // Target center of panel given alignment
+      final target = Offset(
+        screenCenter.dx + (align.x) * (size.width - panel.width) / 2,
+        screenCenter.dy + (align.y) * (size.height - panel.height) / 2,
+      );
+      final delta = orb - target;
+      return Offset(delta.dx * (1 - p), delta.dy * (1 - p));
+    }
 
     return PopScope(
       canPop: false,
@@ -75,8 +155,9 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
       child: AnimatedBuilder(
         animation: Listenable.merge([_progress, _breatheCtrl]),
         builder: (context, _) {
-          final p = _progress.value.clamp(0.0, 1.0);
-          final breathe = _breatheCtrl.value;
+          final p = reduceMotion ? 1.0 : _progress.value.clamp(0.0, 1.0);
+          final breathe = reduceMotion ? 0.0 : _breatheCtrl.value;
+          final offset = originOffset(p);
 
           return Stack(
             fit: StackFit.expand,
@@ -87,8 +168,8 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                 behavior: HitTestBehavior.opaque,
                 child: BackdropFilter(
                   filter: ImageFilter.blur(
-                    sigmaX: 10 * p,
-                    sigmaY: 10 * p,
+                    sigmaX: (reduceMotion ? 6 : 10) * p,
+                    sigmaY: (reduceMotion ? 6 : 10) * p,
                   ),
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.38 * p),
@@ -96,41 +177,56 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                 ),
               ),
 
-              // Living blob panel
-              Center(
-                child: Opacity(
-                  opacity: p,
-                  child: Transform.scale(
-                    scale: 0.72 + 0.28 * p,
-                    child: ClipPath(
-                      clipper: OrganicBlobClipper(
-                        progress: p,
-                        breathe: breathe,
-                      ),
-                      child: Container(
-                        width: size.width * 0.94,
-                        height: size.height * 0.64,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              scheme.surfaceContainerHigh.withValues(alpha: 0.96),
-                              scheme.primaryContainer.withValues(alpha: 0.88),
-                              scheme.secondaryContainer.withValues(alpha: 0.75),
+              // Living shaped panel with origin morph
+              Align(
+                alignment: align,
+                child: Transform.translate(
+                  offset: offset,
+                  child: Opacity(
+                    opacity: p,
+                    child: Transform.scale(
+                      scale: reduceMotion ? 1.0 : (0.72 + 0.28 * p),
+                      child: ClipPath(
+                        clipper: clipperForShape(
+                          shape: ctrl.shape,
+                          progress: p,
+                          breathe: breathe,
+                          audioEnergy: energy,
+                        ),
+                        child: Container(
+                          width: panel.width,
+                          height: panel.height,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                scheme.surfaceContainerHigh
+                                    .withValues(alpha: 0.96),
+                                scheme.primaryContainer
+                                    .withValues(alpha: 0.88),
+                                scheme.secondaryContainer
+                                    .withValues(alpha: 0.75),
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: scheme.primary.withValues(
+                                  alpha: (0.22 + energy * 0.18) * p,
+                                ),
+                                blurRadius: 40 + energy * 24,
+                                spreadRadius: 4 + energy * 6,
+                              ),
                             ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: scheme.primary.withValues(alpha: 0.28 * p),
-                              blurRadius: 48,
-                              spreadRadius: 6,
-                            ),
-                          ],
-                        ),
-                        child: _AskResonateContent(
-                          contextLabel: ctrl.contextLabel,
-                          onClose: _close,
+                          child: _AskResonateContent(
+                            contextLabel: ctrl.contextLabel,
+                            shape: ctrl.shape,
+                            onClose: _close,
+                            onShapeChanged: (s) =>
+                                context.read<AskResonateController>().setShape(s),
+                            reduceMotion: reduceMotion,
+                          ),
                         ),
                       ),
                     ),
@@ -147,11 +243,17 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
 
 class _AskResonateContent extends StatefulWidget {
   final String contextLabel;
+  final AskResonateShape shape;
   final VoidCallback onClose;
+  final ValueChanged<AskResonateShape> onShapeChanged;
+  final bool reduceMotion;
 
   const _AskResonateContent({
     required this.contextLabel,
+    required this.shape,
     required this.onClose,
+    required this.onShapeChanged,
+    required this.reduceMotion,
   });
 
   @override
@@ -246,11 +348,39 @@ class _AskResonateContentState extends State<_AskResonateContent> {
     };
   }
 
+  Widget _shapeChip(AskResonateShape s, String label, IconData icon) {
+    final selected = widget.shape == s;
+    final scheme = Theme.of(context).colorScheme;
+    return FilterChip(
+      selected: selected,
+      label: Text(label),
+      avatar: Icon(icon, size: 16),
+      onSelected: (_) => widget.onShapeChanged(s),
+      selectedColor: scheme.primaryContainer,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final intelligence = context.watch<IntelligenceProvider>();
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final theme = Theme.of(context);
+
+    Widget tile(Widget child) {
+      if (widget.reduceMotion) return child;
+      return child
+          .animate()
+          .fadeIn(duration: 280.ms, curve: Curves.easeOut)
+          .slideY(
+            begin: 0.12,
+            end: 0,
+            duration: 320.ms,
+            curve: Curves.easeOutCubic,
+          );
+    }
 
     return SafeArea(
       child: Padding(
@@ -299,41 +429,54 @@ class _AskResonateContentState extends State<_AskResonateContent> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
+            // Shape switcher
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _shapeChip(AskResonateShape.blob, 'Blob', Icons.bubble_chart),
+                  const SizedBox(width: 6),
+                  _shapeChip(
+                      AskResonateShape.capsule, 'Capsule', Icons.smart_button),
+                  const SizedBox(width: 6),
+                  _shapeChip(AskResonateShape.semicircle, 'Edge',
+                      Icons.vertical_split),
+                  const SizedBox(width: 6),
+                  _shapeChip(
+                      AskResonateShape.orbital, 'Orbital', Icons.radio_button_checked),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
                   for (final (title, subtitle, intent) in _commands)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      leading: Icon(
-                        _iconFor(intent.action),
-                        color: theme.colorScheme.primary,
-                      ),
-                      title: Text(
-                        title,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(subtitle),
-                      trailing: _busy
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right, size: 20),
-                      onTap: _busy ? null : () => _run(intent),
-                    )
-                        .animate()
-                        .fadeIn(duration: 280.ms, curve: Curves.easeOut)
-                        .slideY(
-                          begin: 0.12,
-                          end: 0,
-                          duration: 320.ms,
-                          curve: Curves.easeOutCubic,
+                    tile(
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        leading: Icon(
+                          _iconFor(intent.action),
+                          color: theme.colorScheme.primary,
                         ),
+                        title: Text(
+                          title,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(subtitle),
+                        trailing: _busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.chevron_right, size: 20),
+                        onTap: _busy ? null : () => _run(intent),
+                      ),
+                    ),
                   const Divider(height: 20),
                   TextField(
                     controller: _text,
