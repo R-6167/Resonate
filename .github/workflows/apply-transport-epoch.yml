@@ -1,0 +1,40 @@
+name: Apply TransportEpoch wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/transport-epoch]
+    paths:
+      - "tool/patches/transport_epoch_wire.patch"
+      - ".github/workflows/apply-transport-epoch.yml"
+      - "lib/playback/transport_epoch.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/transport-epoch
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply wire patch
+        run: |
+          set -euo pipefail
+          if grep -q "TransportEpoch _transportEpoch" lib/providers/music_provider.dart; then
+            echo "Already wired"
+            exit 0
+          fi
+          patch -p1 --batch --forward < tool/patches/transport_epoch_wire.patch
+          grep -q "TransportEpoch _transportEpoch" lib/providers/music_provider.dart
+          grep -q "_transportEpoch.epoch" lib/providers/music_provider.dart
+          echo "TransportEpoch wire applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to TransportEpoch"
+          file_pattern: lib/providers/music_provider.dart
+          branch: refactor/transport-epoch

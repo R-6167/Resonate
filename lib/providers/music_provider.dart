@@ -34,6 +34,7 @@ import '../playback/queue_store.dart';
 import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
+import '../playback/transport_epoch.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -146,9 +147,12 @@ class MusicProvider extends ChangeNotifier {
       _crossfadeRuntime.automaticTransitionGeneration;
   set _automaticTransitionGeneration(int value) =>
       _crossfadeRuntime.automaticTransitionGeneration = value;
+  final TransportEpoch _transportEpoch = TransportEpoch();
+  /// Compatibility aliases — transport authority lives in [_transportEpoch].
   /// Bumped on every user transport (play/next/prev/pause). Automatic
   /// crossfade captures this and aborts if it changes mid-flight.
-  int _userTransportEpoch = 0;
+  int get _userTransportEpoch => _transportEpoch.epoch;
+  set _userTransportEpoch(int value) => _transportEpoch.epoch = value;
   String? get _preloadedNextSongId => _crossfadeRuntime.preloadedNextSongId;
   set _preloadedNextSongId(String? value) =>
       _crossfadeRuntime.preloadedNextSongId = value;
@@ -209,11 +213,17 @@ class MusicProvider extends ChangeNotifier {
   int _gaplessWindowStart = 0;
   List<String> _gaplessWindowIds = const [];
   bool _gaplessSourceActive = false;
-  bool _transportInFlight = false;
-  int _pendingUserTransportCount = 0;
-  bool get _userTransportPending => _pendingUserTransportCount > 0;
-  bool _userWantsPlaying = false;
-  bool _loadingSource = false;
+  bool get _transportInFlight => _transportEpoch.inFlight;
+  set _transportInFlight(bool value) => _transportEpoch.inFlight = value;
+  int get _pendingUserTransportCount => _transportEpoch.pendingCount;
+  set _pendingUserTransportCount(int value) =>
+      _transportEpoch.pendingCount = value;
+  bool get _userTransportPending => _transportEpoch.isPending;
+  bool get _userWantsPlaying => _transportEpoch.userWantsPlaying;
+  set _userWantsPlaying(bool value) =>
+      _transportEpoch.userWantsPlaying = value;
+  bool get _loadingSource => _transportEpoch.loadingSource;
+  set _loadingSource(bool value) => _transportEpoch.loadingSource = value;
   DateTime? _lastPlayKickAt;
   DateTime? _lastSilentRecoverAt;
   DateTime? _lastUserPauseAt;
