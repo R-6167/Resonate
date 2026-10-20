@@ -13,6 +13,15 @@ import io.flutter.plugin.common.MethodChannel
 internal class LiveDspChannelHandler {
     fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "setLiveDspEnabled" -> {
+                val enabled = call.argument<Boolean>("enabled") ?: true
+                DspEngineRegistry.applyEnabledAll(enabled)
+                result.success(mapOf(
+                    "ok" to true,
+                    "enabled" to enabled,
+                    "active" to DspEngineRegistry.activeCount(),
+                ))
+            }
             "setLiveDspPreampDb" -> {
                 val db = (call.argument<Number>("db") ?: 0.0).toDouble().coerceIn(-12.0, 12.0)
                 val linear = Math.pow(10.0, db / 20.0)
