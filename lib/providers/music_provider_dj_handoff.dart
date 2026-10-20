@@ -1,5 +1,7 @@
 part of 'music_provider.dart';
 
+extension MusicProviderDjHandoff on MusicProvider {
+
   /// Step 2–3: optional beat seek + tempo stretch for the incoming handoff.
   Future<void> _prepareDjHandoff({
     required AudioPlayer outgoing,
@@ -351,3 +353,4 @@ part of 'music_provider.dart';
       },
     );
   }
+}
