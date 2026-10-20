@@ -32,6 +32,7 @@ Resonate already has a substantial in-house native DSP path. The intended live r
 - The current Flutter method channel exposes `setLiveDspPreampDb`, which maps to `DspEngineRegistry.applyPreampAll`. That is a DSP **preamp** control, not a separate user DVC/volume control.
 - The native registry already has `applyVolumeAll` / `setVolume`, but there is no corresponding public channel/bridge method for it. The native engine comments distinguish preamp from smoothed DVC gain.
 - `syncPreampToDvc` is therefore a misleading helper name: its current implementation sends a preamp command. Rename it to reflect preamp semantics when touching call sites, and add a distinct DVC API rather than reusing this path.
+- `ResonateNativeDspBridge` still calls `attachResonateDsp`, `setResonateDspEnabled`, and `setResonateEqBands`; these method names are not handled by the current `AudioEffectsChannelHandler`. Those calls are swallowed by the Dart bridge, so its `available` flag and `nativeDspEnabled` toggle do not reliably describe or control the custom sink processor. Treat this as a real integration gap: re-point that bridge to the live-DSP status/EQ/master-enable APIs or retire the obsolete bridge path, then test the UI toggle against actual PCM processing. Do not blindly route the old session-attach call to a fake success response.
 - The sink patch script intentionally warns and exits successfully if the upstream `just_audio` method block no longer matches. That preserves build availability, but a green APK build alone does not prove the native processor was injected. Add explicit CI evidence for the injection marker and runtime capability status; retain safe pass-through behavior for release resilience.
 - The current status endpoint reports active engine count, gate state, sticky EQ/speaker settings, and native timing counters. It should be expanded carefully to distinguish `compiled`, `sinkInjected`, `nativeAllowed`, `activeEngines`, and per-engine processing/failure state. Zero active engines while stopped is not itself a failure.
 
@@ -115,10 +116,11 @@ When native injection is unavailable, keep playback alive and explain that the a
 ## Implementation order
 
 1. Finish the registry race hardening and verify CI.
-2. Add explicit sink-injection verification/status.
-3. Correct the preamp/DVC naming mismatch.
-4. Implement DVC as a separate end-to-end control.
-5. Build Audio Lab UI over the typed settings model.
-6. Add profiles/automation only after the controls are stable and testable.
+2. Repair or retire the disconnected `ResonateNativeDspBridge` session/toggle calls and verify that the UI reflects real sink processing.
+3. Add explicit sink-injection verification/status.
+4. Correct the preamp/DVC naming mismatch.
+5. Implement DVC as a separate end-to-end control.
+6. Build Audio Lab UI over the typed settings model.
+7. Add profiles/automation only after the controls are stable and testable.
 
 Keep each phase a small PR. Avoid another broad rewrite of `MusicProvider`; keep transport/crossfade gain envelopes and DSP user gain independently owned.
