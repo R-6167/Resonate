@@ -46,8 +46,7 @@ class _LiveDvcControlState extends State<LiveDvcControl> {
     final result = await AudioEffectsBridge.setLiveDspDvcDb(value);
     if (persist) {
       try {
-        final settings = await DspSettings.load();
-        await DspSettings.save(settings.copyWith(dvcDb: value));
+        await DspSettings.update((settings) => settings.copyWith(dvcDb: value));
       } catch (_) {
         if (mounted) setState(() => _status = 'Applied for this session; could not save the preference.');
         return;

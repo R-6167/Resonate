@@ -1,6 +1,6 @@
 # Advanced DSP and DVC implementation plan
 
-Status: native DSP bridge, independent DVC control, fail-closed sink-injection CI validation, and automated DVC transition/A-B regression checks are merged. User has confirmed that moving the DVC slider changes dB as expected. Item 3 is underway: a typed versioned DSP settings document now migrates legacy EQ/DVC preferences and is being adopted by DVC and EQ persistence. Physical-device clipping, crossfade, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
+Status: native DSP bridge, independent DVC control, fail-closed sink-injection CI validation, automated DVC transition/A-B regression checks, and the initial versioned DSP settings model are merged. Follow-up item 3 work adds atomic read-modify-write updates and migrates DVC, EQ, and auxiliary effect persistence onto the canonical document while retaining legacy compatibility keys. Physical-device clipping, crossfade, screen-off, and output-route checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
 
 ## Summary
 
@@ -51,7 +51,7 @@ Create a typed, versioned settings model in Dart with independent fields for:
 - speaker protection and virtual-bass amount;
 - optional future effects only after their processing path is implemented and tested.
 
-Clamp and validate at the model boundary. Persist a versioned JSON/settings schema, migrate existing preferences, and serialize updates so rapid slider changes cannot reorder older asynchronous writes over newer ones. Avoid two competing sources of truth across `EqualizerProvider`, `AudioEffectsProvider`, and native sticky state.
+Clamp and validate at the model boundary. Persist a versioned JSON/settings schema, migrate existing preferences, and use `DspSettings.update` for serialized read-modify-write operations so concurrent controls preserve unrelated fields. Full-snapshot `save` remains for deliberate complete replacements; control-specific writers should not load a snapshot and later save it. Avoid two competing sources of truth across `EqualizerProvider`, `AudioEffectsProvider`, and native sticky state.
 
 ### 2. Keep preamp and DVC separate end-to-end
 

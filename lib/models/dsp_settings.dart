@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Canonical, versioned snapshot for Resonate's native DSP user settings.
 ///
 /// Fields remain independent by design: EQ preamp is not DVC, and neither is
-/// the transport/crossfade envelope. Existing preference keys are read once as
-/// a migration source; new writes use one JSON document.
+/// the transport/crossfade envelope. Existing preference keys are read as a
+/// migration source; new writes use one JSON document.
 class DspSettings {
   static const int schemaVersion = 1;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
@@ -103,6 +103,7 @@ class DspSettings {
       if (value is! num || !value.toDouble().isFinite) return fallback;
       return value.toDouble().clamp(min, max).toDouble();
     }
+
     final rawBands = json['eqBandGainsDb'];
     final bands = rawBands is List
         ? rawBands.whereType<num>().map((v) => _clamp(v.toDouble(), -12, 12)).toList()
@@ -124,8 +125,7 @@ class DspSettings {
     );
   }
 
-  static Future<DspSettings> load() async {
-    final prefs = await SharedPreferences.getInstance();
+  static DspSettings _readFromPreferences(SharedPreferences prefs) {
     final raw = prefs.getString(preferenceKey);
     if (raw != null) {
       try {
@@ -140,10 +140,9 @@ class DspSettings {
     final hasLegacyBands = List<int>.generate(31, (i) => i)
         .any((i) => prefs.containsKey('eq_studio_band_$i'));
     final bandGains = hasLegacyBands
-        ? List<double>.generate(
-            31, (i) => prefs.getDouble('eq_studio_band_$i') ?? 0.0)
+        ? List<double>.generate(31, (i) => prefs.getDouble('eq_studio_band_$i') ?? 0.0)
         : <double>[];
-    final migrated = DspSettings(
+    return DspSettings(
       masterEnabled: prefs.getBool('equalizer_native_dsp') ?? false,
       eqEnabled: prefs.getBool('equalizer_enabled') ?? true,
       preset: prefs.getString('equalizer_preset') ?? 'Flat',
@@ -155,11 +154,41 @@ class DspSettings {
       reverbAmount: prefs.getDouble('reverb') ?? 0,
       virtualizerAmount: prefs.getDouble('virtualizer') ?? 0,
     );
-    await save(migrated);
-    return migrated;
   }
 
-  /// Queue writes so a slow older slider update cannot overwrite a newer one.
+  static Future<DspSettings> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final settings = _readFromPreferences(prefs);
+    if (prefs.getString(preferenceKey) == null) {
+      await save(settings);
+    } else {
+      try {
+        final decoded = jsonDecode(prefs.getString(preferenceKey)!);
+        if (decoded is! Map || decoded['version'] != schemaVersion) {
+          await save(settings);
+        }
+      } catch (_) {
+        await save(settings);
+      }
+    }
+    return settings;
+  }
+
+  /// Atomically read-modify-write the latest canonical snapshot.
+  ///
+  /// The transform runs inside the same serialized queue as the write, so
+  /// overlapping controls cannot save a stale full snapshot over a newer one.
+  static Future<void> update(DspSettings Function(DspSettings current) transform) {
+    _writeQueue = _writeQueue.catchError((_) {}).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final current = _readFromPreferences(prefs);
+      final next = transform(current);
+      await prefs.setString(preferenceKey, jsonEncode(next.toJson()));
+    });
+    return _writeQueue;
+  }
+
+  /// Save a complete snapshot. Prefer [update] for individual control changes.
   static Future<void> save(DspSettings settings) {
     final snapshot = jsonEncode(settings.toJson());
     _writeQueue = _writeQueue.catchError((_) {}).then((_) async {

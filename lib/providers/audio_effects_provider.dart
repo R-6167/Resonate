@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/dsp_settings.dart';
 import '../services/audio_effects_bridge.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
@@ -100,10 +101,11 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      effectsEnabled = prefs.getBool('effects_enabled') ?? true;
-      reverb = prefs.getDouble('reverb') ?? 0.0;
+      final canonical = await DspSettings.load();
+      effectsEnabled = canonical.effectsEnabled;
+      reverb = canonical.reverbAmount;
+      virtualizer = canonical.virtualizerAmount;
       bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
-      virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
       // Always force loudness off (legacy prefs ignored).
       loudness = 0.0;
       // Do not apply native effects at load — no audio session yet.
@@ -128,11 +130,18 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _save() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('bassBoost', bassBoost);
+      await prefs.setDouble('loudness', loudness);
+      // Keep legacy keys readable by older builds while canonical state owns
+      // effect enable/reverb/virtualizer settings.
       await prefs.setBool('effects_enabled', effectsEnabled);
       await prefs.setDouble('reverb', reverb);
-      await prefs.setDouble('bassBoost', bassBoost);
       await prefs.setDouble('virtualizer', virtualizer);
-      await prefs.setDouble('loudness', loudness);
+      await DspSettings.update((settings) => settings.copyWith(
+            effectsEnabled: effectsEnabled,
+            reverbAmount: reverb,
+            virtualizerAmount: virtualizer,
+          ));
     } catch (e) {
       debugPrint('Audio effects save failed: $e');
     }
