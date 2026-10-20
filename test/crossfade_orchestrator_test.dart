@@ -24,7 +24,7 @@ void main() {
       expect(timing.effectiveFadeMs, 6500);
       expect(timing.preloadWindowMs, 22000);
       expect(timing.fadeArmWindowMs, 14000);
-      expect(timing.triggerWindowMs, 9500);
+      expect(timing.triggerWindowMs, 8350);
     });
 
     test('keeps preload window bounded for long configured fades', () {
@@ -35,7 +35,7 @@ void main() {
 
       expect(timing.preloadWindowMs, 22000);
       expect(timing.fadeArmWindowMs, 14000);
-      expect(timing.triggerWindowMs, 16000);
+      expect(timing.triggerWindowMs, 14400);
     });
   });
 }
