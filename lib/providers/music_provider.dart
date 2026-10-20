@@ -35,6 +35,7 @@ import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
 import '../playback/crossfade_orchestrator.dart';
+import '../playback/crossfade_frame_volumes.dart';
 import '../playback/crossfade_transition_guard.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
@@ -4288,9 +4289,15 @@ class MusicProvider extends ChangeNotifier {
         // If focus is lost mid-fade, scale both engines down together. If focus
         // returns, _unduckAfterInterruption defers restoration until this fade ends.
         final frameMaster = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
-        final gainScale = (frameMaster / master).clamp(0.0, 1.0);
-        final outVol = (base * outGain * gainScale).clamp(0.0, 1.0);
-        final inVol = (frameMaster * inGain).clamp(0.0, 1.0);
+        final frameVolumes = CrossfadeFrameVolumes.calculate(
+          base: base,
+          master: master,
+          frameMaster: frameMaster,
+          outgoingGain: outGain,
+          incomingGain: inGain,
+        );
+        final outVol = frameVolumes.outgoing;
+        final inVol = frameVolumes.incoming;
         lastOut = outVol;
         final stepStarted = DateTime.now();
         try {
