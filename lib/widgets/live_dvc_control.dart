@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
+import '../models/dsp_settings.dart';
 import '../services/audio_effects_bridge.dart';
 import '../ui/resonate_glass.dart';
 
@@ -14,7 +13,6 @@ class LiveDvcControl extends StatefulWidget {
 }
 
 class _LiveDvcControlState extends State<LiveDvcControl> {
-  static const _preferenceKey = 'live_dsp_dvc_db_v1';
   static const _minimumDb = -24.0;
   static const _maximumDb = 6.0;
 
@@ -29,12 +27,10 @@ class _LiveDvcControlState extends State<LiveDvcControl> {
   }
 
   Future<void> _load() async {
-    double value = 0.0;
+    var value = 0.0;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      value = (prefs.getDouble(_preferenceKey) ?? 0.0)
-          .clamp(_minimumDb, _maximumDb)
-          .toDouble();
+      final settings = await DspSettings.load();
+      value = settings.dvcDb.clamp(_minimumDb, _maximumDb).toDouble();
     } catch (_) {
       // Unity gain is the safe default if preferences cannot be read.
     }
@@ -50,8 +46,8 @@ class _LiveDvcControlState extends State<LiveDvcControl> {
     final result = await AudioEffectsBridge.setLiveDspDvcDb(value);
     if (persist) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setDouble(_preferenceKey, value);
+        final settings = await DspSettings.load();
+        await DspSettings.save(settings.copyWith(dvcDb: value));
       } catch (_) {
         if (mounted) setState(() => _status = 'Applied for this session; could not save the preference.');
         return;
