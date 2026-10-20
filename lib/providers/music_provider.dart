@@ -35,6 +35,7 @@ import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
 import '../playback/crossfade_orchestrator.dart';
+import '../playback/crossfade_transition_guard.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
@@ -2306,6 +2307,12 @@ class MusicProvider extends ChangeNotifier {
     final epoch = _userTransportEpoch;
     final fromIndex = _queueIndex;
     final fromSongId = currentSong?.id;
+    final transitionGuard = CrossfadeTransitionGuard(
+      userTransportEpoch: epoch,
+      transitionGeneration: transitionMarker,
+      outgoingSongId: fromSongId,
+      queueIndex: fromIndex,
+    );
     if (_transportInFlight || _loadingSource || _userTransportPending) {
       _automaticCrossfadeInFlight = false;
       _crossfadeInProgress = false;
@@ -2388,11 +2395,13 @@ class MusicProvider extends ChangeNotifier {
         return false;
       });
       if (ok) return;
-      if (_userTransportEpoch != epoch ||
-          _automaticTransitionGeneration != transitionMarker ||
-          _authority.isStale(generation) ||
-          currentSong?.id != fromSongId ||
-          _queueIndex != fromIndex) {
+      if (!transitionGuard.matches(
+            userTransportEpoch: _userTransportEpoch,
+            transitionGeneration: _automaticTransitionGeneration,
+            currentSongId: currentSong?.id,
+            queueIndex: _queueIndex,
+          ) ||
+          _authority.isStale(generation)) {
         await ResonateDiagnostics.record('crossfade_fallback_skipped_already_advanced', {
           'preempted': _userTransportEpoch != epoch,
           'fromSongId': fromSongId,
@@ -2413,11 +2422,13 @@ class MusicProvider extends ChangeNotifier {
         await inactivePlayer.stop();
       } catch (_) {}
       await _softFadeOutActive(milliseconds: 500);
-      if (_userTransportEpoch != epoch ||
-          _automaticTransitionGeneration != transitionMarker ||
-          _authority.isStale(generation) ||
-          currentSong?.id != fromSongId ||
-          _queueIndex != fromIndex) {
+      if (!transitionGuard.matches(
+            userTransportEpoch: _userTransportEpoch,
+            transitionGeneration: _automaticTransitionGeneration,
+            currentSongId: currentSong?.id,
+            queueIndex: _queueIndex,
+          ) ||
+          _authority.isStale(generation)) {
         await ResonateDiagnostics.record('crossfade_preempted_by_user', {
           'stage': 'fallback_soft',
           'fromSongId': fromSongId,
@@ -2434,11 +2445,13 @@ class MusicProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('automatic crossfade error: $e');
-      if (_userTransportEpoch == epoch &&
-          _automaticTransitionGeneration == transitionMarker &&
-          !_authority.isStale(generation) &&
-          currentSong?.id == fromSongId &&
-          _queueIndex == fromIndex) {
+      if (transitionGuard.matches(
+            userTransportEpoch: _userTransportEpoch,
+            transitionGeneration: _automaticTransitionGeneration,
+            currentSongId: currentSong?.id,
+            queueIndex: _queueIndex,
+          ) &&
+          !_authority.isStale(generation)) {
         try {
           await inactivePlayer.stop();
         } catch (_) {}
