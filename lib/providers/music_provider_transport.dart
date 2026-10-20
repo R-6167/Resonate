@@ -391,7 +391,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
               audioPlayer,
               0.0,
               target,
-              durationMs: source == 'system' ? 160 : _transportFadeMs,
+              durationMs: source == 'system' ? 160 : MusicProvider._transportFadeMs,
             );
           } else if (!midTransition) {
             try {
