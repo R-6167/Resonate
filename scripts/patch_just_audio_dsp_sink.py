@@ -174,9 +174,9 @@ def main() -> int:
             return 1
         patched = patched.replace(
             import_anchor,
-            import_anchor + "\\n"
-            "import androidx.media3.exoplayer.audio.AudioSink;\\n"
-            "import androidx.media3.exoplayer.audio.DefaultAudioSink;\\n"
+            import_anchor + "\n"
+            "import androidx.media3.exoplayer.audio.AudioSink;\n"
+            "import androidx.media3.exoplayer.audio.DefaultAudioSink;\n"
             "import android.content.Context;",
             1,
         )
