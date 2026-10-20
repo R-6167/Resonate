@@ -66,6 +66,17 @@ void main() {
       expect(prefs.getString(DspSettings.preferenceKey), isNotNull);
     });
 
+    test('serialized field updates preserve each other under overlap', () async {
+      await DspSettings.save(DspSettings(dvcDb: 1, reverbAmount: 0.2));
+      await Future.wait([
+        DspSettings.update((current) => current.copyWith(dvcDb: 4)),
+        DspSettings.update((current) => current.copyWith(reverbAmount: 0.8)),
+      ]);
+      final restored = await DspSettings.load();
+      expect(restored.dvcDb, 4);
+      expect(restored.reverbAmount, 0.8);
+    });
+
     test('non-finite EQ band values fall back safely', () {
       final settings = DspSettings(eqBandGainsDb: [double.infinity, 20, -20]);
       expect(settings.eqBandGainsDb, [0, 12, -12]);
