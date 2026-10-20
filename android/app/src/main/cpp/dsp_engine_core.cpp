@@ -727,6 +727,14 @@ void dsp_set_crossover_hz(void* handle, float freq_hz) {
     static_cast<Engine*>(handle)->control_queue.push(cmd);
 }
 
+void dsp_set_processing_enabled(void* handle, bool enabled) {
+    if (!handle) return;
+    ControlCommand cmd;
+    cmd.type = ControlType::ProcessingEnabled;
+    cmd.enabled = enabled;
+    static_cast<Engine*>(handle)->control_queue.push(cmd);
+}
+
 void dsp_eq_set_enabled(void* handle, bool enabled) {
     if (!handle) return;
     ControlCommand cmd;
