@@ -1,0 +1,42 @@
+name: Apply DjHandoffState wire + purge engine-pair tooling
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/dj-handoff-state]
+    paths:
+      - "tool/patches/dj_handoff_wire.b64.*"
+      - ".github/workflows/apply-dj-handoff-state.yml"
+      - "lib/playback/dj_handoff_state.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/dj-handoff-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild patch, apply, purge EnginePair temps
+        run: |
+          set -euo pipefail
+          if ! grep -q "DjHandoffState _djHandoff" lib/providers/music_provider.dart; then
+            cat tool/patches/dj_handoff_wire.b64.* | tr -d '\n' | base64 -d > /tmp/dj_wire.patch
+            patch -p1 --batch --forward < /tmp/dj_wire.patch
+            grep -q "DjHandoffState _djHandoff" lib/providers/music_provider.dart
+            echo "DjHandoffState wire applied"
+          else
+            echo "Already wired"
+          fi
+          rm -f tool/patches/engine_pair_wire.patch
+          rm -f .github/workflows/apply-engine-pair.yml
+          rm -f tool/patches/dj_handoff_state_wire.patch
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire DjHandoffState; purge EnginePair temp tooling"
+          branch: refactor/dj-handoff-state
