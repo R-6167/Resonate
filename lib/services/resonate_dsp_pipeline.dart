@@ -146,12 +146,13 @@ class ResonateNativeDspBridge {
   static Future<bool> attachSession(int sessionId) async {
     if (sessionId <= 0) return false;
     try {
-      final raw = await _channel.invokeMethod<dynamic>('attachResonateDsp', {
-        'sessionId': sessionId,
-      });
+      // The custom DSP is injected in the ExoPlayer PCM sink, not attached to
+      // Android's session effects. Report availability from the real sink registry.
+      final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
       if (raw is Map) {
-        available = raw['ok'] == true;
-        lastBandCount = (raw['bandCount'] as num?)?.toInt() ?? 0;
+        final active = (raw['activeEngines'] as num?)?.toInt() ?? 0;
+        available = active > 0 && raw['nativeAllowed'] != false;
+        lastBandCount = (raw['eqBands'] as num?)?.toInt() ?? 0;
         // Always show product name in UI; ignore technical server strings.
         engineLabel = 'Resonate DSP Engine';
         return available;
@@ -168,12 +169,12 @@ class ResonateNativeDspBridge {
     required bool enabled,
   }) async {
     try {
-      final ok = await _channel.invokeMethod<bool>('setResonateEqBands', {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspEqBands', {
         'centersHz': centersHz,
         'gainsDb': gainsDb,
         'enabled': enabled,
       });
-      return ok == true;
+      return raw is Map && raw['ok'] == true;
     } catch (_) {
       return false;
     }
@@ -181,7 +182,7 @@ class ResonateNativeDspBridge {
 
   static Future<void> setEnabled(bool enabled) async {
     try {
-      await _channel.invokeMethod('setResonateDspEnabled', {'enabled': enabled});
+      await _channel.invokeMethod('setLiveDspEnabled', {'enabled': enabled});
     } catch (_) {}
   }
 }
