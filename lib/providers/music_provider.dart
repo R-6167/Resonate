@@ -493,9 +493,6 @@ class MusicProvider extends ChangeNotifier {
   }
 
 
-  static const _savedQueueIdsKey = 'playback_queue_song_ids';
-  static const _savedQueueIndexKey = 'playback_queue_index';
-  static const _shuffleEnabledKey = 'playback_shuffle_enabled';
   static const _repeatModeKey = 'playback_repeat_mode';
   static const _audioFocusAutomationKey = 'audio_focus_automation_enabled';
   static const _audioFocusLevelKey = 'audio_focus_automation_level';
@@ -552,7 +549,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _loadPlaybackSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _shuffleEnabled = prefs.getBool(_shuffleEnabledKey) ?? false;
+      _shuffleEnabled = prefs.getBool(QueueStore.shuffleEnabledKey) ?? false;
       _audioLevelingEnabled = prefs.getBool(_audioLevelingEnabledKey) ?? false;
       _audioLevelingTargetRmsDbfs = (prefs.getDouble(_audioLevelingTargetKey) ?? LoudnessService.defaultTargetRmsDbfs).clamp(-24.0, -12.0).toDouble();
       _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
@@ -577,11 +574,8 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> setShuffleEnabled(bool enabled) async {
     _shuffleEnabled = enabled;
-    if (enabled && _queue.length > 1 && _queueIndex < _queue.length - 1) {
-      final current = _queue[_queueIndex];
-      final upcoming = _queue.sublist(_queueIndex + 1)..shuffle(math.Random());
-      _queue = [..._queue.take(_queueIndex + 1), ...upcoming];
-      _queueIndex = _queue.indexWhere((song) => song.id == current.id);
+    if (enabled) {
+      _queueStore.shuffleUpcoming();
     }
     await _persistPlaybackModes(); await _persistQueue(); notifyListeners();
   }
@@ -606,7 +600,7 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _persistPlaybackModes() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_shuffleEnabledKey, _shuffleEnabled);
+      await prefs.setBool(QueueStore.shuffleEnabledKey, _shuffleEnabled);
       await prefs.setString(_repeatModeKey, switch (_repeatMode) { PlaybackRepeatMode.all => 'all', PlaybackRepeatMode.one => 'one', PlaybackRepeatMode.off => 'off' });
     } catch (e) { debugPrint('Playback mode save failed: $e'); }
   }
@@ -1260,12 +1254,12 @@ class MusicProvider extends ChangeNotifier {
     _queueRestoreInProgress = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final ids = prefs.getStringList(_savedQueueIdsKey) ?? const <String>[];
+      final ids = prefs.getStringList(QueueStore.savedQueueIdsKey) ?? const <String>[];
       _resumePositionMs = prefs.getInt(_resumePositionKey) ?? _resumePositionMs;
       _resumeSongId = prefs.getString(_resumeSongIdKey) ?? _resumeSongId;
       await _loadResumeMap(prefs);
       if (ids.isEmpty || currentSong != null || _queue.isNotEmpty) return;
-      final savedIndex = prefs.getInt(_savedQueueIndexKey) ?? 0;
+      final savedIndex = prefs.getInt(QueueStore.savedQueueIndexKey) ?? 0;
       final songs = await _database.getAllSongs();
       await _visibility.load();
       final visibleSongs = _visibility.filter(songs, (song) => song.id);
@@ -1298,11 +1292,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _persistQueue() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_queue.isEmpty) { await prefs.remove(_savedQueueIdsKey); await prefs.remove(_savedQueueIndexKey); }
-      else { await prefs.setStringList(_savedQueueIdsKey, _queue.map((song) => song.id).toList()); await prefs.setInt(_savedQueueIndexKey, _queueIndex); }
-    } catch (e) { debugPrint('Playback queue persistence failed: $e'); }
+    await _queueStore.persist();
   }
 
   void _publishServiceState({bool positionOnly = false}) {
