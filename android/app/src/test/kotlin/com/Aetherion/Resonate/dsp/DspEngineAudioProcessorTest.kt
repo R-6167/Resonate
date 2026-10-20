@@ -55,6 +55,7 @@ class DspEngineAudioProcessorTest {
 
     private class FakeRegistryApi : DspEngineRegistry.NativeDspApi {
         override fun setEnabled(handle: Long, enabled: Boolean) = Unit
+        override fun setProcessingEnabled(handle: Long, enabled: Boolean) = Unit
         override fun setVolume(handle: Long, linearGain: Double) = Unit
         override fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) = Unit
         override fun setSpeakerMode(handle: Long, enabled: Boolean) = Unit
