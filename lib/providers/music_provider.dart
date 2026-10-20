@@ -5310,20 +5310,21 @@ class MusicProvider extends ChangeNotifier {
     );
   }
   Future<void> _syncSystemVolume() async {
+    final generation = _volumeFacade.beginSystemVolumePoll();
     try {
       final raw = await _systemVolumeChannel.invokeMethod<dynamic>('getSystemVolume');
+      if (! _volumeFacade.isCurrentSystemVolumePoll(generation)) return;
       if (raw is Map) {
         final current = (raw['current'] as num?)?.toDouble() ?? 0;
         final max = (raw['max'] as num?)?.toDouble() ?? 0;
-        if (max > 0) {
-          final next = (current / max).clamp(0.0, 1.0).toDouble();
-          if ((next - _volume).abs() > 0.001) { _volume = next; notifyListeners(); }
-        }
+        if (_volumeFacade.updateSystemVolume(current, max)) notifyListeners();
       }
     } catch (_) {}
   }
 
   Future<void> setVolume(double volume) async {
+    // Invalidate any in-flight system-volume poll before applying a user choice.
+    _volumeFacade.beginSystemVolumePoll();
     _volume = volume.clamp(0.0, 1.0).toDouble();
     try {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
