@@ -136,18 +136,25 @@ class DspEngineRegistryTest {
         registerThread.start()
         assertTrue(enteredRegister.await(2, TimeUnit.SECONDS))
 
+        val updateDone = CountDownLatch(1)
         val updateThread = Thread {
-            DspEngineRegistry.applyVolumeAll(0.42)
+            try {
+                DspEngineRegistry.applyVolumeAll(0.42)
+            } finally {
+                updateDone.countDown()
+            }
         }
         updateThread.start()
 
-        // Let the update contend with registration. With the shared registry lock,
-        // it runs after the handle is published and therefore updates that engine.
+        // The update must block while registration is applying its sticky snapshot.
+        // Without the shared lock, it can finish now and miss the unpublished handle.
+        val updateWasBlocked = !updateDone.await(100, TimeUnit.MILLISECONDS)
         releaseRegister.countDown()
         registerThread.join(2000)
         updateThread.join(2000)
         assertFalse(registerThread.isAlive)
         assertFalse(updateThread.isAlive)
+        assertTrue(updateWasBlocked)
 
         assertTrue(blocking.calls.any { it == "volume:2002:0.42" })
         blocking.calls.clear()
