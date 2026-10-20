@@ -1,0 +1,41 @@
+name: Apply ResumePositionStore wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/resume-position-store]
+    paths:
+      - "tool/patches/resume_wire.b64.*"
+      - ".github/workflows/apply-resume-position-store.yml"
+      - "lib/playback/resume_position_store.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/resume-position-store
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild patch and apply
+        run: |
+          set -euo pipefail
+          if grep -q "ResumePositionStore _resumeStore" lib/providers/music_provider.dart; then
+            echo "Already wired"
+            exit 0
+          fi
+          cat tool/patches/resume_wire.b64.* | tr -d '\n' | base64 -d > /tmp/resume_wire.patch
+          patch -p1 --batch --forward < /tmp/resume_wire.patch
+          grep -q "ResumePositionStore _resumeStore" lib/providers/music_provider.dart
+          grep -q "_resumeStore.record" lib/providers/music_provider.dart
+          echo "ResumePositionStore wire applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to ResumePositionStore"
+          file_pattern: lib/providers/music_provider.dart
+          branch: refactor/resume-position-store
