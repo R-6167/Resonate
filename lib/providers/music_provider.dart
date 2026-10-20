@@ -39,6 +39,7 @@ import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
 import '../playback/focus_interruption_runtime.dart';
+import '../playback/playback_history_session.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -341,10 +342,7 @@ class MusicProvider extends ChangeNotifier {
   static const Duration _autoResumeMaxFocusLoss =
       FocusInterruptionRuntime.autoResumeMaxFocusLoss;
 
-  ListeningEvent? _activeHistoryEvent;
-  int _activeHistoryPositionMs = 0;
-  Future<void> _historySerial = Future<void>.value();
-  bool _historyOperationActive = false;
+  final PlaybackHistorySession _historySession = PlaybackHistorySession();
 
   double get volume => _volume;
   bool get audioLevelingEnabled => _audioLevelingEnabled;
@@ -1521,8 +1519,8 @@ class MusicProvider extends ChangeNotifier {
         currentPosition = position;
       _forceClearStuckTransition(reason: 'position_tick');
       _maybeRecoverSilentPlayback();
-        if (_activeHistoryEvent != null) {
-          _activeHistoryPositionMs = position.inMilliseconds;
+        if (_historySession.activeEvent != null) {
+          _historySession.positionMs = position.inMilliseconds;
           _persistResumePosition();
         }
         notifyListeners();
@@ -1547,7 +1545,7 @@ class MusicProvider extends ChangeNotifier {
     if (song == null) return;
     final raw = currentPosition.inMilliseconds > 0
         ? currentPosition.inMilliseconds
-        : _activeHistoryPositionMs;
+        : _historySession.positionMs;
     final cap = currentDuration?.inMilliseconds ?? 0;
     final shouldWrite = _resumeStore.record(
       songId: song.id,
@@ -3326,18 +3324,18 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _startHistoryEvent(Song song) async {
-    await _queueHistoryOperation(() async {
-      if (_activeHistoryEvent?.songId == song.id) return;
+    await _historySession.enqueue(() async {
+      if (_historySession.activeEvent?.songId == song.id) return;
       final event = ListeningEvent(id: '${DateTime.now().microsecondsSinceEpoch}_${song.id}', songId: song.id, previousSongId: _queueIndex > 0 ? _queue[_queueIndex - 1].id : null, startedAt: DateTime.now(), durationPlayedMs: currentPosition.inMilliseconds, songDurationMs: song.duration.inMilliseconds, completionRatio: 0, completed: false, skipped: false);
-      _activeHistoryEvent = event; _activeHistoryPositionMs = currentPosition.inMilliseconds; _resumePositionMs = currentPosition.inMilliseconds; _resumeSongId = song.id;
+      _historySession.activeEvent = event; _historySession.positionMs = currentPosition.inMilliseconds; _resumePositionMs = currentPosition.inMilliseconds; _resumeSongId = song.id;
       try { final inserted = await _database.insertListeningEvent(event); final playCount = await _database.updateSongPlayCount(song.id); if (inserted < 0 || playCount < 0) { unawaited(ResonateDiagnostics.record('listening_history_start_failed', {'songId': song.id, 'insertResult': inserted, 'playCountResult': playCount})); } } catch (e, stack) { debugPrint('Listening history start failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_start_failed', {'songId': song.id, 'error': e.toString(), 'stack': stack.toString()})); }
     });
   }
 
   Future<void> _finishHistoryEvent({bool completed = false}) async {
-    await _queueHistoryOperation(() async {
-      final event = _activeHistoryEvent; if (event == null) return;
-      final total = event.songDurationMs > 0 ? event.songDurationMs : (currentDuration?.inMilliseconds ?? 0); final position = _activeHistoryPositionMs.clamp(0, total > 0 ? total : 1).toInt(); final ratio = total <= 0 ? 0.0 : (position / total).clamp(0.0, 1.0).toDouble(); final wasCompleted = completed || ratio >= .90;
+    await _historySession.enqueue(() async {
+      final event = _historySession.activeEvent; if (event == null) return;
+      final total = event.songDurationMs > 0 ? event.songDurationMs : (currentDuration?.inMilliseconds ?? 0); final position = _historySession.positionMs.clamp(0, total > 0 ? total : 1).toInt(); final ratio = total <= 0 ? 0.0 : (position / total).clamp(0.0, 1.0).toDouble(); final wasCompleted = completed || ratio >= .90;
       final updated = ListeningEvent(id: event.id, songId: event.songId, previousSongId: event.previousSongId, startedAt: event.startedAt, endedAt: DateTime.now(), durationPlayedMs: position, songDurationMs: total, completionRatio: ratio, completed: wasCompleted, skipped: !wasCompleted && position > 0, skipPositionMs: !wasCompleted && position > 0 ? position : null);
       // Phase 7: full listen after DJ handoff → soft positive signal.
       try {
@@ -3373,21 +3371,10 @@ class MusicProvider extends ChangeNotifier {
         }
       } catch (_) {}
 
-      _activeHistoryEvent = null; _activeHistoryPositionMs = 0;
+      _historySession.activeEvent = null; _historySession.positionMs = 0;
       if (wasCompleted) { if (currentSong != null) { _resumeStore.clearSong(currentSong!.id); } else { _resumePositionMs = 0; _resumeSongId = null; } unawaited(_resumeStore.persist()); } else { _persistResumePosition(force: true); }
       try { final updatedRows = await _database.updateListeningEvent(updated); if (updatedRows < 0 || updatedRows == 0) { unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'eventId': event.id, 'updateResult': updatedRows})); } } catch (e, stack) { debugPrint('Listening history finish failed: $e'); unawaited(ResonateDiagnostics.record('listening_history_finish_failed', {'songId': event.songId, 'error': e.toString(), 'stack': stack.toString()})); }
     });
-  }
-
-  Future<void> _queueHistoryOperation(Future<void> Function() operation) {
-    // Every history mutation must stay on the same serial chain. The old
-    // active-operation shortcut allowed start/finish writes to overlap.
-    final next = _historySerial.then((_) async {
-      _historyOperationActive = true;
-      try { await operation(); } finally { _historyOperationActive = false; }
-    });
-    _historySerial = next.then<void>((_) {}, onError: (_, __) {});
-    return next;
   }
 
   Future<bool> enqueueSongs(List<Song> songs) async { await _visibility.load(); final additions = songs.where((s) => _visibility.isVisible(s.id) && s.filePath.trim().isNotEmpty && !_queue.any((q) => q.id == s.id)).toList(); if (additions.isEmpty) return false; if (effectiveShuffleEnabled && additions.length > 1) additions.shuffle(math.Random()); _queue.addAll(additions); await _persistQueue(); notifyListeners(); return true; }
@@ -5258,7 +5245,7 @@ class MusicProvider extends ChangeNotifier {
           } else {
             await audioPlayer.seek(Duration.zero);
             currentPosition = Duration.zero;
-            if (_activeHistoryEvent != null) _activeHistoryPositionMs = 0;
+            if (_historySession.activeEvent != null) _historySession.positionMs = 0;
             _persistResumePosition(force: true);
             notifyListeners();
             _publishServiceState();
@@ -5289,8 +5276,8 @@ class MusicProvider extends ChangeNotifier {
           );
           await audioPlayer.seek(safe);
           currentPosition = safe;
-          if (_activeHistoryEvent != null) {
-            _activeHistoryPositionMs = safe.inMilliseconds;
+          if (_historySession.activeEvent != null) {
+            _historySession.positionMs = safe.inMilliseconds;
           }
           // Local seek/replay evidence for Intelligence ranking (no audio content).
           final songId = currentSong?.id;
