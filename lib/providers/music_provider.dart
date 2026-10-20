@@ -44,6 +44,7 @@ import '../playback/focus_interruption_runtime.dart';
 import '../playback/playback_history_session.dart';
 import '../playback/gapless_window_state.dart';
 import '../playback/mode_playback_policy_state.dart';
+import '../playback/volume_facade.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -97,7 +98,9 @@ class MusicProvider extends ChangeNotifier {
   bool isPlaying = false;
   Duration currentPosition = Duration.zero;
   Duration? currentDuration;
-  double _volume = 1.0;
+  final VolumeFacade _volumeFacade = VolumeFacade();
+  double get _volume => _volumeFacade.userVolume;
+  set _volume(double value) => _volumeFacade.setUserVolume(value);
   /// User preamp and track trim remain separate; runtime owns their derived scale.
   final LevelingRuntime _levelingRuntime = LevelingRuntime();
   double get _eqPreampUserScale => _levelingRuntime.userPreampScale;
@@ -117,7 +120,8 @@ class MusicProvider extends ChangeNotifier {
   set _trackLevelingGeneration(int value) => _levelingRuntime.refreshGeneration = value;
   final LoudnessService _loudnessService = LoudnessService();
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
-  double _sleepFadeScale = 1.0;
+  double get _sleepFadeScale => _volumeFacade.sleepFadeScale;
+  set _sleepFadeScale(double value) => _volumeFacade.setSleepFadeScale(value);
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
@@ -5310,20 +5314,21 @@ class MusicProvider extends ChangeNotifier {
     );
   }
   Future<void> _syncSystemVolume() async {
+    final generation = _volumeFacade.beginSystemVolumePoll();
     try {
       final raw = await _systemVolumeChannel.invokeMethod<dynamic>('getSystemVolume');
+      if (! _volumeFacade.isCurrentSystemVolumePoll(generation)) return;
       if (raw is Map) {
         final current = (raw['current'] as num?)?.toDouble() ?? 0;
         final max = (raw['max'] as num?)?.toDouble() ?? 0;
-        if (max > 0) {
-          final next = (current / max).clamp(0.0, 1.0).toDouble();
-          if ((next - _volume).abs() > 0.001) { _volume = next; notifyListeners(); }
-        }
+        if (_volumeFacade.updateSystemVolume(current, max)) notifyListeners();
       }
     } catch (_) {}
   }
 
   Future<void> setVolume(double volume) async {
+    // Invalidate any in-flight system-volume poll before applying a user choice.
+    _volumeFacade.beginSystemVolumePoll();
     _volume = volume.clamp(0.0, 1.0).toDouble();
     try {
       await _systemVolumeChannel.invokeMethod('setSystemVolume', {'value': _volume});
