@@ -639,9 +639,9 @@ class MusicProvider extends ChangeNotifier {
         // CRITICAL: onPlay must never toggle. If isPlaying was optimistic-true
         // while native was still paused, toggle would take the pause branch and
         // leave the track loaded but silent (library tap / auto-next bug).
-        onPlay: () => resumePlayback(source: 'audio_service'),
+        onPlay: () => this.resumePlayback(source: 'audio_service'),
         onPause: () => this.pause(source: 'audio_service'),
-        onStop: () => stop(source: 'audio_service'),
+        onStop: () => this.stop(source: 'audio_service'),
         onSeek: (position) => this.seek(position, source: 'audio_service'),
         onNext: () => this.nextSong(source: 'audio_service'),
         onPrevious: () => this.previousSong(source: 'audio_service'),
@@ -1322,7 +1322,7 @@ class MusicProvider extends ChangeNotifier {
     try {
       await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
     } catch (_) {}
-    await resumePlayback(source: 'system');
+    await this.resumePlayback(source: 'system');
     // Nudge volume again only if no newer focus event superseded this recovery.
     await Future<void>.delayed(const Duration(milliseconds: 200));
     if (generation == _focusResumeGeneration && _userWantsPlaying && !_crossfadeInProgress) {
@@ -2541,30 +2541,6 @@ class MusicProvider extends ChangeNotifier {
   Future<void> onTrackEnded(String completedSongId) => _advanceAfterCompletion(completedSongId);
 
   /// Jump to any index in the current queue and start playback.
-  Future<bool> playQueueIndex(int index) {
-    if (_queue.isEmpty || index < 0 || index >= _queue.length) {
-      return Future<bool>.value(false);
-    }
-    final intentToken = _playbackIntentGate.issue();
-    _automaticCrossfadeInFlight = false;
-    _crossfadeInProgress = false;
-    _completionAdvanceInProgress = false;
-    _lastCompletionSongId = null;
-    return _serializePlayback(
-      () => _playSongInternal(
-        _queue[index],
-        queue: _queue,
-        startIndex: index,
-        playbackIntentToken: intentToken,
-      ),
-      command: 'play',
-      source: 'normal_player',
-      userInitiated: true,
-      intentToken: intentToken,
-      onSuperseded: () async => false,
-    );
-  }
-
   Uri _audioUri(String value) { final path = value.trim(); if (path.startsWith('content://') || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('file://')) return Uri.parse(path); return Uri.file(path); }
 
   Future<void> _stopBoth() async { try { await _playerA.stop(); } catch (_) {} try { await _playerB.stop(); } catch (_) {} try { await _playerA.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerB.setLoopMode(LoopMode.off); } catch (_) {} try { await _playerA.setVolume(1.0); } catch (_) {} try { await _playerB.setVolume(1.0); } catch (_) {} }
@@ -3711,158 +3687,8 @@ class MusicProvider extends ChangeNotifier {
 
   /// Explicit play/resume — used by media-session onPlay and as the play half of toggle.
   /// Never toggles; never pauses.
-  Future<void> resumePlayback({String source = 'normal_player'}) {
-    _podcastSession.onResumed(currentPosition);
-    _audiobookSession.onResumed(currentPosition);
-    _modes?.onPlaybackResumed(currentSong);
-    final intentToken = _playbackIntentGate.issue();
-    _cancelAutomaticPlaybackWork();
-    return _serializePlayback(() async {
-      try {
-        _userWantsPlaying = true;
-        _isDucked = false;
-        if (audioPlayer.audioSource != null) {
-          try {
-            if (source != 'system') {
-              final session = await AudioSession.instance;
-              await session.setActive(true);
-            }
-          } catch (_) {}
-          // If we are sitting on a completed source, seek to zero first.
-          if (audioPlayer.processingState == ProcessingState.completed) {
-            try {
-              await audioPlayer.seek(Duration.zero);
-            } catch (_) {}
-          }
-          final midTransition = _transitionLive;
-          final target = _effectiveCrossfadeMaster.clamp(0.0, 1.0);
-          // Start quiet then fade in (skip only during a real ramp).
-          if (!midTransition) {
-            try {
-              await audioPlayer.setVolume(0.0);
-            } catch (_) {}
-          }
-          for (var attempt = 0; attempt < 12; attempt++) {
-            if (attempt == 0 || attempt == 3 || attempt == 6) {
-              try {
-                audioPlayer.play();
-              } catch (e) {
-                debugPrint('resumePlayback play() fire $attempt failed: $e');
-              }
-            }
-            if (audioPlayer.playing) break;
-            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
-          }
-          if (!midTransition && audioPlayer.playing) {
-            await _fadePlayerVolume(
-              audioPlayer,
-              0.0,
-              target,
-              durationMs: source == 'system' ? 160 : _transportFadeMs,
-            );
-          } else if (!midTransition) {
-            try {
-              await audioPlayer.setVolume(target);
-            } catch (_) {}
-          }
-          isPlaying = audioPlayer.playing || _userWantsPlaying;
-          _publishServiceState();
-          notifyListeners();
-          unawaited(ResonateDiagnostics.record('playback_resume_fade', {
-            'source': source,
-            'faded': !midTransition,
-            'playing': audioPlayer.playing,
-          }));
-          return;
-        }
-        if (currentSong != null) {
-          await _playSongInternal(
-            currentSong!,
-            queue: _queue.isEmpty ? null : _queue,
-            startIndex: _queueIndex,
-            resume: true,
-            playbackIntentToken: intentToken,
-          );
-        }
-      } catch (e) {
-        debugPrint('resumePlayback failed: $e');
-      }
-    }, command: 'play', source: source, userInitiated: source != 'system', intentToken: intentToken);
-  }
-
-  Future<void> togglePlayPause({String source = 'normal_player'}) {
-    // Prefer optimistic isPlaying when native lags; user pause must win.
-    final wantPause = isPlaying || audioPlayer.playing || _userWantsPlaying;
-    if (wantPause) {
-      return this.pause(source: source);
-    }
-    return resumePlayback(source: source);
-  }
-
-
-  
-
-  Future<void> stop({String source = 'normal_player'}) {
-    final intentToken = _playbackIntentGate.issue();
-    _cancelAutomaticPlaybackWork();
-    return _serializePlayback(() async {
-      if (!_playbackIntentGate.isCurrent(intentToken)) return;
-      _userWantsPlaying = false;
-      _podcastSession.onStopped(currentPosition);
-    _audiobookSession.onStopped(currentPosition);
-      _modes?.onPlaybackStopped();
-      await _finishHistoryEvent();
-      await _stopBoth();
-      isPlaying = false;
-      currentPosition = Duration.zero;
-      // Abandon audio focus so other apps can play without mixing with us.
-      try {
-        final session = await AudioSession.instance;
-        await session.setActive(false);
-      } catch (e) {
-        debugPrint('AudioSession setActive(false) on stop failed: $e');
-      }
-      _publishServiceState();
-      notifyListeners();
-      await ResonateDiagnostics.record('audio_focus_stop', {'source': source});
-    }, command: 'stop', source: source, userInitiated: true, intentToken: intentToken);
-  }
-
-
   /// If the target queue index is already inside the active gapless window,
   /// seek to that local index instead of rebuilding ConcatenatingAudioSource.
-  Future<bool> _tryGaplessSeekToQueueIndex(int queueIndex) async {
-    if (!_gaplessWindow.active || effectiveCrossfadeEnabled) return false;
-    if (queueIndex < 0 || queueIndex >= _queue.length) return false;
-    final song = _queue[queueIndex];
-    final local = _gaplessWindow.songIds.indexOf(song.id);
-    if (local < 0) return false;
-    try {
-      await audioPlayer.seek(Duration.zero, index: local);
-      _queueIndex = queueIndex;
-      currentSong = song;
-      unawaited(_refreshTrackLevelingFor(currentSong));
-      currentDuration = song.duration ?? audioPlayer.duration;
-      currentPosition = Duration.zero;
-      isPlaying = true;
-      _userWantsPlaying = true;
-      try {
-        audioPlayer.play();
-      } catch (_) {}
-      _publishServiceState();
-      notifyListeners();
-      await ResonateDiagnostics.record('playback_gapless_seek', {
-        'localIndex': local,
-        'queueIndex': queueIndex,
-        'songId': song.id,
-      });
-      return true;
-    } catch (e) {
-      debugPrint('Gapless seek failed: $e');
-      return false;
-    }
-  }
-
   int _pendingNextSteps = 0;
 
   
@@ -3908,7 +3734,6 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await this.playSong(songs[index], queue: songs, startIndex: index); }
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
   @override
   void dispose() {
