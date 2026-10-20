@@ -53,6 +53,20 @@ class AudioEffectsBridge {
     return null;
   }
 
+  /// Set the native Digital Volume Control gain, independent of EQ preamp.
+  /// The native engine smooths the transition; range is -24 dB to +6 dB.
+  static Future<Map<String, dynamic>?> setLiveDspDvcDb(double db) async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('setLiveDspDvcDb', {
+        'db': db.clamp(-24.0, 6.0),
+      });
+      if (raw is Map) return Map<String, dynamic>.from(raw);
+    } catch (e) {
+      debugPrint('setLiveDspDvcDb failed: $e');
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>?> setLiveDspEqBands({
     List<double>? centersHz,
     required List<double> gainsDb,
