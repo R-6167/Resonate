@@ -26,6 +26,7 @@ import 'providers/playback_features_provider.dart';
 import 'providers/playlist_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
+import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
 import 'services/playback_diagnostics_observer.dart';
@@ -284,6 +285,7 @@ class ResonateApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
+        ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
           create: (_) => MusicProvider(audioHandler: audioHandler),
         ),
