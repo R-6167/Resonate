@@ -39,7 +39,6 @@ void main() {
     });
   });
 
-
   group('CrossfadeOrchestrator gains', () {
     test('starts with outgoing audio only and ends with incoming audio only', () {
       final start = CrossfadeOrchestrator.gains(
@@ -97,6 +96,17 @@ void main() {
       expect(before.incoming, closeTo(0.0, 1e-9));
       expect(after.outgoing, closeTo(0.0, 1e-9));
       expect(after.incoming, closeTo(1.0, 1e-9));
+    });
+
+    test('treats non-positive duration as a completed fade', () {
+      final gains = CrossfadeOrchestrator.gains(
+        elapsedMs: 0,
+        totalMs: 0,
+        fadeType: 'linear',
+      );
+
+      expect(gains.outgoing, closeTo(0.0, 1e-9));
+      expect(gains.incoming, closeTo(1.0, 1e-9));
     });
   });
 }

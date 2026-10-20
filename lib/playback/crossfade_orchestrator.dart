@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'crossfade_frame_progress.dart';
+
 /// Deterministic timing policy and fade-curve math for crossfade execution.
 ///
 /// This class deliberately does not own audio players or execute handoffs;
@@ -16,7 +18,10 @@ class CrossfadeOrchestrator {
     required int totalMs,
     required String fadeType,
   }) {
-    final linear = (elapsedMs / totalMs).clamp(0.0, 1.0);
+    final linear = CrossfadeFrameProgress.calculate(
+      elapsedMs: elapsedMs,
+      totalMs: totalMs,
+    ).fraction;
     final eased = switch (fadeType) {
       'ease_in' => linear * linear,
       'ease_out' => 1.0 - ((1.0 - linear) * (1.0 - linear)),
