@@ -1,0 +1,35 @@
+name: Purge QueueStore temp artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/cleanup-and-crossfade-settings]
+    paths:
+      - ".github/workflows/purge-queue-store-temp.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/cleanup-and-crossfade-settings
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove temporary split tooling
+        run: |
+          set -euo pipefail
+          rm -rf tool/patches tool/queue_store_chunks
+          rm -f tool/apply_queue_store_wire.sh tool/assemble_music_provider.sh
+          rm -f .github/workflows/apply-queue-store-wire.yml
+          rm -f .github/workflows/assemble-queue-store-music-provider.yml
+          # leave this workflow for one commit then it can stay or be removed later
+          echo "Remaining tool/:"; ls -la tool 2>/dev/null || echo "(empty or gone)"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: purge QueueStore temporary upload artifacts"
+          branch: chore/cleanup-and-crossfade-settings

@@ -1,0 +1,39 @@
+name: Apply QueueStore completion patch
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chore/cleanup-and-crossfade-settings]
+    paths:
+      - "tool/patches/queue_store_complete.patch"
+      - ".github/workflows/apply-queue-store-complete.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/cleanup-and-crossfade-settings
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply completion patch
+        run: |
+          set -euo pipefail
+          if grep -q "_queueStore.persist()" lib/providers/music_provider.dart; then
+            echo "Already complete"
+            exit 0
+          fi
+          patch -p1 --batch --forward < tool/patches/queue_store_complete.patch
+          grep -q "_queueStore.persist()" lib/providers/music_provider.dart
+          grep -q "shuffleUpcoming" lib/providers/music_provider.dart
+          echo "QueueStore completion applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: route queue persist/shuffle through QueueStore"
+          file_pattern: lib/providers/music_provider.dart
+          branch: chore/cleanup-and-crossfade-settings
