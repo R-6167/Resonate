@@ -162,4 +162,21 @@ class DspEngineRegistryTest {
         assertTrue(blocking.calls.any { it == "volume:3003:0.42" })
     }
 
+
+    @Test
+    fun master_enable_updates_live_engines_and_is_inherited_by_new_engines() {
+        assertTrue(DspEngineRegistry.register(1, 1001L))
+        DspEngineRegistry.applyEnabledAll(false)
+        assertTrue(fake.calls.any { it == "enabled:1001:false" })
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(2, 2002L))
+        assertTrue(fake.calls.any { it == "enabled:2002:false" })
+
+        fake.calls.clear()
+        DspEngineRegistry.applyEnabledAll(true)
+        assertTrue(fake.calls.any { it == "enabled:1001:true" })
+        assertTrue(fake.calls.any { it == "enabled:2002:true" })
+    }
+
 }
