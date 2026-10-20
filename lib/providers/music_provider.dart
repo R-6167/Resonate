@@ -40,6 +40,7 @@ import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
 import '../playback/focus_interruption_runtime.dart';
 import '../playback/playback_history_session.dart';
+import '../playback/gapless_window_state.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -258,9 +259,7 @@ class MusicProvider extends ChangeNotifier {
   final DjBeatDriftCorrector _djBeatDriftCorrector = const DjBeatDriftCorrector();
 
   int? _androidSdkInt;
-  int _gaplessWindowStart = 0;
-  List<String> _gaplessWindowIds = const [];
-  bool _gaplessSourceActive = false;
+  final GaplessWindowState _gaplessWindow = GaplessWindowState();
   bool get _transportInFlight => _transportEpoch.inFlight;
   set _transportInFlight(bool value) => _transportEpoch.inFlight = value;
   int get _pendingUserTransportCount => _transportEpoch.pendingCount;
@@ -1490,9 +1489,9 @@ class MusicProvider extends ChangeNotifier {
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
       if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
-      if (!_gaplessSourceActive || _transportInFlight) return;
-      if (index < 0 || index >= _gaplessWindowIds.length) return;
-      final songId = _gaplessWindowIds[index];
+      if (!_gaplessWindow.active || _transportInFlight) return;
+      if (index < 0 || index >= _gaplessWindow.songIds.length) return;
+      final songId = _gaplessWindow.songIds[index];
       final globalIndex = _queue.indexWhere((s) => s.id == songId);
       if (globalIndex < 0) return;
       if (globalIndex == _queueIndex && currentSong?.id == songId) return;
@@ -1509,7 +1508,7 @@ class MusicProvider extends ChangeNotifier {
       unawaited(ResonateDiagnostics.record('playback_gapless_index', {
         'localIndex': index,
         'queueIndex': globalIndex,
-        'windowStart': _gaplessWindowStart,
+        'windowStart': _gaplessWindow.start,
         'songId': currentSong?.id,
       }));
     });
@@ -3125,8 +3124,8 @@ class MusicProvider extends ChangeNotifier {
       // library (270+ content:// URIs caused Loading interrupted / stalled UI).
       const gaplessWindow = 12;
       final wantGapless = !_crossfadeEnabled && nextQueue.length > 1;
-      _gaplessSourceActive = false;
-      _gaplessWindowIds = const [];
+      _gaplessWindow.active = false;
+      _gaplessWindow.songIds = const [];
       if (wantGapless) {
         try {
           final start = (nextIndex - 1).clamp(0, nextQueue.length - 1);
@@ -3149,9 +3148,9 @@ class MusicProvider extends ChangeNotifier {
               ),
               ms: 15000,
             );
-            _gaplessSourceActive = true;
-            _gaplessWindowStart = start;
-            _gaplessWindowIds = window.map((s) => s.id).toList();
+            _gaplessWindow.active = true;
+            _gaplessWindow.start = start;
+            _gaplessWindow.songIds = window.map((s) => s.id).toList();
             await ResonateDiagnostics.record('playback_gapless_source', {
               'children': children.length,
               'localIndex': safeLocal,
@@ -3163,8 +3162,8 @@ class MusicProvider extends ChangeNotifier {
         } catch (e) {
           debugPrint('Gapless setAudioSource failed: $e');
           durationFromSource = null;
-          _gaplessSourceActive = false;
-          _gaplessWindowIds = const [];
+          _gaplessWindow.active = false;
+          _gaplessWindow.songIds = const [];
         }
       }
       if (durationFromSource == null) {
@@ -3955,7 +3954,7 @@ class MusicProvider extends ChangeNotifier {
 
       // Gapless concatenating source fights dual-engine crossfade (index jumps,
       // double-completion). Flatten outgoing to a single URI at current position.
-      if (_gaplessSourceActive && outgoingSong != null) {
+      if (_gaplessWindow.active && outgoingSong != null) {
         final holdPos = outgoing.position;
         final wasPlaying = outgoing.playing;
         try {
@@ -3984,8 +3983,8 @@ class MusicProvider extends ChangeNotifier {
         } catch (e) {
           debugPrint('gapless flatten for crossfade: $e');
         }
-        _gaplessSourceActive = false;
-        _gaplessWindowIds = const [];
+        _gaplessWindow.active = false;
+        _gaplessWindow.songIds = const [];
       }
 
       final alreadyPreloaded = _preloadedNextSongId == nextSong.id;
@@ -5057,10 +5056,10 @@ class MusicProvider extends ChangeNotifier {
   /// If the target queue index is already inside the active gapless window,
   /// seek to that local index instead of rebuilding ConcatenatingAudioSource.
   Future<bool> _tryGaplessSeekToQueueIndex(int queueIndex) async {
-    if (!_gaplessSourceActive || effectiveCrossfadeEnabled) return false;
+    if (!_gaplessWindow.active || effectiveCrossfadeEnabled) return false;
     if (queueIndex < 0 || queueIndex >= _queue.length) return false;
     final song = _queue[queueIndex];
-    final local = _gaplessWindowIds.indexOf(song.id);
+    final local = _gaplessWindow.songIds.indexOf(song.id);
     if (local < 0) return false;
     try {
       await audioPlayer.seek(Duration.zero, index: local);
