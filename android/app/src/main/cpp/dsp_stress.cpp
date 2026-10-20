@@ -3,6 +3,7 @@
  */
 #include "dsp_engine.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -161,7 +162,7 @@ extern "C" int dsp_run_ab_stress(int32_t iterations, int32_t* failures, int64_t*
     const int sr = 48000;
     const int ch = 2;
     const int frames = 256;
-    const int64_t max_abs_limit = 1.001;
+    const double max_abs_limit = 1.001;
 
     DspConfig cfg{};
     cfg.sample_rate = sr;
