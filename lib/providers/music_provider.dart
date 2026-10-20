@@ -4276,6 +4276,8 @@ class MusicProvider extends ChangeNotifier {
           return false;
         }
         final elapsed = DateTime.now().difference(fadeStartedAt).inMilliseconds;
+        // The runtime monitor and DJ FX sweep also use normalized progress.
+        final linear = (elapsed / total).clamp(0.0, 1.0);
         final gains = CrossfadeOrchestrator.gains(
           elapsedMs: elapsed,
           totalMs: total,
