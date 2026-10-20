@@ -37,6 +37,7 @@ import '../playback/crossfade_runtime.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
+import '../playback/audio_leveling_settings.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -96,10 +97,13 @@ class MusicProvider extends ChangeNotifier {
   /// Effective preamp scale (user preamp multiplied by conservative track trim).
   /// Existing recovery, ducking and crossfade paths all consume this value.
   double _eqPreampScale = 1.0;
-  static const String _audioLevelingEnabledKey = 'audio_leveling_enabled_v1';
-  static const String _audioLevelingTargetKey = 'audio_leveling_target_rms_dbfs_v1';
-  bool _audioLevelingEnabled = false;
-  double _audioLevelingTargetRmsDbfs = LoudnessService.defaultTargetRmsDbfs;
+  final AudioLevelingSettings _levelingSettings = AudioLevelingSettings();
+  /// Compatibility aliases — leveling prefs live in [_levelingSettings].
+  bool get _audioLevelingEnabled => _levelingSettings.enabled;
+  set _audioLevelingEnabled(bool value) => _levelingSettings.enabled = value;
+  double get _audioLevelingTargetRmsDbfs => _levelingSettings.targetRmsDbfs;
+  set _audioLevelingTargetRmsDbfs(double value) =>
+      _levelingSettings.targetRmsDbfs = value;
   double _trackLevelingScale = 1.0;
   int _trackLevelingGeneration = 0;
   final LoudnessService _loudnessService = LoudnessService();
@@ -339,25 +343,15 @@ class MusicProvider extends ChangeNotifier {
   double get audioLevelingTargetRmsDbfs => _audioLevelingTargetRmsDbfs;
 
   Future<void> setAudioLevelingEnabled(bool enabled) async {
-    if (_audioLevelingEnabled == enabled) return;
-    _audioLevelingEnabled = enabled;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_audioLevelingEnabledKey, enabled);
-    } catch (_) {}
+    if (!_levelingSettings.setEnabled(enabled)) return;
+    await _levelingSettings.persist();
     await _refreshTrackLevelingFor(currentSong);
     notifyListeners();
   }
 
   Future<void> setAudioLevelingTargetRmsDbfs(double target) async {
-    if (!target.isFinite) return;
-    final safeTarget = target.clamp(-24.0, -12.0).toDouble();
-    if ((_audioLevelingTargetRmsDbfs - safeTarget).abs() < 0.001) return;
-    _audioLevelingTargetRmsDbfs = safeTarget;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_audioLevelingTargetKey, safeTarget);
-    } catch (_) {}
+    if (!_levelingSettings.setTargetRmsDbfs(target)) return;
+    await _levelingSettings.persist();
     await _refreshTrackLevelingFor(currentSong);
     notifyListeners();
   }
@@ -633,8 +627,7 @@ class MusicProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       _shuffleEnabled = prefs.getBool(QueueStore.shuffleEnabledKey) ?? false;
-      _audioLevelingEnabled = prefs.getBool(_audioLevelingEnabledKey) ?? false;
-      _audioLevelingTargetRmsDbfs = (prefs.getDouble(_audioLevelingTargetKey) ?? LoudnessService.defaultTargetRmsDbfs).clamp(-24.0, -12.0).toDouble();
+      await _levelingSettings.load(prefs);
       await _audioFocusSettings.load(prefs);
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
