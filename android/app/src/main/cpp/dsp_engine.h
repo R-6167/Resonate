@@ -89,6 +89,7 @@ void  dsp_set_volume(void* handle, double linear_gain);
 void  dsp_set_preamp(void* handle, double linear_gain);
 
 void  dsp_eq_set_enabled(void* handle, bool enabled);
+void  dsp_set_processing_enabled(void* handle, bool enabled);
 void  dsp_eq_set_bands(void* handle, const double* centers_hz, const double* gains_db, int32_t count);
 void  dsp_eq_set_band(void* handle, int32_t index, double freq_hz, double gain_db, double q);
 
