@@ -39,6 +39,7 @@ import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
+import '../playback/leveling_runtime.dart';
 import '../playback/focus_interruption_runtime.dart';
 import '../playback/playback_history_session.dart';
 import '../playback/gapless_window_state.dart';
@@ -97,11 +98,12 @@ class MusicProvider extends ChangeNotifier {
   Duration currentPosition = Duration.zero;
   Duration? currentDuration;
   double _volume = 1.0;
-  /// User-selected EQ preamp, kept separate from the track leveling trim.
-  double _eqPreampUserScale = 1.0;
-  /// Effective preamp scale (user preamp multiplied by conservative track trim).
-  /// Existing recovery, ducking and crossfade paths all consume this value.
-  double _eqPreampScale = 1.0;
+  /// User preamp and track trim remain separate; runtime owns their derived scale.
+  final LevelingRuntime _levelingRuntime = LevelingRuntime();
+  double get _eqPreampUserScale => _levelingRuntime.userPreampScale;
+  set _eqPreampUserScale(double value) => _levelingRuntime.setUserPreampScale(value);
+  double get _eqPreampScale => _levelingRuntime.effectivePreampScale;
+  set _eqPreampScale(double value) => _levelingRuntime.effectivePreampScale = value;
   final AudioLevelingSettings _levelingSettings = AudioLevelingSettings();
   /// Compatibility aliases — leveling prefs live in [_levelingSettings].
   bool get _audioLevelingEnabled => _levelingSettings.enabled;
@@ -109,8 +111,10 @@ class MusicProvider extends ChangeNotifier {
   double get _audioLevelingTargetRmsDbfs => _levelingSettings.targetRmsDbfs;
   set _audioLevelingTargetRmsDbfs(double value) =>
       _levelingSettings.targetRmsDbfs = value;
-  double _trackLevelingScale = 1.0;
-  int _trackLevelingGeneration = 0;
+  double get _trackLevelingScale => _levelingRuntime.trackScale;
+  set _trackLevelingScale(double value) => _levelingRuntime.setTrackScale(value);
+  int get _trackLevelingGeneration => _levelingRuntime.refreshGeneration;
+  set _trackLevelingGeneration(int value) => _levelingRuntime.refreshGeneration = value;
   final LoudnessService _loudnessService = LoudnessService();
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
   double _sleepFadeScale = 1.0;
