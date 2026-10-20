@@ -39,6 +39,7 @@ import '../playback/crossfade_frame_volumes.dart';
 import '../playback/crossfade_frame_progress.dart';
 import '../playback/crossfade_transition_guard.dart';
 import '../playback/crossfade_fallback_target.dart';
+import '../playback/crossfade_fallback_fade.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
@@ -2500,7 +2501,7 @@ class MusicProvider extends ChangeNotifier {
     }
     for (var i = 1; i <= steps; i++) {
       final t = i / steps;
-      final gain = math.cos(t * (math.pi / 2.0));
+      final gain = CrossfadeFallbackFade.outgoingGain(t);
       try {
         await player.setVolume((start * gain).clamp(0.0, 1.0));
       } catch (_) {}
