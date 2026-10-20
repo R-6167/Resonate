@@ -44,6 +44,7 @@ import '../playback/focus_interruption_runtime.dart';
 import '../playback/playback_history_session.dart';
 import '../playback/gapless_window_state.dart';
 import '../playback/mode_playback_policy_state.dart';
+import '../playback/volume_facade.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -97,7 +98,9 @@ class MusicProvider extends ChangeNotifier {
   bool isPlaying = false;
   Duration currentPosition = Duration.zero;
   Duration? currentDuration;
-  double _volume = 1.0;
+  final VolumeFacade _volumeFacade = VolumeFacade();
+  double get _volume => _volumeFacade.userVolume;
+  set _volume(double value) => _volumeFacade.setUserVolume(value);
   /// User preamp and track trim remain separate; runtime owns their derived scale.
   final LevelingRuntime _levelingRuntime = LevelingRuntime();
   double get _eqPreampUserScale => _levelingRuntime.userPreampScale;
@@ -117,7 +120,8 @@ class MusicProvider extends ChangeNotifier {
   set _trackLevelingGeneration(int value) => _levelingRuntime.refreshGeneration = value;
   final LoudnessService _loudnessService = LoudnessService();
   /// Sleep-timer fade multiplier (1.0 = full, 0.0 = silent). Applied on top of preamp.
-  double _sleepFadeScale = 1.0;
+  double get _sleepFadeScale => _volumeFacade.sleepFadeScale;
+  set _sleepFadeScale(double value) => _volumeFacade.setSleepFadeScale(value);
   /// Optional listener for Android audio session (Resonate native DSP).
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
