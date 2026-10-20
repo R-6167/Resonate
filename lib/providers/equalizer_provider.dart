@@ -922,8 +922,7 @@ class EqualizerProvider extends ChangeNotifier {
       }
       // Keep the versioned canonical snapshot aligned while legacy keys are
       // retained for compatibility during the staged migration.
-      final canonical = await DspSettings.load();
-      await DspSettings.save(canonical.copyWith(
+      await DspSettings.update((canonical) => canonical.copyWith(
         eqEnabled: isEnabled,
         preset: preset,
         eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
