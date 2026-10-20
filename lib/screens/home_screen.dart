@@ -13,6 +13,9 @@ import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
+import '../widgets/ask_resonate/ask_resonate_controller.dart';
+import '../widgets/ask_resonate/ask_resonate_orb.dart';
+import '../widgets/ask_resonate/ask_resonate_overlay.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
@@ -89,9 +92,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleScroll(ScrollNotification notification) {
-    // A vertical list inside the horizontal PageView commonly arrives at depth 1.
-    // Ignore only deeply nested scrollables to avoid unrelated inner gestures
-    // controlling the app-level navigation.
     if (notification.depth > 1 || notification.metrics.axis != Axis.vertical) return;
 
     final delta = notification is ScrollUpdateNotification
@@ -101,8 +101,6 @@ class _HomeScreenState extends State<HomeScreen> {
             : null;
     if (delta == null || delta.abs() < 2) return;
 
-    // Scrolling deeper into a list tucks the bar away; reversing the gesture
-    // brings it back. The mini-player remains available above the nav bar.
     final shouldShow = delta < 0;
     if (shouldShow != _navigationVisible && mounted) {
       setState(() => _navigationVisible = shouldShow);
@@ -111,27 +109,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // FAB on For You (0), Library (1), Player (2) — not Settings (3).
     final showAsk = _selectedIndex <= 2;
 
+    final labels = const ['For You', 'Library', 'Player', 'Settings'];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 3)]);
+    });
+
     return Scaffold(
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          _handleScroll(notification);
-          return false;
-        },
-        child: PageView.builder(
-          controller: _pageController,
-          itemCount: _screens.length,
-          onPageChanged: (index) => setState(() {
-          _selectedIndex = index;
-          _navigationVisible = true;
-        }),
-          itemBuilder: (_, index) => _screens[index],
-        ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              _handleScroll(notification);
+              return false;
+            },
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _screens.length,
+              onPageChanged: (index) => setState(() {
+                _selectedIndex = index;
+                _navigationVisible = true;
+              }),
+              itemBuilder: (_, index) => _screens[index],
+            ),
+          ),
+          if (showAsk) const AskResonateOrb(),
+          if (context.watch<AskResonateController>().isOpen)
+            const AskResonateOverlay(),
+        ],
       ),
-      floatingActionButton: showAsk ? const AskResonateFab() : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -198,9 +207,6 @@ class _HomeDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
-    // MusicProvider emits frequent position/engine notifications. Select only the
-    // playback fields this dashboard renders so position ticks don't rebuild the
-    // entire For You feed while the user scrolls.
     final music = context.read<MusicProvider>();
     final currentSong = context.select<MusicProvider, Song?>((p) => p.currentSong);
     final isPlaying = context.select<MusicProvider, bool>((p) => p.isPlaying);
@@ -214,7 +220,6 @@ class _HomeDashboard extends StatelessWidget {
     final recommendationQueue = intelligence.recommendations.map((item) => item.song).toList();
     final children = <Widget>[
       const SizedBox(height: 6),
-      // Combined Intelligence + Autopilot + nudge (single card, no duplicate sections)
       AutopilotHomeCard(songCount: songs.length),
     ];
 
@@ -251,7 +256,6 @@ class _HomeDashboard extends StatelessWidget {
       ]);
     }
 
-    // Recently played from local listening history
     final history = context.watch<ListeningHistoryProvider>();
     final recentSongs = <Song>[];
     final seen = <String>{};
@@ -284,21 +288,11 @@ class _HomeDashboard extends StatelessWidget {
                     leading: const CircleAvatar(
                       child: Icon(Icons.history_rounded, size: 18),
                     ),
-                    title: Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      song.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
                     onTap: () async {
                       await music.playSong(song);
-                      if (context.mounted) {
-                        openShellPlayer(context);
-                      }
+                      if (context.mounted) openShellPlayer(context);
                     },
                   ),
                 ),
@@ -313,8 +307,8 @@ class _HomeDashboard extends StatelessWidget {
       children.addAll([
         const SizedBox(height: 16),
         const DrivingSuggestionBanner(),
-      const ModeShelfCard(),
-      const EvolvingMixCard(),
+        const ModeShelfCard(),
+        const EvolvingMixCard(),
       ]);
     }
 
@@ -322,39 +316,38 @@ class _HomeDashboard extends StatelessWidget {
       children.addAll([
         const SizedBox(height: 20),
         _sectionTitle(context, 'Now playing'),
-        ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(
-          leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
-          title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
-              const DjModeStatusChip(dense: true),
-            ],
-          ),
-          trailing: FilledButton.tonalIcon(
-            style: FilledButton.styleFrom(
-              minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
-              padding: EdgeInsets.symmetric(
-                horizontal: density.largeControls ? 18 : 12,
-                vertical: density.largeControls ? 12 : 8,
+        ResonateGlassCard(
+          padding: EdgeInsets.zero,
+          child: ListTile(
+            leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
+            title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 4),
+                const DjModeStatusChip(dense: true),
+              ],
+            ),
+            trailing: FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(
+                minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
+                padding: EdgeInsets.symmetric(
+                  horizontal: density.largeControls ? 18 : 12,
+                  vertical: density.largeControls ? 12 : 8,
+                ),
               ),
+              onPressed: () => PlaybackAuthority.instance.userToggle(music),
+              icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: density.largeControls ? 28 : 22),
+              label: Text(isPlaying ? 'Pause' : 'Play'),
             ),
-            onPressed: () => PlaybackAuthority.instance.userToggle(music),
-            icon: Icon(
-              isPlaying ? Icons.pause : Icons.play_arrow,
-              size: density.largeControls ? 28 : 22,
-            ),
-            label: Text(isPlaying ? 'Pause' : 'Play'),
+            onTap: () => openShellPlayer(context),
           ),
-          onTap: () => openShellPlayer(context),
-        )),
+        ),
       ]);
     }
 
-    // “More music…” keeps additional recommendations (skip #1 is already the nudge inside the card)
     children.addAll([
       const SizedBox(height: 20),
       _sectionTitle(context, intelligence.isEnabled ? 'More music for this moment' : 'Suggested from your library'),
@@ -380,7 +373,6 @@ class _HomeDashboard extends StatelessWidget {
 
 class _SessionCard extends StatelessWidget {
   final IntelligenceProvider intelligence;
-
   const _SessionCard({required this.intelligence});
 
   @override
@@ -409,7 +401,6 @@ class _SessionCard extends StatelessWidget {
 
 class _LearningWaveDots extends StatefulWidget {
   const _LearningWaveDots();
-
   @override
   State<_LearningWaveDots> createState() => _LearningWaveDotsState();
 }
@@ -452,7 +443,6 @@ class _LearningWaveDotsState extends State<_LearningWaveDots> with SingleTickerP
 }
 
 double mathSin(double value) {
-  // Small local sine approximation keeps this animation dependency-free.
   var x = value;
   while (x > 3.1415926535) x -= 6.283185307;
   while (x < -3.1415926535) x += 6.283185307;
@@ -463,7 +453,6 @@ double mathSin(double value) {
 class _RecommendationTile extends StatefulWidget {
   final IntelligenceRecommendation item;
   final List<dynamic> songs;
-
   const _RecommendationTile({required this.item, required this.songs});
 
   @override
@@ -495,20 +484,28 @@ class _RecommendationTileState extends State<_RecommendationTile> {
         final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
         final confidenceText = '${widget.item.confidenceLabel} • $confidence%';
         return ResonateGlassCard(
-          // Live BackdropFilter blur on every recommendation card is expensive
-          // during scrolling, particularly on low-end Android devices.
           blurEnabled: false,
           padding: EdgeInsets.zero,
           margin: const EdgeInsets.only(bottom: 9),
           child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)),
+            leading: CircleAvatar(
+              child: _loading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.music_note_rounded),
+            ),
             title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text('${widget.item.song.artist}\n$confidenceText • ${widget.item.reason}', maxLines: 3, overflow: TextOverflow.ellipsis),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: liked ? 'Unlike' : 'Like', icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded), onPressed: _loading ? null : () => library.toggleFavorite(widget.item.song)),
-              _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play),
-            ]),
-            onTap: _loading ? null : _play,
+            subtitle: Text(
+              '${widget.item.song.artist}\n$confidenceText · ${widget.item.reason}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            isThreeLine: true,
+            trailing: IconButton(
+              tooltip: liked ? 'Unlike' : 'Like',
+              icon: Icon(liked ? Icons.favorite : Icons.favorite_border),
+              onPressed: () => library.toggleFavorite(widget.item.song),
+            ),
+            onTap: _play,
           ),
         );
       },
