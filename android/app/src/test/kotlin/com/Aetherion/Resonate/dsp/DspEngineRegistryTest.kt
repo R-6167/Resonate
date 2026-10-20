@@ -14,6 +14,10 @@ class DspEngineRegistryTest {
         val calls = mutableListOf<String>()
 
         override fun setEnabled(handle: Long, enabled: Boolean) {
+            calls += "eq-enabled:" + handle + ":" + enabled
+        }
+
+        override fun setProcessingEnabled(handle: Long, enabled: Boolean) {
             calls += "enabled:" + handle + ":" + enabled
         }
 
