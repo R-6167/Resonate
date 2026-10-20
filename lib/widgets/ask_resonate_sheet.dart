@@ -6,9 +6,11 @@ import '../providers/intelligence_provider.dart';
 import '../providers/music_provider.dart';
 import '../services/companion_command_executor.dart';
 import '../services/local_intent_parser.dart';
+import 'ask_resonate/ask_resonate_controller.dart';
 import 'blur_sheet.dart';
 
-/// Floating “Ask Resonate” entry — show only on For You / Library / Player.
+/// Floating "Ask Resonate" entry — legacy extended FAB (kept for deep links).
+/// Prefer the persistent [AskResonateOrb] in the shell Stack.
 class AskResonateFab extends StatelessWidget {
   const AskResonateFab({super.key});
 
@@ -23,13 +25,21 @@ class AskResonateFab extends StatelessWidget {
   }
 }
 
+/// Opens Ask Resonate. Uses the new living overlay when [AskResonateController]
+/// is in the tree; otherwise falls back to the blurred bottom sheet.
 Future<void> openAskResonate(BuildContext context) {
-  return showBlurredModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (ctx) => const _AskResonateBody(),
-  );
+  try {
+    final ctrl = context.read<AskResonateController>();
+    ctrl.open();
+    return Future<void>.value();
+  } catch (_) {
+    return showBlurredModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => const _AskResonateBody(),
+    );
+  }
 }
 
 class _AskResonateBody extends StatefulWidget {
@@ -47,7 +57,7 @@ class _AskResonateBodyState extends State<_AskResonateBody> {
   static const _commands = <(String, String, CompanionIntent)>[
     (
       'More like this',
-      'Similar to what’s playing',
+      'Similar to what\'s playing',
       CompanionIntent(action: CompanionAction.similarToCurrent),
     ),
     (
