@@ -41,6 +41,7 @@ import '../playback/audio_leveling_settings.dart';
 import '../playback/focus_interruption_runtime.dart';
 import '../playback/playback_history_session.dart';
 import '../playback/gapless_window_state.dart';
+import '../playback/mode_playback_policy_state.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -125,10 +126,11 @@ class MusicProvider extends ChangeNotifier {
   set _queueIndex(int value) => _queueStore.index = value;
   bool get _shuffleEnabled => _queueStore.shuffleEnabled;
   set _shuffleEnabled(bool value) => _queueStore.shuffleEnabled = value;
-  /// Mode soft-gates (from ModeProvider). Defaults preserve legacy behavior.
-  bool _modeCrossfadeAllowed = true;
-  bool _modeShuffleAllowed = true;
-  bool _modePreciseResume = false;
+  /// Compatibility aliases — mode policy runtime lives in [ModePlaybackPolicyState].
+  final ModePlaybackPolicyState _modePlaybackPolicy = ModePlaybackPolicyState();
+  bool get _modeCrossfadeAllowed => _modePlaybackPolicy.crossfadeAllowed;
+  bool get _modeShuffleAllowed => _modePlaybackPolicy.shuffleAllowed;
+  bool get _modePreciseResume => _modePlaybackPolicy.preciseResume;
 
   PlaybackRepeatMode _repeatMode = PlaybackRepeatMode.off;
   final CrossfadeRuntime _crossfadeRuntime = CrossfadeRuntime();
@@ -839,12 +841,11 @@ class MusicProvider extends ChangeNotifier {
     required bool preciseResume,
   }) {
     final crossfadeWasAllowed = _modeCrossfadeAllowed;
-    final changed = _modeCrossfadeAllowed != crossfadeAllowed ||
-        _modeShuffleAllowed != shuffleAllowed ||
-        _modePreciseResume != preciseResume;
-    _modeCrossfadeAllowed = crossfadeAllowed;
-    _modeShuffleAllowed = shuffleAllowed;
-    _modePreciseResume = preciseResume;
+    final changed = _modePlaybackPolicy.update(
+      crossfadeAllowed: crossfadeAllowed,
+      shuffleAllowed: shuffleAllowed,
+      preciseResume: preciseResume,
+    );
 
     // A Mode boundary is an authority boundary. If the new Mode blocks
     // crossfade (notably Podcast/Audiobook), an already-running automatic
