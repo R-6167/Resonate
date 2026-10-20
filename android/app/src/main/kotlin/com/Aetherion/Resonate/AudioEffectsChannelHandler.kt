@@ -35,6 +35,7 @@ internal class AudioEffectsChannelHandler {
                         result.success(true)
                     }
                     // Live DSP controls have their own boundary from Android system effects.
+                    "setLiveDspEnabled",
                     "setLiveDspPreampDb",
                     "setLiveDspLimiterCeiling",
                     "setLiveDspCrossoverHz",

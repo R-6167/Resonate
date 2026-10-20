@@ -19,6 +19,7 @@ object DspEngineRegistry {
     /** Small native seam so registry inheritance can be tested without loading JNI in JVM tests. */
     internal interface NativeDspApi {
         fun setEnabled(handle: Long, enabled: Boolean)
+        fun setProcessingEnabled(handle: Long, enabled: Boolean)
         fun setVolume(handle: Long, linearGain: Double)
         fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean)
         fun setSpeakerMode(handle: Long, enabled: Boolean)
@@ -30,6 +31,7 @@ object DspEngineRegistry {
 
     private val jniApi = object : NativeDspApi {
         override fun setEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetEnabled(handle, enabled)
+        override fun setProcessingEnabled(handle: Long, enabled: Boolean) = DspEngineJni.nativeSetProcessingEnabled(handle, enabled)
         override fun setVolume(handle: Long, linearGain: Double) = DspEngineJni.nativeSetVolume(handle, linearGain)
         override fun setEqBands(handle: Long, centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) =
             DspEngineJni.nativeSetEqBands(handle, centersHz, gainsDb, enabled)
@@ -52,6 +54,7 @@ object DspEngineRegistry {
     private data class StickyState(
         val linearGain: Double = 1.0,
         val eqEnabled: Boolean = true,
+        val dspEnabled: Boolean = true,
         val centersHz: DoubleArray? = null,
         val gainsDb: DoubleArray? = null,
         val speakerMode: Boolean = false,
@@ -180,6 +183,7 @@ object DspEngineRegistry {
             "nativeAllowed" to DspSessionGate.isNativeAllowed(),
             "linearGain" to stickyState.linearGain,
             "eqEnabled" to stickyState.eqEnabled,
+            "dspEnabled" to stickyState.dspEnabled,
             "eqBands" to (stickyState.gainsDb?.size ?: 0),
             "speakerMode" to stickyState.speakerMode,
             "virtualBass" to stickyState.virtualBass,
@@ -188,6 +192,22 @@ object DspEngineRegistry {
         return base
     }
 
+
+    /** Master native DSP enable; independent from EQ-band enable and DVC gain. */
+    @JvmStatic
+    @Synchronized
+    fun applyEnabledAll(enabled: Boolean) {
+        stickyState = stickyState.copy(dspEnabled = enabled)
+        val list = snapshotHandles()
+        for (h in list) {
+            try {
+                nativeApi.setProcessingEnabled(h, enabled)
+            } catch (t: Throwable) {
+                Log.w(TAG, "setEnabled failed handle=$h", t)
+            }
+        }
+        Log.i(TAG, "applyEnabledAll enabled=$enabled targets=${list.size}")
+    }
 
     /** True preamp (v0.4) — separate from DVC/volume. */
     @JvmStatic
@@ -271,6 +291,7 @@ object DspEngineRegistry {
         val state = stickyState
         try {
             nativeApi.setVolume(handle, state.linearGain)
+            nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
                 nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)

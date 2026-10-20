@@ -124,3 +124,26 @@ When native injection is unavailable, keep playback alive and explain that the a
 7. Add profiles/automation only after the controls are stable and testable.
 
 Keep each phase a small PR. Avoid another broad rewrite of `MusicProvider`; keep transport/crossfade gain envelopes and DSP user gain independently owned.
+
+
+## Bridge wiring repair (follow-up PR)
+
+The legacy `ResonateNativeDspBridge` previously called `attachResonateDsp`,
+`setResonateEqBands`, and `setResonateDspEnabled`, none of which were handled
+by the active audio-effects channel. The bridge swallowed those missing-method
+errors, which could make the UI preference look enabled without proving that
+the live sink processor was available.
+
+The repair routes the bridge through the current `getLiveDspStatus`,
+`setLiveDspEqBands`, and `setLiveDspEnabled` methods. Availability is now
+derived from active registered sink engines and the native safety gate; a
+positive Android audio session ID alone is not treated as proof that DSP is
+attached. Master enable is stored as sticky registry state and applied to newly
+registered A/B engines as well as current engines. EQ-band enable remains a
+separate setting. If no sink engine is registered, the bridge reports unavailable
+rather than pretending a session effect was attached.
+
+Validation should cover both JVM registry tests and merged-commit CI, followed
+by device playback checks. This bridge repair does not itself expose the planned
+DVC slider; DVC remains a separate follow-up that must use the registry's volume
+gain, not EQ preamp or crossfade gain.
