@@ -22,6 +22,7 @@ object DspEngineJni {
         sampleRate: Double
     ): Int
     external fun nativeSetEnabled(handle: Long, enabled: Boolean)
+    external fun nativeSetProcessingEnabled(handle: Long, enabled: Boolean)
     external fun nativeSetVolume(handle: Long, linearGain: Double)
     external fun nativeSetEqBands(
         handle: Long,
