@@ -623,6 +623,7 @@ class MusicProvider extends ChangeNotifier {
       loudnessB: _loudnessB,
     );
     _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
+      if (_disposed) return;
       try {
         if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
       } catch (e) {
@@ -630,6 +631,7 @@ class MusicProvider extends ChangeNotifier {
       }
     }, onError: (e) => debugPrint('sessionA stream error: $e'));
     _sessionBSub = _playerB.androidAudioSessionIdStream.listen((id) {
+      if (_disposed) return;
       try {
         if (id != null && id > 0 && !_activeIsA) onAndroidSession?.call(id);
       } catch (e) {
