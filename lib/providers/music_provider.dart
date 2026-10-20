@@ -34,6 +34,7 @@ import '../playback/queue_store.dart';
 import '../playback/resume_position_store.dart';
 import '../playback/audio_focus_settings.dart';
 import '../playback/crossfade_runtime.dart';
+import '../playback/crossfade_orchestrator.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
 import '../playback/engine_pair.dart';
@@ -1636,20 +1637,17 @@ class MusicProvider extends ChangeNotifier {
 
     if (!canCrossfadeNext) return;
 
-    final preloadMs = (_crossfadeDurationMs + 10000).clamp(10000, 28000);
-    final fadeArmMs = _crossfadeDurationMs + 2000;
-    if (remaining <= Duration(milliseconds: preloadMs) &&
-        remaining > Duration(milliseconds: fadeArmMs)) {
+    final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
+    final timing = CrossfadeOrchestrator.timing(
+      configuredDurationMs: _crossfadeDurationMs,
+      djActive: djActive,
+    );
+    if (remaining <= Duration(milliseconds: timing.preloadWindowMs) &&
+        remaining > Duration(milliseconds: timing.fadeArmWindowMs)) {
       unawaited(_preloadNextForCrossfade());
     }
 
-    final djActive = _djBeatAlignActive || _djTempoMatchActive || _djSfxActive;
-    final effectiveXfMs =
-        (djActive ? _crossfadeDurationMs.clamp(500, 6500) : _crossfadeDurationMs)
-            .toInt();
-    final startMarginMs = (1200 + (effectiveXfMs ~/ 10)).clamp(1500, 3000);
-    final triggerMs = (effectiveXfMs + startMarginMs).clamp(2000, 16000);
-    if (remaining > Duration(milliseconds: triggerMs)) return;
+    if (remaining > Duration(milliseconds: timing.triggerWindowMs)) return;
     if (remaining < const Duration(milliseconds: 1200)) return;
     _automaticCrossfadeInFlight = true;
     _transitionArmedAt = DateTime.now();
