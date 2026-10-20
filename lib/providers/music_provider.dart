@@ -45,6 +45,7 @@ import '../playback/playback_history_session.dart';
 import '../playback/gapless_window_state.dart';
 import '../playback/mode_playback_policy_state.dart';
 import '../playback/volume_facade.dart';
+import '../playback/player_stream_binder.dart';
 import '../modes/services/audiobook_session_bridge.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/services/podcast_session_bridge.dart';
@@ -305,10 +306,8 @@ class MusicProvider extends ChangeNotifier {
   Timer? _systemVolumePollTimer;
   Timer? _endOfTrackWatchdog;
   String? _lastCompletionSongId;
-  StreamSubscription<PlayerState>? _playerStateSubscription;
-  StreamSubscription<Duration>? _positionSubscription;
+  final PlayerStreamBinder _playerStreamBinder = PlayerStreamBinder();
   StreamSubscription<int?>? _currentIndexSubscription;
-  StreamSubscription<Duration?>? _durationSubscription;
   StreamSubscription<double>? _volumeSubscription;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
   StreamSubscription<void>? _noisySubscription;
@@ -1386,9 +1385,9 @@ class MusicProvider extends ChangeNotifier {
   }
 
   void _bindActivePlayerStreams() {
-    _playerStateSubscription?.cancel(); _positionSubscription?.cancel(); _currentIndexSubscription?.cancel(); _durationSubscription?.cancel(); _volumeSubscription?.cancel();
+    _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
-    _playerStateSubscription = player.playerStateStream.listen((state) {
+    _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
       final completed = state.processingState == ProcessingState.completed;
       final loading = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
@@ -1526,7 +1525,7 @@ class MusicProvider extends ChangeNotifier {
       }));
     });
 
-    _positionSubscription = player.positionStream.listen((position) {
+    _playerStreamBinder.bindPosition(player.positionStream, (position) {
       if (currentPosition != position) {
         currentPosition = position;
       _forceClearStuckTransition(reason: 'position_tick');
@@ -1541,7 +1540,7 @@ class MusicProvider extends ChangeNotifier {
       _maybeStartAutomaticCrossfade(position);
       _armEndOfTrackWatchdog();
     });
-    _durationSubscription = player.durationStream.listen((duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
+    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
     // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
     // internal gain into _volume or it will overwrite the system-volume value.
   }
@@ -5359,9 +5358,7 @@ class MusicProvider extends ChangeNotifier {
     _systemVolumePollTimer?.cancel();
     _endOfTrackWatchdog?.cancel();
     _modes?.removeListener(_onModesChangedForSessions);
-    _playerStateSubscription?.cancel();
-    _positionSubscription?.cancel();
-    _durationSubscription?.cancel();
+    _playerStreamBinder.cancel();
     _volumeSubscription?.cancel();
     _interruptionSubscription?.cancel();
     _noisySubscription?.cancel();
