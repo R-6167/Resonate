@@ -1,6 +1,6 @@
 # Advanced DSP and DVC implementation plan
 
-Status: architecture audit complete; implementation plan only. Do not treat UI state as proof that an effect is active.
+Status: architecture audit complete; DVC channel/UI wiring is being implemented and requires CI plus on-device validation. Do not treat UI state as proof that an effect is active.
 
 ## Summary
 
@@ -27,14 +27,15 @@ Resonate already has a substantial in-house native DSP path. The intended live r
 - Native source and build integration exist under `android/app/src/main/cpp/`; JVM tests cover processor fail-open behavior, registration inheritance, and live updates.
 - The four large playback orchestration extractions are connected as Dart library parts: `music_provider_crossfade.dart`, `music_provider_transport.dart`, `music_provider_dj_handoff.dart`, and `music_provider_audio_effects_lifecycle.dart`. The parent provider declares each with a matching `part` directive. These are not orphan standalone classes.
 
-### Gap to resolve before calling DVC user-controllable
+### DVC control wiring (current implementation)
 
-- The current Flutter method channel exposes `setLiveDspPreampDb`, which maps to `DspEngineRegistry.applyPreampAll`. That is a DSP **preamp** control, not a separate user DVC/volume control.
-- The native registry already has `applyVolumeAll` / `setVolume`, but there is no corresponding public channel/bridge method for it. The native engine comments distinguish preamp from smoothed DVC gain.
-- `syncPreampToDvc` is therefore a misleading helper name: its current implementation sends a preamp command. Rename it to reflect preamp semantics when touching call sites, and add a distinct DVC API rather than reusing this path.
-- `ResonateNativeDspBridge` still calls `attachResonateDsp`, `setResonateDspEnabled`, and `setResonateEqBands`; these method names are not handled by the current `AudioEffectsChannelHandler`. Those calls are swallowed by the Dart bridge, so its `available` flag and `nativeDspEnabled` toggle do not reliably describe or control the custom sink processor. Treat this as a real integration gap: re-point that bridge to the live-DSP status/EQ/master-enable APIs or retire the obsolete bridge path, then test the UI toggle against actual PCM processing. Do not blindly route the old session-attach call to a fake success response.
-- The sink patch script intentionally warns and exits successfully if the upstream `just_audio` method block no longer matches. That preserves build availability, but a green APK build alone does not prove the native processor was injected. Add explicit CI evidence for the injection marker and runtime capability status; retain safe pass-through behavior for release resilience.
-- The current status endpoint reports active engine count, gate state, sticky EQ/speaker settings, and native timing counters. It should be expanded carefully to distinguish `compiled`, `sinkInjected`, `nativeAllowed`, `activeEngines`, and per-engine processing/failure state. Zero active engines while stopped is not itself a failure.
+- The native engine already has a smoothed DVC gain stage separate from EQ preamp. The registry's sticky `linearGain` is applied to every newly registered A/B engine.
+- PR follow-up `feat/dvc-control-end-to-end` adds `setLiveDspDvcDb` through the Flutter bridge and Android method channel to `DspEngineRegistry.applyVolumeAll`. The channel clamps requests to −24 dB through +6 dB and converts dB to linear gain; the native stage owns the gain ramp.
+- Audio automation settings now includes a persistent DVC slider and reset-to-unity action. The preference is stored in SharedPreferences and re-applied to the registry, including when no sink is currently active. A green build is still required before this is considered validated.
+- DVC remains separate from EQ preamp, Android system media volume, player volume, and crossfade envelope gain. The native processing chain applies DVC before the crossover/limiter stage, so positive gain is subject to downstream peak protection; on-device clipping and transition checks are still required.
+- `syncPreampToDvc` is a legacy helper name: it currently sends a preamp command, not DVC. Rename it and its call sites to `syncPreampToNativeDsp` as a cleanup; never use it for the dedicated DVC control.
+- The old `ResonateNativeDspBridge` should continue to use live-DSP status/EQ/master-enable APIs rather than resurrecting the obsolete session-attach contract.
+- The sink patch script may still warn and exit successfully if upstream `just_audio` injection markers change. A green APK build alone does not prove sink injection; keep explicit patch-marker validation and safe PCM pass-through behavior in the CI hardening backlog.
 
 ## Supported architecture for advanced controls
 
