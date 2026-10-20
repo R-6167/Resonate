@@ -1,0 +1,61 @@
+--- a/lib/providers/music_provider.dart
++++ b/lib/providers/music_provider.dart
+@@ -32,6 +32,7 @@
+ import '../services/playback_coordinator.dart';
+ import '../playback/queue_store.dart';
+ import '../playback/resume_position_store.dart';
++import '../playback/audio_focus_settings.dart';
+ import '../modes/services/audiobook_session_bridge.dart';
+ import '../modes/providers/mode_provider.dart';
+ import '../modes/services/podcast_session_bridge.dart';
+@@ -221,17 +222,22 @@
+   int _focusResumeGeneration = 0;
+   int _volumeFadeGen = 0;
+   static const double _duckLevel = 0.32;
+-  bool _audioFocusAutomationEnabled = true;
+-  int _audioFocusLevel = 2;
+-  bool get audioFocusAutomationEnabled => _audioFocusAutomationEnabled;
+-  int get audioFocusLevel => _audioFocusLevel;
++  final AudioFocusSettings _audioFocusSettings = AudioFocusSettings();
++  /// Compatibility aliases — focus prefs live in [_audioFocusSettings].
++  bool get _audioFocusAutomationEnabled =>
++      _audioFocusSettings.automationEnabled;
++  set _audioFocusAutomationEnabled(bool value) =>
++      _audioFocusSettings.automationEnabled = value;
++  int get _audioFocusLevel => _audioFocusSettings.level;
++  set _audioFocusLevel(int value) => _audioFocusSettings.level = value;
++  bool get audioFocusAutomationEnabled =>
++      _audioFocusSettings.automationEnabled;
++  int get audioFocusLevel => _audioFocusSettings.clampedLevel;
+ 
+   Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
+-    if (automatic != null) _audioFocusAutomationEnabled = automatic;
+-    if (level != null) _audioFocusLevel = level.clamp(1, 4).toInt();
+-    final prefs = await SharedPreferences.getInstance();
+-    await prefs.setBool(_audioFocusAutomationKey, _audioFocusAutomationEnabled);
+-    await prefs.setInt(_audioFocusLevelKey, _audioFocusLevel);
++    if (automatic != null) _audioFocusSettings.setAutomationEnabled(automatic);
++    if (level != null) _audioFocusSettings.setLevel(level);
++    await _audioFocusSettings.persist();
+     notifyListeners();
+   }
+   static const int _duckFadeMs = 180;
+@@ -500,8 +506,6 @@
+ 
+ 
+   static const _repeatModeKey = 'playback_repeat_mode';
+-  static const _audioFocusAutomationKey = 'audio_focus_automation_enabled';
+-  static const _audioFocusLevelKey = 'audio_focus_automation_level';
+   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
+ 
+   MusicProvider({this.audioHandler}) {
+@@ -554,8 +558,7 @@
+       _shuffleEnabled = prefs.getBool(QueueStore.shuffleEnabledKey) ?? false;
+       _audioLevelingEnabled = prefs.getBool(_audioLevelingEnabledKey) ?? false;
+       _audioLevelingTargetRmsDbfs = (prefs.getDouble(_audioLevelingTargetKey) ?? LoudnessService.defaultTargetRmsDbfs).clamp(-24.0, -12.0).toDouble();
+-      _audioFocusAutomationEnabled = prefs.getBool(_audioFocusAutomationKey) ?? true;
+-      _audioFocusLevel = (prefs.getInt(_audioFocusLevelKey) ?? 2).clamp(1, 4).toInt();
++      await _audioFocusSettings.load(prefs);
+       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
+       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
+       // Crossfade preferences are owned and restored by CrossfadeProvider.

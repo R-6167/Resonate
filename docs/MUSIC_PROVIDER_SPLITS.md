@@ -12,31 +12,30 @@ bounded collaborators while keeping the Phase 0 public contract:
 ### 1. QueueStore (`lib/playback/queue_store.dart`)
 - Owns: songs list, index, shuffle flag, ID persistence keys
 - MusicProvider keeps thin `_queue` / `_queueIndex` / `_shuffleEnabled` aliases
-- Persist / shuffle routed through `QueueStore.persist` / `shuffleUpcoming`
 
 ### 2. CrossfadeSettings (`lib/playback/crossfade_settings.dart`)
 - Owns: enabled, durationMs, fadeType (+ optional prefs keys)
-- Does **not** own runtime transition flags or A/B engine work
-- Note: CrossfadeProvider may still restore UI prefs; this is the shared value object
-
-## In progress
+- Runtime transition flags stay on MusicProvider / CrossfadeProvider
 
 ### 3. ResumePositionStore (`lib/playback/resume_position_store.dart`)
 - Owns: per-song map, last-session song/position, prefs keys, throttle
-- `MusicProvider._persistResumePosition` becomes compute-position + `record`/`persist`
-- Public `resumePositionFor` / `resumePositionMs` / `resumeSongId` preserved
 
-## Planned
+### 4. AudioFocusSettings (`lib/playback/audio_focus_settings.dart`)
+- Owns: automation enabled + level (1–4) + prefs keys
+- Duck/unduck, focus-loss timers, interruption streams stay on MusicProvider
 
-### 4. AudioFocusSettings
-- automation enabled + level + prefs keys
-- duck/unduck runtime stays on MusicProvider until a later FocusController
+## Planned (higher risk)
 
-### 5. Later (higher risk)
-- CrossfadeRuntime (in-flight flags, generations, preload)
-- TransportEpoch / command gate
-- EnginePair ownership
-- DJ handoff surface
+### 5. CrossfadeRuntime
+- In-flight flags, automatic generations, preload state
+
+### 6. TransportEpoch / command gate
+- User transport epoch, pending counts, generation tokens
+
+### 7. EnginePair ownership
+- A/B players, equalizers, loudness enhancers
+
+### 8. DJ handoff surface
 
 ## Rules for each split
 1. Public API unchanged

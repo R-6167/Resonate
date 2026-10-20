@@ -1,0 +1,40 @@
+name: Apply AudioFocusSettings wire
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/audio-focus-settings]
+    paths:
+      - "tool/patches/audio_focus_settings_wire.patch"
+      - ".github/workflows/apply-audio-focus-settings.yml"
+      - "lib/playback/audio_focus_settings.dart"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/audio-focus-settings
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply wire patch
+        run: |
+          set -euo pipefail
+          if grep -q "AudioFocusSettings _audioFocusSettings" lib/providers/music_provider.dart; then
+            echo "Already wired"
+            exit 0
+          fi
+          patch -p1 --batch --forward < tool/patches/audio_focus_settings_wire.patch
+          grep -q "AudioFocusSettings _audioFocusSettings" lib/providers/music_provider.dart
+          grep -q "_audioFocusSettings.persist" lib/providers/music_provider.dart
+          echo "AudioFocusSettings wire applied"
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "refactor: wire MusicProvider to AudioFocusSettings"
+          file_pattern: lib/providers/music_provider.dart
+          branch: refactor/audio-focus-settings
