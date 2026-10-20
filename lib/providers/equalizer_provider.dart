@@ -618,7 +618,7 @@ class EqualizerProvider extends ChangeNotifier {
     // bounded by the DSP's supported -6 dB preamp floor.
     final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0).toDouble() : 0.0;
     try {
-      syncPreampToDvc(effective, enabled: isEnabled);
+      syncPreampToNativeDsp(effective, enabled: isEnabled);
     } catch (e) {
       debugPrint('live DSP preamp push failed: $e');
     }
@@ -650,7 +650,7 @@ class EqualizerProvider extends ChangeNotifier {
         gainsDb: gains,
         enabled: isEnabled,
       );
-      syncPreampToDvc(preamp, enabled: isEnabled);
+      syncPreampToNativeDsp(preamp, enabled: isEnabled);
       final route = AudioOutputRouteService.instance;
       syncSpeakerPolicy(
         needsSpeakerProtection: route.needsSpeakerProtection,
