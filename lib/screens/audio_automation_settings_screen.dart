@@ -5,6 +5,7 @@ import '../providers/music_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../ui/resonate_glass.dart';
 import 'equalizer_screen.dart';
+import '../widgets/live_dvc_control.dart';
 
 class AudioAutomationSettingsScreen extends StatelessWidget {
   const AudioAutomationSettingsScreen({super.key});
@@ -93,6 +94,8 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              const LiveDvcControl(),
               const SizedBox(height: 12),
               Consumer<EqualizerProvider>(
                 builder: (context, eq, _) => ResonateGlassCard(
