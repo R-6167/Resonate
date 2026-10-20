@@ -317,4 +317,181 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
       intentToken: intentToken,
     );
   }
+
+
+  /// Remaining public transport operations and queue-aware navigation helpers.
+  Future<bool> playQueueIndex(int index) {
+    if (_queue.isEmpty || index < 0 || index >= _queue.length) {
+      return Future<bool>.value(false);
+    }
+    final intentToken = _playbackIntentGate.issue();
+    _automaticCrossfadeInFlight = false;
+    _crossfadeInProgress = false;
+    _completionAdvanceInProgress = false;
+    _lastCompletionSongId = null;
+    return _serializePlayback(
+      () => _playSongInternal(
+        _queue[index],
+        queue: _queue,
+        startIndex: index,
+        playbackIntentToken: intentToken,
+      ),
+      command: 'play',
+      source: 'normal_player',
+      userInitiated: true,
+      intentToken: intentToken,
+      onSuperseded: () async => false,
+    );
+  }
+
+  Future<void> resumePlayback({String source = 'normal_player'}) {
+    _podcastSession.onResumed(currentPosition);
+    _audiobookSession.onResumed(currentPosition);
+    _modes?.onPlaybackResumed(currentSong);
+    final intentToken = _playbackIntentGate.issue();
+    _cancelAutomaticPlaybackWork();
+    return _serializePlayback(() async {
+      try {
+        _userWantsPlaying = true;
+        _isDucked = false;
+        if (audioPlayer.audioSource != null) {
+          try {
+            if (source != 'system') {
+              final session = await AudioSession.instance;
+              await session.setActive(true);
+            }
+          } catch (_) {}
+          // If we are sitting on a completed source, seek to zero first.
+          if (audioPlayer.processingState == ProcessingState.completed) {
+            try {
+              await audioPlayer.seek(Duration.zero);
+            } catch (_) {}
+          }
+          final midTransition = _transitionLive;
+          final target = _effectiveCrossfadeMaster.clamp(0.0, 1.0);
+          // Start quiet then fade in (skip only during a real ramp).
+          if (!midTransition) {
+            try {
+              await audioPlayer.setVolume(0.0);
+            } catch (_) {}
+          }
+          for (var attempt = 0; attempt < 12; attempt++) {
+            if (attempt == 0 || attempt == 3 || attempt == 6) {
+              try {
+                audioPlayer.play();
+              } catch (e) {
+                debugPrint('resumePlayback play() fire $attempt failed: $e');
+              }
+            }
+            if (audioPlayer.playing) break;
+            await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
+          }
+          if (!midTransition && audioPlayer.playing) {
+            await _fadePlayerVolume(
+              audioPlayer,
+              0.0,
+              target,
+              durationMs: source == 'system' ? 160 : MusicProvider._transportFadeMs,
+            );
+          } else if (!midTransition) {
+            try {
+              await audioPlayer.setVolume(target);
+            } catch (_) {}
+          }
+          isPlaying = audioPlayer.playing || _userWantsPlaying;
+          _publishServiceState();
+          notifyListeners();
+          unawaited(ResonateDiagnostics.record('playback_resume_fade', {
+            'source': source,
+            'faded': !midTransition,
+            'playing': audioPlayer.playing,
+          }));
+          return;
+        }
+        if (currentSong != null) {
+          await _playSongInternal(
+            currentSong!,
+            queue: _queue.isEmpty ? null : _queue,
+            startIndex: _queueIndex,
+            resume: true,
+            playbackIntentToken: intentToken,
+          );
+        }
+      } catch (e) {
+        debugPrint('resumePlayback failed: $e');
+      }
+    }, command: 'play', source: source, userInitiated: source != 'system', intentToken: intentToken);
+  }
+
+  Future<void> togglePlayPause({String source = 'normal_player'}) {
+    // Prefer optimistic isPlaying when native lags; user pause must win.
+    final wantPause = isPlaying || audioPlayer.playing || _userWantsPlaying;
+    if (wantPause) {
+      return this.pause(source: source);
+    }
+    return resumePlayback(source: source);
+  }
+
+
+  
+
+  Future<void> stop({String source = 'normal_player'}) {
+    final intentToken = _playbackIntentGate.issue();
+    _cancelAutomaticPlaybackWork();
+    return _serializePlayback(() async {
+      if (!_playbackIntentGate.isCurrent(intentToken)) return;
+      _userWantsPlaying = false;
+      _podcastSession.onStopped(currentPosition);
+    _audiobookSession.onStopped(currentPosition);
+      _modes?.onPlaybackStopped();
+      await _finishHistoryEvent();
+      await _stopBoth();
+      isPlaying = false;
+      currentPosition = Duration.zero;
+      // Abandon audio focus so other apps can play without mixing with us.
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      } catch (e) {
+        debugPrint('AudioSession setActive(false) on stop failed: $e');
+      }
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.record('audio_focus_stop', {'source': source});
+    }, command: 'stop', source: source, userInitiated: true, intentToken: intentToken);
+  }
+
+  Future<bool> _tryGaplessSeekToQueueIndex(int queueIndex) async {
+    if (!_gaplessWindow.active || effectiveCrossfadeEnabled) return false;
+    if (queueIndex < 0 || queueIndex >= _queue.length) return false;
+    final song = _queue[queueIndex];
+    final local = _gaplessWindow.songIds.indexOf(song.id);
+    if (local < 0) return false;
+    try {
+      await audioPlayer.seek(Duration.zero, index: local);
+      _queueIndex = queueIndex;
+      currentSong = song;
+      unawaited(_refreshTrackLevelingFor(currentSong));
+      currentDuration = song.duration ?? audioPlayer.duration;
+      currentPosition = Duration.zero;
+      isPlaying = true;
+      _userWantsPlaying = true;
+      try {
+        audioPlayer.play();
+      } catch (_) {}
+      _publishServiceState();
+      notifyListeners();
+      await ResonateDiagnostics.record('playback_gapless_seek', {
+        'localIndex': local,
+        'queueIndex': queueIndex,
+        'songId': song.id,
+      });
+      return true;
+    } catch (e) {
+      debugPrint('Gapless seek failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async { if (songs.isEmpty) { await _finishHistoryEvent(); _queue = <Song>[]; _queueIndex = 0; await _persistQueue(); notifyListeners(); return; } final index = startIndex.clamp(0, songs.length - 1).toInt(); await this.playSong(songs[index], queue: songs, startIndex: index); }
 }
