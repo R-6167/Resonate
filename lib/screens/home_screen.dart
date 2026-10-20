@@ -13,6 +13,9 @@ import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/evolving_mix_card.dart';
 import '../widgets/autopilot_home_card.dart';
 import '../widgets/ask_resonate_sheet.dart';
+import '../widgets/ask_resonate/ask_resonate_controller.dart';
+import '../widgets/ask_resonate/ask_resonate_orb.dart';
+import '../widgets/ask_resonate/ask_resonate_overlay.dart';
 import '../widgets/resonate_logo.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
@@ -114,24 +117,39 @@ class _HomeScreenState extends State<HomeScreen> {
     // FAB on For You (0), Library (1), Player (2) — not Settings (3).
     final showAsk = _selectedIndex <= 2;
 
+    // Keep context label in sync with the active shell tab.
+    final labels = const ['For You', 'Library', 'Player', 'Settings'];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AskResonateController>().setContext(labels[_selectedIndex.clamp(0, 3)]);
+    });
+
     return Scaffold(
-      body: NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          _handleScroll(notification);
-          return false;
-        },
-        child: PageView.builder(
-          controller: _pageController,
-          itemCount: _screens.length,
-          onPageChanged: (index) => setState(() {
-          _selectedIndex = index;
-          _navigationVisible = true;
-        }),
-          itemBuilder: (_, index) => _screens[index],
-        ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              _handleScroll(notification);
+              return false;
+            },
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _screens.length,
+              onPageChanged: (index) => setState(() {
+                _selectedIndex = index;
+                _navigationVisible = true;
+              }),
+              itemBuilder: (_, index) => _screens[index],
+            ),
+          ),
+          // Persistent living Orb (hidden on Settings via controller context if desired)
+          if (showAsk) const AskResonateOrb(),
+          // Full-screen organic overlay when open
+          if (context.watch<AskResonateController>().isOpen)
+            const AskResonateOverlay(),
+        ],
       ),
-      floatingActionButton: showAsk ? const AskResonateFab() : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -495,20 +513,21 @@ class _RecommendationTileState extends State<_RecommendationTile> {
         final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
         final confidenceText = '${widget.item.confidenceLabel} • $confidence%';
         return ResonateGlassCard(
-          // Live BackdropFilter blur on every recommendation card is expensive
-          // during scrolling, particularly on low-end Android devices.
           blurEnabled: false,
           padding: EdgeInsets.zero,
           margin: const EdgeInsets.only(bottom: 9),
           child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)),
+            leading: const CircleAvatar(child: Icon(Icons.auto_awesome_outlined)),
             title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text('${widget.item.song.artist}\n$confidenceText • ${widget.item.reason}', maxLines: 3, overflow: TextOverflow.ellipsis),
-            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: liked ? 'Unlike' : 'Like', icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded), onPressed: _loading ? null : () => library.toggleFavorite(widget.item.song)),
-              _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play),
-            ]),
-            onTap: _loading ? null : _play,
+            subtitle: Text('${widget.item.song.artist}\n$confidenceText', maxLines: 2),
+            isThreeLine: true,
+            trailing: IconButton(
+              icon: _loading
+                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Icon(liked ? Icons.favorite : Icons.favorite_border),
+              onPressed: () => library.toggleFavorite(widget.item.song.id),
+            ),
+            onTap: _play,
           ),
         );
       },
