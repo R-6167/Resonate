@@ -38,7 +38,7 @@ void main() {
       expect(timing.triggerWindowMs, 14400);
     });
   });
-}
+
 
   group('CrossfadeOrchestrator gains', () {
     test('starts with outgoing audio only and ends with incoming audio only', () {
@@ -99,3 +99,4 @@ void main() {
       expect(after.incoming, closeTo(1.0, 1e-9));
     });
   });
+}
