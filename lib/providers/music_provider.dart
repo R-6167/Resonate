@@ -139,6 +139,7 @@ class MusicProvider extends ChangeNotifier {
   void Function(int sessionId)? onAndroidSession;
   StreamSubscription<int?>? _sessionASub;
   StreamSubscription<int?>? _sessionBSub;
+  bool _disposed = false;
   final QueueStore _queueStore = QueueStore();
   /// Compatibility aliases — queue state lives in [_queueStore].
   List<Song> get _queue => _queueStore.songs;
@@ -961,8 +962,10 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _configureAudioSession() async {
+    if (_disposed) return;
     try {
       final session = await AudioSession.instance;
+      if (_disposed) return;
       // Explicit media focus (same base as .music()): exclusive GAIN so other apps
       // should not mix with us. We soft-duck on duck events; pause+resume on full pause.
       await session.configure(const AudioSessionConfiguration(
@@ -976,7 +979,9 @@ class MusicProvider extends ChangeNotifier {
         androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
         androidWillPauseWhenDucked: false,
       ));
+      if (_disposed) return;
       _interruptionSubscription = session.interruptionEventStream.listen((event) {
+        if (_disposed) return;
         unawaited(ResonateDiagnostics.record('audio_focus_event', {
           'begin': event.begin,
           'type': event.type.name,
@@ -1033,6 +1038,7 @@ class MusicProvider extends ChangeNotifier {
         }
       });
       _noisySubscription = session.becomingNoisyEventStream.listen((_) {
+        if (_disposed) return;
         // Headphones unplugged: treat as user-facing pause (do not auto-resume).
         if (isPlaying || _userWantsPlaying) {
           unawaited(this.pause(source: 'becoming_noisy'));
@@ -1042,8 +1048,10 @@ class MusicProvider extends ChangeNotifier {
       try {
         await _devicesChangedSubscription?.cancel();
       } catch (_) {}
+      if (_disposed) return;
       _devicesChangedSubscription =
           session.devicesChangedEventStream.listen((_) {
+        if (_disposed) return;
         unawaited(_onAudioRouteChanged());
       });
     } catch (e) {
@@ -1054,6 +1062,7 @@ class MusicProvider extends ChangeNotifier {
   /// BT/headset route change: re-claim session and force audible volume.
   /// OEMs often take 0.5–3s to settle A2DP; we pulse volume a few times.
   Future<void> _onAudioRouteChanged() async {
+    if (_disposed) return;
     final now = DateTime.now();
     if (_lastRouteRecoverAt != null &&
         now.difference(_lastRouteRecoverAt!) < const Duration(milliseconds: 800)) {
@@ -1068,32 +1077,39 @@ class MusicProvider extends ChangeNotifier {
         'songId': currentSong?.id,
       });
     } catch (_) {}
-    if (!_userWantsPlaying) return;
+    if (_disposed || !_userWantsPlaying) return;
     if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
     try {
       final session = await AudioSession.instance;
+      if (_disposed) return;
       try {
         await session.setActive(true);
       } catch (_) {}
+      if (_disposed) return;
     } catch (_) {}
+    if (_disposed) return;
     for (final delayMs in <int>[200, 700, 1600, 3200]) {
       await Future<void>.delayed(Duration(milliseconds: delayMs));
-      if (!_userWantsPlaying) return;
+      if (_disposed || !_userWantsPlaying) return;
       if (_crossfadeInProgress || _automaticCrossfadeInFlight) return;
       try {
         await _recoverDjEngineState(reason: 'audio_route_changed');
       } catch (_) {}
+      if (_disposed) return;
       try {
         final active = audioPlayer;
         final vol = (_volume * _eqPreampScale).clamp(0.05, 1.0);
         await active.setVolume(vol);
+        if (_disposed) return;
         if (_userWantsPlaying && !active.playing) {
           try {
             await active.play();
           } catch (_) {}
         }
       } catch (_) {}
+      if (_disposed) return;
     }
+    if (_disposed) return;
     try {
       await ResonateDiagnostics.record('audio_route_recover_done', {
         'playing': audioPlayer.playing,
@@ -1334,6 +1350,7 @@ class MusicProvider extends ChangeNotifier {
     _playerStreamBinder.cancel(); _currentIndexSubscription?.cancel(); _volumeSubscription?.cancel();
     final player = audioPlayer;
     _playerStreamBinder.bindPlayerState(player.playerStateStream, (state) {
+      if (_disposed) return;
       final completed = state.processingState == ProcessingState.completed;
       final loading = state.processingState == ProcessingState.loading ||
           state.processingState == ProcessingState.buffering;
@@ -1446,6 +1463,7 @@ class MusicProvider extends ChangeNotifier {
     });
     _currentIndexSubscription?.cancel();
     _currentIndexSubscription = player.currentIndexStream.listen((index) {
+      if (_disposed) return;
       if (index == null || _crossfadeEnabled || _crossfadeInProgress) return;
       if (!_gaplessWindow.active || _transportInFlight) return;
       if (index < 0 || index >= _gaplessWindow.songIds.length) return;
@@ -1472,6 +1490,7 @@ class MusicProvider extends ChangeNotifier {
     });
 
     _playerStreamBinder.bindPosition(player.positionStream, (position) {
+      if (_disposed) return;
       if (currentPosition != position) {
         currentPosition = position;
       _forceClearStuckTransition(reason: 'position_tick');
@@ -1486,7 +1505,7 @@ class MusicProvider extends ChangeNotifier {
       _maybeStartAutomaticCrossfade(position);
       _armEndOfTrackWatchdog();
     });
-    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
+    _playerStreamBinder.bindDuration(player.durationStream, (duration) { if (_disposed) return; if (duration != null && currentDuration != duration) { currentDuration = duration; notifyListeners(); _publishServiceState(); } });
     // App volume is sourced from Android STREAM_MUSIC. Do not mirror the player's
     // internal gain into _volume or it will overwrite the system-volume value.
   }
@@ -3305,15 +3324,25 @@ class MusicProvider extends ChangeNotifier {
   Stream<Duration?> get durationStream => audioPlayer.durationStream;
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _systemVolumePollTimer?.cancel();
     _endOfTrackWatchdog?.cancel();
     _modes?.removeListener(_onModesChangedForSessions);
     _playerStreamBinder.cancel();
+    _currentIndexSubscription?.cancel();
+    _currentIndexSubscription = null;
     _volumeSubscription?.cancel();
     _interruptionSubscription?.cancel();
+    _interruptionSubscription = null;
     _noisySubscription?.cancel();
+    _noisySubscription = null;
+    _devicesChangedSubscription?.cancel();
+    _devicesChangedSubscription = null;
     _sessionASub?.cancel();
+    _sessionASub = null;
     _sessionBSub?.cancel();
+    _sessionBSub = null;
     unawaited(_engines.dispose());
     super.dispose();
   }
