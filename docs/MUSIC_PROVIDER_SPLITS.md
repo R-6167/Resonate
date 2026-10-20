@@ -1,32 +1,31 @@
 # MusicProvider structural splits
 
-Goal: shrink `lib/providers/music_provider.dart` while keeping the Phase 0 public contract:
+Goal: shrink `lib/providers/music_provider.dart` while keeping the Phase 0 public contract.
 
-`playSong` / `playQueueIndex` / `nextSong` / `previousSong` /
-`enqueueSongs` / `playNext` / `removeFromQueue` / `reorderQueue` /
-`togglePlayPause` / `pause` / `seek` / `stop`.
+## Done
 
-## Done (data + runtime state bags)
+| Collaborator | Path |
+|--------------|------|
+| QueueStore | `lib/playback/queue_store.dart` |
+| CrossfadeSettings | `lib/playback/crossfade_settings.dart` |
+| ResumePositionStore | `lib/playback/resume_position_store.dart` |
+| AudioFocusSettings | `lib/playback/audio_focus_settings.dart` |
+| CrossfadeRuntime | `lib/playback/crossfade_runtime.dart` |
+| TransportEpoch | `lib/playback/transport_epoch.dart` |
 
-| Collaborator | Path | Owns |
-|--------------|------|------|
-| QueueStore | `lib/playback/queue_store.dart` | Queue list, index, shuffle, ID persistence |
-| CrossfadeSettings | `lib/playback/crossfade_settings.dart` | Enabled / duration / fade curve (value object) |
-| ResumePositionStore | `lib/playback/resume_position_store.dart` | Per-song + last-session resume map |
-| AudioFocusSettings | `lib/playback/audio_focus_settings.dart` | Automation enabled + level prefs |
-| CrossfadeRuntime | `lib/playback/crossfade_runtime.dart` | In-flight flags, generations, preload ids |
-| TransportEpoch | `lib/playback/transport_epoch.dart` | User transport epoch, in-flight/pending, wants-playing |
+## In progress
 
-Temporary patch files and one-shot apply workflows used to land these on GitHub have been removed.
+### EnginePair (`lib/playback/engine_pair.dart`)
+- Construction of A/B `AudioPlayer` + Android EQ/loudness
+- `activeIsA`, active/inactive accessors, `swap` / `resetToA` / `dispose`
+- **Still on MusicProvider:** stream binding, session callbacks, crossfade orchestration, `AudioEffectsController`
 
-## Still on MusicProvider (higher risk)
+## Planned
 
-- Dual audio engines (A/B), EQ, loudness enhancers
-- `_performTrueCrossfade` / preload loaders / engine swap
 - DJ handoff surface
-- History / focus interruption runtime (duck unduck streams)
+- Move more of `_performTrueCrossfade` onto collaborators after EnginePair settles
 
-## Rules for any future split
+## Rules
 1. Public API unchanged
-2. Generation / epoch ownership: transport always wins
-3. Prefer pure data + state bags first; move async engine methods last
+2. Transport always wins (TransportEpoch + CrossfadeRuntime)
+3. Prefer ownership of construction first; async orchestration later

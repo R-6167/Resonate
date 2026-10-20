@@ -1,0 +1,80 @@
+--- a/lib/providers/music_provider.dart
++++ b/lib/providers/music_provider.dart
+@@ -35,6 +35,7 @@
+ import '../playback/audio_focus_settings.dart';
+ import '../playback/crossfade_runtime.dart';
+ import '../playback/transport_epoch.dart';
++import '../playback/engine_pair.dart';
+ import '../modes/services/audiobook_session_bridge.dart';
+ import '../modes/providers/mode_provider.dart';
+ import '../modes/services/podcast_session_bridge.dart';
+@@ -66,19 +67,23 @@
+   ModeProvider? _modes;
+   late final AudioEffectsController _audioEffectsController;
+   final LibraryVisibilityStore _visibility = LibraryVisibilityStore.instance;
+-  late final AudioPlayer _playerA;
+-  late final AudioPlayer _playerB;
+-  late final AndroidEqualizer _equalizerA;
+-  late final AndroidEqualizer _equalizerB;
+-  late final AndroidLoudnessEnhancer _loudnessA;
+-  late final AndroidLoudnessEnhancer _loudnessB;
+-  bool _activeIsA = true;
+-  AudioPlayer get audioPlayer => _activeIsA ? _playerA : _playerB;
+-  AudioPlayer get inactivePlayer => _activeIsA ? _playerB : _playerA;
+-  AndroidEqualizer get equalizer => _activeIsA ? _equalizerA : _equalizerB;
+-  AndroidLoudnessEnhancer get loudnessEnhancer => _activeIsA ? _loudnessA : _loudnessB;
+-  AndroidEqualizer get inactiveEqualizer => _activeIsA ? _equalizerB : _equalizerA;
+-  AndroidLoudnessEnhancer get inactiveLoudnessEnhancer => _activeIsA ? _loudnessB : _loudnessA;
++  final EnginePair _engines = EnginePair();
++  /// Compatibility aliases — dual engines live in [_engines].
++  AudioPlayer get _playerA => _engines.playerA;
++  AudioPlayer get _playerB => _engines.playerB;
++  AndroidEqualizer get _equalizerA => _engines.equalizerA;
++  AndroidEqualizer get _equalizerB => _engines.equalizerB;
++  AndroidLoudnessEnhancer get _loudnessA => _engines.loudnessA;
++  AndroidLoudnessEnhancer get _loudnessB => _engines.loudnessB;
++  bool get _activeIsA => _engines.activeIsA;
++  set _activeIsA(bool value) => _engines.activeIsA = value;
++  AudioPlayer get audioPlayer => _engines.active;
++  AudioPlayer get inactivePlayer => _engines.inactive;
++  AndroidEqualizer get equalizer => _engines.equalizer;
++  AndroidLoudnessEnhancer get loudnessEnhancer => _engines.loudnessEnhancer;
++  AndroidEqualizer get inactiveEqualizer => _engines.inactiveEqualizer;
++  AndroidLoudnessEnhancer get inactiveLoudnessEnhancer =>
++      _engines.inactiveLoudnessEnhancer;
+ 
+   Song? currentSong;
+   bool isPlaying = false;
+@@ -551,15 +556,13 @@
+   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
+ 
+   MusicProvider({this.audioHandler}) {
+-    _equalizerA = AndroidEqualizer();
+-    _equalizerB = AndroidEqualizer();
+-    _loudnessA = AndroidLoudnessEnhancer();
+-    _loudnessB = AndroidLoudnessEnhancer();
+-    _audioEffectsController = AudioEffectsController(equalizerA: _equalizerA, equalizerB: _equalizerB, loudnessA: _loudnessA, loudnessB: _loudnessB);
+-    // Reconnected: Equalizer + LoudnessEnhancer in the pipeline (was the 34h-stable path).
+-    // Extra native effects stay lazy — attach only after a session exists.
+-    _playerA = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerA, _loudnessA]));
+-    _playerB = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [_equalizerB, _loudnessB]));
++    // Players + Android effects are constructed by [EnginePair].
++    _audioEffectsController = AudioEffectsController(
++      equalizerA: _equalizerA,
++      equalizerB: _equalizerB,
++      loudnessA: _loudnessA,
++      loudnessB: _loudnessB,
++    );
+     _sessionASub = _playerA.androidAudioSessionIdStream.listen((id) {
+       try {
+         if (id != null && id > 0 && _activeIsA) onAndroidSession?.call(id);
+@@ -5331,8 +5334,7 @@
+     _noisySubscription?.cancel();
+     _sessionASub?.cancel();
+     _sessionBSub?.cancel();
+-    _playerA.dispose();
+-    _playerB.dispose();
++    unawaited(_engines.dispose());
+     super.dispose();
+   }
+ }
