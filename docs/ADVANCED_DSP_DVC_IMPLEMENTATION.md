@@ -1,6 +1,6 @@
 # Advanced DSP and DVC implementation plan
 
-Status: architecture audit complete; DVC channel/UI wiring is being implemented and requires CI plus on-device validation. Do not treat UI state as proof that an effect is active.
+Status: native DSP bridge and independent DVC control are implemented and merged; CI has passed. Live sink injection is now being hardened so upstream `just_audio` changes cannot silently disable native DSP. On-device audibility, clipping, transition, and screen-off checks remain outstanding. Do not treat UI state or APK compilation alone as proof that an effect is active.
 
 ## Summary
 
@@ -92,7 +92,7 @@ When native injection is unavailable, keep playback alive and explain that the a
 ### Phase A — Integration verification and hardening
 - Serialize registry register/unregister/update operations.
 - Test that a concurrent new engine inherits the latest setting generation.
-- Make CI report whether the `just_audio` sink patch was applied; do not infer injection from APK compilation alone.
+- Make CI fail if the `just_audio` sink patch cannot be applied or its required markers are absent; do not infer injection from APK compilation alone.
 - Verify status reporting with playback stopped, one engine active, two engines active, and native DSP disabled/failing.
 - Keep the current playback path and defaults unchanged.
 
@@ -118,7 +118,7 @@ When native injection is unavailable, keep playback alive and explain that the a
 
 1. Finish the registry race hardening and verify CI.
 2. Repair or retire the disconnected `ResonateNativeDspBridge` session/toggle calls and verify that the UI reflects real sink processing.
-3. Add explicit sink-injection verification/status.
+3. Add explicit sink-injection verification/status. (Build-time patch application and marker verification are now enforced; runtime capability reporting and device checks remain.)
 4. Correct the preamp/DVC naming mismatch.
 5. Implement DVC as a separate end-to-end control.
 6. Build Audio Lab UI over the typed settings model.
