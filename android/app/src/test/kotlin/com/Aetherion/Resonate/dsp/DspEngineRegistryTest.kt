@@ -120,7 +120,7 @@ class DspEngineRegistryTest {
     @Test
     fun dvc_gain_is_clamped_and_inherited_by_new_engines() {
         DspEngineRegistry.applyVolumeAll(99.0)
-        assertTrue(fake.calls.contains("volume:0:4.0") || fake.calls.none { it.startsWith("volume:") })
+        assertTrue(fake.calls.none { it.startsWith("volume:") })
 
         fake.calls.clear()
         assertTrue(DspEngineRegistry.register(7, 7007L))
