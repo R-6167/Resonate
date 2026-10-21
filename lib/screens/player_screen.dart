@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
-import '../widgets/resonate_living_sheet.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
@@ -33,10 +32,9 @@ import 'album_screen.dart';
 import 'artist_screen.dart';
 import 'lyrics_screen.dart';
 
-// NOTE: Full player restored — if this file is only a few lines, restore failed.
+// TEMPORARY STUB - RESTORE IMMEDIATELY FROM True-Apk via web UI if this remains
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
-
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -44,9 +42,13 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text('Restoring player...'),
+    return Scaffold(
+      appBar: AppBar(title: const Text('Now Playing')),
+      body: const Center(
+        child: Text(
+          'Player file needs restore from Resonate-True-Apk branch.\n'\n'Open player_screen.dart on True-Apk, Raw, copy, paste here.',
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }
