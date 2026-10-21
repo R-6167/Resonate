@@ -109,3 +109,13 @@ The new `docs/RESONATE_UX_REFINEMENT_PLAN.md` defines the phased UX and sound-id
 - [ ] Keep device installed-size measurement separate from APK size; it has not been measured in this audit.
 
 Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the reference sound and first-party profile intents, verify native DSP/headroom behavior, and add curve/persistence/migration tests before redesigning the EQ UI. No feature implementation was included in Phase 0.
+
+
+## UX refinement program — Phase 1 sound identity — 2026-10-21
+
+- [x] Phase 0 inventory PR #123 merged; its follow-up post-merge CI was checked separately before implementation.
+- [x] Added five conservative first-party EQ profiles to the existing catalog: Resonate Signature, Warmth, Clarity, Afterhours, and Pulse. Existing classic profiles and custom presets remain available.
+- [x] Curves use the current 10-band preset contract and modest gain ranges; they are initial design profiles, not yet described as listening-validated.
+- [ ] Add profile curve/catalog tests and verify selection/persistence plus legacy/custom JSON compatibility.
+- [ ] Confirm the native DSP and automatic-headroom path, then record listening checks across varied recordings and output routes.
+- [ ] Keep the release APK below the existing 100 MB ceiling; establish a fresh comparable baseline before adding a CI size-failure gate.

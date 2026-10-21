@@ -1,6 +1,6 @@
 # Resonate UX Refinement Plan
 
-Status: Phase 0 planning/baseline. This plan does not authorize feature implementation by itself; each implementation phase should be delivered in a small PR against `Resonate-True-Apk`, with CI and targeted validation before merge.
+Status: Phase 0 complete; Phase 1 implementation in progress. This plan does not authorize feature implementation by itself; each implementation phase should be delivered in a small PR against `Resonate-True-Apk`, with CI and targeted validation before merge.
 
 ## Product direction
 
@@ -27,6 +27,10 @@ Principles:
 Exit criteria: a source-backed screen/control inventory, a size baseline, and a prioritized first implementation phase. No user-facing feature changes in this phase.
 
 ### Phase 1 — Resonate sound identity and EQ
+- [x] Add five conservative first-party profiles (Signature, Warmth, Clarity, Afterhours, Pulse) under a dedicated Resonate category, alongside all classic profiles.
+- [x] Keep the new profiles to modest gains (within -1 to +2.5 dB) to reduce avoidable clipping risk; this is a conservative starting point, not a substitute for headroom management or listening validation.
+- [ ] Add exact curve/catalog tests and verify preset selection, persistence, and legacy/custom-preset compatibility in CI.
+- [ ] Inspect native DSP/headroom application and run listening validation across varied tracks and output routes before calling profiles complete.
 - Define a small first-party profile set with clear intent and a reference profile (candidate directions: Signature, Warmth, Clarity, Afterhours, Pulse).
 - Treat these names as design proposals, not approved final tuning or claims about sound quality.
 - Inspect the current EQ model, band layout, native DSP mapping, preamp/headroom behavior, and custom preset schema before authoring curves.
