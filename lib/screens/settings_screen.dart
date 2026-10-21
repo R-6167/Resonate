@@ -91,7 +91,7 @@ class SettingsScreen extends StatelessWidget {
                       : null,
                 ),
               ),
-              _item(context, 'Visualization', 'Audio spectrum and waveform display', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
+              _item(context, 'Visualization & Orb', 'Shared live spectrum, audio response and motion controls', Icons.graphic_eq_rounded, const AudioVisualizationSettingsScreen()),
             ]),
             _section(context, 'Privacy', Icons.lock_outline_rounded, [
               const ListTile(leading: Icon(Icons.phone_android_rounded), title: Text('Local-only learning'), subtitle: Text('Intelligence uses on-device listening data.')),
