@@ -626,7 +626,9 @@ class EqualizerProvider extends ChangeNotifier {
       syncStudioBandsToNativeEq(
         centersHz: centers,
         gainsDb: gains,
-        enabled: isEnabled,
+        // The master DSP switch is the actual audio-path gate. Keep the EQ
+        // preference independent so re-enabling the master restores the curve.
+        enabled: isEnabled && _nativeDspEnabled,
       );
     } catch (e) {
       debugPrint('live DSP EQ push failed: $e');
