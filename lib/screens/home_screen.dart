@@ -50,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _selectPage(int index) {
+    if (index == 3) context.read<AskResonateController>().close();
     setState(() {
       _selectedIndex = index;
       _navigationVisible = true;
@@ -99,10 +100,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: PageView.builder(
               controller: _pageController,
               itemCount: _screens.length,
-              onPageChanged: (index) => setState(() {
+              onPageChanged: (index) {
+                if (index == 3) context.read<AskResonateController>().close();
+                setState(() {
                 _selectedIndex = index;
                 _navigationVisible = true;
-              }),
+                });
+              },
               itemBuilder: (_, index) => _screens[index],
             ),
           ),
