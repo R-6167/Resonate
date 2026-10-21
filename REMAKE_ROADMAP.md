@@ -142,3 +142,13 @@ Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the r
 - [ ] Revisit the seven optional JPEGs from the separate `Assets` branch later; image review/integration is deferred, not a blocker for this phase.
 
 Next: Phase 3 — audit Audio Automation, audio-focus behavior, DVC, EQ headroom, loudness leveling, limiter/crossover, and DJ/crossfade controls for clear wording, a canonical home, persistence, and accurate wiring. Keep playback-engine changes isolated from UI simplification.
+
+
+## UX refinement — Phase 3 audio-control audit update (2026-10-21)
+
+- [x] PR #132 merged: Resonate sound profiles now use the existing EQ category/preset picker; no curve or DSP behavior changed.
+- [x] Confirmed Audio Automation is linked from Settings and groups audio focus, pause/resume fade, DVC, named limiter/crossover profiles, EQ headroom, and preamp access.
+- [x] Confirmed EQ headroom uses the maximum positive software EQ band to estimate preamp attenuation and routes it through live DSP; this remains a conservative estimate, not output metering.
+- [x] Confirmed Audio leveling UI and service describe sampled RMS rather than LUFS/true peak and only apply conservative attenuation to cached analysis.
+- [ ] PR for AudioLevelingSettings regression tests must pass CI before merge.
+- [ ] Device validation remains necessary for interruption behavior, no surprise resume when another player takes focus, EQ headroom audibility, and leveling sound quality.

@@ -1,6 +1,6 @@
 # Resonate UX Refinement Plan
 
-Status: Phase 0 complete; Phase 1 implementation in progress. This plan does not authorize feature implementation by itself; each implementation phase should be delivered in a small PR against `Resonate-True-Apk`, with CI and targeted validation before merge.
+Status: Phases 0 and 2 implementation complete; Phase 1 sound validation and Phase 3 audio-control audit remain in progress. This plan does not authorize feature implementation by itself; each implementation phase should be delivered in a small PR against `Resonate-True-Apk`, with CI and targeted validation before merge.
 
 ## Product direction
 
@@ -138,3 +138,15 @@ Hard ceiling for now: **100 MB total app size**. Treat this as a release gate, n
 - [x] Keep Resonate Signature, Warmth, Clarity, Afterhours, and Pulse available under the existing `Resonate` preset category, alongside the same preset picker used for classic and custom curves.
 - [x] Preserve the current Resonate Signature curve and existing preset storage/selection behavior; this is a navigation/UI simplification, not a sound-tuning change.
 - [ ] Confirm CI and manually check category selection, current-profile selection, fine-tuning, and restart persistence on device.
+
+
+### Phase 3 progress — audio controls and state safety (2026-10-21)
+
+- [x] Confirm Audio Automation has a canonical Settings entry and contains Audio Focus, pause/resume fade, DVC, limiter/crossover protection profiles, automatic EQ headroom, and a direct route to EQ/preamp.
+- [x] Confirm focus settings expose Manual/Automatic response and four persisted levels. Android focus-loss events do not reliably distinguish calls from another music player, so Level 2 is documented in-app as the conservative choice when unexpected auto-resume is a concern.
+- [x] Confirm EQ auto-headroom is persisted in the canonical DSP snapshot and legacy preference, and is applied through the live DSP preamp path; Android LoudnessEnhancer is explicitly disabled to avoid double-applying preamp gain.
+- [x] Confirm track leveling is deliberately sampled RMS (not LUFS/true-peak), disabled by default, and only applies cached conservative attenuation rather than boosting quiet tracks.
+- [x] Add focused regression tests for audio-leveling preference defaults, clamping, non-finite target rejection, and persistence.
+- [ ] CI must pass for the new test and the 100 MiB APK gate.
+- [ ] Manual validation still required: verify the Settings entry on device, test notification ducking and calls, confirm a second music app does not trigger unwanted resume, verify EQ headroom with positive boosts, and listen-check leveling across varied tracks.
+- [ ] Do not claim call-only automation until platform focus events provide a reliable interruption source; keep the safe no-auto-resume level clearly described.
