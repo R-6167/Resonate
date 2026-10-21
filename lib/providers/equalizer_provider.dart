@@ -626,7 +626,7 @@ class EqualizerProvider extends ChangeNotifier {
     // bounded by the DSP's supported -6 dB preamp floor.
     final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0).toDouble() : 0.0;
     try {
-      syncPreampToNativeDsp(effective, enabled: isEnabled);
+      await AudioEffectsBridge.setLiveDspPreampDb(effective);
     } catch (e) {
       debugPrint('live DSP preamp push failed: $e');
     }
