@@ -52,16 +52,21 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
   Widget build(BuildContext context) => Consumer2<AudioVisualizationProvider, MusicProvider>(builder: (context, settings, music, _) {
     if (settings.frameRate != _fps) { _fps = settings.frameRate; WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _restartTimer(); }); }
     if (!settings.enabled) return const Center(child: Text('Visualization Disabled'));
-    return ValueListenableBuilder<double>(valueListenable: _phase, builder: (_, phase, __) => CustomPaint(painter: _VisualizationPainter(color: Theme.of(context).colorScheme.primary, phase: phase * math.pi * 2, position: music.currentPosition.inMilliseconds / 1000.0, playing: music.isPlaying, type: settings.visualizationType, sensitivity: settings.sensitivity, mirror: settings.mirror, bass: settings.reactToBass), size: const Size(double.infinity, 180)));
+    return ValueListenableBuilder<double>(valueListenable: _phase, builder: (_, phase, __) => CustomPaint(painter: _VisualizationPainter(color: Theme.of(context).colorScheme.primary, phase: phase * math.pi * 2, position: music.currentPosition.inMilliseconds / 1000.0, playing: music.isPlaying, type: settings.visualizationType, sensitivity: settings.sensitivity, mirror: settings.mirror, bass: settings.reactToBass, spectrum: settings.frequencies), size: const Size(double.infinity, 180)));
   });
 }
 
 class _VisualizationPainter extends CustomPainter {
-  final Color color; final double phase, position, sensitivity; final bool playing, mirror, bass; final String type;
-  _VisualizationPainter({required this.color, required this.phase, required this.position, required this.playing, required this.type, required this.sensitivity, required this.mirror, required this.bass});
+  final Color color; final double phase, position, sensitivity; final bool playing, mirror, bass; final String type; final List<double> spectrum;
+  _VisualizationPainter({required this.color, required this.phase, required this.position, required this.playing, required this.type, required this.sensitivity, required this.mirror, required this.bass, required this.spectrum});
   @override void paint(Canvas canvas, Size size) {
     final bars = type == 'waveform' ? 48 : 28;
-    final values = List<double>.generate(bars, (i) { final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0; final motion = playing ? math.sin(phase * 1.7 + i * .72 + position * 1.8).abs() : .08; return (.10 + motion * .80) * sensitivity * bassBoost; });
+    final values = List<double>.generate(bars, (i) {
+      final index = ((i / bars) * spectrum.length).floor().clamp(0, math.max(0, spectrum.length - 1));
+      final measured = spectrum.isEmpty ? 0.0 : spectrum[index].clamp(0.0, 1.0);
+      final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0;
+      return (measured * (0.55 + sensitivity * 1.15) * bassBoost).clamp(0.0, 1.0);
+    });
     final center = Offset(size.width / 2, size.height / 2);
     final paint = Paint()..color = color.withOpacity(.92)..strokeCap = StrokeCap.round;
     if (type == 'circular') { final radius = math.min(size.width, size.height) * .20; for (var i = 0; i < values.length; i++) { final angle = i / values.length * math.pi * 2; final r2 = radius + values[i] * radius * 1.6; canvas.drawLine(Offset(center.dx + math.cos(angle) * radius, center.dy + math.sin(angle) * radius), Offset(center.dx + math.cos(angle) * r2, center.dy + math.sin(angle) * r2), paint..strokeWidth = 3); } canvas.drawCircle(center, radius * .42, Paint()..color = color.withOpacity(.12)); return; }
