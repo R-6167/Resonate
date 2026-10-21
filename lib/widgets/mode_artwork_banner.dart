@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import '../modes/models/resonate_mode.dart';
 
 /// Shared, image-led artwork for mode selection and mode shelves.
-/// BoxFit.cover fills the banner; contrast gradients keep copy readable.
-/// The previous lightweight illustration remains as an error fallback.
+/// Supplied artwork is portrait-oriented, so it gets its own near-native-ratio
+/// panel instead of being cropped across a wide background. The drawn gradient
+/// remains available if an image cannot load.
 class ModeArtworkBanner extends StatelessWidget {
   const ModeArtworkBanner({super.key, required this.mode});
 
@@ -31,83 +32,113 @@ class ModeArtworkBanner extends StatelessWidget {
           ),
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.asset(
-              _asset(mode),
-              fit: BoxFit.cover,
-              alignment: _alignment(mode),
-              filterQuality: FilterQuality.medium,
-              errorBuilder: (context, error, stackTrace) => DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: colors,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final artWidth = constraints.maxWidth < 360
+                ? 100.0
+                : constraints.maxWidth < 520
+                    ? 128.0
+                    : 168.0;
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          colors.first.withValues(alpha: .98),
+                          colors.last.withValues(alpha: .94),
+                          colors.last.withValues(alpha: .78),
+                        ],
+                        stops: const [0, .56, 1],
+                      ),
+                    ),
                   ),
                 ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      right: -24,
-                      top: -42,
-                      child: Container(
-                        width: 176,
-                        height: 176,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: .14),
-                            width: 24,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: artWidth,
+                    height: 172,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Image.asset(
+                            _asset(mode),
+                            fit: BoxFit.cover,
+                            alignment: _alignment(mode),
+                            filterQuality: FilterQuality.medium,
+                            errorBuilder: (context, error, stackTrace) =>
+                                DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: colors,
+                                ),
+                              ),
+                              child: Stack(
+                                children: [
+                                  Positioned(
+                                    right: -24,
+                                    top: -42,
+                                    child: Container(
+                                      width: 176,
+                                      height: 176,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white.withValues(
+                                            alpha: .14,
+                                          ),
+                                          width: 24,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    right: 12,
+                                    bottom: -36,
+                                    child: Container(
+                                      width: 100,
+                                      height: 100,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white.withValues(
+                                          alpha: .08,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
+                          const DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [
+                                  Color(0x66000000),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Positioned(
-                      right: 28,
-                      bottom: -56,
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: .08),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Color(0xE6000000),
-                    Color(0xA6000000),
-                    Color(0x12000000),
-                  ],
-                  stops: [0, .58, 1],
-                ),
-              ),
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Color(0x66000000), Colors.transparent],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              child: Row(
-                children: [
-                  Expanded(
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 12, 18),
+                  child: SizedBox(
+                    width: constraints.maxWidth - artWidth - 30,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,8 +149,8 @@ class ModeArtworkBanner extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Colors.white.withValues(alpha: .82),
-                            letterSpacing: 1.6,
+                            color: Colors.white.withValues(alpha: .84),
+                            letterSpacing: 1.5,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -140,23 +171,10 @@ class ModeArtworkBanner extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: .28),
-                      borderRadius: BorderRadius.circular(17),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: .32),
-                      ),
-                    ),
-                    child: Icon(_icon(mode), size: 27, color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -175,15 +193,15 @@ class ModeArtworkBanner extends StatelessWidget {
       };
 
   static Alignment _alignment(ResonateMode mode) => switch (mode) {
-        ResonateMode.normal => const Alignment(0.35, 0),
-        ResonateMode.running => const Alignment(0.45, 0),
-        ResonateMode.workout => const Alignment(0.45, 0),
-        ResonateMode.driving => const Alignment(0.42, 0),
-        ResonateMode.work => const Alignment(0.45, 0),
-        ResonateMode.podcast => const Alignment(0.4, 0),
-        ResonateMode.motivation => const Alignment(0.42, 0),
-        ResonateMode.audiobook => const Alignment(0.4, 0),
-        ResonateMode.sleep => const Alignment(0.4, 0),
+        ResonateMode.normal => const Alignment(0, 0),
+        ResonateMode.running => const Alignment(0, 0),
+        ResonateMode.workout => const Alignment(0, 0.12),
+        ResonateMode.driving => const Alignment(0, 0),
+        ResonateMode.work => const Alignment(0, 0),
+        ResonateMode.podcast => const Alignment(0, 0),
+        ResonateMode.motivation => const Alignment(0, 0),
+        ResonateMode.audiobook => const Alignment(0, 0),
+        ResonateMode.sleep => const Alignment(0, 0),
       };
 
   static IconData _icon(ResonateMode mode) => switch (mode) {
