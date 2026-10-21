@@ -150,3 +150,12 @@ Hard ceiling for now: **100 MB total app size**. Treat this as a release gate, n
 - [ ] CI must pass for the new test and the 100 MiB APK gate.
 - [ ] Manual validation still required: verify the Settings entry on device, test notification ducking and calls, confirm a second music app does not trigger unwanted resume, verify EQ headroom with positive boosts, and listen-check leveling across varied tracks.
 - [ ] Do not claim call-only automation until platform focus events provide a reliable interruption source; keep the safe no-auto-resume level clearly described.
+
+
+### Phase 2 image integration follow-up (2026-10-21)
+
+- [x] Register the nine user-supplied JPEGs in the Flutter asset manifest and map them explicitly to Normal, Running, Workout, Driving, Work, Podcast, Motivation, Audiobook, and Sleep.
+- [x] Use cover-cropping in the shared mode banner, with left/bottom contrast gradients, concise copy, and the existing drawn-art fallback if an image cannot load.
+- [x] Add regression coverage for exact asset mapping, cover fit, mode labels, and narrow-screen/large-text layout.
+- [ ] CI and release APK size gate must pass before merge.
+- [ ] Inspect crops, readability, and player/mode-screen consistency on device; per-mode alignment can be tuned after seeing real screen ratios.
