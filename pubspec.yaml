@@ -36,3 +36,12 @@ flutter:
     - assets/branding/resonate_in_app_logo.png
     - assets/branding/resonate_app_icon.png
     - assets/sfx/
+    - assets/Normal_Mode.jpg
+    - assets/Running_Mode.jpg
+    - assets/Workout_Mode.jpg
+    - assets/Driving_Mode.jpg
+    - assets/Work_Mode.jpg
+    - assets/Podcast_Mode.jpg
+    - assets/Motivation_Mode.jpg
+    - assets/Audiobook_Mode.jpg
+    - assets/Sleep_Mode.jpg

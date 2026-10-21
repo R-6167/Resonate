@@ -139,7 +139,11 @@ Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the r
 - [x] PR #129 merged: release APK size is now gated at 100 MiB in CI.
 - [x] PR #130 merged: artwork accessibility/layout regression tests; post-merge CI run #39598409138 passed.
 - [ ] Device smoke check: switch all modes, inspect empty/populated shelves, verify player badge and large-text/narrow layouts.
-- [ ] Revisit the seven optional JPEGs from the separate `Assets` branch later; image review/integration is deferred, not a blocker for this phase.
+- [x] Integrate the nine supplied mode JPEGs from `assets/` into the shared mode artwork banner using explicit enum-to-file mapping, `BoxFit.cover`, contrast gradients, and a graceful lightweight fallback (PR in review).
+- [x] Register all nine JPEGs as local Flutter assets; no network loading or dependencies added.
+- [x] Add regression coverage for the nine image mappings and narrow/large-text layout.
+- [ ] Confirm CI and the measured release APK remains below 100 MiB; manually review actual crops/contrast on device.
+- [ ] If the image subject is clipped on a particular device ratio, tune that mode's alignment based on visual review.
 
 Next: Phase 3 — audit Audio Automation, audio-focus behavior, DVC, EQ headroom, loudness leveling, limiter/crossover, and DJ/crossfade controls for clear wording, a canonical home, persistence, and accurate wiring. Keep playback-engine changes isolated from UI simplification.
 
