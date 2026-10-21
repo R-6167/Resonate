@@ -172,7 +172,6 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                           children: [
                             ClipPath(
                               clipper: clipperForShape(
-                                shape: ctrl.shape,
                                 progress: p,
                                 breathe: breathe,
                                 audioEnergy: energy,
@@ -226,13 +225,11 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
 
 class _AskResonateContent extends StatefulWidget {
   final String contextLabel;
-  final AskResonateShape shape;
   final VoidCallback onClose;
   final bool reduceMotion;
 
   const _AskResonateContent({
     required this.contextLabel,
-    required this.shape,
     required this.onClose,
     required this.reduceMotion,
   });
