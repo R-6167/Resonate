@@ -27,5 +27,42 @@ void main() {
       expect(runtime.noteFocusEvent(), 2);
       expect(runtime.focusEventGeneration, 2);
     });
+
+    test('unduck target preserves sleep-timer fade and clamps safely', () {
+      final runtime = FocusInterruptionRuntime();
+
+      expect(
+        runtime.unduckRestoreGain(preampScale: 0.8, sleepFadeScale: 0.5),
+        0.4,
+      );
+      expect(
+        runtime.unduckRestoreGain(preampScale: 1.5, sleepFadeScale: 0.5),
+        0.75,
+      );
+      expect(
+        runtime.unduckRestoreGain(preampScale: 0.8, sleepFadeScale: -1),
+        0.0,
+      );
+    });
+
+    test('unduck only finalizes for current focus generation outside a transition', () {
+      final runtime = FocusInterruptionRuntime();
+      final generation = runtime.noteFocusEvent();
+
+      expect(
+        runtime.canFinalizeUnduck(generation, transitionLive: false),
+        isTrue,
+      );
+      expect(
+        runtime.canFinalizeUnduck(generation, transitionLive: true),
+        isFalse,
+      );
+
+      runtime.noteFocusEvent();
+      expect(
+        runtime.canFinalizeUnduck(generation, transitionLive: false),
+        isFalse,
+      );
+    });
   });
 }
