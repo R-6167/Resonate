@@ -100,7 +100,7 @@ The new `docs/RESONATE_UX_REFINEMENT_PLAN.md` defines the phased UX and sound-id
 
 - [x] PR #122 merged; its CI passed. Post-merge CI run #39584802997 was still running at the time the audit was recorded and must be checked separately.
 - [x] Added `docs/RESONATE_UX_PHASE_0_AUDIT.md` with the current screen/mode/EQ/DSP/art inventory and Phase 1 acceptance notes.
-- [x] Current listening-mode enum has nine entries (Normal, Running, Workout, Driving, Work, Podcast, Motivation, Audiobook, Sleep); `docs/MODES.md` omits Workout and Sleep. This is a confirmed documentation mismatch.
+- [x] Current listening-mode enum has nine entries (Normal, Running, Workout, Driving, Work, Podcast, Motivation, Audiobook, Sleep); `docs/MODES.md` previously omitted Workout and Sleep; this PR corrects that documentation mismatch.
 - [x] EQ currently has 32 built-in generic category-based presets plus custom save/delete and versioned JSON import/export. Phase 1 must preserve custom preset compatibility and evaluate headroom before adopting curves.
 - [x] CI release APK baseline: 76.2 MB from run #39579384222, using `flutter build apk --release --no-shrink`. This is below the current 100 MB APK ceiling by about 23.8 MB on the same reported measure. It is not an installed-size measurement.
 - [x] Existing asset tree has branding PNGs and SFX, but no dedicated mode artwork. The two branding PNGs total 2,727,164 bytes; six SFX total 208,416 bytes; all tracked `assets/` files total about 2.80 MiB.
