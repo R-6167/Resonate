@@ -119,3 +119,12 @@ Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the r
 - [ ] Add profile curve/catalog tests and verify selection/persistence plus legacy/custom JSON compatibility.
 - [ ] Confirm the native DSP and automatic-headroom path, then record listening checks across varied recordings and output routes.
 - [ ] Keep the release APK below the existing 100 MB ceiling; establish a fresh comparable baseline before adding a CI size-failure gate.
+
+
+## UX refinement program — EQ profile picker — 2026-10-21
+
+- [x] Added a dedicated first-party Resonate sound-profile card row to the existing EQ screen; profiles are discoverable without navigating the category chips.
+- [x] Cards provide short plain-language intent, distinct icons, accessible text labels, and an exact selected-state indicator.
+- [x] Preset application uses the existing EqualizerProvider path; no DSP, storage schema, dependency, or playback-engine changes.
+- [ ] Confirm PR #124 post-merge release build and APK size; current post-merge CI run #39587954052 is still in progress at the last check.
+- [ ] Validate profile selection and persistence on device, then continue the remaining native headroom and listening checks before declaring Phase 1 complete.

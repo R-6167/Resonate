@@ -36,7 +36,9 @@ Exit criteria: a source-backed screen/control inventory, a size baseline, and a 
 - Inspect the current EQ model, band layout, native DSP mapping, preamp/headroom behavior, and custom preset schema before authoring curves.
 - Author profiles as explicit, versioned curves with conservative gain/headroom behavior; avoid broad boosts that risk clipping.
 - Listen-test across varied recordings and outputs before calling a profile complete; automated tests validate mappings and persistence, not subjective sound quality.
-- Make preset selection visually clear, show modified/custom state, and offer an explicit "Save as custom" path without overwriting user presets.
+- [x] Feature the five first-party profiles as horizontally browsable, readable cards with descriptions and a clear selected state; preserve the full category catalog for classic and custom presets.
+- [x] Keep one-tap profile selection and retain the existing explicit save-as-custom action; fine-tuning remains available in the band sliders.
+- [ ] Verify profile selection, restart persistence, and custom/legacy import compatibility in CI and manual checks.
 - Keep band sliders in an advanced/fine-tune area; keep preamp accessible and distinguish it from loudness normalization.
 - Preserve existing custom preset save/import/export compatibility unless migration is demonstrably needed.
 
