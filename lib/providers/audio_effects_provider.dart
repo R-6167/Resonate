@@ -171,6 +171,14 @@ class AudioEffectsProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final canonical = await DspSettings.load();
+      // Restore the canonical native protection profile at startup. Registry
+      // sticky state carries these values to both A/B engines, including a
+      // sink created after this provider finishes loading.
+      await AudioEffectsBridge.setLiveDspLimiterCeiling(
+        highDb: canonical.limiterHighCeilingDb,
+        lowDb: canonical.limiterLowCeilingDb,
+      );
+      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
       effectsEnabled = canonical.effectsEnabled;
       reverb = canonical.reverbAmount;
       virtualizer = canonical.virtualizerAmount;
