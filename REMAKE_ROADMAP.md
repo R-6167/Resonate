@@ -128,3 +128,17 @@ Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the r
 - [x] Preset application uses the existing EqualizerProvider path; no DSP, storage schema, dependency, or playback-engine changes.
 - [ ] Confirm PR #124 post-merge release build and APK size; current post-merge CI run #39587954052 is still in progress at the last check.
 - [ ] Validate profile selection and persistence on device, then continue the remaining native headroom and listening checks before declaring Phase 1 complete.
+
+
+## UX refinement — Phase 2 mode identity completion (2026-10-21)
+
+- [x] Complete the nine-mode lightweight artwork system without raster images or added dependencies.
+- [x] Use shared artwork on the Modes screen and populated mode shelves; the Now Playing badge shares the same palette and icon language.
+- [x] Extend mode-shelf identity to Normal and empty-shelf states so context remains clear when no virtual shelf tracks are present.
+- [x] Add widget tests for all mode banner variants, semantic labels, and narrow-screen/large-text rendering.
+- [x] PR #129 merged: release APK size is now gated at 100 MiB in CI.
+- [x] PR #130 merged: artwork accessibility/layout regression tests; post-merge CI run #39598409138 passed.
+- [ ] Device smoke check: switch all modes, inspect empty/populated shelves, verify player badge and large-text/narrow layouts.
+- [ ] Revisit the seven optional JPEGs from the separate `Assets` branch later; image review/integration is deferred, not a blocker for this phase.
+
+Next: Phase 3 — audit Audio Automation, audio-focus behavior, DVC, EQ headroom, loudness leveling, limiter/crossover, and DJ/crossfade controls for clear wording, a canonical home, persistence, and accurate wiring. Keep playback-engine changes isolated from UI simplification.
