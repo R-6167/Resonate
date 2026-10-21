@@ -45,6 +45,8 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchController = TextEditingController();
+  final _songsScrollController = ScrollController();
+  String? _lastAutoScrolledSongId;
   bool _hasSelectedFolders = false;
   bool _selectMode = false;
   final Set<String> _selectedIds = <String>{};
@@ -66,8 +68,56 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _onSearchChanged() {
+    _lastAutoScrolledSongId = null;
     context.read<LibraryProvider>().searchSongs(_searchController.text);
-    setState(() {});
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showSearch() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Search library'),
+        content: TextField(
+          controller: _searchController,
+          autofocus: true,
+          textInputAction: TextInputAction.search,
+          decoration: const InputDecoration(
+            hintText: 'Songs, artists, albums',
+            prefixIcon: Icon(Icons.search_rounded),
+          ),
+          onSubmitted: (_) => Navigator.pop(dialogContext),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _searchController.clear();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Clear'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _restoreCurrentSongRow(List<Song> songs, String? songId) {
+    if (songId == null || songId == _lastAutoScrolledSongId) return;
+    final index = songs.indexWhere((song) => song.id == songId);
+    if (index < 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_songsScrollController.hasClients) return;
+      final position = _songsScrollController.position;
+      const rowExtent = 72.0;
+      final target = (index * rowExtent - (position.viewportDimension / 2) + rowExtent / 2)
+          .clamp(0.0, position.maxScrollExtent);
+      _songsScrollController.jumpTo(target.toDouble());
+      _lastAutoScrolledSongId = songId;
+    });
   }
 
   void _toggleSelectMode([bool? on]) {
@@ -394,6 +444,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ] else ...[
           IconButton(
+            tooltip: 'Search library',
+            icon: Icon(
+              _searchController.text.isEmpty ? Icons.search_rounded : Icons.search_off_rounded,
+            ),
+            onPressed: _showSearch,
+          ),
+          IconButton(
             tooltip: 'Select',
             icon: const Icon(Icons.checklist_rounded),
             onPressed: () => _toggleSelectMode(true),
@@ -492,26 +549,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search songs, artists, albums...',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear_rounded),
-                        onPressed: _searchController.clear,
-                      ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-          Padding(
+remove inline search          Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: SegmentedButton<int>(
               segments: const [
@@ -802,6 +840,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   );
                 }
                 final nowPlaying = music.currentSong;
+                _restoreCurrentSongRow(songs, nowPlaying?.id);
                 return Column(
                   children: [
                     if (nowPlaying != null)
@@ -844,6 +883,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ),
                     Expanded(
                       child: ListView.builder(
+                        controller: _songsScrollController,
+                        itemExtent: 72,
                         itemCount: songs.length,
                         itemBuilder: (_, index) {
                           final song = songs[index];
@@ -1000,6 +1041,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _songsScrollController.dispose();
     super.dispose();
   }
 }
