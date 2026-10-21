@@ -41,7 +41,7 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
   void _restartTimer() {
     _timer?.cancel();
     if (!_playing) return;
-    final milliseconds = (1000 / _fps.clamp(15, 60)).round().clamp(16, 67);
+    final milliseconds = (1000 / _fps.clamp(12, 30)).round().clamp(33, 83);
     _timer = Timer.periodic(Duration(milliseconds: milliseconds), (_) => _phase.value = (_phase.value + .055) % 1.0);
   }
 
@@ -62,10 +62,10 @@ class _VisualizationPainter extends CustomPainter {
   @override void paint(Canvas canvas, Size size) {
     final bars = type == 'waveform' ? 48 : 28;
     final values = List<double>.generate(bars, (i) {
-      final index = ((i / bars) * spectrum.length).floor().clamp(0, math.max(0, spectrum.length - 1));
-      final measured = spectrum.isEmpty ? 0.0 : spectrum[index].clamp(0.0, 1.0);
+      final index = ((i / bars) * spectrum.length).floor().clamp(0, math.max(0, spectrum.length - 1)).toInt();
+      final measured = spectrum.isEmpty ? 0.0 : spectrum[index].clamp(0.0, 1.0).toDouble();
       final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0;
-      return (measured * (0.55 + sensitivity * 1.15) * bassBoost).clamp(0.0, 1.0);
+      return (measured * (0.55 + sensitivity * 1.15) * bassBoost).clamp(0.0, 1.0).toDouble();
     });
     final center = Offset(size.width / 2, size.height / 2);
     final paint = Paint()..color = color.withOpacity(.92)..strokeCap = StrokeCap.round;
