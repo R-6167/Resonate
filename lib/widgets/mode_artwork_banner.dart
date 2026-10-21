@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../modes/models/resonate_mode.dart';
 
-/// Lightweight, local-only illustration for a listening mode.
-/// Uses Material icons and gradients instead of large image assets.
+/// Shared, image-led artwork for mode selection and mode shelves.
+/// BoxFit.cover fills the banner; contrast gradients keep copy readable.
+/// The previous lightweight illustration remains as an error fallback.
 class ModeArtworkBanner extends StatelessWidget {
   const ModeArtworkBanner({super.key, required this.mode});
 
@@ -12,17 +13,15 @@ class ModeArtworkBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = _colors(mode);
-    final icon = _icon(mode);
-    final description = _description(mode);
     final title = mode.label;
-    final scheme = Theme.of(context).colorScheme;
+    final description = _description(mode);
 
     return Semantics(
       image: true,
-      label: '$title mode artwork. $description',
+      label: title + ' mode artwork. ' + description,
       child: Container(
         width: double.infinity,
-        constraints: const BoxConstraints(minHeight: 148),
+        constraints: const BoxConstraints(minHeight: 172),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
           gradient: LinearGradient(
@@ -33,37 +32,84 @@ class ModeArtworkBanner extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            Positioned(
-              right: -24,
-              top: -42,
-              child: Container(
-                width: 176,
-                height: 176,
+            Image.asset(
+              _asset(mode),
+              fit: BoxFit.cover,
+              alignment: _alignment(mode),
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (context, error, stackTrace) => DecoratedBox(
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withValues(alpha: .14), width: 24),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: colors,
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -24,
+                      top: -42,
+                      child: Container(
+                        width: 176,
+                        height: 176,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: .14),
+                            width: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 28,
+                      bottom: -56,
+                      child: Container(
+                        width: 140,
+                        height: 140,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: .08),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            Positioned(
-              right: 28,
-              bottom: -56,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: .08),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Color(0xE6000000),
+                    Color(0xA6000000),
+                    Color(0x12000000),
+                  ],
+                  stops: [0, .58, 1],
+                ),
+              ),
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Color(0x66000000), Colors.transparent],
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -72,9 +118,9 @@ class ModeArtworkBanner extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Colors.white.withValues(alpha: .78),
+                            color: Colors.white.withValues(alpha: .82),
                             letterSpacing: 1.6,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -86,6 +132,9 @@ class ModeArtworkBanner extends StatelessWidget {
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
                             height: 1.18,
+                            shadows: const [
+                              Shadow(color: Colors.black45, blurRadius: 8),
+                            ],
                           ),
                         ),
                       ],
@@ -93,14 +142,16 @@ class ModeArtworkBanner extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Container(
-                    width: 88,
-                    height: 88,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: .12),
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Colors.white.withValues(alpha: .2)),
+                      color: Colors.black.withValues(alpha: .28),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: .32),
+                      ),
                     ),
-                    child: Icon(icon, size: 52, color: Colors.white),
+                    child: Icon(_icon(mode), size: 27, color: Colors.white),
                   ),
                 ],
               ),
@@ -111,50 +162,68 @@ class ModeArtworkBanner extends StatelessWidget {
     );
   }
 
-  static IconData _icon(ResonateMode mode) {
-    final value = mode.name.toLowerCase();
-    if (value.contains('run')) return Icons.directions_run_rounded;
-    if (value.contains('workout')) return Icons.fitness_center_rounded;
-    if (value.contains('driv')) return Icons.directions_car_filled_rounded;
-    if (value.contains('work')) return Icons.center_focus_strong_rounded;
-    if (value.contains('podcast')) return Icons.mic_rounded;
-    if (value.contains('audio') || value.contains('book')) return Icons.menu_book_rounded;
-    if (value.contains('sleep')) return Icons.nights_stay_rounded;
-    if (value.contains('motivat')) return Icons.bolt_rounded;
-    return Icons.graphic_eq_rounded;
-  }
+  static String _asset(ResonateMode mode) => switch (mode) {
+        ResonateMode.normal => 'assets/Normal_Mode.jpg',
+        ResonateMode.running => 'assets/Running_Mode.jpg',
+        ResonateMode.workout => 'assets/Workout_Mode.jpg',
+        ResonateMode.driving => 'assets/Driving_Mode.jpg',
+        ResonateMode.work => 'assets/Work_Mode.jpg',
+        ResonateMode.podcast => 'assets/Podcast_Mode.jpg',
+        ResonateMode.motivation => 'assets/Motivation_Mode.jpg',
+        ResonateMode.audiobook => 'assets/Audiobook_Mode.jpg',
+        ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
+      };
 
-  static String _description(ResonateMode mode) {
-    final value = mode.name.toLowerCase();
-    if (value.contains('run')) return 'Find your rhythm. Keep moving.';
-    if (value.contains('workout')) return 'Build momentum, one track at a time.';
-    if (value.contains('driv')) return 'A soundtrack for the road ahead.';
-    if (value.contains('work')) return 'Stay in flow with fewer distractions.';
-    if (value.contains('podcast')) return 'Make room for voices and ideas.';
-    if (value.contains('audio') || value.contains('book')) return 'Settle in and follow the story.';
-    if (value.contains('sleep')) return 'Slow the pace and wind down.';
-    if (value.contains('motivat')) return 'Bring the energy when you need it.';
-    return 'Your library, your sound.';
-  }
+  static Alignment _alignment(ResonateMode mode) => switch (mode) {
+        ResonateMode.normal => const Alignment(0.35, 0),
+        ResonateMode.running => const Alignment(0.45, 0),
+        ResonateMode.workout => const Alignment(0.45, 0),
+        ResonateMode.driving => const Alignment(0.42, 0),
+        ResonateMode.work => const Alignment(0.45, 0),
+        ResonateMode.podcast => const Alignment(0.4, 0),
+        ResonateMode.motivation => const Alignment(0.42, 0),
+        ResonateMode.audiobook => const Alignment(0.4, 0),
+        ResonateMode.sleep => const Alignment(0.4, 0),
+      };
 
-  static List<Color> _colors(ResonateMode mode) {
-    final value = mode.name.toLowerCase();
-    if (value.contains('run') || value.contains('workout')) {
-      return const [Color(0xFFEF6C35), Color(0xFF9D2F54)];
-    }
-    if (value.contains('driv')) return const [Color(0xFF276A9B), Color(0xFF253D70)];
-    if (value.contains('work')) return const [Color(0xFF277C78), Color(0xFF234D68)];
-    if (value.contains('podcast') || value.contains('audio') || value.contains('book')) {
-      return const [Color(0xFF7454A6), Color(0xFF3F477E)];
-    }
-    if (value.contains('sleep')) return const [Color(0xFF303F83), Color(0xFF171D42)];
-    if (value.contains('motivat')) return const [Color(0xFFD66B28), Color(0xFF8C3E45)];
-    return const [Color(0xFF347A95), Color(0xFF373C78)];
-  }
+  static IconData _icon(ResonateMode mode) => switch (mode) {
+        ResonateMode.normal => Icons.graphic_eq_rounded,
+        ResonateMode.running => Icons.directions_run_rounded,
+        ResonateMode.workout => Icons.fitness_center_rounded,
+        ResonateMode.driving => Icons.directions_car_filled_rounded,
+        ResonateMode.work => Icons.center_focus_strong_rounded,
+        ResonateMode.podcast => Icons.mic_rounded,
+        ResonateMode.motivation => Icons.bolt_rounded,
+        ResonateMode.audiobook => Icons.menu_book_rounded,
+        ResonateMode.sleep => Icons.nights_stay_rounded,
+      };
+
+  static String _description(ResonateMode mode) => switch (mode) {
+        ResonateMode.normal => 'Your library, your sound.',
+        ResonateMode.running => 'Find your rhythm. Keep moving.',
+        ResonateMode.workout => 'Build momentum, one track at a time.',
+        ResonateMode.driving => 'A soundtrack for the road ahead.',
+        ResonateMode.work => 'Stay in flow with fewer distractions.',
+        ResonateMode.podcast => 'Make room for voices and ideas.',
+        ResonateMode.motivation => 'Bring the energy when you need it.',
+        ResonateMode.audiobook => 'Settle in and follow the story.',
+        ResonateMode.sleep => 'Slow the pace and wind down.',
+      };
+
+  static List<Color> _colors(ResonateMode mode) => switch (mode) {
+        ResonateMode.running || ResonateMode.workout =>
+          const [Color(0xFFEF6C35), Color(0xFF9D2F54)],
+        ResonateMode.driving => const [Color(0xFF276A9B), Color(0xFF253D70)],
+        ResonateMode.work => const [Color(0xFF277C78), Color(0xFF234D68)],
+        ResonateMode.podcast || ResonateMode.audiobook =>
+          const [Color(0xFF7454A6), Color(0xFF3F477E)],
+        ResonateMode.sleep => const [Color(0xFF303F83), Color(0xFF171D42)],
+        ResonateMode.motivation => const [Color(0xFFD66B28), Color(0xFF8C3E45)],
+        ResonateMode.normal => const [Color(0xFF347A95), Color(0xFF373C78)],
+      };
 }
 
-/// Compact, non-interactive mode identity for the player artwork surface.
-/// It adds context without taking vertical space away from playback controls.
+/// Compact mode identity for the player surface; preserves playback-control space.
 class ModeArtworkBadge extends StatelessWidget {
   const ModeArtworkBadge({super.key, required this.mode});
 
@@ -163,9 +232,8 @@ class ModeArtworkBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = ModeArtworkBanner._colors(mode);
-    final icon = ModeArtworkBanner._icon(mode);
     return Semantics(
-      label: '${mode.label} mode active',
+      label: mode.label + ' mode active',
       child: Container(
         constraints: const BoxConstraints(maxWidth: 190),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -188,7 +256,7 @@ class ModeArtworkBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: Colors.white),
+            Icon(ModeArtworkBanner._icon(mode), size: 18, color: Colors.white),
             const SizedBox(width: 7),
             Flexible(
               child: Text(
@@ -207,4 +275,3 @@ class ModeArtworkBadge extends StatelessWidget {
     );
   }
 }
-
