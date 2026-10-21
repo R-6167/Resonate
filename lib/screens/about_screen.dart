@@ -35,12 +35,12 @@ class AboutScreen extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 Positioned(
-                  right: -12,
-                  top: -18,
+                  right: 0,
+                  top: 0,
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: 0.14,
-                      child: const ResonateLogo(size: 190, full: true, showWord: false),
+                      child: const ResonateLogo(size: 176, full: true, showWord: false),
                     ),
                   ),
                 ),
