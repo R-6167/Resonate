@@ -22,6 +22,10 @@ internal class AudioEffectsChannelHandler {
                         effectsBridge.attachToSession(call.argument<Int>("sessionId") ?: 0)
                         result.success(true)
                     }
+                    "detachFromSession" -> {
+                        effectsBridge.detachFromSession(call.argument<Int>("sessionId") ?: 0)
+                        result.success(true)
+                    }
                     "setBassBoost" -> {
                         // Retired: mature Resonate DSP owns bass processing.
                         result.success(true)
