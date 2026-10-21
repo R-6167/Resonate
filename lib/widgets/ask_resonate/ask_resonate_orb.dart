@@ -129,6 +129,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
           child: AnimatedCompanionMark(
             mode: intelligence.autonomyLabel,
             size: 28,
+            audioEnergy: reduceMotion ? 0.0 : lowBandEnergy * viz.sensitivity,
           ),
         ),
       ),
