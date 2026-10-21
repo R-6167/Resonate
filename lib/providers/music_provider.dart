@@ -360,6 +360,13 @@ class MusicProvider extends ChangeNotifier {
   bool get audioFocusAutomationEnabled =>
       _audioFocusSettings.automationEnabled;
   int get audioFocusLevel => _audioFocusSettings.clampedLevel;
+  bool get pauseResumeFadeEnabled => _audioFocusSettings.pauseResumeFadeEnabled;
+
+  Future<void> setPauseResumeFadeEnabled(bool value) async {
+    _audioFocusSettings.pauseResumeFadeEnabled = value;
+    await _audioFocusSettings.persist();
+    notifyListeners();
+  }
 
   Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
     if (automatic != null) _audioFocusSettings.setAutomationEnabled(automatic);
