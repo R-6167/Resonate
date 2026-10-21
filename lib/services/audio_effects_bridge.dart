@@ -14,6 +14,15 @@ class AudioEffectsBridge {
     }
   }
 
+  static Future<void> detachFromSession(int sessionId) async {
+    if (sessionId <= 0) return;
+    try {
+      await _channel.invokeMethod('detachFromSession', {'sessionId': sessionId});
+    } catch (e) {
+      debugPrint('AudioEffectsBridge.detachFromSession failed: $e');
+    }
+  }
+
   static Future<void> setBassBoost(double strength) async {
     try {
       final s = (strength.clamp(0.0, 1.0) * 1000).round();
@@ -34,7 +43,11 @@ class AudioEffectsBridge {
 
   static Future<void> setReverb(double strength) async {
     try {
-      final s = (strength.clamp(0.0, 1.0) * 1900 - 900).round();
+      final amount = strength.clamp(0.0, 1.0).toDouble();
+      // Zero is the explicit disabled sentinel. EnvironmentalReverb uses
+      // negative levels for non-zero effect amounts, so preserve zero here.
+      final mapped = amount <= 0 ? 0 : (amount * 1900 - 900).round();
+      final s = mapped == 0 && amount > 0 ? 1 : mapped;
       await _channel.invokeMethod('setReverb', {'strength': s});
     } catch (e) {
       debugPrint('setReverb failed: $e');
