@@ -93,7 +93,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
     final lowBandEnergy = viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
         ? viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6
         : 0.0;
-    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.12).clamp(0.0, 0.12);
+    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.12).clamp(0.0, 0.12).toDouble();
     final scheme = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
