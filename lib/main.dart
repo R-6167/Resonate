@@ -26,6 +26,7 @@ import 'providers/playback_features_provider.dart';
 import 'providers/playlist_provider.dart';
 import 'providers/theme_provider.dart';
 import 'navigation/shell_nav.dart';
+import 'widgets/ask_resonate/ask_resonate_controller.dart';
 import 'screens/home_screen.dart';
 import 'services/audio_service_handler.dart';
 import 'services/playback_diagnostics_observer.dart';
@@ -251,19 +252,11 @@ Future<void> main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.aetherion.resonate.audio',
       androidNotificationChannelName: 'Resonate Playback',
-      // audio_service asserts: ongoing must be false when stopForegroundOnPause is false.
       androidNotificationOngoing: false,
-      // Keep the media session / notification while paused so play-pause stays real-time.
       androidStopForegroundOnPause: false,
       androidNotificationChannelDescription: 'Now playing and transport controls',
       fastForwardInterval: Duration(seconds: 10),
       rewindInterval: Duration(seconds: 10),
-      // Must be a real bitmap (PNG) resource. audio_service defaults to
-      // mipmap/ic_launcher which this project did not ship; Unisoc/HMD then
-      // posts a FGS notification with icon=0 and crashes MainActivity on
-      // first play (IllegalArgumentException: no valid small icon) while
-      // ExoPlayer has already started — "Resonate keeps stopping".
-      // A vector drawable is also rejected as a small icon on this OEM.
       androidNotificationIcon: 'drawable/ic_stat_resonate',
     ),
   );
@@ -284,6 +277,7 @@ class ResonateApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => ShellNav()),
+        ChangeNotifierProvider(create: (_) => AskResonateController()),
         ChangeNotifierProvider(
           create: (_) => MusicProvider(audioHandler: audioHandler),
         ),
@@ -301,9 +295,7 @@ class ResonateApp extends StatelessWidget {
           create: (context) =>
               PlaybackDiagnosticsObserver(music: context.read<MusicProvider>()),
         ),
-        // Bluetooth before Modes + Equalizer (car context + EQ profiles).
         ChangeNotifierProvider(create: (_) => BluetoothProvider()),
-        // Modes: policy only. Ports never force play or reclaim focus.
         ChangeNotifierProvider(
           create: (context) {
             final modes = ModeProvider();
@@ -388,7 +380,6 @@ class ResonateApp extends StatelessWidget {
   }
 }
 
-/// Persists resume position when the app is backgrounded or detached.
 class _LifecycleHome extends StatefulWidget {
   const _LifecycleHome();
 
