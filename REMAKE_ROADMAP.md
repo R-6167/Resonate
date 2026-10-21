@@ -94,3 +94,18 @@ Status: PR #120 and PR #121 are merged to `Resonate-True-Apk`. PR #121 merge com
 
 ## UX refinement program — 2026-10-21
 The new `docs/RESONATE_UX_REFINEMENT_PLAN.md` defines the phased UX and sound-identity work, with mode artwork and a 100 MB app-size ceiling. It begins with an audit and measurable baseline; it does not authorize feature changes before the current behavior, release size, and test requirements are understood.
+
+
+## UX refinement — Phase 0 audit — 2026-10-21
+
+- [x] PR #122 merged; its CI passed. Post-merge CI run #39584802997 was still running at the time the audit was recorded and must be checked separately.
+- [x] Added `docs/RESONATE_UX_PHASE_0_AUDIT.md` with the current screen/mode/EQ/DSP/art inventory and Phase 1 acceptance notes.
+- [x] Current listening-mode enum has nine entries (Normal, Running, Workout, Driving, Work, Podcast, Motivation, Audiobook, Sleep); `docs/MODES.md` previously omitted Workout and Sleep; this PR corrects that documentation mismatch.
+- [x] EQ currently has 32 built-in generic category-based presets plus custom save/delete and versioned JSON import/export. Phase 1 must preserve custom preset compatibility and evaluate headroom before adopting curves.
+- [x] CI release APK baseline: 76.2 MB from run #39579384222, using `flutter build apk --release --no-shrink`. This is below the current 100 MB APK ceiling by about 23.8 MB on the same reported measure. It is not an installed-size measurement.
+- [x] Existing asset tree has branding PNGs and SFX, but no dedicated mode artwork. The two branding PNGs total 2,727,164 bytes; six SFX total 208,416 bytes; all tracked `assets/` files total about 2.80 MiB.
+- [ ] Check post-merge CI run #39584802997 before considering the current base fully green.
+- [ ] Add an explicit APK-size threshold to CI only after a fresh base build confirms the measurement and threshold convention.
+- [ ] Keep device installed-size measurement separate from APK size; it has not been measured in this audit.
+
+Next recommended phase: Phase 1 — Resonate sound identity and EQ. Define the reference sound and first-party profile intents, verify native DSP/headroom behavior, and add curve/persistence/migration tests before redesigning the EQ UI. No feature implementation was included in Phase 0.
