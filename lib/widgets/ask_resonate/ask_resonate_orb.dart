@@ -33,56 +33,6 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
     context.read<AskResonateController>().open(shape: shape);
   }
 
-  void _showShapeMenu() {
-    _capturePosition();
-    final ctrl = context.read<AskResonateController>();
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.bubble_chart),
-                title: const Text('Organic blob'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ctrl.open(shape: AskResonateShape.blob);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.smart_button),
-                title: const Text('Capsule'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ctrl.open(shape: AskResonateShape.capsule);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.vertical_split),
-                title: const Text('Edge semicircle'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ctrl.open(shape: AskResonateShape.semicircle);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.radio_button_checked),
-                title: const Text('Orbital'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  ctrl.open(shape: AskResonateShape.orbital);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<AskResonateController>();
@@ -91,9 +41,9 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
     final viz = context.watch<AudioVisualizationProvider>();
     viz.setPlaybackActive(music.isPlaying);
     final lowBandEnergy = viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
-        ? viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6
+        ? (viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6 * 3.2).clamp(0.0, 1.0).toDouble()
         : 0.0;
-    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.12).clamp(0.0, 0.12).toDouble();
+    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.28).clamp(0.0, 0.28).toDouble();
     final scheme = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
@@ -145,8 +95,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
         label: 'Ask Resonate',
         hint: 'Opens the Resonate companion. Long press to choose overlay shape.',
         child: GestureDetector(
-          onTap: () => _openWithShape(AskResonateShape.blob),
-          onLongPress: _showShapeMenu,
+          onTap: () => _openWithShape(ctrl.shape),
           child: orb,
         ),
       ),
