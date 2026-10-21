@@ -30,7 +30,7 @@ class AudioVisualizationSettingsScreen extends StatelessWidget {
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Performance', style: TextStyle(fontWeight: FontWeight.bold))),
         SwitchListTile(title: const Text('Smooth Animation'), subtitle: const Text('Use continuous motion when enabled'), value: p.smoothAnimation, onChanged: p.enabled ? p.setSmoothAnimation : null),
         _slider(context, 'Frame Rate', p.frameRate, 12, 30, p.setFrameRate, '${p.frameRate.round()} FPS', divisions: 9),
-        const Padding(padding: EdgeInsets.all(16), child: ResonateGlassCard(child: Padding(padding: EdgeInsets.all(16), child: Text('The current visualizer is intentionally lightweight. Lower frame rates reduce redraw work; a future native FFT visualizer can feed real frequency data into the same surface.')))),
+        const Padding(padding: EdgeInsets.all(16), child: ResonateGlassCard(child: Padding(padding: EdgeInsets.all(16), child: Text('Both the main visualizer and Ask Resonate use the same native playback spectrum. Capture is optional, low-rate, and fails silently on unsupported devices; it does not modify the audio path.')))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: OutlinedButton.icon(onPressed: p.reset, icon: const Icon(Icons.restore), label: const Text('Reset Visualization Settings'))),
       ]);
     }));
