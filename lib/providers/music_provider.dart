@@ -984,6 +984,9 @@ class MusicProvider extends ChangeNotifier {
       if (_disposed) return;
       _interruptionSubscription = session.interruptionEventStream.listen((event) {
         if (_disposed) return;
+        // Give each focus event an identity. A seek/skip can cancel the volume
+        // fade, but only a newer focus event should cancel final unduck recovery.
+        _focusInterruption.noteFocusEvent();
         unawaited(ResonateDiagnostics.record('audio_focus_event', {
           'begin': event.begin,
           'type': event.type.name,
@@ -1235,21 +1238,39 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> _unduckAfterInterruption() async {
-    if (!_isDucked && audioPlayer.volume >= _eqPreampScale * 0.9) {
+    if (!_isDucked && audioPlayer.volume >= _effectiveCrossfadeMaster * 0.9) {
       _unduckPendingAfterCrossfade = false;
       return;
     }
-    if (_crossfadeInProgress || _automaticCrossfadeInFlight) {
+    if (_transitionLive) {
       // Keep both engines at the ducked gain until the handoff has committed.
       // Clearing _isDucked here would make the incoming engine jump to full gain.
       _unduckPendingAfterCrossfade = true;
       return;
     }
     _unduckPendingAfterCrossfade = false;
+    final focusGeneration = _focusInterruption.focusEventGeneration;
+    // Restore the full user master (including an active sleep-timer fade), not
+    // just EQ preamp. A transport command can cancel the ramp; it must not
+    // leave the engine at the intermediate duck volume.
+    final restored = (_eqPreampScale * _sleepFadeScale)
+        .clamp(0.0, 1.0)
+        .toDouble();
     try {
-      final restored = _eqPreampScale.clamp(0.0, 1.0);
       final from = audioPlayer.volume;
       await _fadePlayerVolume(audioPlayer, from, restored);
+
+      // A new focus event wins over this stale completion. A user seek/skip
+      // only cancels the fade generation, so in that case we still snap to the
+      // correct gain after checking that no crossfade took ownership.
+      if (!_focusInterruption.ownsFocusEventGeneration(focusGeneration)) return;
+      if (_transitionLive) {
+        _unduckPendingAfterCrossfade = true;
+        return;
+      }
+      final fadeDidNotReachTarget =
+          (audioPlayer.volume - restored).abs() > 0.05;
+      await audioPlayer.setVolume(restored);
       try {
         await inactivePlayer.setVolume(0.0);
       } catch (_) {}
@@ -1257,11 +1278,13 @@ class MusicProvider extends ChangeNotifier {
       unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
         'level': restored,
         'engine': _activeIsA ? 'A' : 'B',
+        'fadeCancelledOrIncomplete': fadeDidNotReachTarget,
       }));
     } catch (_) {
+      if (!_focusInterruption.ownsFocusEventGeneration(focusGeneration)) return;
       _isDucked = false;
       try {
-        await audioPlayer.setVolume(_effectiveCrossfadeMaster.clamp(0.0, 1.0));
+        await audioPlayer.setVolume(restored);
       } catch (_) {}
     }
   }
