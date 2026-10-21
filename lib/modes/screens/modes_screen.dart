@@ -7,6 +7,7 @@ import '../models/media_type.dart';
 import '../models/playback_policy.dart';
 import '../models/resonate_mode.dart';
 import '../providers/mode_provider.dart';
+import '../../widgets/mode_artwork_banner.dart';
 
 /// Reference UI for the standalone Modes module.
 ///
@@ -27,6 +28,8 @@ class ModesScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              ModeArtworkBanner(mode: active),
+              const SizedBox(height: 16),
               Text(
                 'Modes change how Resonate behaves — not just what plays.',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -44,17 +47,20 @@ class ModesScreen extends StatelessWidget {
               ),
               const Divider(),
               for (final mode in ResonateMode.values)
-                ListTile(
-                  leading: Text(
-                    mode.emoji,
-                    style: const TextStyle(fontSize: 24),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  color: active == mode
+                      ? Theme.of(context).colorScheme.secondaryContainer
+                      : null,
+                  child: ListTile(
+                    leading: Icon(_modeIcon(mode), size: 26),
+                    title: Text(mode.label),
+                    subtitle: Text(mode.shortDescription),
+                    trailing: active == mode
+                        ? const Icon(Icons.check_circle_rounded)
+                        : const Icon(Icons.circle_outlined),
+                    onTap: () => modes.setMode(mode),
                   ),
-                  title: Text(mode.label),
-                  subtitle: Text(mode.shortDescription),
-                  trailing: active == mode
-                      ? const Icon(Icons.check_circle)
-                      : const Icon(Icons.circle_outlined),
-                  onTap: () => modes.setMode(mode),
                 ),
               const Divider(),
               _buildContentFolders(context, modes),
@@ -66,6 +72,18 @@ class ModesScreen extends StatelessWidget {
       ),
     );
   }
+
+  IconData _modeIcon(ResonateMode mode) => switch (mode) {
+        ResonateMode.normal => Icons.graphic_eq_rounded,
+        ResonateMode.running => Icons.directions_run_rounded,
+        ResonateMode.workout => Icons.fitness_center_rounded,
+        ResonateMode.driving => Icons.directions_car_filled_rounded,
+        ResonateMode.work => Icons.center_focus_strong_rounded,
+        ResonateMode.podcast => Icons.mic_rounded,
+        ResonateMode.motivation => Icons.bolt_rounded,
+        ResonateMode.audiobook => Icons.menu_book_rounded,
+        ResonateMode.sleep => Icons.nights_stay_rounded,
+      };
 
   Widget _buildContentFolders(BuildContext context, ModeProvider modes) {
     return Column(
