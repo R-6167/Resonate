@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
-
 import '../models/intelligence_recommendation.dart';
 import '../models/song.dart';
 import '../providers/intelligence_provider.dart';
@@ -34,11 +33,25 @@ String _homeFormatHours(int ms) {
 }
 
 class HomeDashboard extends StatelessWidget {
-  const HomeDashboard({super.key});
+  const HomeDashboard();
+
+  List<Widget> _recommendations(IntelligenceProvider intelligence, List<dynamic> songs) {
+    if (!intelligence.isEnabled) {
+      return const [ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: Icon(Icons.auto_awesome_outlined), title: Text('Intelligence is off'), subtitle: Text('Your player remains fully manual. Enable it from Settings when you want local anticipation.')))];
+    }
+    final recommendations = intelligence.recommendations.skip(1).toList();
+    if (recommendations.isEmpty) {
+      return const [ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(leading: Icon(Icons.headphones_rounded), title: Text('Let Resonate get to know your taste'), subtitle: Text('Finishes, skips and song-to-song choices become local signals for future decisions.')))];
+    }
+    return recommendations.map<Widget>((item) => _RecommendationTile(item: item, songs: songs)).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
+    // MusicProvider emits frequent position/engine notifications. Select only the
+    // playback fields this dashboard renders so position ticks don't rebuild the
+    // entire For You feed while the user scrolls.
     final music = context.read<MusicProvider>();
     final currentSong = context.select<MusicProvider, Song?>((p) => p.currentSong);
     final isPlaying = context.select<MusicProvider, bool>((p) => p.isPlaying);
@@ -47,9 +60,12 @@ class HomeDashboard extends StatelessWidget {
     final currentDuration = context.select<MusicProvider, Duration?>((p) => p.currentDuration);
     final intelligence = context.watch<IntelligenceProvider>();
     final modes = context.watch<ModeProvider>();
+    final density = ModePlayerDensity.fromMode(modes);
     final songs = library.allSongs;
+    final recommendationQueue = intelligence.recommendations.map((item) => item.song).toList();
     final children = <Widget>[
       const SizedBox(height: 6),
+      // Combined Intelligence + Autopilot + nudge (single card, no duplicate sections)
       AutopilotHomeCard(songCount: songs.length),
     ];
 
@@ -86,6 +102,7 @@ class HomeDashboard extends StatelessWidget {
       ]);
     }
 
+    // Recently played from local listening history
     final history = context.watch<ListeningHistoryProvider>();
     final recentSongs = <Song>[];
     final seen = <String>{};
@@ -99,10 +116,7 @@ class HomeDashboard extends StatelessWidget {
     if (recentSongs.isNotEmpty) {
       children.addAll([
         const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Recently played', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        ),
+        _sectionTitle(context, 'Recently played'),
         SizedBox(
           height: 96,
           child: ListView.separated(
@@ -118,12 +132,24 @@ class HomeDashboard extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   child: ListTile(
                     dense: true,
-                    leading: const CircleAvatar(child: Icon(Icons.history_rounded, size: 18)),
-                    title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.history_rounded, size: 18),
+                    ),
+                    title: Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      song.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () async {
                       await music.playSong(song);
-                      if (context.mounted) openShellPlayer(context);
+                      if (context.mounted) {
+                        openShellPlayer(context);
+                      }
                     },
                   ),
                 ),
@@ -138,36 +164,205 @@ class HomeDashboard extends StatelessWidget {
       children.addAll([
         const SizedBox(height: 16),
         const DrivingSuggestionBanner(),
-        const ModeShelfCard(),
-        const EvolvingMixCard(),
+      const ModeShelfCard(),
+      const EvolvingMixCard(),
       ]);
     }
 
     if (currentSong != null) {
       children.addAll([
         const SizedBox(height: 20),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Now playing', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-        ),
-        ResonateGlassCard(
-          padding: EdgeInsets.zero,
-          child: ListTile(
-            leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
-            title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: const DjModeStatusChip(dense: true),
-            onTap: () => openShellPlayer(context),
+        _sectionTitle(context, 'Now playing'),
+        ResonateGlassCard(padding: EdgeInsets.zero, child: ListTile(
+          leading: CircleAvatar(child: Icon(isPlaying ? Icons.graphic_eq : Icons.pause_rounded)),
+          title: Text(currentSong.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(currentSong.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              const DjModeStatusChip(dense: true),
+            ],
           ),
-        ),
+          trailing: FilledButton.tonalIcon(
+            style: FilledButton.styleFrom(
+              minimumSize: Size(density.homePlayMinWidth, density.homePlayMinHeight),
+              padding: EdgeInsets.symmetric(
+                horizontal: density.largeControls ? 18 : 12,
+                vertical: density.largeControls ? 12 : 8,
+              ),
+            ),
+            onPressed: () => PlaybackAuthority.instance.userToggle(music),
+            icon: Icon(
+              isPlaying ? Icons.pause : Icons.play_arrow,
+              size: density.largeControls ? 28 : 22,
+            ),
+            label: Text(isPlaying ? 'Pause' : 'Play'),
+          ),
+          onTap: () => openShellPlayer(context),
+        )),
       ]);
     }
 
-    children.add(const SizedBox(height: 32));
+    // “More music…” keeps additional recommendations (skip #1 is already the nudge inside the card)
+    children.addAll([
+      const SizedBox(height: 20),
+      _sectionTitle(context, intelligence.isEnabled ? 'More music for this moment' : 'Suggested from your library'),
+      ..._recommendations(intelligence, recommendationQueue.isEmpty ? songs : recommendationQueue),
+      const SizedBox(height: 30),
+    ]);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 24),
-      children: children,
+    return ResonateGlassScaffold(
+      title: const ResonateLogo(size: 48),
+      actions: const [ResonateModeChip(dense: true)],
+      body: RefreshIndicator(
+        onRefresh: intelligence.refreshRecommendations,
+        child: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 34), children: children),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(text, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+      );
+}
+
+class _SessionCard extends StatelessWidget {
+  final IntelligenceProvider intelligence;
+
+  const _SessionCard({required this.intelligence});
+
+  @override
+  Widget build(BuildContext context) {
+    return ResonateGlassCard(
+      padding: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Your listening flow', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            const SizedBox(width: 42, height: 24, child: _LearningWaveDots()),
+            const SizedBox(width: 10),
+            Expanded(child: Text(intelligence.sessionSummary)),
+          ]),
+          if (intelligence.sessionArtists.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('Current flow: ${intelligence.sessionArtists.take(3).join(' • ')}'),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+class _LearningWaveDots extends StatefulWidget {
+  const _LearningWaveDots();
+
+  @override
+  State<_LearningWaveDots> createState() => _LearningWaveDotsState();
+}
+
+class _LearningWaveDotsState extends State<_LearningWaveDots> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: List.generate(3, (index) {
+            final phase = (_controller.value + index * .18) % 1.0;
+            final wave = (0.5 + 0.5 * mathSin(phase * 6.283185307)).clamp(0.0, 1.0);
+            return Transform.translate(
+              offset: Offset(0, -6 * wave),
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
+              ),
+            );
+          }),
+        ),
+      );
+}
+
+double mathSin(double value) {
+  // Small local sine approximation keeps this animation dependency-free.
+  var x = value;
+  while (x > 3.1415926535) x -= 6.283185307;
+  while (x < -3.1415926535) x += 6.283185307;
+  final x2 = x * x;
+  return x * (1 - x2 / 6 + (x2 * x2) / 120 - (x2 * x2 * x2) / 5040);
+}
+
+class _RecommendationTile extends StatefulWidget {
+  final IntelligenceRecommendation item;
+  final List<dynamic> songs;
+
+  const _RecommendationTile({required this.item, required this.songs});
+
+  @override
+  State<_RecommendationTile> createState() => _RecommendationTileState();
+}
+
+class _RecommendationTileState extends State<_RecommendationTile> {
+  bool _loading = false;
+
+  Future<void> _play() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final music = context.read<MusicProvider>();
+    final index = widget.songs.indexWhere((song) => song.id == widget.item.song.id);
+    try {
+      final list = widget.songs.whereType<Song>().toList();
+      final q = index >= 0 && index < list.length ? list.sublist(index) : <Song>[widget.item.song];
+      await music.playSong(widget.item.song, queue: q, startIndex: 0);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<LibraryProvider>(
+      builder: (context, library, _) {
+        final liked = library.isFavoriteSync(widget.item.song.id);
+        final confidence = (widget.item.confidence.clamp(0.0, 1.0) * 100).round();
+        final confidenceText = '${widget.item.confidenceLabel} • $confidence%';
+        return ResonateGlassCard(
+          // Live BackdropFilter blur on every recommendation card is expensive
+          // during scrolling, particularly on low-end Android devices.
+          blurEnabled: false,
+          padding: EdgeInsets.zero,
+          margin: const EdgeInsets.only(bottom: 9),
+          child: ListTile(
+            leading: const CircleAvatar(child: Icon(Icons.music_note_rounded)),
+            title: Text(widget.item.song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${widget.item.song.artist}\n$confidenceText • ${widget.item.reason}', maxLines: 3, overflow: TextOverflow.ellipsis),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(tooltip: liked ? 'Unlike' : 'Like', icon: Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded), onPressed: _loading ? null : () => library.toggleFavorite(widget.item.song)),
+              _loading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(icon: const Icon(Icons.play_arrow_rounded), onPressed: _play),
+            ]),
+            onTap: _loading ? null : _play,
+          ),
+        );
+      },
     );
   }
 }
