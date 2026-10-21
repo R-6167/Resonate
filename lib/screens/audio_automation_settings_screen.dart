@@ -171,6 +171,7 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
   double _lowCeilingDb = -0.2;
   double _crossoverHz = 120;
   bool _loaded = false;
+  Future<void> _applyQueue = Future<void>.value();
 
   @override
   void initState() {
@@ -187,7 +188,15 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
       _crossoverHz = settings.crossoverHz;
       _loaded = true;
     });
-    await _apply();
+    await _queueApply();
+  }
+
+  Future<void> _queueApply() {
+    // Keep paired limiter/crossover updates ordered during rapid slider moves.
+    _applyQueue = _applyQueue
+        .catchError((_) {})
+        .then((_) => _apply());
+    return _applyQueue;
   }
 
   Future<void> _apply() async {
@@ -212,7 +221,7 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
       _lowCeilingDb = -0.2;
       _crossoverHz = 120;
     });
-    await _apply();
+    await _queueApply();
     await _persist();
   }
 
@@ -253,7 +262,7 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
               onChanged: _loaded
                   ? (value) {
                       setState(() => _highCeilingDb = value);
-                      unawaited(_apply());
+                      unawaited(_queueApply());
                     }
                   : null,
               onChangeEnd: (_) => _persist(),
