@@ -15,7 +15,8 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
   MusicProvider? _music;
   bool _playing = false;
-  double _fps = 30;
+  double _fps = 24;
+  bool _smoothAnimation = true;
 
   @override
   void didChangeDependencies() {
@@ -28,6 +29,7 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
     }
     final settings = context.read<AudioVisualizationProvider>();
     _fps = settings.frameRate;
+    _smoothAnimation = settings.smoothAnimation;
     _playing = music.isPlaying;
     _restartTimer();
   }
@@ -40,7 +42,7 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
 
   void _restartTimer() {
     _timer?.cancel();
-    if (!_playing) return;
+    if (!_playing || !_smoothAnimation) return;
     final milliseconds = (1000 / _fps.clamp(12, 30)).round().clamp(33, 83);
     _timer = Timer.periodic(Duration(milliseconds: milliseconds), (_) => _phase.value = (_phase.value + .055) % 1.0);
   }
@@ -50,7 +52,7 @@ class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
 
   @override
   Widget build(BuildContext context) => Consumer2<AudioVisualizationProvider, MusicProvider>(builder: (context, settings, music, _) {
-    if (settings.frameRate != _fps) { _fps = settings.frameRate; WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _restartTimer(); }); }
+    if (settings.frameRate != _fps || settings.smoothAnimation != _smoothAnimation) { _fps = settings.frameRate; _smoothAnimation = settings.smoothAnimation; WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _restartTimer(); }); }
     if (!settings.enabled) return const Center(child: Text('Visualization Disabled'));
     return ValueListenableBuilder<double>(valueListenable: _phase, builder: (_, phase, __) => CustomPaint(painter: _VisualizationPainter(color: Theme.of(context).colorScheme.primary, phase: phase * math.pi * 2, position: music.currentPosition.inMilliseconds / 1000.0, playing: music.isPlaying, type: settings.visualizationType, sensitivity: settings.sensitivity, mirror: settings.mirror, bass: settings.reactToBass, spectrum: settings.frequencies), size: const Size(double.infinity, 180)));
   });
