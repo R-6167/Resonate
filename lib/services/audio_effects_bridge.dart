@@ -44,10 +44,10 @@ class AudioEffectsBridge {
   static Future<void> setReverb(double strength) async {
     try {
       final amount = strength.clamp(0.0, 1.0).toDouble();
-      // Zero is the explicit disabled sentinel. EnvironmentalReverb uses
-      // negative levels for non-zero effect amounts, so preserve zero here.
-      final mapped = amount <= 0 ? 0 : (amount * 1900 - 900).round();
-      final s = mapped == 0 && amount > 0 ? 1 : mapped;
+      // Zero is the explicit disabled sentinel. Android EnvironmentalReverb
+      // accepts -900..0 millibels; reserve 0 for off and map enabled values
+      // to -900..-1 so positive settings never exceed the platform range.
+      final s = amount <= 0 ? 0 : (-900 + (amount * 899).round());
       await _channel.invokeMethod('setReverb', {'strength': s});
     } catch (e) {
       debugPrint('setReverb failed: $e');
