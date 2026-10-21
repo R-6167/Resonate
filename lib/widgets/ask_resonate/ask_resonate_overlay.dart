@@ -9,6 +9,7 @@ import '../../providers/intelligence_mix_controller.dart';
 import '../../providers/intelligence_provider.dart';
 import '../../providers/music_provider.dart';
 import '../../services/companion_command_executor.dart';
+import '../../services/local_intent_parser.dart';
 import 'ask_resonate_controller.dart';
 import 'shape_clippers.dart';
 
