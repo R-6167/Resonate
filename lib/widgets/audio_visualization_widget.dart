@@ -69,7 +69,7 @@ class _VisualizationPainter extends CustomPainter {
       final index = ((i / bars) * spectrum.length).floor().clamp(0, math.max(0, spectrum.length - 1)).toInt();
       final measured = spectrum.isEmpty ? 0.0 : spectrum[index].clamp(0.0, 1.0).toDouble();
       final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0;
-      return (measured * (0.55 + sensitivity * 1.15) * bassBoost).clamp(0.0, 1.0).toDouble();
+      return (math.sqrt(measured) * (0.45 + sensitivity * 1.35) * bassBoost).clamp(0.0, 1.0).toDouble();
     });
     final center = Offset(size.width / 2, size.height / 2);
     final paint = Paint()..color = color.withOpacity(.92)..strokeCap = StrokeCap.round;
