@@ -72,10 +72,9 @@ Public APIs only: `playSong`, `playQueueIndex`, `nextSong`, `previousSong`, tran
 ## Historical local cleanup instructions
 The repository previously contained committed Gradle caches. PR #56 removes the tracked files; the existing `.gitignore` should keep local cache files out of future commits.
 
-
 ## Hardening and usability pass — 2026-10-21
 
-Status: PR #120 is merged; post-merge CI run #39571202265 passed. A follow-up audio-reactive/DSP UX pass is in progress and still requires CI plus device smoke tests.
+Status: PR #120 and PR #121 are merged to `Resonate-True-Apk`. PR #121 merge commit: `06b6ad9f3b706a6121b0c2e4b2ee087bdcb15d8f`. Device smoke tests for its audio-reactive/DSP UX changes remain to be confirmed separately; a merged PR is not evidence that subjective sound or on-device behavior has been validated.
 
 - [x] Move Library search into the top navigation icon and reclaim the always-visible search-field space.
 - [x] Restore the current track's row position when the track is visible in the current library result set; retain the user's scroll position while the current track is unchanged.
@@ -83,7 +82,7 @@ Status: PR #120 is merged; post-merge CI run #39571202265 passed. A follow-up au
 - [x] Guard CrossfadeProvider against a late initial SharedPreferences read overwriting a user's immediate setting change.
 - [x] Refresh About & How to use copy for current search, crossfade/mode policy, automation, audio-reactive visualization, and explicit Autopilot consent.
 - [x] Replace the root MIT terms with a Resonate Restricted Use License for original Resonate materials; third-party components remain governed by their own licenses.
-- [x] Remove the duplicate inner Ask Resonate panel, persist its selected shape, move shape choices into Visualization & Orb, and rebuild the boundary on live spectrum updates.
+- [x] Remove the duplicate inner Ask Resonate panel, persist its selected shape, move shape choices to Visualization & Orb, and rebuild the boundary on live spectrum updates.
 - [x] Increase low-level spectrum response visibility for the orb and main visualizer; clear stale spectrum values when capture stops or is unavailable.
 - [x] Restore saved DVC to the native DSP registry at audio-effects startup so new A/B engines inherit it.
 - [x] Add a persisted Pause/resume fade toggle and wire it to manual transport pause/resume.
@@ -92,4 +91,6 @@ Status: PR #120 is merged; post-merge CI run #39571202265 passed. A follow-up au
 - [x] Add a regression test for pause/resume fade preference persistence.
 - [ ] Audit playback/crossfade state transitions and add focused regression tests where practical.
 - [ ] Verify overlay shape/audio response, DVC audibility and persistence, pause/resume fades, limiter profiles, branding, and optional spectrum fallback on target Android hardware.
-- [ ] Confirm the follow-up CI result before requesting merge.
+
+## UX refinement program — 2026-10-21
+The new `docs/RESONATE_UX_REFINEMENT_PLAN.md` defines the phased UX and sound-identity work, with mode artwork and a 100 MB app-size ceiling. It begins with an audit and measurable baseline; it does not authorize feature changes before the current behavior, release size, and test requirements are understood.
