@@ -152,3 +152,41 @@ Validation should cover both JVM registry tests and merged-commit CI, followed
 by device playback checks. This bridge repair does not itself expose the planned
 DVC slider; DVC remains a separate follow-up that must use the registry's volume
 gain, not EQ preamp or crossfade gain.
+
+
+## Canonical save/restore/live-engine audit — 2026-10-21
+
+The audit distinguishes a persisted preference from an effect that is actually
+connected to the live PCM path. The following fixes restore the active native
+profile from the canonical snapshot during provider initialization, before any
+new sink exists: native master enable/bypass, EQ curve and enablement, DVC,
+and effective preamp. Registry calls update sticky state, so subsequently
+registered A/B engines inherit the profile. The provider no longer writes raw
+preamp after applying automatic EQ headroom, which previously could overwrite
+the calculated headroom value during initialization.
+
+| Setting | Persistence / restore status | Live application status |
+| --- | --- | --- |
+| Native master enable | Canonical and legacy mirror; restored on provider initialization | Explicitly pushed to registry even with zero active sinks; sticky for future sinks |
+| EQ enabled, preset, 31-band curve | Canonical snapshot and legacy mirrors; custom presets stored separately | Curve and EQ enable pushed to live registry |
+| Preamp and automatic headroom | Canonical and legacy mirror; headroom restored | Effective preamp (including headroom) is awaited and pushed; no later raw-preamp overwrite |
+| DVC | Canonical snapshot; legacy key used for migration | Restored to registry on provider initialization and applied to future A/B sinks |
+| Reverb / virtualizer / effects-enabled | Canonical snapshot and legacy mirrors; provider loads values | Currently applied by AudioEffectsProvider when its apply path runs; session/reconnect lifecycle reapplication still needs verification |
+| Speaker protection / virtual bass | Model fields exist, but current live values are route policy outputs | Route service pushes values to native registry; these fields are not currently independent user controls and must not override route policy on restore |
+| Limiter ceiling | Model field and native bridge/registry APIs exist | No supported user setting currently drives this field from canonical restore; leave dormant rather than silently applying a mismatched single ceiling to the native high/low limiter parameters |
+| Crossover frequency | Native API exists | No canonical user setting currently owns it; native default remains in force |
+| Legacy BassBoost / LoudnessEnhancer | BassBoost legacy value may remain saved; loudness is forced to zero | Both retired from active processing to avoid stacked gain/bass stages |
+
+The model's limiterCeilingDb, speakerProtectionEnabled, and virtualBassAmount
+fields are retained for schema compatibility, but they are not evidence of
+active, independently configurable controls. Do not expose them as active
+controls until their ownership, units, reset semantics, and live-engine status
+are implemented and tested. Likewise, saved Android reverb or virtualizer
+values are not proof that the platform effect has been applied to the current
+playback session.
+
+Remaining validation after CI: restart with non-default EQ/headroom/DVC/master
+settings; verify both A/B engines receive the same profile during crossfade;
+verify route changes reassert speaker policy; and test reverb/virtualizer
+persistence across playback-session recreation. These require device playback
+checks and are not inferred from Flutter/Kotlin tests alone.

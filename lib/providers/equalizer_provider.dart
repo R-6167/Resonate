@@ -263,11 +263,10 @@ class EqualizerProvider extends ChangeNotifier {
       await prefs.setBool('equalizer_native_dsp', value);
       await DspSettings.update((settings) => settings.copyWith(masterEnabled: value));
     } catch (_) {}
-    if (!value) {
-      try {
-        await ResonateNativeDspBridge.setEnabled(false);
-      } catch (_) {}
-    } else {
+    // Persisted master state must be applied to the registry even when no sink
+    // exists yet; the registry carries it forward to future A/B engines.
+    await ResonateNativeDspBridge.setEnabled(value);
+    if (value) {
       final sid = _music?.audioPlayer.androidAudioSessionId;
       if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     }
@@ -489,10 +488,10 @@ class EqualizerProvider extends ChangeNotifier {
           }
         }
       }
-      // Digital preamp + live DSP curve so settings survive process death
-      // even before hardware EQ binds on first play.
+      // Restore the full active native profile immediately. These registry
+      // calls update sticky state even if playback has not created a sink yet.
       await _applyPreamp();
-      _pushLiveDspCurve();
+      await _pushLiveDspCurve(dvcDb: canonical.dvcDb);
       notifyListeners();
     } catch (e) {
       debugPrint('Equalizer initialization failed: $e');
@@ -515,7 +514,7 @@ class EqualizerProvider extends ChangeNotifier {
       }
       await _pushToHardware();
       await _applyPreamp();
-      _pushLiveDspCurve();
+      await _pushLiveDspCurve();
       debugPrint('EQ re-applied after hardware bind preset=$preset preamp=$preamp');
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -627,7 +626,7 @@ class EqualizerProvider extends ChangeNotifier {
     // bounded by the DSP's supported -6 dB preamp floor.
     final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0).toDouble() : 0.0;
     try {
-      syncPreampToNativeDsp(effective, enabled: isEnabled);
+      await AudioEffectsBridge.setLiveDspPreampDb(effective);
     } catch (e) {
       debugPrint('live DSP preamp push failed: $e');
     }
@@ -650,16 +649,24 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
 
-  void _pushLiveDspCurve() {
+  Future<void> _pushLiveDspCurve({double? dvcDb}) async {
     try {
       final centers = studioBands.map((b) => b.frequencyHz).toList();
       final gains = studioBands.map((b) => b.gainDb).toList();
-      syncStudioBandsToNativeEq(
+
+      // Master bypass, EQ enable, preamp, and DVC are independent stages.
+      // Apply the canonical master state even before the first sink registers.
+      await ResonateNativeDspBridge.setEnabled(_nativeDspEnabled);
+      await AudioEffectsBridge.setLiveDspEqBands(
         centersHz: centers,
         gainsDb: gains,
         enabled: isEnabled,
       );
-      syncPreampToNativeDsp(preamp, enabled: isEnabled);
+      final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
+      await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
+
+      // _applyPreamp() owns the effective gain, including automatic headroom.
+      // Do not write raw [preamp] here afterwards: that would undo headroom.
       final route = AudioOutputRouteService.instance;
       syncSpeakerPolicy(
         needsSpeakerProtection: route.needsSpeakerProtection,
