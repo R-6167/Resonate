@@ -40,11 +40,13 @@ Coordinators describe session intent; they do not call `play()` directly.
 |------|--------|
 | Normal | Legacy Resonate behavior |
 | Running | Music-first, motion-aware session |
+| Workout | Music-first; 120–160 BPM target guidance from available DJ analysis |
 | Driving | Car context, reduced UI density, conservative automation |
 | Work | Long sessions, less aggressive transitions |
 | Podcast | Precise resume, speech-first, no crossfade/shuffle |
 | Motivation | Speech + optional music follow-up |
 | Audiobook | Precise resume, chapter-aware navigation, no crossfade/shuffle |
+| Sleep | Gentle queue, no shuffle or crossfade; sleep timer suggested |
 
 ## Current integration status
 
