@@ -34,13 +34,23 @@ class AudioEffectsProvider extends ChangeNotifier {
       }
       _sessionSubscriptions.add(
         sessionPlayer.androidAudioSessionIdStream.listen((id) {
+          final previousId = _sessionIdsByPlayer.remove(sessionPlayer);
           if (id == null || id <= 0) {
-            _sessionIdsByPlayer.remove(sessionPlayer);
+            if (previousId != null &&
+                !_sessionIdsByPlayer.values.contains(previousId)) {
+              unawaited(AudioEffectsBridge.detachFromSession(previousId));
+            }
             return;
           }
-          final previousId = _sessionIdsByPlayer[sessionPlayer];
+          if (previousId == id) {
+            _sessionIdsByPlayer[sessionPlayer] = id;
+            return;
+          }
+          if (previousId != null &&
+              !_sessionIdsByPlayer.values.contains(previousId)) {
+            unawaited(AudioEffectsBridge.detachFromSession(previousId));
+          }
           _sessionIdsByPlayer[sessionPlayer] = id;
-          if (previousId == id) return;
           // Reattach after the platform recreates this player's audio session.
           unawaited(_applyNative(sessionIdOverride: id));
         }, onError: (Object error) {
