@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../../providers/intelligence_provider.dart';
 import '../../providers/audio_visualization_provider.dart';
-import '../../providers/music_provider.dart';
 import '../animated_companion_mark.dart';
 import 'ask_resonate_controller.dart';
 
@@ -39,13 +38,16 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
   Widget build(BuildContext context) {
     final ctrl = context.watch<AskResonateController>();
     final intelligence = context.watch<IntelligenceProvider>();
-    final music = context.watch<MusicProvider>();
     final viz = context.watch<AudioVisualizationProvider>();
-    viz.setPlaybackActive(music.isPlaying);
-    final lowBandEnergy = viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
-        ? math.sqrt(viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6).clamp(0.0, 1.0).toDouble()
-        : 0.0;
-    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.28).clamp(0.0, 0.28).toDouble();
+    final lowBandEnergy =
+        viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
+            ? math
+                .sqrt(viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6)
+                .clamp(0.0, 1.0)
+                .toDouble()
+            : 0.0;
+    final audioScale =
+        1.0 + (lowBandEnergy * viz.sensitivity * 0.28).clamp(0.0, 0.28).toDouble();
     final scheme = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
@@ -95,8 +97,10 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
       child: Semantics(
         button: true,
         label: 'Ask Resonate',
-        hint: 'Opens the Resonate companion. Long press to choose overlay shape.',
+        hint: 'Opens the Resonate companion.',
+        onTap: _open,
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: _open,
           child: orb,
         ),
