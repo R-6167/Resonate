@@ -30,9 +30,9 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
     context.read<AskResonateController>().updateOrbGlobalPosition(pos);
   }
 
-  void _openWithShape(AskResonateShape shape) {
+  void _open() {
     _capturePosition();
-    context.read<AskResonateController>().open(shape: shape);
+    context.read<AskResonateController>().open();
   }
 
   @override
@@ -97,7 +97,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
         label: 'Ask Resonate',
         hint: 'Opens the Resonate companion. Long press to choose overlay shape.',
         child: GestureDetector(
-          onTap: () => _openWithShape(ctrl.shape),
+          onTap: _open,
           child: orb,
         ),
       ),
