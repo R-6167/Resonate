@@ -28,15 +28,15 @@ class AudioVisualizationProvider extends ChangeNotifier {
 
   void setEnabled(bool value) { enabled = value; _save(); _syncCapture(); notifyListeners(); }
   void setVisualizationType(String value) { if (['bars','circular','waveform','dots','wave'].contains(value)) { visualizationType = value; _save(); notifyListeners(); } }
-  void setSensitivity(double value) { sensitivity = value.clamp(0.1, 1.0); _save(); notifyListeners(); }
-  void setSmoothing(double value) { smoothing = value.clamp(0.0, 1.0); _save(); notifyListeners(); }
+  void setSensitivity(double value) { sensitivity = value.clamp(0.1, 1.0).toDouble(); _save(); notifyListeners(); }
+  void setSmoothing(double value) { smoothing = value.clamp(0.0, 1.0).toDouble(); _save(); notifyListeners(); }
   void setShowWaveform(bool value) { showWaveform = value; _save(); notifyListeners(); }
   void setShowParticles(bool value) { showParticles = value; _save(); notifyListeners(); }
   void setMirror(bool value) { mirror = value; _save(); notifyListeners(); }
   void setReactToBass(bool value) { reactToBass = value; _save(); notifyListeners(); }
   void setOrbAudioReactive(bool value) { orbAudioReactive = value; _save(); notifyListeners(); }
   void setSmoothAnimation(bool value) { smoothAnimation = value; _save(); notifyListeners(); }
-  void setFrameRate(double value) { frameRate = value.clamp(12, 30); _save(); notifyListeners(); }
+  void setFrameRate(double value) { frameRate = value.clamp(12, 30).toDouble(); _save(); notifyListeners(); }
 
   /// Called by the persistent shell orb, so capture continues even when the
   /// Now Playing visualization is not on screen.
