@@ -19,6 +19,9 @@ class AudioVisualizationSettingsScreen extends StatelessWidget {
         SwitchListTile(title: const Text('Particles'), value: p.showParticles, onChanged: p.enabled ? p.setShowParticles : null),
         SwitchListTile(title: const Text('Mirror Visualization'), value: p.mirror, onChanged: p.enabled ? p.setMirror : null),
         const Divider(),
+        const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Ask Resonate Orb', style: TextStyle(fontWeight: FontWeight.bold))),
+        SwitchListTile(title: const Text('Audio-reactive movement'), subtitle: const Text('Use the live low-frequency spectrum to pulse the orb and overlay shape'), value: p.orbAudioReactive, onChanged: p.enabled ? p.setOrbAudioReactive : null),
+        const Divider(),
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Audio Response', style: TextStyle(fontWeight: FontWeight.bold))),
         SwitchListTile(title: const Text('Bass Response'), subtitle: const Text('Emphasize low-frequency movement'), value: p.reactToBass, onChanged: p.enabled ? p.setReactToBass : null),
         _slider(context, 'Sensitivity', p.sensitivity, 0.1, 1.0, p.setSensitivity, '${(p.sensitivity*100).round()}%'),
@@ -26,13 +29,13 @@ class AudioVisualizationSettingsScreen extends StatelessWidget {
         const Divider(),
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Performance', style: TextStyle(fontWeight: FontWeight.bold))),
         SwitchListTile(title: const Text('Smooth Animation'), subtitle: const Text('Use continuous motion when enabled'), value: p.smoothAnimation, onChanged: p.enabled ? p.setSmoothAnimation : null),
-        _slider(context, 'Frame Rate', p.frameRate, 15, 60, p.setFrameRate, '${p.frameRate.round()} FPS', divisions: 9),
+        _slider(context, 'Frame Rate', p.frameRate, 12, 30, p.setFrameRate, '${p.frameRate.round()} FPS', divisions: 9),
         const Padding(padding: EdgeInsets.all(16), child: ResonateGlassCard(child: Padding(padding: EdgeInsets.all(16), child: Text('The current visualizer is intentionally lightweight. Lower frame rates reduce redraw work; a future native FFT visualizer can feed real frequency data into the same surface.')))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: OutlinedButton.icon(onPressed: p.reset, icon: const Icon(Icons.restore), label: const Text('Reset Visualization Settings'))),
       ]);
     }));
   }
-  Widget _header(BuildContext context) => Container(margin: const EdgeInsets.all(16), padding: const EdgeInsets.all(22), decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: Theme.of(context).colorScheme.surfaceContainerHighest), child: Column(children: [Icon(Icons.graphic_eq_rounded, size: 52, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 10), Text('Audio Visualization', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), const SizedBox(height: 6), const Text('A clean, responsive visual layer for Now Playing.', textAlign: TextAlign.center)]));
+  Widget _header(BuildContext context) => Container(margin: const EdgeInsets.all(16), padding: const EdgeInsets.all(22), decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: Theme.of(context).colorScheme.surfaceContainerHighest), child: Column(children: [Icon(Icons.graphic_eq_rounded, size: 52, color: Theme.of(context).colorScheme.primary), const SizedBox(height: 10), Text('Audio Visualization & Orb', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), const SizedBox(height: 6), const Text('A lightweight, shared audio-reactive layer for Now Playing and Ask Resonate.', textAlign: TextAlign.center)]));
   Widget _slider(BuildContext context, String title, double value, double min, double max, ValueChanged<double> onChanged, String label, {int? divisions}) => Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(title), Text(label, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold))]), Slider(value: value, min: min, max: max, divisions: divisions ?? 18, onChanged: onChanged)]));
   Future<void> _chooseType(BuildContext context, AudioVisualizationProvider p, Map<String,String> types) async { await showDialog<void>(context: context, builder: (context) => AlertDialog(title: const Text('Visualization Type'), content: Column(mainAxisSize: MainAxisSize.min, children: types.entries.map((entry) => RadioListTile<String>(title: Text(entry.value), value: entry.key, groupValue: p.visualizationType, onChanged: (value) { if (value != null) { p.setVisualizationType(value); Navigator.pop(context); } })).toList()))); }
 }
