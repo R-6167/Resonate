@@ -39,7 +39,7 @@ class AudioEffectsProvider extends ChangeNotifier {
           if (id == null || id <= 0) {
             if (previousId != null &&
                 !_sessionIdsByPlayer.values.contains(previousId)) {
-              unawaited(AudioEffectsBridge.detachFromSession(previousId));
+              unawaited(_detachNativeSession(previousId));
             }
             return;
           }
@@ -108,6 +108,13 @@ class AudioEffectsProvider extends ChangeNotifier {
     }
     await _save();
     notifyListeners();
+  }
+
+  Future<void> _detachNativeSession(int sessionId) {
+    _nativeApplyQueue = _nativeApplyQueue
+        .catchError((_) {})
+        .then((_) => AudioEffectsBridge.detachFromSession(sessionId));
+    return _nativeApplyQueue;
   }
 
   Future<void> _applyNative({int? sessionIdOverride}) {
