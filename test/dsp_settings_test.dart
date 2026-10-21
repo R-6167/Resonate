@@ -20,6 +20,9 @@ void main() {
         autoEqHeadroom: true,
         dvcDb: 2.5,
         limiterCeilingDb: -3,
+        limiterHighCeilingDb: -2.5,
+        limiterLowCeilingDb: -1.5,
+        crossoverHz: 160,
         speakerProtectionEnabled: true,
         virtualBassAmount: 0.4,
         effectsEnabled: false,
@@ -36,6 +39,9 @@ void main() {
       expect(restored.autoEqHeadroom, isTrue);
       expect(restored.dvcDb, 2.5);
       expect(restored.limiterCeilingDb, -3);
+      expect(restored.limiterHighCeilingDb, -2.5);
+      expect(restored.limiterLowCeilingDb, -1.5);
+      expect(restored.crossoverHz, 160);
       expect(restored.speakerProtectionEnabled, isTrue);
       expect(restored.eqBandGainsDb, [3, -2, 1]);
       expect(restored.virtualBassAmount, 0.4);
@@ -49,18 +55,37 @@ void main() {
         preampDb: 20,
         dvcDb: -50,
         limiterCeilingDb: -30,
+        limiterHighCeilingDb: -30,
+        limiterLowCeilingDb: 2,
+        crossoverHz: 500,
         virtualBassAmount: 2,
         reverbAmount: double.nan,
       );
       expect(settings.preampDb, 6);
       expect(settings.dvcDb, -24);
       expect(settings.limiterCeilingDb, -12);
+      expect(settings.limiterHighCeilingDb, -6);
+      expect(settings.limiterLowCeilingDb, -0.1);
+      expect(settings.crossoverHz, 200);
       expect(settings.virtualBassAmount, 1);
       expect(settings.reverbAmount, 0);
       expect(
         () => DspSettings.fromJson({'version': 999}),
         throwsFormatException,
       );
+    });
+
+    test('migrates schema v1 limiter ceiling into both bands and adds crossover default', () {
+      final restored = DspSettings.fromJson({
+        'version': 1,
+        'masterEnabled': true,
+        'limiterCeilingDb': -2.0,
+      });
+      expect(restored.masterEnabled, isTrue);
+      expect(restored.limiterHighCeilingDb, -2);
+      expect(restored.limiterLowCeilingDb, -2);
+      expect(restored.crossoverHz, 120);
+      expect(restored.toJson()['version'], DspSettings.schemaVersion);
     });
 
     test('migrates legacy DVC and EQ values to the versioned document', () async {
