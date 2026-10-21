@@ -240,14 +240,6 @@ class CrossfadeScreen extends StatelessWidget {
 
                 const SizedBox(height: 22),
                 Text('Duration', style: Theme.of(context).textTheme.titleMedium),
-                Slider(
-                  value: durationMs <= 0 ? 3000 : durationMs,
-                  min: 500,
-                  max: 12000,
-                  divisions: 23,
-                  label: crossfade.getDurationString(),
-                  onChanged: (v) => crossfade.setDuration(v),
-                ),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
