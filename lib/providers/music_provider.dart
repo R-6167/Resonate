@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../models/dsp_settings.dart';
 import '../models/dj_analysis.dart';
 import '../models/listening_event.dart';
 import '../services/audio_service_handler.dart';
@@ -360,6 +361,13 @@ class MusicProvider extends ChangeNotifier {
   bool get audioFocusAutomationEnabled =>
       _audioFocusSettings.automationEnabled;
   int get audioFocusLevel => _audioFocusSettings.clampedLevel;
+  bool get pauseResumeFadeEnabled => _audioFocusSettings.pauseResumeFadeEnabled;
+
+  Future<void> setPauseResumeFadeEnabled(bool value) async {
+    _audioFocusSettings.pauseResumeFadeEnabled = value;
+    await _audioFocusSettings.persist();
+    notifyListeners();
+  }
 
   Future<void> setAudioFocusAutomation({bool? automatic, int? level}) async {
     if (automatic != null) _audioFocusSettings.setAutomationEnabled(automatic);
@@ -667,6 +675,21 @@ class MusicProvider extends ChangeNotifier {
       _shuffleEnabled = prefs.getBool(QueueStore.shuffleEnabledKey) ?? false;
       await _levelingSettings.load(prefs);
       await _audioFocusSettings.load(prefs);
+      // Restore persistent native protection/gain before the first playback
+      // sink is created. AudioEffectsProvider is lazy, so relying on its load
+      // would leave DVC and limiter settings at native defaults until Settings
+      // happened to be opened. The registry carries these values to new A/B sinks.
+      try {
+        final dsp = await DspSettings.load();
+        await AudioEffectsBridge.setLiveDspDvcDb(dsp.dvcDb);
+        await AudioEffectsBridge.setLiveDspLimiterCeiling(
+          highDb: dsp.limiterHighCeilingDb,
+          lowDb: dsp.limiterLowCeilingDb,
+        );
+        await AudioEffectsBridge.setLiveDspCrossoverHz(dsp.crossoverHz);
+      } catch (e) {
+        debugPrint('Native DSP preference restore deferred: $e');
+      }
       final repeat = prefs.getString(_repeatModeKey) ?? 'off';
       _repeatMode = switch (repeat) { 'all' => PlaybackRepeatMode.all, 'one' => PlaybackRepeatMode.one, _ => PlaybackRepeatMode.off };
       // Crossfade preferences are owned and restored by CrossfadeProvider.

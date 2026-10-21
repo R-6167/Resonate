@@ -31,38 +31,42 @@ class AboutScreen extends StatelessWidget {
                 colors: [scheme.primaryContainer, scheme.surfaceContainerHighest],
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                const ResonateLogo(size: 72, full: true, showWord: false),
-                const SizedBox(height: 14),
-                Text(
-                  'Resonate',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontStyle: FontStyle.italic,
-                    letterSpacing: -0.6,
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.14,
+                      child: const ResonateLogo(size: 176, full: true, showWord: false),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Version $versionLabel',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Your music. Your rules. Fully offline.',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'A local-first music player built around your own audio files: library browsing, dual-engine crossfade, '
-                  'equalizer and audio automation, audio-reactive visuals, optional DJ Mode, and on-device recommendations. '
-                  'Resonate does not require a streaming subscription to play your local music.',
-                  style: theme.textTheme.bodyLarge,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Version $versionLabel',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Your music. Your rules. Fully offline.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'A local-first music player built around your own audio files: library browsing, dual-engine crossfade, '
+                      'equalizer and audio automation, audio-reactive visuals, optional DJ Mode, and on-device recommendations. '
+                      'Resonate does not require a streaming subscription to play your local music.',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -85,7 +89,7 @@ class AboutScreen extends StatelessWidget {
               '• Repeat one can crossfade back into the same track when crossfade is enabled. Skip and pause should cancel a transition.\n\n'
               'Sound & visualization\n'
               '• Settings → Equalizer controls tone, preamp, bass, width, and reverb. Audio automation controls interruption behavior and EQ headroom.\n'
-              '• Settings → Visualization & Orb shares audio-response settings between the main visualizer and Ask Resonate. Spectrum capture is optional and may be unavailable on some devices.\n\n'
+              '• Settings → Visualization & Orb shares audio-response settings between the main visualizer and Ask Resonate, including the saved overlay shape. Spectrum capture is optional and may be unavailable on some devices.\n\n'
               'Ask Resonate & Intelligence\n'
               '• Use the orb quick actions to explore similar tracks, change energy, or refine recommendations; there is no free-text prompt box.\n'
               '• Intelligence recommendations and feedback are local. Autopilot requires explicit consent before it can change or enqueue tracks.\n\n'

@@ -43,6 +43,10 @@ class AudioVisualizationProvider extends ChangeNotifier {
   void setPlaybackActive(bool value) {
     if (_playbackActive == value) return;
     _playbackActive = value;
+    if (!value) {
+      frequencies = List<double>.filled(32, 0.0);
+      notifyListeners();
+    }
     _syncCapture();
   }
 
@@ -61,7 +65,14 @@ class AudioVisualizationProvider extends ChangeNotifier {
     _captureInFlight = true;
     try {
       final next = await AudioEffectsBridge.getAudioSpectrum();
-      if (_disposed || next.isEmpty) return;
+      if (_disposed) return;
+      if (next.isEmpty) {
+        if (frequencies.any((value) => value != 0.0)) {
+          frequencies = List<double>.filled(32, 0.0);
+          notifyListeners();
+        }
+        return;
+      }
       final count = next.length < frequencies.length ? next.length : frequencies.length;
       final alpha = 1.0 - smoothing * 0.88;
       final updated = List<double>.of(frequencies);

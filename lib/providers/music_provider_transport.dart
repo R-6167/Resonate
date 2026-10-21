@@ -66,6 +66,15 @@ Future<void> pause({String source = 'normal_player'}) {
         }
         final midTransition =
             _crossfadeInProgress || _repeatSelfHandoffInFlight;
+        if (_audioFocusSettings.pauseResumeFadeEnabled && !midTransition && !fromSystemFocus) {
+          await _fadePlayerVolume(
+            audioPlayer,
+            _effectiveCrossfadeMaster,
+            0.0,
+            durationMs: MusicProvider._transportFadeMs,
+            steps: 6,
+          );
+        }
         try {
           await audioPlayer.pause();
         } catch (_) {}
@@ -370,7 +379,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
           final midTransition = _transitionLive;
           final target = _effectiveCrossfadeMaster.clamp(0.0, 1.0);
           // Start quiet then fade in (skip only during a real ramp).
-          if (!midTransition) {
+          if (!midTransition && _audioFocusSettings.pauseResumeFadeEnabled) {
             try {
               await audioPlayer.setVolume(0.0);
             } catch (_) {}
@@ -386,7 +395,7 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
             if (audioPlayer.playing) break;
             await Future<void>.delayed(Duration(milliseconds: 40 + attempt * 25));
           }
-          if (!midTransition && audioPlayer.playing) {
+          if (!midTransition && audioPlayer.playing && _audioFocusSettings.pauseResumeFadeEnabled) {
             await _fadePlayerVolume(
               audioPlayer,
               0.0,

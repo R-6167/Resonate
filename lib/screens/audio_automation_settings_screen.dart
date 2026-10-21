@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -44,6 +42,18 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                       ),
                       value: music.audioFocusAutomationEnabled,
                       onChanged: (value) => music.setAudioFocusAutomation(automatic: value),
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(Icons.volume_up_rounded),
+                      title: const Text('Pause/resume fade'),
+                      subtitle: Text(
+                        music.pauseResumeFadeEnabled
+                            ? 'Fade down briefly on manual pause and fade up on resume.'
+                            : 'Pause and resume immediately without a transport fade.',
+                      ),
+                      value: music.pauseResumeFadeEnabled,
+                      onChanged: music.setPauseResumeFadeEnabled,
                     ),
                   ],
                 ),
@@ -167,11 +177,16 @@ class _LimiterCrossoverControls extends StatefulWidget {
 }
 
 class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
-  double _highCeilingDb = -0.5;
-  double _lowCeilingDb = -0.2;
-  double _crossoverHz = 120;
+  static const _profiles = <String, (double, double, double)>{
+    'Transparent': (-0.2, -0.2, 160),
+    'Balanced': (-0.5, -0.8, 120),
+    'Speaker safe': (-1.5, -2.5, 100),
+    'Extra headroom': (-3.0, -3.0, 180),
+  };
+
+  String _selected = 'Balanced';
   bool _loaded = false;
-  Future<void> _applyQueue = Future<void>.value();
+  String _status = 'Loading saved protection profile…';
 
   @override
   void initState() {
@@ -180,50 +195,66 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
   }
 
   Future<void> _load() async {
-    final settings = await DspSettings.load();
-    if (!mounted) return;
+    try {
+      final settings = await DspSettings.load();
+      final match = _profiles.entries.where((entry) =>
+          (entry.value.$1 - settings.limiterHighCeilingDb).abs() < 0.06 &&
+          (entry.value.$2 - settings.limiterLowCeilingDb).abs() < 0.06 &&
+          (entry.value.$3 - settings.crossoverHz).abs() < 1.0);
+      if (!mounted) return;
+      setState(() {
+        _selected = match.isEmpty ? 'Custom' : match.first.key;
+        _loaded = true;
+        _status = 'Saved profile restored. Protection only engages on peaks that reach its threshold.';
+      });
+      // Reapply the saved native values for current engines and future A/B sinks.
+      await AudioEffectsBridge.setLiveDspLimiterCeiling(
+        highDb: settings.limiterHighCeilingDb,
+        lowDb: settings.limiterLowCeilingDb,
+      );
+      await AudioEffectsBridge.setLiveDspCrossoverHz(settings.crossoverHz);
+    } catch (_) {
+      if (mounted) setState(() {
+        _loaded = true;
+        _status = 'Could not read the saved profile; playback remains available.';
+      });
+    }
+  }
+
+  Future<void> _choose(String name) async {
+    final values = _profiles[name];
+    if (values == null || !_loaded) return;
     setState(() {
-      _highCeilingDb = settings.limiterHighCeilingDb;
-      _lowCeilingDb = settings.limiterLowCeilingDb;
-      _crossoverHz = settings.crossoverHz;
-      _loaded = true;
+      _selected = name;
+      _status = 'Applying $name profile…';
     });
-    await _queueApply();
-  }
-
-  Future<void> _queueApply() {
-    // Keep paired limiter/crossover updates ordered during rapid slider moves.
-    _applyQueue = _applyQueue
-        .catchError((_) {})
-        .then((_) => _apply());
-    return _applyQueue;
-  }
-
-  Future<void> _apply() async {
-    await AudioEffectsBridge.setLiveDspLimiterCeiling(
-      highDb: _highCeilingDb,
-      lowDb: _lowCeilingDb,
+    final high = values.$1;
+    final low = values.$2;
+    final crossover = values.$3;
+    final limiter = await AudioEffectsBridge.setLiveDspLimiterCeiling(
+      highDb: high,
+      lowDb: low,
     );
-    await AudioEffectsBridge.setLiveDspCrossoverHz(_crossoverHz);
+    final split = await AudioEffectsBridge.setLiveDspCrossoverHz(crossover);
+    try {
+      await DspSettings.update((current) => current.copyWith(
+        limiterHighCeilingDb: high,
+        limiterLowCeilingDb: low,
+        crossoverHz: crossover,
+      ));
+    } catch (_) {
+      if (mounted) setState(() => _status = 'Applied for this session, but the profile could not be saved.');
+      return;
+    }
+    if (!mounted) return;
+    final active = (limiter?['active'] as num?)?.toInt() ??
+        (split?['active'] as num?)?.toInt() ?? 0;
+    setState(() => _status = active > 0
+        ? '$name applied. It protects peaks; it is not a tone or loudness control.'
+        : '$name saved and will apply when a native playback engine starts.');
   }
 
-  Future<void> _persist() async {
-    await DspSettings.update((current) => current.copyWith(
-          limiterHighCeilingDb: _highCeilingDb,
-          limiterLowCeilingDb: _lowCeilingDb,
-          crossoverHz: _crossoverHz,
-        ));
-  }
-
-  Future<void> _reset() async {
-    setState(() {
-      _highCeilingDb = -0.5;
-      _lowCeilingDb = -0.2;
-      _crossoverHz = 120;
-    });
-    await _queueApply();
-    await _persist();
-  }
+  Future<void> _reset() => _choose('Balanced');
 
   @override
   Widget build(BuildContext context) => ResonateGlassCard(
@@ -247,58 +278,38 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Tune the native two-band peak protection. Lower limiter ceilings are more conservative. '
-              'The crossover sets the frequency split between the low and high limiter bands; it is not an EQ bass control.',
+              'Choose a protection profile instead of tuning tiny slider changes. '
+              'The limiter acts only on peaks; it should not noticeably change the overall tone or loudness. '
+              'Use the Equalizer for audible tonal changes.',
             ),
-            const SizedBox(height: 16),
-            _settingSlider(
-              context,
-              title: 'High-band limiter ceiling',
-              valueLabel: '${_highCeilingDb.toStringAsFixed(1)} dB',
-              value: _highCeilingDb,
-              min: -6,
-              max: -0.1,
-              divisions: 59,
-              onChanged: _loaded
-                  ? (value) {
-                      setState(() => _highCeilingDb = value);
-                      unawaited(_queueApply());
-                    }
-                  : null,
-              onChangeEnd: (_) => _persist(),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final name in _profiles.keys)
+                  ChoiceChip(
+                    label: Text(name),
+                    selected: _selected == name,
+                    onSelected: _loaded ? (_) => _choose(name) : null,
+                  ),
+              ],
             ),
-            _settingSlider(
-              context,
-              title: 'Low-band limiter ceiling',
-              valueLabel: '${_lowCeilingDb.toStringAsFixed(1)} dB',
-              value: _lowCeilingDb,
-              min: -6,
-              max: -0.1,
-              divisions: 59,
-              onChanged: _loaded
-                  ? (value) {
-                      setState(() => _lowCeilingDb = value);
-                      unawaited(_apply());
-                    }
-                  : null,
-              onChangeEnd: (_) => _persist(),
+            const SizedBox(height: 8),
+            Text(
+              _selected == 'Custom'
+                  ? 'Custom saved values detected. Choose a profile to apply a known configuration.'
+                  : switch (_selected) {
+                      'Transparent' => 'Near-zero ceiling · 160 Hz split',
+                      'Balanced' => 'Moderate peak control · 120 Hz split',
+                      'Speaker safe' => 'More conservative low-band protection · 100 Hz split',
+                      'Extra headroom' => 'Stronger peak reduction · 180 Hz split',
+                      _ => 'Select a protection profile.',
+                    },
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-            _settingSlider(
-              context,
-              title: 'Crossover frequency',
-              valueLabel: '${_crossoverHz.round()} Hz',
-              value: _crossoverHz,
-              min: 80,
-              max: 200,
-              divisions: 24,
-              onChanged: _loaded
-                  ? (value) {
-                      setState(() => _crossoverHz = value);
-                      unawaited(_apply());
-                    }
-                  : null,
-              onChangeEnd: (_) => _persist(),
-            ),
+            const SizedBox(height: 8),
+            Text(_status, style: Theme.of(context).textTheme.bodySmall),
             if (!_loaded)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -306,39 +317,5 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
               ),
           ],
         ),
-      );
-
-  Widget _settingSlider(
-    BuildContext context, {
-    required String title,
-    required String valueLabel,
-    required double value,
-    required double min,
-    required double max,
-    required int divisions,
-    required ValueChanged<double>? onChanged,
-    required ValueChanged<double> onChangeEnd,
-  }) =>
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text(title)),
-              Text(
-                valueLabel,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ],
-          ),
-          Slider(
-            value: value.clamp(min, max).toDouble(),
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: onChanged,
-            onChangeEnd: onChanged == null ? null : onChangeEnd,
-          ),
-        ],
       );
 }

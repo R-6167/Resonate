@@ -24,10 +24,13 @@ class AnimatedCompanionMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final amount = audioEnergy.clamp(0.0, 1.0).toDouble();
-    final turns = (mode == 'Autopilot' ? 0.018 : 0.008) * amount;
+    final turns = (mode == 'Autopilot' ? 0.16 : 0.11) * amount;
     return Transform.rotate(
       angle: turns,
-      child: Icon(_icon, size: size),
+      child: Transform.scale(
+        scale: 1.0 + amount * 0.18,
+        child: Icon(_icon, size: size),
+      ),
     );
   }
 }

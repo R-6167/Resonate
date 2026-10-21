@@ -214,7 +214,7 @@ class HomeDashboard extends StatelessWidget {
     ]);
 
     return ResonateGlassScaffold(
-      title: const ResonateLogo(size: 48),
+      title: const ResonateLogo(size: 58, full: true, showWord: false),
       actions: const [ResonateModeChip(dense: true)],
       body: RefreshIndicator(
         onRefresh: intelligence.refreshRecommendations,

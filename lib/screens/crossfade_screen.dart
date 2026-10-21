@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
-import '../widgets/dj_mode_status_chip.dart';
+import 'dj_mode_settings_screen.dart';
 
 import '../providers/crossfade_provider.dart';
 import '../providers/music_provider.dart';
@@ -99,9 +99,17 @@ class CrossfadeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              const DjModeStatusBanner(
-                contextLabel:
-                    'When DJ Mode is on, handoffs may seek to a beat and bias duration.',
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: const Icon(Icons.headphones_rounded, size: 18),
+                  label: const Text('DJ Mode settings'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DjModeSettingsScreen(),
+                    ),
+                  ),
+                ),
               ),
               if (blockedByMode) ...[
                 const SizedBox(height: 12),
