@@ -20,7 +20,7 @@ class AskResonateController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final stored = prefs.getString(_shapePreferenceKey);
       final match = AskResonateShape.values.where((value) => value.name == stored);
-      if (match.isNotEmpty && match.first != _shape) {
+      if (!_shapeTouched && match.isNotEmpty && match.first != _shape) {
         _shape = match.first;
         notifyListeners();
       }
@@ -30,6 +30,7 @@ class AskResonateController extends ChangeNotifier {
   }
 
   bool _isOpen = false;
+  bool _shapeTouched = false;
   AskResonateShape _shape = AskResonateShape.blob;
   String _contextLabel = 'For You';
   Offset? _orbGlobalPosition;
@@ -73,8 +74,9 @@ class AskResonateController extends ChangeNotifier {
   void setShape(AskResonateShape shape) {
     if (_shape == shape) return;
     _shape = shape;
+    _shapeTouched = true;
     notifyListeners();
-    SharedPreferences.getInstance().then((prefs) => prefs.setString(_shapePreferenceKey, shape.name)).catchError((_) {});
+    SharedPreferences.getInstance().then((prefs) => prefs.setString(_shapePreferenceKey, shape.name)).catchError((_) => false);
   }
 
   void updateOrbGlobalPosition(Offset? position) {
