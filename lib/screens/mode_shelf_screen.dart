@@ -60,19 +60,44 @@ class ModeShelfScreen extends StatelessWidget {
             ),
           ],
           body: shelf.isNormal
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Normal mode uses your full library.\n'
-                      'Switch mode to build a virtual shelf.',
+              ? ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    ModeArtworkBanner(mode: shelf.mode),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Normal mode uses your full library.',
+                      style: Theme.of(context).textTheme.titleMedium,
                       textAlign: TextAlign.center,
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Switch to another mode to build a focused virtual shelf.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ModesScreen(
+                              folderPicker: const ResonateModeFolderPickerPort(),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.tune_rounded),
+                      label: const Text('Choose a mode'),
+                    ),
+                  ],
                 )
               : shelf.isEmpty
                   ? ListView(
-                      padding: const EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        ModeArtworkBanner(mode: shelf.mode),
+                        const SizedBox(height: 24),
                       children: [
                         Icon(Icons.playlist_remove_rounded,
                             size: 48, color: scheme.onSurfaceVariant),
