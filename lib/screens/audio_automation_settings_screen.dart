@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/dsp_settings.dart';
+import '../services/audio_effects_bridge.dart';
 import '../providers/music_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../ui/resonate_glass.dart';
@@ -97,6 +101,8 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
               const SizedBox(height: 12),
               const LiveDvcControl(),
               const SizedBox(height: 12),
+              const _LimiterCrossoverControls(),
+              const SizedBox(height: 12),
               Consumer<EqualizerProvider>(
                 builder: (context, eq, _) => ResonateGlassCard(
                   blurEnabled: false,
@@ -148,5 +154,182 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
         subtitle: Text(subtitle),
         dense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      );
+}
+
+
+class _LimiterCrossoverControls extends StatefulWidget {
+  const _LimiterCrossoverControls();
+
+  @override
+  State<_LimiterCrossoverControls> createState() =>
+      _LimiterCrossoverControlsState();
+}
+
+class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
+  double _highCeilingDb = -0.5;
+  double _lowCeilingDb = -0.2;
+  double _crossoverHz = 120;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final settings = await DspSettings.load();
+    if (!mounted) return;
+    setState(() {
+      _highCeilingDb = settings.limiterHighCeilingDb;
+      _lowCeilingDb = settings.limiterLowCeilingDb;
+      _crossoverHz = settings.crossoverHz;
+      _loaded = true;
+    });
+    await _apply();
+  }
+
+  Future<void> _apply() async {
+    await AudioEffectsBridge.setLiveDspLimiterCeiling(
+      highDb: _highCeilingDb,
+      lowDb: _lowCeilingDb,
+    );
+    await AudioEffectsBridge.setLiveDspCrossoverHz(_crossoverHz);
+  }
+
+  Future<void> _persist() async {
+    await DspSettings.update((current) => current.copyWith(
+          limiterHighCeilingDb: _highCeilingDb,
+          limiterLowCeilingDb: _lowCeilingDb,
+          crossoverHz: _crossoverHz,
+        ));
+  }
+
+  Future<void> _reset() async {
+    setState(() {
+      _highCeilingDb = -0.5;
+      _lowCeilingDb = -0.2;
+      _crossoverHz = 120;
+    });
+    await _apply();
+    await _persist();
+  }
+
+  @override
+  Widget build(BuildContext context) => ResonateGlassCard(
+        blurEnabled: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Limiter and crossover',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                TextButton(
+                  onPressed: _loaded ? _reset : null,
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Tune the native two-band peak protection. Lower limiter ceilings are more conservative. '
+              'The crossover sets the frequency split between the low and high limiter bands; it is not an EQ bass control.',
+            ),
+            const SizedBox(height: 16),
+            _settingSlider(
+              context,
+              title: 'High-band limiter ceiling',
+              valueLabel: '${_highCeilingDb.toStringAsFixed(1)} dB',
+              value: _highCeilingDb,
+              min: -6,
+              max: -0.1,
+              divisions: 59,
+              onChanged: _loaded
+                  ? (value) {
+                      setState(() => _highCeilingDb = value);
+                      unawaited(_apply());
+                    }
+                  : null,
+              onChangeEnd: (_) => _persist(),
+            ),
+            _settingSlider(
+              context,
+              title: 'Low-band limiter ceiling',
+              valueLabel: '${_lowCeilingDb.toStringAsFixed(1)} dB',
+              value: _lowCeilingDb,
+              min: -6,
+              max: -0.1,
+              divisions: 59,
+              onChanged: _loaded
+                  ? (value) {
+                      setState(() => _lowCeilingDb = value);
+                      unawaited(_apply());
+                    }
+                  : null,
+              onChangeEnd: (_) => _persist(),
+            ),
+            _settingSlider(
+              context,
+              title: 'Crossover frequency',
+              valueLabel: '${_crossoverHz.round()} Hz',
+              value: _crossoverHz,
+              min: 80,
+              max: 200,
+              divisions: 24,
+              onChanged: _loaded
+                  ? (value) {
+                      setState(() => _crossoverHz = value);
+                      unawaited(_apply());
+                    }
+                  : null,
+              onChangeEnd: (_) => _persist(),
+            ),
+            if (!_loaded)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(),
+              ),
+          ],
+        ),
+      );
+
+  Widget _settingSlider(
+    BuildContext context, {
+    required String title,
+    required String valueLabel,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double>? onChanged,
+    required ValueChanged<double> onChangeEnd,
+  }) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(title)),
+              Text(
+                valueLabel,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ],
+          ),
+          Slider(
+            value: value.clamp(min, max).toDouble(),
+            min: min,
+            max: max,
+            divisions: divisions,
+            onChanged: onChanged,
+            onChangeEnd: onChanged == null ? null : onChangeEnd,
+          ),
+        ],
       );
 }
