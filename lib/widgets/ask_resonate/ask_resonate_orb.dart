@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -41,7 +43,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
     final viz = context.watch<AudioVisualizationProvider>();
     viz.setPlaybackActive(music.isPlaying);
     final lowBandEnergy = viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
-        ? (viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6 * 3.2).clamp(0.0, 1.0).toDouble()
+        ? math.sqrt(viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6).clamp(0.0, 1.0).toDouble()
         : 0.0;
     final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.28).clamp(0.0, 0.28).toDouble();
     final scheme = Theme.of(context).colorScheme;
