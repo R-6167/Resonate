@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_visualization_provider.dart';
@@ -318,13 +317,6 @@ class _AskResonateContentState extends State<_AskResonateContent> {
     final intelligence = context.watch<IntelligenceProvider>();
     final theme = Theme.of(context);
 
-    Widget tile(Widget child) {
-      if (widget.reduceMotion) return child;
-      return child
-          .animate()
-          .fadeIn(duration: 280.ms, curve: Curves.easeOut)
-          .slideY(begin: 0.12, end: 0, duration: 320.ms, curve: Curves.easeOutCubic);
-    }
 
     return SafeArea(
       child: Padding(
@@ -395,7 +387,7 @@ class _AskResonateContentState extends State<_AskResonateContent> {
                     mainAxisSpacing: 8,
                     childAspectRatio: 1.55,
                     children: [
-                      for (final (title, subtitle, intent) in _commands)
+                      for (final (title, _, intent) in _commands)
                         Material(
                           color: theme.colorScheme.surface.withValues(alpha: 0.72),
                           borderRadius: BorderRadius.circular(14),
