@@ -143,13 +143,13 @@ class AboutScreen extends StatelessWidget {
               context: context,
               applicationName: 'Resonate',
               applicationVersion: versionLabel,
-              applicationLegalese: 'Copyright © innotrepid',
+              applicationLegalese: 'Copyright © 2026 Aetherion · Resonate by innotrepid',
             ),
           ),
 
           const SizedBox(height: 16),
           Text(
-            'Copyright © innotrepid',
+            'Copyright © 2026 Aetherion · Resonate by innotrepid',
             style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
