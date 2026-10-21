@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_visualization_provider.dart';
+import '../widgets/ask_resonate/ask_resonate_controller.dart';
 
 class AudioVisualizationSettingsScreen extends StatelessWidget {
   const AudioVisualizationSettingsScreen({Key? key}) : super(key: key);
   @override Widget build(BuildContext context) {
     return ResonateGlassScaffold(title: const Text('Visualization & Orb'), body: Consumer<AudioVisualizationProvider>(builder: (context, p, _) {
+      final shapeController = context.watch<AskResonateController>();
       final types = {'bars':'Spectrum Bars','waveform':'Waveform','circular':'Circular Spectrum','wave':'Animated Wave'};
       return ListView(padding: const EdgeInsets.only(bottom: 32), children: [
         _header(context),
@@ -18,6 +20,33 @@ class AudioVisualizationSettingsScreen extends StatelessWidget {
         SwitchListTile(title: const Text('Mirror Visualization'), value: p.mirror, onChanged: p.enabled ? p.setMirror : null),
         const Divider(),
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Ask Resonate Orb', style: TextStyle(fontWeight: FontWeight.bold))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Overlay shape'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in <(AskResonateShape, String)>[
+                    (AskResonateShape.blob, 'Blob'),
+                    (AskResonateShape.capsule, 'Capsule'),
+                    (AskResonateShape.semicircle, 'Edge'),
+                    (AskResonateShape.orbital, 'Orbital'),
+                  ])
+                    ChoiceChip(
+                      label: Text(option.$2),
+                      selected: shapeController.shape == option.$1,
+                      onSelected: (_) => shapeController.setShape(option.$1),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
         SwitchListTile(title: const Text('Audio-reactive movement'), subtitle: const Text('Use the live low-frequency spectrum to pulse the orb and overlay shape'), value: p.orbAudioReactive, onChanged: p.enabled ? p.setOrbAudioReactive : null),
         const Divider(),
         const Padding(padding: EdgeInsets.fromLTRB(16,20,16,8), child: Text('Audio Response', style: TextStyle(fontWeight: FontWeight.bold))),
