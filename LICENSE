@@ -1,21 +1,59 @@
-MIT License
+Resonate Restricted Use License (RRUL) 1.0
+Copyright (c) 2026 innotrepid. All rights reserved.
 
-Copyright (c) 2026 Aetherion
+IMPORTANT: This license applies only to original Resonate application code,
+documentation, branding, and bundled assets owned by the Resonate copyright
+holder. Third-party components are governed by their own license files and
+notices; where a third-party license grants broader rights, those rights remain
+in force for that component.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Limited permission
+The copyright holder grants you a personal, revocable, non-exclusive,
+non-transferable, non-sublicensable license to download, inspect, run, and
+modify a copy of the covered Resonate materials solely for your own
+non-commercial use.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Restrictions
+Unless you obtain prior written permission from the copyright holder, you may
+not:
+- publish, redistribute, sublicense, sell, rent, or otherwise provide copies of
+  the covered Resonate code, app, or modified versions to another person;
+- use the covered materials or a derivative work for commercial purposes,
+  paid services, advertising, or commercial distribution;
+- remove or obscure copyright, attribution, or license notices;
+- use the Resonate name, logo, icons, or other brand assets to suggest
+  sponsorship, affiliation, or endorsement; or
+- claim ownership of the original Resonate materials.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. Contributions and derivatives
+Your private modifications remain subject to this license. This license does
+not grant permission to distribute modified versions. A contribution submitted
+to the Resonate project may be subject to a separate written contribution
+agreement or terms stated by the project maintainer.
+
+4. Ownership and third-party materials
+The covered materials are licensed, not sold. All rights not expressly granted
+are reserved. This license does not replace or narrow the licenses of Flutter,
+Dart, plugins, libraries, fonts, or other third-party materials included with
+or used by Resonate.
+
+5. Termination
+Permission under this license terminates automatically if you materially
+violate its terms. You must stop using and delete copies of covered materials
+if the violation is not cured after written notice, where cure is legally
+permitted.
+
+6. Disclaimer and limitation
+To the maximum extent permitted by applicable law, the covered materials are
+provided "AS IS", without warranties or conditions of any kind. The copyright
+holder is not liable for indirect, incidental, special, consequential, or
+punitive damages arising from use of the covered materials, to the maximum
+extent permitted by law.
+
+7. Other rights
+Nothing in this license limits rights that cannot lawfully be limited under
+applicable law. If a provision is unenforceable, the remaining provisions
+continue to apply to the extent permitted by law.
+
+For written permission or commercial licensing, contact the Resonate
+copyright holder through the project's official repository.
