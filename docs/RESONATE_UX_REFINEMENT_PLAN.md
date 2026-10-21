@@ -56,6 +56,21 @@ Exit criteria: profiles map to real DSP settings, survive restart, preserve cust
 
 Exit criteria: each chosen mode is instantly recognizable, mode switching and playback behavior remain unchanged unless separately specified, and asset/package-size budgets are met.
 
+### Phase 2 completion record — 2026-10-21
+
+Status: implementation is complete without the seven optional JPEGs. The artwork is deliberately drawn locally with Flutter gradients, geometric accents, and Material icons; the uploaded images remain deferred until they can be visually reviewed and optimized. No runtime network requests or new dependencies are needed.
+
+- [x] Add a shared, mode-aware banner for the nine existing listening modes.
+- [x] Give the Modes selector consistent icons and a clear active-mode state.
+- [x] Carry mode identity to Now Playing with a compact badge that does not take space from playback controls.
+- [x] Show mode artwork on populated, empty, and Normal-mode shelf states so the visual identity does not disappear when a shelf has no tracks.
+- [x] Add widget regression coverage for all mode banners, semantic labels, and narrow-screen/large-text rendering (PR #130; post-merge CI run #39598409138 passed).
+- [x] Enforce the release APK budget in CI at 100 MiB (PR #129 merged).
+- [ ] Complete on-device visual review for mode switching, small screens, larger text, and the player badge. Automated tests do not replace this manual check.
+- [ ] Record measured release APK size after the next artwork UI change; the hard gate remains 100 MiB.
+
+Deferred: inspect and selectively integrate the seven images on the separate `Assets` branch when their pixels are available for review. Do not treat them as required to complete the current lightweight-artwork phase.
+
 ### Phase 3 — Automation and control simplification
 - Audit Audio Automation, Audio Focus, DVC, volume normalization, limiter/crossover, crossfade, and DJ controls for duplicate or confusing paths.
 - Use switches for binary choices; named chips/presets for mutually exclusive behavior; retain sliders for genuinely continuous controls.
