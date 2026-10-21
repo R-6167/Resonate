@@ -21,9 +21,8 @@ class AskResonateOverlay extends StatefulWidget {
 }
 
 class _AskResonateOverlayState extends State<AskResonateOverlay>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late final AnimationController _openCtrl;
-  late final AnimationController _breatheCtrl;
   late final Animation<double> _progress;
 
   @override
@@ -33,11 +32,6 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 620),
     );
-    _breatheCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 3400),
-    );
-
     _progress = CurvedAnimation(
       parent: _openCtrl,
       curve: Curves.easeOutBack,
@@ -52,7 +46,6 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
         _openCtrl.value = 1;
       } else {
         _openCtrl.forward();
-        _breatheCtrl.repeat(reverse: true);
       }
     });
   }
@@ -60,7 +53,6 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
   @override
   void dispose() {
     _openCtrl.dispose();
-    _breatheCtrl.dispose();
     super.dispose();
   }
 
@@ -141,10 +133,10 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
         if (!didPop) _close();
       },
       child: AnimatedBuilder(
-        animation: Listenable.merge([_progress, _breatheCtrl]),
+        animation: _progress,
         builder: (context, _) {
           final p = reduceMotion ? 1.0 : _progress.value.clamp(0.0, 1.0);
-          final breathe = reduceMotion ? 0.0 : _breatheCtrl.value;
+          final breathe = reduceMotion ? 0.0 : energy;
           final offset = originOffset(p);
 
           return Stack(
