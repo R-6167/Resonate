@@ -198,13 +198,23 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                               ),
                             ),
                             Padding(
-                              padding: EdgeInsets.all(ctrl.shape == AskResonateShape.semicircle ? 26 : 14),
-                              child: _AskResonateContent(
-                                contextLabel: ctrl.contextLabel,
-                                shape: ctrl.shape,
-                                onClose: _close,
-                                onShapeChanged: (s) => context.read<AskResonateController>().setShape(s),
-                                reduceMotion: reduceMotion,
+                              padding: EdgeInsets.all(ctrl.shape == AskResonateShape.semicircle ? 18 : 12),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: scheme.surface.withValues(alpha: 0.84),
+                                  borderRadius: BorderRadius.circular(22),
+                                  border: Border.all(
+                                    color: scheme.outlineVariant.withValues(alpha: 0.55),
+                                  ),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: _AskResonateContent(
+                                  contextLabel: ctrl.contextLabel,
+                                  shape: ctrl.shape,
+                                  onClose: _close,
+                                  onShapeChanged: (s) => context.read<AskResonateController>().setShape(s),
+                                  reduceMotion: reduceMotion,
+                                ),
                               ),
                             ),
                           ],
