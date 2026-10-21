@@ -36,7 +36,7 @@ Exit criteria: a source-backed screen/control inventory, a size baseline, and a 
 - Inspect the current EQ model, band layout, native DSP mapping, preamp/headroom behavior, and custom preset schema before authoring curves.
 - Author profiles as explicit, versioned curves with conservative gain/headroom behavior; avoid broad boosts that risk clipping.
 - Listen-test across varied recordings and outputs before calling a profile complete; automated tests validate mappings and persistence, not subjective sound quality.
-- [x] Feature the five first-party profiles as horizontally browsable, readable cards with descriptions and a clear selected state; preserve the full category catalog for classic and custom presets.
+- [x] Keep first-party sound profiles inside the existing preset/category picker (the `Resonate` category) instead of maintaining a separate featured-card carousel; classic and custom presets remain in the same catalog.
 - [x] Keep one-tap profile selection and retain the existing explicit save-as-custom action; fine-tuning remains available in the band sliders.
 - [ ] Verify profile selection, restart persistence, and custom/legacy import compatibility in CI and manual checks.
 - Keep band sliders in an advanced/fine-tune area; keep preamp accessible and distinguish it from loudness normalization.
@@ -130,3 +130,11 @@ Hard ceiling for now: **100 MB total app size**. Treat this as a release gate, n
 - Each phase must name tests, manual checks, expected asset-size delta, and rollback risk before implementation.
 - CI success does not prove audio quality or audible DSP behavior; record listening/device checks separately.
 - No new features during the refinement plan unless they are required to fix an existing broken or misleading behavior.
+
+
+### Phase 3 implementation note — EQ sound unification (2026-10-21)
+
+- [x] Remove the separate horizontally scrolling first-party profile card row from Equalizer.
+- [x] Keep Resonate Signature, Warmth, Clarity, Afterhours, and Pulse available under the existing `Resonate` preset category, alongside the same preset picker used for classic and custom curves.
+- [x] Preserve the current Resonate Signature curve and existing preset storage/selection behavior; this is a navigation/UI simplification, not a sound-tuning change.
+- [ ] Confirm CI and manually check category selection, current-profile selection, fine-tuning, and restart persistence on device.
