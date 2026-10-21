@@ -100,6 +100,9 @@ class MusicProvider extends ChangeNotifier {
   bool get _activeIsA => _engines.activeIsA;
   set _activeIsA(bool value) => _engines.activeIsA = value;
   AudioPlayer get audioPlayer => _engines.active;
+  /// Both players own independent Android audio sessions; session-based
+  /// auxiliary effects must be reapplied to either engine across handoffs.
+  List<AudioPlayer> get audioSessionPlayers => [_playerA, _playerB];
   AudioPlayer get inactivePlayer => _engines.inactive;
   AndroidEqualizer get equalizer => _engines.equalizer;
   AndroidLoudnessEnhancer get loudnessEnhancer => _engines.loudnessEnhancer;
