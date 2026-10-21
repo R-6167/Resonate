@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// the transport/crossfade envelope. Existing preference keys are read as a
 /// migration source; new writes use one JSON document.
 class DspSettings {
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
   static const String preferenceKey = 'resonate_dsp_settings_v1';
   static Future<void> _writeQueue = Future<void>.value();
 
@@ -19,7 +19,11 @@ class DspSettings {
   final double preampDb;
   final bool autoEqHeadroom;
   final double dvcDb;
+  /// Legacy single-ceiling field retained for old call sites and migrations.
   final double limiterCeilingDb;
+  final double limiterHighCeilingDb;
+  final double limiterLowCeilingDb;
+  final double crossoverHz;
   final bool speakerProtectionEnabled;
   final double virtualBassAmount;
   final bool effectsEnabled;
@@ -35,6 +39,9 @@ class DspSettings {
     this.autoEqHeadroom = false,
     this.dvcDb = 0,
     this.limiterCeilingDb = -1,
+    this.limiterHighCeilingDb = -0.5,
+    this.limiterLowCeilingDb = -0.2,
+    this.crossoverHz = 120,
     this.speakerProtectionEnabled = false,
     this.virtualBassAmount = 0,
     this.effectsEnabled = true,
@@ -56,6 +63,9 @@ class DspSettings {
     bool? autoEqHeadroom,
     double? dvcDb,
     double? limiterCeilingDb,
+    double? limiterHighCeilingDb,
+    double? limiterLowCeilingDb,
+    double? crossoverHz,
     bool? speakerProtectionEnabled,
     double? virtualBassAmount,
     bool? effectsEnabled,
@@ -70,6 +80,13 @@ class DspSettings {
         autoEqHeadroom: autoEqHeadroom ?? this.autoEqHeadroom,
         dvcDb: _clamp(dvcDb ?? this.dvcDb, -24, 6),
         limiterCeilingDb: _clamp(limiterCeilingDb ?? this.limiterCeilingDb, -12, 0),
+        limiterHighCeilingDb: _clamp(
+          limiterHighCeilingDb ?? limiterCeilingDb ?? this.limiterHighCeilingDb,
+          -6, -0.1),
+        limiterLowCeilingDb: _clamp(
+          limiterLowCeilingDb ?? limiterCeilingDb ?? this.limiterLowCeilingDb,
+          -6, -0.1),
+        crossoverHz: _clamp(crossoverHz ?? this.crossoverHz, 80, 200),
         speakerProtectionEnabled: speakerProtectionEnabled ?? this.speakerProtectionEnabled,
         virtualBassAmount: _clamp(virtualBassAmount ?? this.virtualBassAmount, 0, 1),
         effectsEnabled: effectsEnabled ?? this.effectsEnabled,
@@ -87,6 +104,9 @@ class DspSettings {
         'autoEqHeadroom': autoEqHeadroom,
         'dvcDb': dvcDb,
         'limiterCeilingDb': limiterCeilingDb,
+        'limiterHighCeilingDb': limiterHighCeilingDb,
+        'limiterLowCeilingDb': limiterLowCeilingDb,
+        'crossoverHz': crossoverHz,
         'speakerProtectionEnabled': speakerProtectionEnabled,
         'virtualBassAmount': virtualBassAmount,
         'effectsEnabled': effectsEnabled,
@@ -95,7 +115,8 @@ class DspSettings {
       };
 
   factory DspSettings.fromJson(Map<String, dynamic> json) {
-    if (json['version'] != schemaVersion) {
+    final version = json['version'];
+    if (version != 1 && version != schemaVersion) {
       throw const FormatException('Unsupported Resonate DSP settings version.');
     }
     double number(String key, double fallback, double min, double max) {
@@ -117,6 +138,17 @@ class DspSettings {
       autoEqHeadroom: json['autoEqHeadroom'] is bool ? json['autoEqHeadroom'] as bool : false,
       dvcDb: number('dvcDb', 0, -24, 6),
       limiterCeilingDb: number('limiterCeilingDb', -1, -12, 0),
+      limiterHighCeilingDb: number(
+        'limiterHighCeilingDb',
+        version == 1 ? number('limiterCeilingDb', -0.5, -6, -0.1) : -0.5,
+        -6, -0.1,
+      ),
+      limiterLowCeilingDb: number(
+        'limiterLowCeilingDb',
+        version == 1 ? number('limiterCeilingDb', -0.2, -6, -0.1) : -0.2,
+        -6, -0.1,
+      ),
+      crossoverHz: number('crossoverHz', 120, 80, 200),
       speakerProtectionEnabled: json['speakerProtectionEnabled'] is bool ? json['speakerProtectionEnabled'] as bool : false,
       virtualBassAmount: number('virtualBassAmount', 0, 0, 1),
       effectsEnabled: json['effectsEnabled'] is bool ? json['effectsEnabled'] as bool : true,
