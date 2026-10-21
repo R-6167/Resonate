@@ -17,12 +17,12 @@ Principles:
 ## Phases
 
 ### Phase 0 — Baseline and inventory (current)
-- [ ] Confirm the target branch, latest merged PR, CI state, and existing open work before changing behavior.
-- [ ] Inventory current screens, modes, EQ and DSP settings, preset storage/import/export, automation controls, and current artwork/assets.
-- [ ] Record a release APK/AAB size baseline and establish a repeatable measurement in CI or release checks.
-- [ ] Identify the existing sound profiles and their actual DSP mappings before proposing new curves.
-- [ ] Separate confirmed bugs from usability ideas and document acceptance checks for each phase.
-- [ ] Keep this phase documentation/audit-only except for corrections to stale roadmap status.
+- [x] Confirm target branch and PR #122 merge; PR #122 CI passed. Post-merge run #39584802997 was still in progress at audit time, so its result must be checked separately. Existing open PRs were inventoried.
+- [x] Inventory current screens, nine modes, EQ/DSP settings, custom preset storage/import/export, automation controls, and artwork/assets; see `docs/RESONATE_UX_PHASE_0_AUDIT.md`.
+- [x] Record the release APK baseline: 76.2 MB from successful CI run #39579384222 using `flutter build apk --release --no-shrink`. The existing workflow prints the size; a hard 100 MB threshold is not yet enforced.
+- [x] Identified 32 generic built-in EQ profiles, the 10-band mapping, canonical DSP settings schema, custom JSON v1 format, and legacy preference migration. Native headroom/listening validation remains Phase 1 work.
+- [x] Separated source/build-confirmed findings from design ideas and documented Phase 1 acceptance criteria in the Phase 0 audit.
+- [x] Kept Phase 0 changes documentation-only; no app code, DSP behavior, assets, or dependencies changed.
 
 Exit criteria: a source-backed screen/control inventory, a size baseline, and a prioritized first implementation phase. No user-facing feature changes in this phase.
 
