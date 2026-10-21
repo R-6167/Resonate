@@ -37,6 +37,28 @@ Resonate already has a substantial in-house native DSP path. The intended live r
 - The old `ResonateNativeDspBridge` should continue to use live-DSP status/EQ/master-enable APIs rather than resurrecting the obsolete session-attach contract.
 - The sink patch script fails the build if the expected upstream patch location changes and CI separately verifies the processor-injection markers. Runtime reflection failure still logs a warning and uses the default sink, preserving playback in pass-through mode.
 
+## Limiter and crossover controls (canonical settings schema v2)
+
+The Audio automation screen now exposes the already-implemented native two-band
+limiter and crossover controls. These settings are persisted in the versioned
+`DspSettings` document and restored at startup through `AudioEffectsProvider`.
+The native registry keeps them as sticky values and applies them to every live
+engine and to newly registered A/B engines.
+
+- High-band and low-band limiter ceilings are stored independently in dBFS and
+  clamped to the native range `-6.0..-0.1 dB`. The defaults remain `-0.5 dB`
+  high-band and `-0.2 dB` low-band.
+- Crossover frequency is stored in Hz and clamped to `80..200 Hz`; default
+  remains `120 Hz`.
+- Settings apply live while dragging and persist on slider release; reset
+  restores the existing native defaults.
+- Schema v1 snapshots are accepted and migrated to schema v2. A legacy single
+  `limiterCeilingDb` value initializes both band ceilings during migration;
+  v2 stores separate high/low values and crossover frequency.
+- These controls configure the native two-band detector/limiter crossover.
+  They do not by themselves prove a certified true-peak ceiling on every output
+  route; retain conservative settings and validate loud material on device.
+
 ## Supported architecture for advanced controls
 
 ### 1. One canonical DSP settings model
