@@ -15,6 +15,16 @@ class FocusInterruptionRuntime {
 
   int resumeGeneration = 0;
 
+  /// Invalidates an in-flight unduck only when a newer focus event arrives.
+  /// Transport commands may cancel volume fades, but must not strand the
+  /// engine at the temporary duck gain after focus has already returned.
+  int focusEventGeneration = 0;
+
+  int noteFocusEvent() => ++focusEventGeneration;
+
+  bool ownsFocusEventGeneration(int generation) =>
+      focusEventGeneration == generation;
+
   static const double duckLevel = 0.32;
   static const int duckFadeMs = 180;
   static const Duration autoResumeMaxFocusLoss = Duration(minutes: 3);
