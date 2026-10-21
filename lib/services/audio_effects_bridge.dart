@@ -144,8 +144,8 @@ class AudioEffectsBridge {
   }) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspLimiterCeiling', {
-        'highDb': highDb,
-        'lowDb': lowDb,
+        'highDb': highDb.clamp(-6.0, -0.1),
+        'lowDb': lowDb.clamp(-6.0, -0.1),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {
@@ -157,7 +157,7 @@ class AudioEffectsBridge {
   static Future<Map<String, dynamic>?> setLiveDspCrossoverHz(double hz) async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('setLiveDspCrossoverHz', {
-        'hz': hz,
+        'hz': hz.clamp(80.0, 200.0),
       });
       if (raw is Map) return Map<String, dynamic>.from(raw);
     } catch (e) {

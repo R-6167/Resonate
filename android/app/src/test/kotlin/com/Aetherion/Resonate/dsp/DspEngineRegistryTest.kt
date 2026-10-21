@@ -197,4 +197,24 @@ class DspEngineRegistryTest {
         assertTrue(fake.calls.any { it == "enabled:2002:true" })
     }
 
+    @Test
+    fun limiter_and_crossover_updates_are_clamped_and_sticky_for_both_engines() {
+        assertTrue(DspEngineRegistry.register(1, 1001L))
+        assertTrue(DspEngineRegistry.register(2, 2002L))
+        fake.calls.clear()
+
+        DspEngineRegistry.applyLimiterCeilingAll(-99f, 1f)
+        DspEngineRegistry.applyCrossoverHzAll(900f)
+
+        assertTrue(fake.calls.contains("limiter:1001:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("limiter:2002:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("crossover:1001:200.0"))
+        assertTrue(fake.calls.contains("crossover:2002:200.0"))
+
+        fake.calls.clear()
+        assertTrue(DspEngineRegistry.register(3, 3003L))
+        assertTrue(fake.calls.contains("limiter:3003:-6.0:-0.1"))
+        assertTrue(fake.calls.contains("crossover:3003:200.0"))
+    }
+
 }
