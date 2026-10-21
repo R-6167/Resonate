@@ -98,7 +98,6 @@ class ModeShelfScreen extends StatelessWidget {
                       children: [
                         ModeArtworkBanner(mode: shelf.mode),
                         const SizedBox(height: 24),
-                      children: [
                         Icon(Icons.playlist_remove_rounded,
                             size: 48, color: scheme.onSurfaceVariant),
                         const SizedBox(height: 16),
