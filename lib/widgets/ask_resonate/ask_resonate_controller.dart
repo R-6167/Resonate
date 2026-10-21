@@ -73,10 +73,12 @@ class AskResonateController extends ChangeNotifier {
 
   void setShape(AskResonateShape shape) {
     _shapeTouched = true;
-    if (_shape == shape) return;
+    final changed = _shape != shape;
     _shape = shape;
-    notifyListeners();
-    SharedPreferences.getInstance().then((prefs) => prefs.setString(_shapePreferenceKey, shape.name)).catchError((_) => false);
+    if (changed) notifyListeners();
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString(_shapePreferenceKey, shape.name))
+        .catchError((_) => false);
   }
 
   void updateOrbGlobalPosition(Offset? position) {
