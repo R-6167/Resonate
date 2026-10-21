@@ -8,26 +8,46 @@ import '../services/audio_effects_bridge.dart';
 
 class AudioEffectsProvider extends ChangeNotifier {
   final AudioPlayer? player;
+  final List<AudioPlayer> sessionPlayers;
   final AndroidLoudnessEnhancer? loudnessEnhancer;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
   double loudness = 0.0;
   bool effectsEnabled = true;
-  StreamSubscription<int?>? _sessionSubscription;
-  int? _lastAppliedSessionId;
 
-  AudioEffectsProvider({this.player, this.loudnessEnhancer}) {
-    // Android audio sessions can be recreated after interruption or player
-    // teardown. Reattach the saved auxiliary effects when the session changes;
-    // preferences alone do not make an effect active on the new session.
-    _sessionSubscription = player?.androidAudioSessionIdStream.listen((id) {
-      if (id == null || id <= 0 || id == _lastAppliedSessionId) return;
-      _lastAppliedSessionId = id;
-      unawaited(_applyNative(sessionIdOverride: id));
-    }, onError: (Object error) {
-      debugPrint('Audio-effects session stream failed: $error');
-    });
+  final List<StreamSubscription<int?>> _sessionSubscriptions = [];
+  final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
+
+  AudioEffectsProvider({
+    this.player,
+    List<AudioPlayer>? sessionPlayers,
+    this.loudnessEnhancer,
+  }) : sessionPlayers = sessionPlayers ??
+            (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player]) {
+    // A/B players own independent Android sessions. Track both so an incoming
+    // crossfade engine receives the same saved auxiliary-effect profile.
+    for (final sessionPlayer in this.sessionPlayers) {
+      final currentId = sessionPlayer.androidAudioSessionId;
+      if (currentId != null && currentId > 0) {
+        _sessionIdsByPlayer[sessionPlayer] = currentId;
+      }
+      _sessionSubscriptions.add(
+        sessionPlayer.androidAudioSessionIdStream.listen((id) {
+          if (id == null || id <= 0) {
+            _sessionIdsByPlayer.remove(sessionPlayer);
+            return;
+          }
+          final previousId = _sessionIdsByPlayer[sessionPlayer];
+          _sessionIdsByPlayer[sessionPlayer] = id;
+          if (previousId == id) return;
+          // Reattach after the platform recreates this player's audio session.
+          unawaited(_applyNative(sessionIdOverride: id));
+        }, onError: (Object error) {
+          debugPrint('Audio-effects session stream failed: $error');
+        }),
+      );
+    }
     _load();
   }
 
@@ -80,18 +100,27 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   Future<void> _applyNative({int? sessionIdOverride}) async {
-    final sessionId = sessionIdOverride ?? player?.androidAudioSessionId ?? 0;
-    if (sessionId <= 0) return;
+    final sessionIds = sessionIdOverride != null
+        ? <int>{sessionIdOverride}
+        : <int>{
+            ..._sessionIdsByPlayer.values,
+            if ((player?.androidAudioSessionId ?? 0) > 0)
+              player!.androidAudioSessionId!,
+          };
+    if (sessionIds.isEmpty) return;
+
     final enabled = effectsEnabled;
-    try {
-      await AudioEffectsBridge.attachToSession(sessionId);
-      // BassBoost is retired from the active path. Mature DSP owns all bass
-      // processing; applying Android BassBoost here would stack another EQ.
-      await AudioEffectsBridge.setBassBoost(0.0);
-      await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
-      await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
-    } catch (e) {
-      debugPrint('Native audio effects failed: $e');
+    for (final sessionId in sessionIds) {
+      try {
+        await AudioEffectsBridge.attachToSession(sessionId);
+        // BassBoost is retired from the active path. Mature DSP owns all bass
+        // processing; applying Android BassBoost here would stack another EQ.
+        await AudioEffectsBridge.setBassBoost(0.0);
+        await AudioEffectsBridge.setVirtualizer(enabled ? virtualizer : 0.0);
+        await AudioEffectsBridge.setReverb(enabled ? reverb : 0.0);
+      } catch (e) {
+        debugPrint('Native audio effects failed for session $sessionId: $e');
+      }
     }
 
     // LoudnessEnhancer is intentionally disabled — DSP preamp + EQ handle level.
@@ -122,13 +151,8 @@ class AudioEffectsProvider extends ChangeNotifier {
       // Always force loudness off (legacy prefs ignored).
       loudness = 0.0;
       // If playback/session creation raced the preference load, apply the
-      // restored settings now. Otherwise the session stream applies them when
-      // a valid session appears.
-      final sessionId = player?.androidAudioSessionId ?? 0;
-      if (sessionId > 0) {
-        _lastAppliedSessionId = sessionId;
-        await _applyNative(sessionIdOverride: sessionId);
-      }
+      // restored settings now to every currently known A/B session.
+      await _applyNative();
       notifyListeners();
     } catch (e) {
       debugPrint('Audio effects load failed: $e');
@@ -169,8 +193,11 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(_sessionSubscription?.cancel());
-    _sessionSubscription = null;
+    for (final subscription in _sessionSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _sessionSubscriptions.clear();
+    _sessionIdsByPlayer.clear();
     AudioEffectsBridge.release();
     super.dispose();
   }
