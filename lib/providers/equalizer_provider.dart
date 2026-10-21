@@ -404,7 +404,43 @@ class EqualizerProvider extends ChangeNotifier {
     const EqualizerPreset(name: 'Car', category: 'Space', gains: [4, 3, 1, 0, 0, 1, 2, 3, 3, 2]),
   ];
 
-  List<EqualizerPreset> get allPresets => [...builtInPresets, ...customPresets];
+  /// First-party Resonate profiles. These are deliberately restrained starting
+  /// curves, not claims of universally correct or listening-validated tuning.
+  /// Keep these alongside the classic presets so existing names and user
+  /// libraries remain compatible.
+  static const List<EqualizerPreset> resonatePresets = [
+    EqualizerPreset(
+      name: 'Resonate Signature',
+      category: 'Resonate',
+      gains: [1.5, 1.5, 1, 0.5, 0, 0, 0.5, 1, 1.5, 1],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Warmth',
+      category: 'Resonate',
+      gains: [2, 1.5, 1, 0.5, 0, -0.5, -0.5, 0, 0.5, 0.5],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Clarity',
+      category: 'Resonate',
+      gains: [-1, -0.5, 0, 0.5, 1, 1.5, 2, 2, 1.5, 1],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Afterhours',
+      category: 'Resonate',
+      gains: [1.5, 1, 0.5, 0, -0.5, -0.5, 0, 0.5, 0.5, 0],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Pulse',
+      category: 'Resonate',
+      gains: [2.5, 2, 1, 0, -0.5, 0, 0.5, 1, 1.5, 1],
+    ),
+  ];
+
+  List<EqualizerPreset> get allPresets => [
+        ...builtInPresets,
+        ...resonatePresets,
+        ...customPresets,
+      ];
 
   List<String> get categories {
     final set = <String>{};
