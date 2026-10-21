@@ -77,6 +77,7 @@ Exit criteria: targeted navigation, scrolling, accessibility, and playback regre
 
 ### Phase 5 — Release validation and size guard
 - Run Flutter analysis/tests, native DSP tests, Android build/package checks, and targeted device smoke tests.
+- [x] Enforce the 100 MiB release APK ceiling in CI using the exact built artifact size; report MiB and bytes, and fail the build if the ceiling is exceeded.
 - Verify mode artwork and sound profiles on low-end devices as well as the primary test device.
 - Track both distributable package size and installed size where practical; use the same build variant and measurement method when comparing.
 - Investigate unexpected growth rather than silently raising the budget.
