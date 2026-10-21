@@ -48,7 +48,7 @@ class AndroidEffectsBridge {
     fun setReverb(strength: Int) {
         val sessionId = effectSessionId
         if (sessionId <= 0) return
-        val s = strength.coerceIn(-900, 1000)
+        val s = strength.coerceIn(-900, 0)
         if (s == 0) {
             releaseReverb(sessionId)
             return
