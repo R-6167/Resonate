@@ -171,7 +171,7 @@ the calculated headroom value during initialization.
 | EQ enabled, preset, 31-band curve | Canonical snapshot and legacy mirrors; custom presets stored separately | Curve and EQ enable pushed to live registry |
 | Preamp and automatic headroom | Canonical and legacy mirror; headroom restored | Effective preamp (including headroom) is awaited and pushed; no later raw-preamp overwrite |
 | DVC | Canonical snapshot; legacy key used for migration | Restored to registry on provider initialization and applied to future A/B sinks |
-| Reverb / virtualizer / effects-enabled | Canonical snapshot and legacy mirrors; provider loads values | Currently applied by AudioEffectsProvider when its apply path runs; session/reconnect lifecycle reapplication still needs verification |
+| Reverb / virtualizer / effects-enabled | Canonical snapshot and legacy mirrors; provider loads values | AudioEffectsProvider reapplies restored values to both A/B player sessions when their Android session IDs change, and after a preference-load/session-creation race; physical-device verification is still required |
 | Speaker protection / virtual bass | Model fields exist, but current live values are route policy outputs | Route service pushes values to native registry; these fields are not currently independent user controls and must not override route policy on restore |
 | Limiter ceiling | Model field and native bridge/registry APIs exist | No supported user setting currently drives this field from canonical restore; leave dormant rather than silently applying a mismatched single ceiling to the native high/low limiter parameters |
 | Crossover frequency | Native API exists | No canonical user setting currently owns it; native default remains in force |
@@ -188,5 +188,7 @@ playback session.
 Remaining validation after CI: restart with non-default EQ/headroom/DVC/master
 settings; verify both A/B engines receive the same profile during crossfade;
 verify route changes reassert speaker policy; and test reverb/virtualizer
-persistence across playback-session recreation. These require device playback
-checks and are not inferred from Flutter/Kotlin tests alone.
+persistence across playback-session recreation. The provider now tracks both A/B player session IDs and reattaches auxiliary
+effects when either session changes. Device playback checks are still required
+to prove effects remain audible and stable through real crossfades and session
+recreation; this is not inferred from Flutter/Kotlin tests alone.
