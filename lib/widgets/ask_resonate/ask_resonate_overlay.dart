@@ -10,7 +10,6 @@ import '../../providers/intelligence_mix_controller.dart';
 import '../../providers/intelligence_provider.dart';
 import '../../providers/music_provider.dart';
 import '../../services/companion_command_executor.dart';
-import '../../services/local_intent_parser.dart';
 import 'ask_resonate_controller.dart';
 import 'shape_clippers.dart';
 
@@ -83,6 +82,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
     for (var i = 0; i < n; i++) {
       sum += viz.frequencies[i];
     }
+    if (!viz.orbAudioReactive) return 0;
     return (sum / n * viz.sensitivity).clamp(0.0, 1.0);
   }
 
@@ -172,44 +172,51 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                     opacity: p,
                     child: Transform.scale(
                       scale: reduceMotion ? 1.0 : (0.72 + 0.28 * p),
-                      child: ClipPath(
-                        clipper: clipperForShape(
-                          shape: ctrl.shape,
-                          progress: p,
-                          breathe: breathe,
-                          audioEnergy: energy,
-                        ),
-                        child: Container(
-                          width: panel.width,
-                          height: panel.height,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                scheme.surfaceContainerHigh.withValues(alpha: 0.96),
-                                scheme.primaryContainer.withValues(alpha: 0.88),
-                                scheme.secondaryContainer.withValues(alpha: 0.75),
-                              ],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: scheme.primary.withValues(
-                                  alpha: (0.22 + energy * 0.18) * p,
-                                ),
-                                blurRadius: 40 + energy * 24,
-                                spreadRadius: 4 + energy * 6,
+                      child: SizedBox(
+                        width: panel.width,
+                        height: panel.height,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipPath(
+                              clipper: clipperForShape(
+                                shape: ctrl.shape,
+                                progress: p,
+                                breathe: breathe,
+                                audioEnergy: energy,
                               ),
-                            ],
-                          ),
-                          child: _AskResonateContent(
-                            contextLabel: ctrl.contextLabel,
-                            shape: ctrl.shape,
-                            onClose: _close,
-                            onShapeChanged: (s) =>
-                                context.read<AskResonateController>().setShape(s),
-                            reduceMotion: reduceMotion,
-                          ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      scheme.surfaceContainerHigh.withValues(alpha: 0.96),
+                                      scheme.primaryContainer.withValues(alpha: 0.88),
+                                      scheme.secondaryContainer.withValues(alpha: 0.75),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: scheme.primary.withValues(alpha: (0.22 + energy * 0.18) * p),
+                                      blurRadius: 24 + energy * 12,
+                                      spreadRadius: 2 + energy * 3,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.all(ctrl.shape == AskResonateShape.semicircle ? 26 : 14),
+                              child: _AskResonateContent(
+                                contextLabel: ctrl.contextLabel,
+                                shape: ctrl.shape,
+                                onClose: _close,
+                                onShapeChanged: (s) => context.read<AskResonateController>().setShape(s),
+                                reduceMotion: reduceMotion,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -244,8 +251,6 @@ class _AskResonateContent extends StatefulWidget {
 }
 
 class _AskResonateContentState extends State<_AskResonateContent> {
-  final _parser = LocalIntentParser();
-  final _text = TextEditingController();
   String? _result;
   bool _busy = false;
 
@@ -259,12 +264,6 @@ class _AskResonateContentState extends State<_AskResonateContent> {
     ('Evolve mix', 'Refine the current automatic mix', CompanionIntent(action: CompanionAction.evolveMix)),
     ('Play top pick', 'Start the strongest local recommendation', CompanionIntent(action: CompanionAction.playTopRecommendation)),
   ];
-
-  @override
-  void dispose() {
-    _text.dispose();
-    super.dispose();
-  }
 
   Future<void> _run(CompanionIntent intent) async {
     if (_busy) return;
@@ -317,7 +316,6 @@ class _AskResonateContentState extends State<_AskResonateContent> {
   @override
   Widget build(BuildContext context) {
     final intelligence = context.watch<IntelligenceProvider>();
-    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final theme = Theme.of(context);
 
     Widget tile(Widget child) {
@@ -330,7 +328,7 @@ class _AskResonateContentState extends State<_AskResonateContent> {
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 18, 20, 16 + bottomInset),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -389,48 +387,48 @@ class _AskResonateContentState extends State<_AskResonateContent> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  for (final (title, subtitle, intent) in _commands)
-                    tile(
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        dense: true,
-                        leading: Icon(_iconFor(intent.action), color: theme.colorScheme.primary),
-                        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text(subtitle),
-                        trailing: _busy
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.chevron_right, size: 20),
-                        onTap: _busy ? null : () => _run(intent),
-                      ),
-                    ),
-                  const Divider(height: 20),
-                  TextField(
-                    controller: _text,
-                    enabled: !_busy,
-                    textInputAction: TextInputAction.go,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. play something relaxing',
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.send_rounded),
-                        onPressed: _busy
-                            ? null
-                            : () {
-                                final intent = _parser.parse(_text.text);
-                                _run(intent);
-                              },
-                      ),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                      isDense: true,
-                    ),
-                    onSubmitted: (v) {
-                      if (_busy) return;
-                      _run(_parser.parse(v));
-                    },
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 1.55,
+                    children: [
+                      for (final (title, subtitle, intent) in _commands)
+                        Material(
+                          color: theme.colorScheme.surface.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(14),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: _busy ? null : () => _run(intent),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_busy)
+                                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                  else
+                                    Icon(_iconFor(intent.action), size: 22, color: theme.colorScheme.primary),
+                                  const SizedBox(height: 5),
+                                  Flexible(
+                                    child: Text(
+                                      title,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
+                  const SizedBox(height: 10),
                   if (_result != null) ...[
                     const SizedBox(height: 12),
                     Material(
