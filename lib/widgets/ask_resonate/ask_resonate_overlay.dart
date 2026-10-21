@@ -172,6 +172,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                           children: [
                             ClipPath(
                               clipper: clipperForShape(
+                                shape: ctrl.shape,
                                 progress: p,
                                 breathe: breathe,
                                 audioEnergy: energy,
@@ -203,7 +204,6 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                               ),
                               child: _AskResonateContent(
                                 contextLabel: ctrl.contextLabel,
-                                shape: ctrl.shape,
                                 onClose: _close,
                                 reduceMotion: reduceMotion,
                               ),
