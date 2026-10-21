@@ -549,7 +549,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ),
             ),
-remove inline search          Padding(
+          Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: SegmentedButton<int>(
               segments: const [
