@@ -52,6 +52,8 @@ Exit criteria: profiles map to real DSP settings, survive restart, preserve cust
 - Artwork is decorative/contextual, never the only label or way to operate a mode. Support contrast, text scaling, reduced motion, and smaller screens.
 - Lazy-load or only reference assets where useful; do not introduce network dependencies for core mode art.
 
+- [x] Carry mode identity into the player artwork surface with a compact, high-contrast badge; preserve the existing artwork height and playback-control layout.
+
 Exit criteria: each chosen mode is instantly recognizable, mode switching and playback behavior remain unchanged unless separately specified, and asset/package-size budgets are met.
 
 ### Phase 3 — Automation and control simplification
