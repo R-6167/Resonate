@@ -82,7 +82,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
       sum += viz.frequencies[i];
     }
     if (!viz.orbAudioReactive) return 0;
-    return (sum / n * viz.sensitivity).clamp(0.0, 1.0);
+    return (sum / n * viz.sensitivity).clamp(0.0, 1.0).toDouble();
   }
 
   Size _panelSize(Size screen, AskResonateShape shape) {
