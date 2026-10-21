@@ -5,6 +5,7 @@ import '../widgets/ask_resonate/ask_resonate_controller.dart';
 import '../widgets/ask_resonate/ask_resonate_orb.dart';
 import '../widgets/ask_resonate/ask_resonate_overlay.dart';
 import '../providers/audio_visualization_provider.dart';
+import '../providers/music_provider.dart';
 import '../widgets/mini_player_bar.dart';
 import 'library_screen.dart';
 import 'player_screen.dart';
@@ -24,6 +25,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _navigationVisible = true;
   late final PageController _pageController;
   ShellNav? _shellNav;
+  MusicProvider? _music;
+  AudioVisualizationProvider? _visualization;
 
   final List<Widget> _screens = const [
     HomeDashboard(),
@@ -44,8 +47,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextMusic = context.read<MusicProvider>();
+    if (!identical(_music, nextMusic)) {
+      _music?.removeListener(_syncVisualizationPlayback);
+      _music = nextMusic;
+      _music!.addListener(_syncVisualizationPlayback);
+    }
+    _visualization = context.read<AudioVisualizationProvider>();
+    _syncVisualizationPlayback();
+  }
+
+  void _syncVisualizationPlayback() {
+    final music = _music;
+    final visualization = _visualization;
+    if (music == null || visualization == null) return;
+    // Playback state belongs to the persistent shell, not to whether the orb
+    // happens to rebuild. This keeps the shared spectrum feed alive across tabs.
+    visualization.setPlaybackActive(music.isPlaying);
+  }
+
+  @override
   void dispose() {
     _shellNav?.unbind();
+    _music?.removeListener(_syncVisualizationPlayback);
     _pageController.dispose();
     super.dispose();
   }
@@ -53,7 +79,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectPage(int index) {
     if (index == 3) {
       context.read<AskResonateController>().close();
-      context.read<AudioVisualizationProvider>().setPlaybackActive(false);
     }
     setState(() {
       _selectedIndex = index;
@@ -107,11 +132,10 @@ class _HomeScreenState extends State<HomeScreen> {
               onPageChanged: (index) {
                 if (index == 3) {
                   context.read<AskResonateController>().close();
-                  context.read<AudioVisualizationProvider>().setPlaybackActive(false);
                 }
                 setState(() {
-                _selectedIndex = index;
-                _navigationVisible = true;
+                  _selectedIndex = index;
+                  _navigationVisible = true;
                 });
               },
               itemBuilder: (_, index) => _screens[index],
