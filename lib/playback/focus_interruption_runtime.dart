@@ -25,6 +25,19 @@ class FocusInterruptionRuntime {
   bool ownsFocusEventGeneration(int generation) =>
       focusEventGeneration == generation;
 
+  /// Computes the final player gain after a transient duck ends.
+  /// Sleep-timer fading remains in force while the interruption is cleared.
+  double unduckRestoreGain({
+    required double preampScale,
+    required double sleepFadeScale,
+  }) => (preampScale * sleepFadeScale).clamp(0.0, 1.0).toDouble();
+
+  /// Only the current focus event may finish an unduck, and never mid-handoff.
+  bool canFinalizeUnduck(
+    int generation, {
+    required bool transitionLive,
+  }) => ownsFocusEventGeneration(generation) && !transitionLive;
+
   static const double duckLevel = 0.32;
   static const int duckFadeMs = 180;
   static const Duration autoResumeMaxFocusLoss = Duration(minutes: 3);
