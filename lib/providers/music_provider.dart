@@ -682,7 +682,6 @@ class MusicProvider extends ChangeNotifier {
       try {
         final dsp = await DspSettings.load();
         await AudioEffectsBridge.setLiveDspDvcDb(dsp.dvcDb);
-        await AudioEffectsBridge.setLiveDspPreampDb(dsp.preampDb);
         await AudioEffectsBridge.setLiveDspLimiterCeiling(
           highDb: dsp.limiterHighCeilingDb,
           lowDb: dsp.limiterLowCeilingDb,
