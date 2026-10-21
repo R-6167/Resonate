@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,8 +14,20 @@ class AudioEffectsProvider extends ChangeNotifier {
   double virtualizer = 0.0;
   double loudness = 0.0;
   bool effectsEnabled = true;
+  StreamSubscription<int?>? _sessionSubscription;
+  int? _lastAppliedSessionId;
 
   AudioEffectsProvider({this.player, this.loudnessEnhancer}) {
+    // Android audio sessions can be recreated after interruption or player
+    // teardown. Reattach the saved auxiliary effects when the session changes;
+    // preferences alone do not make an effect active on the new session.
+    _sessionSubscription = player?.androidAudioSessionIdStream.listen((id) {
+      if (id == null || id <= 0 || id == _lastAppliedSessionId) return;
+      _lastAppliedSessionId = id;
+      unawaited(_applyNative(sessionIdOverride: id));
+    }, onError: (Object error) {
+      debugPrint('Audio-effects session stream failed: $error');
+    });
     _load();
   }
 
@@ -65,9 +79,8 @@ class AudioEffectsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _applyNative() async {
-    // Only when the user actually moved a control. Never on first play.
-    final sessionId = player?.androidAudioSessionId ?? 0;
+  Future<void> _applyNative({int? sessionIdOverride}) async {
+    final sessionId = sessionIdOverride ?? player?.androidAudioSessionId ?? 0;
     if (sessionId <= 0) return;
     final enabled = effectsEnabled;
     try {
@@ -108,7 +121,14 @@ class AudioEffectsProvider extends ChangeNotifier {
       bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
       // Always force loudness off (legacy prefs ignored).
       loudness = 0.0;
-      // Do not apply native effects at load — no audio session yet.
+      // If playback/session creation raced the preference load, apply the
+      // restored settings now. Otherwise the session stream applies them when
+      // a valid session appears.
+      final sessionId = player?.androidAudioSessionId ?? 0;
+      if (sessionId > 0) {
+        _lastAppliedSessionId = sessionId;
+        await _applyNative(sessionIdOverride: sessionId);
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Audio effects load failed: $e');
@@ -149,6 +169,8 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_sessionSubscription?.cancel());
+    _sessionSubscription = null;
     AudioEffectsBridge.release();
     super.dispose();
   }
