@@ -14,6 +14,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
   bool showParticles = false;
   bool mirror = false;
   bool reactToBass = true;
+  bool orbAudioReactive = true;
   bool smoothAnimation = true;
   double frameRate = 24;
   List<double> frequencies = List<double>.filled(32, 0.0);
@@ -33,6 +34,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
   void setShowParticles(bool value) { showParticles = value; _save(); notifyListeners(); }
   void setMirror(bool value) { mirror = value; _save(); notifyListeners(); }
   void setReactToBass(bool value) { reactToBass = value; _save(); notifyListeners(); }
+  void setOrbAudioReactive(bool value) { orbAudioReactive = value; _save(); notifyListeners(); }
   void setSmoothAnimation(bool value) { smoothAnimation = value; _save(); notifyListeners(); }
   void setFrameRate(double value) { frameRate = value.clamp(12, 30); _save(); notifyListeners(); }
 
@@ -82,6 +84,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
     showParticles = false;
     mirror = false;
     reactToBass = true;
+    orbAudioReactive = true;
     smoothAnimation = true;
     frameRate = 24;
     await _save();
@@ -100,6 +103,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
       showParticles = prefs.getBool('audio_viz_particles') ?? false;
       mirror = prefs.getBool('audio_viz_mirror') ?? false;
       reactToBass = prefs.getBool('audio_viz_bass') ?? true;
+      orbAudioReactive = prefs.getBool('audio_viz_orb_reactive') ?? true;
       smoothAnimation = prefs.getBool('audio_viz_smooth') ?? true;
       frameRate = (prefs.getDouble('audio_viz_fps') ?? 24).clamp(12, 30).toDouble();
       _syncCapture();
@@ -118,6 +122,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
       await prefs.setBool('audio_viz_particles', showParticles);
       await prefs.setBool('audio_viz_mirror', mirror);
       await prefs.setBool('audio_viz_bass', reactToBass);
+      await prefs.setBool('audio_viz_orb_reactive', orbAudioReactive);
       await prefs.setBool('audio_viz_smooth', smoothAnimation);
       await prefs.setDouble('audio_viz_fps', frameRate);
     } catch (_) {}
