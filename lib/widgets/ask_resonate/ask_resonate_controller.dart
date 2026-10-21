@@ -72,9 +72,9 @@ class AskResonateController extends ChangeNotifier {
   }
 
   void setShape(AskResonateShape shape) {
+    _shapeTouched = true;
     if (_shape == shape) return;
     _shape = shape;
-    _shapeTouched = true;
     notifyListeners();
     SharedPreferences.getInstance().then((prefs) => prefs.setString(_shapePreferenceKey, shape.name)).catchError((_) => false);
   }
