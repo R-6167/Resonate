@@ -15,6 +15,7 @@ import '../providers/playlist_provider.dart';
 import '../services/mode_shelf_builder.dart';
 import '../services/playback_authority.dart';
 import '../ui/resonate_glass.dart';
+import '../widgets/mode_artwork_banner.dart';
 
 class ModeShelfScreen extends StatelessWidget {
   const ModeShelfScreen({super.key});
@@ -137,6 +138,10 @@ class ModeShelfScreen extends StatelessWidget {
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 32),
                             children: [
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: ModeArtworkBanner(mode: shelf.mode),
+                              ),
                               if (shelf.fromFolders.isNotEmpty) ...[
                                 _section(context, 'From your folders'),
                                 ...shelf.fromFolders.map(
