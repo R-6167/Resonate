@@ -114,10 +114,23 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release --no-shrink
 
-      - name: Verify release APK
+      - name: Verify release APK and enforce size budget
+        env:
+          APK_SIZE_LIMIT_MB: "100"
         run: |
-          test -s build/app/outputs/flutter-apk/app-release.apk
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$apk"
+          size_bytes="$(stat -c '%s' "$apk")"
+          size_mb="$(awk -v bytes="$size_bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')"
+          limit_bytes="$((APK_SIZE_LIMIT_MB * 1024 * 1024))"
+          echo "Release APK size: ${size_mb} MiB (${size_bytes} bytes)"
+          echo "Release APK budget: ${APK_SIZE_LIMIT_MB} MiB (${limit_bytes} bytes)"
+          if [ "$size_bytes" -gt "$limit_bytes" ]; then
+            echo "::error::Release APK is ${size_mb} MiB, exceeding the ${APK_SIZE_LIMIT_MB} MiB budget."
+            exit 1
+          fi
+          ls -lh "$apk"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
