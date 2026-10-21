@@ -735,6 +735,9 @@ class EqualizerProvider extends ChangeNotifier {
       await prefs.setBool('equalizer_auto_headroom', value);
     } catch (_) {}
     await _applyPreamp();
+    // Persist through the canonical model as well as the legacy mirror.
+    // Otherwise a restart restores the previous headroom setting.
+    await _save();
     notifyListeners();
   }
 
