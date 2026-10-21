@@ -122,6 +122,20 @@ class AudioEffectsBridge {
     return null;
   }
 
+  /// Returns 32 inexpensive FFT magnitude bands captured from active playback sessions.
+  /// Unsupported devices/routes return silence and never affect playback.
+  static Future<List<double>> getAudioSpectrum() async {
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('getAudioSpectrum');
+      if (raw is List) {
+        return raw.map((value) => (value as num).toDouble().clamp(0.0, 1.0)).toList(growable: false);
+      }
+    } catch (e) {
+      debugPrint('getAudioSpectrum failed: $e');
+    }
+    return const <double>[];
+  }
+
   static Future<Map<String, dynamic>?> getLiveDspStatus() async {
     try {
       final raw = await _channel.invokeMethod<dynamic>('getLiveDspStatus');
