@@ -106,8 +106,8 @@ When native injection is unavailable, keep playback alive and explain that the a
 - Introduce a typed versioned DSP settings document with independent fields for master enable, EQ state/preset/bands, preamp, DVC, limiter ceiling, speaker protection, virtual bass, and supported auxiliary effects.
 - Validate ranges and reject unsupported schema versions; migrate existing SharedPreferences keys without changing defaults.
 - Serialize canonical document writes so asynchronous setting updates do not race each other.
-- Continue migrating every settings owner to this document; avoid letting providers overwrite each other's fields from stale snapshots.
-- Wire Audio Lab to the canonical settings model.
+- Continue migrating every settings owner to this document; avoid letting providers overwrite each other's fields from stale snapshots. DVC, EQ, and auxiliary effect persistence now use atomic updates; the EQ provider also restores its master toggle, preset, preamp, headroom, and 31-band curve from the canonical document.
+- Wire Audio Lab to the canonical settings model. The EQ/Audio Lab provider now initializes from the canonical versioned document and persists the native DSP master toggle there; legacy keys remain as migration/backward-compatibility mirrors.
 - Expose only effects that have a working native implementation and observable status.
 - Save/load custom profiles; reset and bypass must restore predictable values.
 - Confirm no redundant Android effect attaches or duplicated gain stages.

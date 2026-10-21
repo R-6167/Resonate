@@ -261,6 +261,7 @@ class EqualizerProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('equalizer_native_dsp', value);
+      await DspSettings.update((settings) => settings.copyWith(masterEnabled: value));
     } catch (_) {}
     if (!value) {
       try {
@@ -441,21 +442,29 @@ class EqualizerProvider extends ChangeNotifier {
       // Do NOT await AndroidEqualizer.parameters here. That completer finishes
       // at first play and then setEnabled/setGain races session attach.
       final prefs = await SharedPreferences.getInstance();
-      isEnabled = prefs.getBool('equalizer_enabled') ?? true;
-      preset = prefs.getString('equalizer_preset') ?? 'Flat';
+      final canonical = await DspSettings.load();
+      isEnabled = canonical.eqEnabled;
+      preset = canonical.preset;
       await _loadBtProfiles();
-      _nativeDspEnabled = prefs.getBool('equalizer_native_dsp') ?? false;
-      preamp = prefs.getDouble('equalizer_preamp') ?? 0.0;
-      autoEqHeadroom = prefs.getBool('equalizer_auto_headroom') ?? false;
+      _nativeDspEnabled = canonical.masterEnabled;
+      preamp = canonical.preampDb;
+      autoEqHeadroom = canonical.autoEqHeadroom;
       await _loadCustomPresets(prefs);
 
       // Restore studio curve from prefs if present.
       var restoredStudio = false;
-      for (var i = 0; i < studioBands.length; i++) {
-        final v = prefs.getDouble('eq_studio_band_$i');
-        if (v != null) {
-          studioBands[i].gainDb = v.clamp(studioMinDb, studioMaxDb);
-          restoredStudio = true;
+      if (canonical.eqBandGainsDb.length == studioBands.length) {
+        for (var i = 0; i < studioBands.length; i++) {
+          studioBands[i].gainDb = canonical.eqBandGainsDb[i];
+        }
+        restoredStudio = true;
+      } else {
+        for (var i = 0; i < studioBands.length; i++) {
+          final v = prefs.getDouble('eq_studio_band_$i');
+          if (v != null) {
+            studioBands[i].gainDb = v.clamp(studioMinDb, studioMaxDb);
+            restoredStudio = true;
+          }
         }
       }
       if (!restoredStudio) {
@@ -923,6 +932,7 @@ class EqualizerProvider extends ChangeNotifier {
       // Keep the versioned canonical snapshot aligned while legacy keys are
       // retained for compatibility during the staged migration.
       await DspSettings.update((canonical) => canonical.copyWith(
+        masterEnabled: _nativeDspEnabled,
         eqEnabled: isEnabled,
         preset: preset,
         eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
