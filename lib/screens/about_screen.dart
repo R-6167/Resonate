@@ -59,8 +59,9 @@ class AboutScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'A local-first companion player: library, intelligent mixes, optional DJ Mode, '
-                  'and on-device learning. Audio and listening evidence stay on this device.',
+                  'A local-first music player built around your own audio files: library browsing, dual-engine crossfade, '
+                  'equalizer and audio automation, audio-reactive visuals, optional DJ Mode, and on-device recommendations. '
+                  'Resonate does not require a streaming subscription to play your local music.',
                   style: theme.textTheme.bodyLarge,
                 ),
               ],
@@ -74,23 +75,26 @@ class AboutScreen extends StatelessWidget {
             title: 'How to use',
             child: const Text(
               'Library\n'
-              '• Settings → Library: grant access, pick folders, scan, set a minimum length.\n'
-              '• Tap a song to play; long-press to queue as next.\n\n'
-              'Player\n'
-              '• Seek, volume, sleep timer, EQ, effects, and crossfade from More or Settings.\n'
-              '• Swipe artwork: left = next, right = previous.\n\n'
-              'Intelligence\n'
-              '• Turn on for local recommendations and automatic mixes.\n'
-              '• Ask Resonate (floating action): more like this, calmer energy, explore, avoid artist, and more.\n\n'
-              'DJ Mode\n'
-              '• Optional. When on, Resonate plans beat-aware handoffs, harmonic leans, and light transition FX.\n'
-              '• Normal playback always works if analysis is missing — DJ never blocks audio.\n\n'
-              'Autopilot\n'
-              '• Choose the mode under Intelligence settings.\n'
-              '• Explicit consent is required before Autopilot can change or enqueue tracks.\n\n'
-              'Bluetooth\n'
-              '• Media buttons plus optional pause/resume on connect or disconnect.\n'
-              '• Route changes are recovered automatically when you switch outputs.',
+              '• Open Settings → Scan & folders to grant media access, choose folders, and rescan.\n'
+              '• Tap the search icon in the Library toolbar to search titles, artists, and albums without losing list space.\n'
+              '• Tap a track to play it; long-press to queue it. The library restores the current track row when possible.\n'
+              '• Use the toolbar menu to sort, filter, and find possible duplicates.\n\n'
+              'Player & crossfade\n'
+              '• Use the queue, seek bar, sleep timer, EQ, and transport controls from the player.\n'
+              '• Settings → Crossfade controls the transition toggle, duration, and fade curve. Some listening modes intentionally block crossfade.\n'
+              '• Repeat one can crossfade back into the same track when crossfade is enabled. Skip and pause should cancel a transition.\n\n'
+              'Sound & visualization\n'
+              '• Settings → Equalizer controls tone, preamp, bass, width, and reverb. Audio automation controls interruption behavior and EQ headroom.\n'
+              '• Settings → Visualization & Orb shares audio-response settings between the main visualizer and Ask Resonate. Spectrum capture is optional and may be unavailable on some devices.\n\n'
+              'Ask Resonate & Intelligence\n'
+              '• Use the orb quick actions to explore similar tracks, change energy, or refine recommendations; there is no free-text prompt box.\n'
+              '• Intelligence recommendations and feedback are local. Autopilot requires explicit consent before it can change or enqueue tracks.\n\n'
+              'DJ Mode & listening modes\n'
+              '• DJ Mode is optional and can use offline analysis for beat-aware handoffs and light transition effects. Missing analysis must not block normal playback.\n'
+              '• Driving, Podcast, Audiobook, and other modes can apply different folder, playback, and crossfade policies. Check the active mode if a control is unavailable.\n\n'
+              'Bluetooth & automation\n'
+              '• Settings → Audio automation controls interruption response; Device controls covers media buttons and connection behavior.\n'
+              '• Output changes are handled automatically where Android exposes enough information. Device and route behavior varies by manufacturer.',
             ),
           ),
 
@@ -100,26 +104,21 @@ class AboutScreen extends StatelessWidget {
             title: 'What is included',
             child: const Text(
               'Playback\n'
-              '• Dual-engine A/B crossfade with smooth volume ramps; gapless when crossfade is off.\n'
-              '• Queue, shuffle/repeat, per-song resume, sleep timer with fade-out.\n'
-              '• Bluetooth route recovery and volume unstick after device switches.\n\n'
-              'Sound\n'
-              '• Multi-band equalizer, soft preamp, device-aware EQ profiles.\n'
-              '• Effects (bass boost, virtualizer, reverb, loudness) with light guidance.\n'
-              '• Optional visualization.\n\n'
+              '• Dual-engine A/B crossfade with configurable duration and curve; gapless playback when crossfade is off.\n'
+              '• Queue, shuffle/repeat, per-track resume, and sleep timer with fade-out.\n'
+              '• Route-change recovery and guarded playback transitions.\n\n'
+              'Sound & visuals\n'
+              '• Multi-band equalizer, preamp, bass, width, and reverb controls.\n'
+              '• Shared audio-reactive spectrum for the main visualizer and Ask Resonate orb, with sensitivity and performance controls.\n'
+              '• Audio automation for interruption policy and EQ headroom.\n\n'
               'DJ Mode (optional)\n'
-              '• Offline PCM analysis for tempo, energy, structure hints, and key lean.\n'
-              '• Transition strategies: beat align, phrase align, outro→intro, energy bridge.\n'
-              '• Camelot-style harmonic bias with Intelligence ranking when DJ is on.\n'
-              '• Random transition SFX rack beyond reverb; EQ filter sweeps on handoff.\n'
-              '• Weighted skip feedback so early skips teach the planner what not to repeat.\n\n'
-              'Intelligence\n'
-              '• Local ranking from completions, skips, seeks, and mix journeys.\n'
-              '• Decision log and rule-based Ask Resonate.\n'
-              '• Autopilot with graduated consent.\n\n'
-              'Privacy\n'
-              '• History, preferences, analysis, and decisions stay on-device.\n'
-              '• Transfer exports settings only — never your audio files.',
+              '• Offline analysis can inform tempo, energy, structure hints, and harmonic transitions.\n'
+              '• Transition strategies include beat/phrase alignment, outro-to-intro, energy bridges, and light transition effects.\n'
+              '• Weighted skip feedback helps recommendations avoid repeatedly suggesting tracks you skip early.\n\n'
+              'Intelligence & privacy\n'
+              '• Local ranking uses listening feedback such as completions, skips, and seeks.\n'
+              '• Autopilot has graduated consent controls; automatic queue/play changes require permission.\n'
+              '• History, preferences, and analysis are intended to remain on-device; exports contain settings, not audio files.',
             ),
           ),
 
@@ -128,9 +127,9 @@ class AboutScreen extends StatelessWidget {
             icon: Icons.gavel_outlined,
             title: 'License',
             child: const Text(
-              'Resonate application code is provided under the terms distributed with this project source.\n\n'
-              'Open-source packages (Flutter, just_audio, and others) remain under their own licenses. '
-              'Open the licenses page below to review them on device.',
+              'Resonate original application code, branding, and bundled assets are covered by the Resonate Restricted Use License in the project root.\n\n'
+              'You may use and privately modify a copy for personal, non-commercial purposes. You may not redistribute the app or modified copies, sell or commercially exploit it, sublicense it, or use the Resonate name/logo to imply endorsement without written permission.\n\n'
+              'Third-party packages and assets remain under their own licenses. This short summary is informational; the full license text in the repository controls.',
             ),
           ),
 
@@ -155,8 +154,8 @@ class AboutScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'All rights reserved unless otherwise stated in the project license. '
-            'Resonate is not affiliated with any streaming service; it plays files from your device.',
+            'All rights reserved. Third-party components retain their own license terms. '
+            'Resonate is not affiliated with a streaming service; it plays compatible audio files available to your device.',
             style: theme.textTheme.bodySmall,
           ),
         ],
