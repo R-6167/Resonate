@@ -89,7 +89,7 @@ class AboutScreen extends StatelessWidget {
               '• Repeat one can crossfade back into the same track when crossfade is enabled. Skip and pause should cancel a transition.\n\n'
               'Sound & visualization\n'
               '• Settings → Equalizer controls tone, preamp, bass, width, and reverb. Audio automation controls interruption behavior and EQ headroom.\n'
-              '• Settings → Visualization & Orb shares audio-response settings between the main visualizer and Ask Resonate. Spectrum capture is optional and may be unavailable on some devices.\n\n'
+              '• Settings → Visualization & Orb shares audio-response settings between the main visualizer and Ask Resonate, including the saved overlay shape. Spectrum capture is optional and may be unavailable on some devices.\n\n'
               'Ask Resonate & Intelligence\n'
               '• Use the orb quick actions to explore similar tracks, change energy, or refine recommendations; there is no free-text prompt box.\n'
               '• Intelligence recommendations and feedback are local. Autopilot requires explicit consent before it can change or enqueue tracks.\n\n'
