@@ -1268,6 +1268,8 @@ class MusicProvider extends ChangeNotifier {
         _unduckPendingAfterCrossfade = true;
         return;
       }
+      final fadeDidNotReachTarget =
+          (audioPlayer.volume - restored).abs() > 0.05;
       await audioPlayer.setVolume(restored);
       try {
         await inactivePlayer.setVolume(0.0);
@@ -1276,7 +1278,7 @@ class MusicProvider extends ChangeNotifier {
       unawaited(ResonateDiagnostics.record('audio_focus_unduck', {
         'level': restored,
         'engine': _activeIsA ? 'A' : 'B',
-        'fadeCancelledByTransport': audioPlayer.volume < restored * 0.9,
+        'fadeCancelledOrIncomplete': fadeDidNotReachTarget,
       }));
     } catch (_) {
       if (!_focusInterruption.ownsFocusEventGeneration(focusGeneration)) return;
