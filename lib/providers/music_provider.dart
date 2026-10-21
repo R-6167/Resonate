@@ -1253,9 +1253,10 @@ class MusicProvider extends ChangeNotifier {
     // Restore the full user master (including an active sleep-timer fade), not
     // just EQ preamp. A transport command can cancel the ramp; it must not
     // leave the engine at the intermediate duck volume.
-    final restored = (_eqPreampScale * _sleepFadeScale)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    final restored = _focusInterruption.unduckRestoreGain(
+      preampScale: _eqPreampScale,
+      sleepFadeScale: _sleepFadeScale,
+    );
     try {
       final from = audioPlayer.volume;
       await _fadePlayerVolume(audioPlayer, from, restored);
@@ -1263,9 +1264,14 @@ class MusicProvider extends ChangeNotifier {
       // A new focus event wins over this stale completion. A user seek/skip
       // only cancels the fade generation, so in that case we still snap to the
       // correct gain after checking that no crossfade took ownership.
-      if (!_focusInterruption.ownsFocusEventGeneration(focusGeneration)) return;
-      if (_transitionLive) {
-        _unduckPendingAfterCrossfade = true;
+      if (!_focusInterruption.canFinalizeUnduck(
+        focusGeneration,
+        transitionLive: _transitionLive,
+      )) {
+        if (_focusInterruption.ownsFocusEventGeneration(focusGeneration) &&
+            _transitionLive) {
+          _unduckPendingAfterCrossfade = true;
+        }
         return;
       }
       final fadeDidNotReachTarget =
