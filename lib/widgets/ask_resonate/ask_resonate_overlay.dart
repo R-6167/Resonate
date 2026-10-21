@@ -353,7 +353,7 @@ class _AskResonateContentState extends State<_AskResonateContent> {
               intelligence.isEnabled
                   ? (intelligence.sessionSummary.isNotEmpty
                       ? intelligence.sessionSummary
-                      : 'Local companion — pick a command or type a short request.')
+                      : 'Local companion — choose a quick action.')
                   : 'Intelligence is off. Enable it in Settings for actions.',
               style: theme.textTheme.bodySmall,
               maxLines: 3,
