@@ -144,7 +144,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
 
     return Positioned(
       right: 18,
-      bottom: 108,
+      bottom: 16,
       child: Semantics(
         button: true,
         label: 'Ask Resonate',
