@@ -179,6 +179,10 @@ class AudioEffectsProvider extends ChangeNotifier {
         lowDb: canonical.limiterLowCeilingDb,
       );
       await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      // DVC is independent from EQ preamp and must be restored even when the
+      // user has not opened Audio automation in this process. Registry state
+      // carries it to both current and subsequently-created A/B sinks.
+      await AudioEffectsBridge.setLiveDspDvcDb(canonical.dvcDb);
       effectsEnabled = canonical.effectsEnabled;
       reverb = canonical.reverbAmount;
       virtualizer = canonical.virtualizerAmount;
