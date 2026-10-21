@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AudioFocusSettings {
   static const automationKey = 'audio_focus_automation_enabled';
   static const levelKey = 'audio_focus_automation_level';
+  static const pauseResumeFadeKey = 'audio_focus_pause_resume_fade_enabled';
 
   static const int defaultLevel = 2;
   static const int minLevel = 1;
@@ -21,6 +22,7 @@ class AudioFocusSettings {
 
   bool automationEnabled = true;
   int level = defaultLevel;
+  bool pauseResumeFadeEnabled = true;
 
   int get clampedLevel => level.clamp(minLevel, maxLevel).toInt();
 
@@ -43,6 +45,7 @@ class AudioFocusSettings {
     level = (prefs.getInt(levelKey) ?? defaultLevel)
         .clamp(minLevel, maxLevel)
         .toInt();
+    pauseResumeFadeEnabled = prefs.getBool(pauseResumeFadeKey) ?? true;
   }
 
   Future<void> persist() async {
@@ -50,6 +53,7 @@ class AudioFocusSettings {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(automationKey, automationEnabled);
       await prefs.setInt(levelKey, clampedLevel);
+      await prefs.setBool(pauseResumeFadeKey, pauseResumeFadeEnabled);
     } catch (_) {}
   }
 }
