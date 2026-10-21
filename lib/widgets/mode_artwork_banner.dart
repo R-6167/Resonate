@@ -152,3 +152,59 @@ class ModeArtworkBanner extends StatelessWidget {
     return const [Color(0xFF347A95), Color(0xFF373C78)];
   }
 }
+
+/// Compact, non-interactive mode identity for the player artwork surface.
+/// It adds context without taking vertical space away from playback controls.
+class ModeArtworkBadge extends StatelessWidget {
+  const ModeArtworkBadge({super.key, required this.mode});
+
+  final ResonateMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ModeArtworkBanner._colors(mode);
+    final icon = ModeArtworkBanner._icon(mode);
+    return Semantics(
+      label: '${mode.label} mode active',
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 190),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: .22)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: .18),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                mode.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
