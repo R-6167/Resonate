@@ -71,3 +71,18 @@ Public APIs only: `playSong`, `playQueueIndex`, `nextSong`, `previousSong`, tran
 
 ## Historical local cleanup instructions
 The repository previously contained committed Gradle caches. PR #56 removes the tracked files; the existing `.gitignore` should keep local cache files out of future commits.
+
+
+## Hardening and usability pass — 2026-10-21
+
+Status: implementation branch in progress; do not mark complete until CI and device smoke tests pass.
+
+- [x] Move Library search into the top navigation icon and reclaim the always-visible search-field space.
+- [x] Restore the current track's row position when the track is visible in the current library result set; retain the user's scroll position while the current track is unchanged.
+- [x] Remove the duplicate DJ Mode entry in Settings; keep the canonical entry under Playback.
+- [x] Guard CrossfadeProvider against a late initial SharedPreferences read overwriting a user's immediate setting change.
+- [x] Refresh About & How to use copy for current search, crossfade/mode policy, automation, audio-reactive visualization, and explicit Autopilot consent.
+- [x] Replace the root MIT terms with a Resonate Restricted Use License for original Resonate materials; third-party components remain governed by their own licenses.
+- [ ] Audit playback/crossfade state transitions and add focused regression tests where practical.
+- [ ] Verify Library search and current-row restoration, all crossfade states and presets, settings persistence, and optional spectrum fallback on target Android hardware.
+- [ ] Confirm the full CI result before requesting merge.

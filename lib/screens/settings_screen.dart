@@ -8,7 +8,6 @@ import '../providers/bluetooth_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/theme_provider.dart';
 import 'about_screen.dart';
-import 'audio_effects_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
@@ -54,7 +53,6 @@ class SettingsScreen extends StatelessWidget {
                 [
                   if (!modes.policy.hideAdvancedSettingsEntry)
                     _item(context, 'Advanced Intelligence', 'Modes, consent, companion decision log, learning', Icons.auto_awesome, const IntelligenceSettingsScreen()),
-              _item(context, 'DJ Mode', 'Beat/tempo handoffs + optional harmonic bias for Autopilot', Icons.headphones_rounded, const DjModeSettingsScreen()),
                   ListTile(
                     leading: const Icon(Icons.restart_alt_rounded),
                     title: const Text('Reset learned feedback'),

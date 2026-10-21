@@ -10,12 +10,14 @@ class CrossfadeProvider extends ChangeNotifier {
   double duration = 0.0;
   bool isEnabled = false;
   String fadeType = 'linear';
+  bool _userChangedSettings = false;
 
   CrossfadeProvider({required this.music}) {
     unawaited(_load());
   }
 
   Future<void> setDuration(double value) async {
+    _userChangedSettings = true;
     duration = value.clamp(0.0, 12000.0).toDouble();
     isEnabled = duration > 0;
     await _syncPlayerSettings();
@@ -24,6 +26,7 @@ class CrossfadeProvider extends ChangeNotifier {
   }
 
   Future<void> toggleCrossfade(bool value) async {
+    _userChangedSettings = true;
     isEnabled = value;
     if (!isEnabled) {
       duration = 0.0;
@@ -46,6 +49,7 @@ class CrossfadeProvider extends ChangeNotifier {
   Future<void> setFadeType(String value) async {
     const validTypes = ['linear', 'ease_in', 'ease_out', 'ease_in_out'];
     if (!validTypes.contains(value)) return;
+    _userChangedSettings = true;
     fadeType = value;
     await music.setCrossfadeFadeType(value);
     await _save();
@@ -53,6 +57,7 @@ class CrossfadeProvider extends ChangeNotifier {
   }
 
   Future<void> reset() async {
+    _userChangedSettings = true;
     duration = 0.0;
     isEnabled = false;
     fadeType = 'linear';
@@ -75,6 +80,8 @@ class CrossfadeProvider extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      // A quick user interaction must win over a slow initial preferences read.
+      if (_userChangedSettings) return;
       isEnabled = prefs.getBool('crossfade_enabled') ?? false;
       duration = prefs.getDouble('crossfade_duration') ?? 0.0;
       fadeType = prefs.getString('crossfade_fade_type') ?? 'linear';

@@ -56,6 +56,49 @@ class CrossfadeScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
+              Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: ListTile(
+                  leading: Icon(
+                    blockedByMode
+                        ? Icons.pause_circle_outline_rounded
+                        : engineOn
+                            ? Icons.check_circle_outline_rounded
+                            : enabled
+                                ? Icons.hourglass_top_rounded
+                                : Icons.compare_arrows_rounded,
+                    color: blockedByMode
+                        ? scheme.tertiary
+                        : engineOn
+                            ? scheme.primary
+                            : enabled
+                                ? scheme.secondary
+                                : scheme.onSurfaceVariant,
+                  ),
+                  title: Text(
+                    blockedByMode
+                        ? 'Unavailable in ${modes.mode.label} mode'
+                        : engineOn
+                            ? 'Crossfade active'
+                            : enabled
+                                ? 'Enabled · waiting for compatible playback'
+                                : 'Crossfade off',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    blockedByMode
+                        ? 'This mode prioritizes precise speech or chapter playback.'
+                        : engineOn
+                            ? 'A/B transition · ${crossfade.getDurationString()} · ${fadeType.replaceAll('_', ' ')} curve'
+                            : enabled
+                                ? 'The setting is saved, but the current mode or playback state is not applying it.'
+                                : 'Tracks play without an overlap. Turn it on below to blend transitions.',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               const DjModeStatusBanner(
                 contextLabel:
                     'When DJ Mode is on, handoffs may seek to a beat and bias duration.',
@@ -118,23 +161,6 @@ class CrossfadeScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                ),
-              ] else if (enabled && engineOn) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Engine: crossfade active for this mode.',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ] else if (enabled && !engineOn) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Engine: crossfade not applying (check duration and mode).',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: scheme.error,
-                      ),
                 ),
               ],
               const SizedBox(height: 12),
@@ -214,14 +240,6 @@ class CrossfadeScreen extends StatelessWidget {
 
                 const SizedBox(height: 22),
                 Text('Duration', style: Theme.of(context).textTheme.titleMedium),
-                Slider(
-                  value: durationMs <= 0 ? 3000 : durationMs,
-                  min: 500,
-                  max: 12000,
-                  divisions: 23,
-                  label: crossfade.getDurationString(),
-                  onChanged: (v) => crossfade.setDuration(v),
-                ),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
