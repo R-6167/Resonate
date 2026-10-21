@@ -39,7 +39,7 @@ The mode selector iterates `ResonateMode.values` and currently displays emoji, l
 
 ### Documentation mismatch
 
-`docs/MODES.md` documents seven modes (Normal, Running, Driving, Work, Podcast, Motivation, Audiobook) and omits Workout and Sleep even though both exist in the enum and are exposed by the selector. This is a confirmed documentation mismatch, not evidence that either mode is broken.
+At the start of this audit, `docs/MODES.md` documented seven modes and omitted Workout and Sleep even though both exist in the enum and selector. This PR corrects that documentation mismatch by adding both modes to the table; it was a documentation inconsistency, not evidence either mode was broken.
 
 DJ Mode is a separate feature/provider and DJ settings screen, not a member of the nine-value `ResonateMode` enum. Future art should avoid conflating DJ Mode with the listening-mode enum.
 
@@ -131,7 +131,7 @@ Control selection rule:
 
 ### Confirmed from source/build evidence
 - Nine listening modes are in the enum; the mode selector exposes them.
-- `docs/MODES.md` lists only seven and omits Workout and Sleep.
+- `docs/MODES.md` initially omitted Workout and Sleep; this audit PR adds both to the documented mode table.
 - No dedicated mode-art assets currently exist.
 - The 32 built-in EQ presets are generic category-based profiles; custom save/delete and JSON import/export already exist.
 - The release CI build reports 76.2 MB with `--no-shrink`; the uploaded ZIP size is not the APK size.
