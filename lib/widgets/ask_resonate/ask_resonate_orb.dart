@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/intelligence_provider.dart';
+import '../../providers/audio_visualization_provider.dart';
+import '../../providers/music_provider.dart';
 import '../animated_companion_mark.dart';
 import 'ask_resonate_controller.dart';
 
@@ -86,6 +87,13 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
   Widget build(BuildContext context) {
     final ctrl = context.watch<AskResonateController>();
     final intelligence = context.watch<IntelligenceProvider>();
+    final music = context.watch<MusicProvider>();
+    final viz = context.watch<AudioVisualizationProvider>();
+    viz.setPlaybackActive(music.isPlaying);
+    final lowBandEnergy = viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
+        ? viz.frequencies.take(6).fold<double>(0, (sum, value) => sum + value) / 6
+        : 0.0;
+    final audioScale = 1.0 + (lowBandEnergy * viz.sensitivity * 0.12).clamp(0.0, 0.12);
     final scheme = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
@@ -126,21 +134,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
       ),
     );
 
-    if (!reduceMotion) {
-      orb = orb
-          .animate(onPlay: (c) => c.repeat(reverse: true))
-          .scale(
-            begin: const Offset(1, 1),
-            end: const Offset(1.06, 1.06),
-            duration: 2200.ms,
-            curve: Curves.easeInOut,
-          )
-          .then()
-          .tint(
-            color: scheme.secondary.withValues(alpha: 0.08),
-            duration: 2200.ms,
-          );
-    }
+    orb = Transform.scale(scale: reduceMotion ? 1.0 : audioScale, child: orb);
 
     return Positioned(
       right: 18,
