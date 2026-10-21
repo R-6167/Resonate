@@ -18,6 +18,7 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   final List<StreamSubscription<int?>> _sessionSubscriptions = [];
   final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
+  Future<void> _nativeApplyQueue = Future<void>.value();
 
   AudioEffectsProvider({
     this.player,
@@ -109,7 +110,16 @@ class AudioEffectsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _applyNative({int? sessionIdOverride}) async {
+  Future<void> _applyNative({int? sessionIdOverride}) {
+    // AndroidEffectsBridge has a current-session selector, so each attach +
+    // apply sequence must be serialized to prevent A/B calls interleaving.
+    _nativeApplyQueue = _nativeApplyQueue
+        .catchError((_) {})
+        .then((_) => _applyNativeNow(sessionIdOverride: sessionIdOverride));
+    return _nativeApplyQueue;
+  }
+
+  Future<void> _applyNativeNow({int? sessionIdOverride}) async {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
         : <int>{
