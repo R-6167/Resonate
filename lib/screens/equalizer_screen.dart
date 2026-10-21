@@ -395,7 +395,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                       ?.copyWith(fontWeight: FontWeight.w700),
                                 ),
                               ),
-                              if (eq.preset.startsWith('Resonate '))
+                              if (EqualizerProvider.resonatePresets.any((p) => p.name == eq.preset))
                                 const Icon(Icons.verified_rounded,
                                     color: _cBlue, size: 18),
                             ],
