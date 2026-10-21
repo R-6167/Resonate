@@ -20,6 +20,7 @@ import '../widgets/audio_visualization_widget.dart';
 import '../widgets/dj_mode_status_chip.dart';
 import '../widgets/resonate_mode_chip.dart';
 import '../widgets/mode_player_density.dart';
+import '../widgets/mode_artwork_banner.dart';
 import 'mode_shelf_screen.dart';
 import '../widgets/mode_guarded_action.dart';
 import '../modes/models/mode_action.dart';
@@ -162,6 +163,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                             color: Theme.of(context).colorScheme.surfaceContainerHighest,
                           ),
                           child: const AudioVisualizationWidget(),
+                        ),
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: ModeArtworkBadge(mode: modes.mode),
                         ),
                         Center(
                           child: DecoratedBox(
