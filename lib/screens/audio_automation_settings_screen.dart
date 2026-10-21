@@ -249,8 +249,8 @@ class _LimiterCrossoverControlsState extends State<_LimiterCrossoverControls> {
       return;
     }
     if (!mounted) return;
-    final active = ((limiter?['active'] as num?)?.toInt() ?? 0) +
-        ((split?['active'] as num?)?.toInt() ?? 0);
+    final active = (limiter?['active'] as num?)?.toInt() ??
+        (split?['active'] as num?)?.toInt() ?? 0;
     setState(() => _status = active > 0
         ? '$name applied. It protects peaks; it is not a tone or loudness control.'
         : '$name saved and will apply when a native playback engine starts.');
