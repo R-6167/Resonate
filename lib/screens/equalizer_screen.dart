@@ -48,6 +48,24 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     _categorySynced = true;
   }
 
+  IconData _profileIcon(String name) => switch (name) {
+        'Resonate Signature' => Icons.graphic_eq_rounded,
+        'Resonate Warmth' => Icons.waves_rounded,
+        'Resonate Clarity' => Icons.hearing_rounded,
+        'Resonate Afterhours' => Icons.nights_stay_rounded,
+        'Resonate Pulse' => Icons.bolt_rounded,
+        _ => Icons.equalizer_rounded,
+      };
+
+  String _profileDescription(String name) => switch (name) {
+        'Resonate Signature' => 'Balanced everyday listening',
+        'Resonate Warmth' => 'Softer highs, gentle warmth',
+        'Resonate Clarity' => 'Bring detail forward',
+        'Resonate Afterhours' => 'Relaxed late-night tone',
+        'Resonate Pulse' => 'Extra rhythmic weight',
+        _ => 'Resonate sound profile',
+      };
+
   Future<void> _exportPresets(EqualizerProvider eq) async {
     try {
       final stamp = DateTime.now().toIso8601String().replaceAll(':', '-');
@@ -353,6 +371,136 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                             'Cuts stay gentle; boosts are limited so the phone does not crackle.',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // —— Featured first-party sound profiles ——
+                    _GlassCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.auto_awesome_rounded,
+                                  color: _cViolet, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Resonate sound',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              if (eq.preset.startsWith('Resonate '))
+                                const Icon(Icons.verified_rounded,
+                                    color: _cBlue, size: 18),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Choose a sound in one tap. Fine-tune it below whenever you want.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 132,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: EqualizerProvider.resonatePresets.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 10),
+                              itemBuilder: (context, index) {
+                                final profile =
+                                    EqualizerProvider.resonatePresets[index];
+                                final selected = eq.preset == profile.name;
+                                return SizedBox(
+                                  width: 164,
+                                  child: Material(
+                                    color: selected
+                                        ? _cBlue.withValues(alpha: 0.16)
+                                        : scheme.surfaceContainerHighest
+                                            .withValues(alpha: 0.48),
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: eq.isEnabled
+                                          ? () => eq.applyPreset(profile.name)
+                                          : null,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          border: Border.all(
+                                            color: selected
+                                                ? _cBlue
+                                                : scheme.outlineVariant
+                                                    .withValues(alpha: 0.45),
+                                            width: selected ? 1.5 : 1,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  _profileIcon(profile.name),
+                                                  color: selected
+                                                      ? _cBlue
+                                                      : _cViolet,
+                                                  size: 21,
+                                                ),
+                                                const Spacer(),
+                                                if (selected)
+                                                  Icon(Icons.check_circle_rounded,
+                                                      color: _cBlue, size: 18),
+                                              ],
+                                            ),
+                                            const Spacer(),
+                                            Text(
+                                              profile.name.replaceFirst(
+                                                  'Resonate ', ''),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleSmall
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              _profileDescription(profile.name),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          if (!eq.isEnabled)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                'Turn the equalizer on to select a profile.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
                         ],
                       ),
                     ),
