@@ -75,7 +75,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
       sum += viz.frequencies[i];
     }
     if (!viz.orbAudioReactive) return 0;
-    return (sum / n * viz.sensitivity).clamp(0.0, 1.0).toDouble();
+    return (sum / n * viz.sensitivity * 3.2).clamp(0.0, 1.0).toDouble();
   }
 
   Size _panelSize(Size screen, AskResonateShape shape) {
@@ -134,7 +134,7 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
         if (!didPop) _close();
       },
       child: AnimatedBuilder(
-        animation: _progress,
+        animation: Listenable.merge([_progress, viz]),
         builder: (context, _) {
           final p = reduceMotion ? 1.0 : _progress.value.clamp(0.0, 1.0);
           final breathe = reduceMotion ? 0.0 : energy;
@@ -199,23 +199,14 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                               ),
                             ),
                             Padding(
-                              padding: EdgeInsets.all(ctrl.shape == AskResonateShape.semicircle ? 18 : 12),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: scheme.surface.withValues(alpha: 0.84),
-                                  borderRadius: BorderRadius.circular(22),
-                                  border: Border.all(
-                                    color: scheme.outlineVariant.withValues(alpha: 0.55),
-                                  ),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: _AskResonateContent(
-                                  contextLabel: ctrl.contextLabel,
-                                  shape: ctrl.shape,
-                                  onClose: _close,
-                                  onShapeChanged: (s) => context.read<AskResonateController>().setShape(s),
-                                  reduceMotion: reduceMotion,
-                                ),
+                              padding: EdgeInsets.all(
+                                ctrl.shape == AskResonateShape.semicircle ? 28 : 24,
+                              ),
+                              child: _AskResonateContent(
+                                contextLabel: ctrl.contextLabel,
+                                shape: ctrl.shape,
+                                onClose: _close,
+                                reduceMotion: reduceMotion,
                               ),
                             ),
                           ],
@@ -237,14 +228,12 @@ class _AskResonateContent extends StatefulWidget {
   final String contextLabel;
   final AskResonateShape shape;
   final VoidCallback onClose;
-  final ValueChanged<AskResonateShape> onShapeChanged;
   final bool reduceMotion;
 
   const _AskResonateContent({
     required this.contextLabel,
     required this.shape,
     required this.onClose,
-    required this.onShapeChanged,
     required this.reduceMotion,
   });
 
@@ -300,21 +289,6 @@ class _AskResonateContentState extends State<_AskResonateContent> {
     };
   }
 
-  Widget _shapeChip(AskResonateShape s, String label, IconData icon) {
-    final selected = widget.shape == s;
-    final scheme = Theme.of(context).colorScheme;
-    return FilterChip(
-      selected: selected,
-      label: Text(label),
-      avatar: Icon(icon, size: 16),
-      onSelected: (_) => widget.onShapeChanged(s),
-      selectedColor: scheme.primaryContainer,
-      showCheckmark: false,
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final intelligence = context.watch<IntelligenceProvider>();
@@ -361,21 +335,6 @@ class _AskResonateContentState extends State<_AskResonateContent> {
               style: theme.textTheme.bodySmall,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _shapeChip(AskResonateShape.blob, 'Blob', Icons.bubble_chart),
-                  const SizedBox(width: 6),
-                  _shapeChip(AskResonateShape.capsule, 'Capsule', Icons.smart_button),
-                  const SizedBox(width: 6),
-                  _shapeChip(AskResonateShape.semicircle, 'Edge', Icons.vertical_split),
-                  const SizedBox(width: 6),
-                  _shapeChip(AskResonateShape.orbital, 'Orbital', Icons.radio_button_checked),
-                ],
-              ),
             ),
             const SizedBox(height: 8),
             Expanded(
