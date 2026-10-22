@@ -141,7 +141,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             fit: StackFit.expand,
             children: [
               Positioned.fill(
-                child: ModeArtworkBackground(mode: modes.mode),
+                child: RepaintBoundary(
+                  child: ModeArtworkBackground(mode: modes.mode),
+                ),
               ),
               ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
