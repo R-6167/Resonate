@@ -248,7 +248,9 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
             child: Consumer<EqualizerProvider>(
               builder: (context, eq, _) {
                 _syncCategoryFromPreset(eq);
-                final categories = eq.categories;
+                // First-party Resonate profiles are shown as branded cards above;
+                // keep them out of the legacy category chips to avoid duplication.
+                final categories = eq.categories.where((c) => c != 'Resonate').toList();
                 if (categories.isNotEmpty && !categories.contains(_category)) {
                   _category = categories.first;
                 }
