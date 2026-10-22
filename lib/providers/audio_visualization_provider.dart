@@ -23,8 +23,37 @@ class AudioVisualizationProvider extends ChangeNotifier {
   bool _playbackActive = false;
   bool _captureInFlight = false;
   bool _disposed = false;
+  Listenable? _playbackListenable;
+  VoidCallback? _playbackListener;
+  bool Function()? _isPlaybackActive;
 
   AudioVisualizationProvider() { _load(); }
+
+  /// Bind capture lifetime to the actual playback owner. Without this binding,
+  /// the native spectrum poller never starts and both visual consumers stay flat.
+  void bindPlayback({
+    required Listenable listenable,
+    required bool Function() isPlaying,
+  }) {
+    if (identical(_playbackListenable, listenable) &&
+        _isPlaybackActive == isPlaying) {
+      _syncPlaybackState();
+      return;
+    }
+    if (_playbackListenable != null && _playbackListener != null) {
+      _playbackListenable!.removeListener(_playbackListener!);
+    }
+    _playbackListenable = listenable;
+    _isPlaybackActive = isPlaying;
+    _playbackListener = _syncPlaybackState;
+    listenable.addListener(_playbackListener!);
+    _syncPlaybackState();
+  }
+
+  void _syncPlaybackState() {
+    if (_disposed) return;
+    setPlaybackActive(_isPlaybackActive?.call() ?? false);
+  }
 
   void setEnabled(bool value) { enabled = value; _save(); _syncCapture(); notifyListeners(); }
   void setVisualizationType(String value) { if (['bars','circular','waveform','dots','wave'].contains(value)) { visualizationType = value; _save(); notifyListeners(); } }
@@ -142,6 +171,12 @@ class AudioVisualizationProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (_playbackListenable != null && _playbackListener != null) {
+      _playbackListenable!.removeListener(_playbackListener!);
+    }
+    _playbackListenable = null;
+    _playbackListener = null;
+    _isPlaybackActive = null;
     _captureTimer?.cancel();
     _captureTimer = null;
     super.dispose();
