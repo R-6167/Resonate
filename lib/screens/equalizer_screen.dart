@@ -394,94 +394,86 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                           ),
                           const SizedBox(height: 12),
                           SizedBox(
-                            height: 158,
-                            child: ListView.separated(
+                            height: 326,
+                            child: GridView.builder(
                               scrollDirection: Axis.horizontal,
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                mainAxisExtent: 174,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                              ),
                               itemCount: EqualizerProvider.resonatePresets.length,
-                              separatorBuilder: (_, __) => const SizedBox(width: 10),
                               itemBuilder: (context, index) {
                                 final profile = EqualizerProvider.resonatePresets[index];
                                 final accent = _profileColor(profile.name);
                                 final selected = eq.preset == profile.name;
-                                return SizedBox(
-                                  width: 174,
-                                  child: Material(
-                                    color: Colors.transparent,
+                                return Material(
+                                  color: Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: InkWell(
                                     borderRadius: BorderRadius.circular(20),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(20),
-                                      onTap: eq.isEnabled
-                                          ? () => eq.applyPreset(profile.name)
-                                          : null,
-                                      child: Ink(
-                                        padding: const EdgeInsets.all(13),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(20),
-                                          gradient: LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                            colors: [
-                                              accent.withValues(alpha: selected ? 0.34 : 0.20),
-                                              Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-                                            ],
-                                          ),
-                                          border: Border.all(
-                                            color: selected
-                                                ? accent
-                                                : accent.withValues(alpha: 0.38),
-                                            width: selected ? 1.8 : 1,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Container(
-                                                  width: 34,
-                                                  height: 34,
-                                                  decoration: BoxDecoration(
-                                                    color: accent.withValues(alpha: 0.20),
-                                                    borderRadius: BorderRadius.circular(11),
-                                                  ),
-                                                  child: Icon(
-                                                    _profileIcon(profile.name),
-                                                    color: accent,
-                                                    size: 20,
-                                                  ),
-                                                ),
-                                                const Spacer(),
-                                                if (selected)
-                                                  Icon(Icons.check_circle_rounded,
-                                                      color: accent, size: 20),
-                                              ],
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              profile.name.replaceFirst('Resonate ', ''),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleSmall
-                                                  ?.copyWith(fontWeight: FontWeight.w800),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              _profileDescription(profile.name),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context).textTheme.bodySmall,
-                                            ),
+                                    onTap: eq.isEnabled
+                                        ? () => eq.applyPreset(profile.name)
+                                        : null,
+                                    child: Ink(
+                                      padding: const EdgeInsets.all(13),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                          colors: [
+                                            accent.withValues(alpha: selected ? 0.34 : 0.20),
+                                            Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
                                           ],
                                         ),
+                                        border: Border.all(
+                                          color: selected ? accent : accent.withValues(alpha: 0.38),
+                                          width: selected ? 1.8 : 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 34,
+                                                height: 34,
+                                                decoration: BoxDecoration(
+                                                  color: accent.withValues(alpha: 0.20),
+                                                  borderRadius: BorderRadius.circular(11),
+                                                ),
+                                                child: Icon(_profileIcon(profile.name), color: accent, size: 20),
+                                              ),
+                                              const Spacer(),
+                                              if (selected)
+                                                Icon(Icons.check_circle_rounded, color: accent, size: 20),
+                                            ],
+                                          ),
+                                          const Spacer(),
+                                          Text(
+                                            profile.name.replaceFirst('Resonate ', ''),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _profileDescription(profile.name),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(context).textTheme.bodySmall,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
                                 );
                               },
                             ),
-                          ),
+                          )
                         ],
                       ),
                     ),
