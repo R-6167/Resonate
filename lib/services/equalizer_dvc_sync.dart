@@ -17,22 +17,25 @@ void syncPreampToNativeDsp(double preampDb, {bool enabled = true}) {
 }
 
 /// Push studio multi-band curve into live native DSP ENGINE EQ (A/B).
-void syncStudioBandsToNativeEq({
+Future<void> syncStudioBandsToNativeEq({
   required List<double> centersHz,
   required List<double> gainsDb,
   required bool enabled,
-}) {
-  AudioEffectsBridge.setLiveDspEqBands(
-    centersHz: centersHz,
-    gainsDb: gainsDb,
-    enabled: enabled,
-  ).then((r) {
-    if (r != null) {
+}) async {
+  try {
+    final result = await AudioEffectsBridge.setLiveDspEqBands(
+      centersHz: centersHz,
+      gainsDb: gainsDb,
+      enabled: enabled,
+    );
+    if (result != null) {
       debugPrint(
-        'live EQ bands=${gainsDb.length} enabled=$enabled active=${r['active']}',
+        'live EQ bands=${gainsDb.length} enabled=$enabled active=${result['active']}',
       );
     }
-  }).catchError((_) {});
+  } catch (error) {
+    debugPrint('live EQ band update failed: $error');
+  }
 }
 
 /// Apply speaker-protection + virtual-bass policy from output route.

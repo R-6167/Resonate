@@ -623,11 +623,12 @@ class EqualizerProvider extends ChangeNotifier {
     try {
       final centers = studioBands.map((b) => b.frequencyHz).toList();
       final gains = studioBands.map((b) => b.gainDb).toList();
-      syncStudioBandsToNativeEq(
+      // Await the native write so repeated on/off changes are applied in order.
+      // A fire-and-forget write could finish after a newer toggle and restore
+      // the stale EQ state.
+      await syncStudioBandsToNativeEq(
         centersHz: centers,
         gainsDb: gains,
-        // The master DSP switch is the actual audio-path gate. Keep the EQ
-        // preference independent so re-enabling the master restores the curve.
         enabled: isEnabled && _nativeDspEnabled,
       );
     } catch (e) {
