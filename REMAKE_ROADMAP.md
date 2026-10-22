@@ -307,3 +307,18 @@ Acceptance: every test above passes; both consumers respond to changing real tra
 7. **Phase F release gate:** verify latest green Flutter/native/Android CI, actual release APK below 100 MiB, then record the complete device smoke pass. CI status, package size, and subjective listening results are three separate sign-offs.
 
 No generic preset panel, broad sound retuning, or new feature work is authorized by this closeout. Keep the Resonate sound identity and the 100 MiB package ceiling.
+
+
+### Resonate simplification and FFT renderer rebuild — 2026-10-22
+
+- [x] Rebuilt `AudioVisualizationWidget` as a direct renderer of the shared native FFT samples. Removed its independent phase timer and time-position-driven wave animation; bars, wave and circular forms now derive from measured bands only. Repaint work stays inside a `RepaintBoundary`.
+- [x] Replaced the Ask Resonate orb's animated companion mark with a compact seven-band FFT mark and restrained low-band scale response. It shares the same provider and has no independent idle pulse.
+- [x] Hardened spectrum polling against a late method-channel reply arriving after pause/disable, and avoid notifying both consumers for imperceptible numeric noise.
+- [ ] Real-audio behavior still needs physical-device verification. If the feed remains flat, diagnose native `Visualizer` session attachment/capture first; do not add animation to disguise missing data.
+- [x] Simplified the Equalizer surface to one branded **Resonate sound** identity, the existing Studio bands, and user-created custom profiles. Removed the generic built-in preset picker/import-export UI, learned preset leans, Bluetooth preset selector, and obsolete Advanced placeholder from this screen. Legacy preset catalogs/storage remain in the provider so saved settings and old data can still resolve; they are no longer presented as a generic UI catalog.
+- [x] Mode player backgrounds now request a theme-specific image first, falling back to the current single image and then the existing lightweight gradient. Supply paired images using `assets/Normal_Mode_Light.jpg` / `assets/Normal_Mode_Dark.jpg` and the same `<Mode>_Mode_<Light|Dark>.jpg` naming for Running, Workout, Driving, Work, Podcast, Motivation, Audiobook, and Sleep.
+- [ ] Confirm widget/unit tests, native Android build, release APK build, and the 100 MiB ceiling in CI.
+- [ ] After supplying the 18 theme-specific images, verify light/dark mode selection and text/control readability on device.
+- [ ] Device-check real FFT response across tracks, pause/resume, next/previous, A/B crossfade, Bluetooth route changes, and reduced-motion settings.
+
+Scope remains polish and reliability only: keep the Resonate sound character, preserve custom profiles and Studio bands, and do not reintroduce a generic preset panel.
