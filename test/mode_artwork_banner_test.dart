@@ -83,15 +83,15 @@ void main() {
       );
 
       final expectedAsset = switch (mode) {
-        ResonateMode.normal => 'assets/Normal_Mode.jpg',
-        ResonateMode.running => 'assets/Running_Mode.jpg',
-        ResonateMode.workout => 'assets/Workout_Mode.jpg',
-        ResonateMode.driving => 'assets/Driving_Mode.jpg',
-        ResonateMode.work => 'assets/Work_Mode.jpg',
-        ResonateMode.podcast => 'assets/Podcast_Mode.jpg',
-        ResonateMode.motivation => 'assets/Motivation_Mode.jpg',
-        ResonateMode.audiobook => 'assets/Audiobook_Mode.jpg',
-        ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
+        ResonateMode.normal => 'assets/Normal_Mode_Light.jpg',
+        ResonateMode.running => 'assets/Running_Mode_Light.jpg',
+        ResonateMode.workout => 'assets/Workout_Mode_Light.jpg',
+        ResonateMode.driving => 'assets/Driving_Mode_Light.jpg',
+        ResonateMode.work => 'assets/Work_Mode_Light.jpg',
+        ResonateMode.podcast => 'assets/Podcast_Mode_Light.jpg',
+        ResonateMode.motivation => 'assets/Motivation_Mode_Light.jpg',
+        ResonateMode.audiobook => 'assets/Audiobook_Mode_Light.jpg',
+        ResonateMode.sleep => 'assets/Sleep_Mode_Light.jpg',
       };
 
       expect(find.byType(Image), findsOneWidget);
