@@ -300,9 +300,20 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                               ],
                             ),
                           ),
-                          if (eq.preset == 'Resonate Signature')
-                            Icon(Icons.check_circle_rounded,
-                                color: Theme.of(context).colorScheme.primary),
+                          IconButton(
+                            tooltip: eq.preset == 'Resonate Signature'
+                                ? 'Resonate sound selected'
+                                : 'Restore Resonate sound',
+                            onPressed: eq.isEnabled
+                                ? () => eq.applyPreset('Resonate Signature')
+                                : null,
+                            icon: Icon(
+                              eq.preset == 'Resonate Signature'
+                                  ? Icons.check_circle_rounded
+                                  : Icons.restart_alt_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
                         ],
                       ),
                     ),
