@@ -146,376 +146,376 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
               ListView(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
-            children: [
-              GestureDetector(
-                onHorizontalDragEnd: density.allowHorizontalSwipe
-                    ? (details) {
-                        final v = details.primaryVelocity ?? 0;
-                        if (v < -400) {
-                          music.nextSong(source: 'player_swipe');
-                        } else if (v > 400) {
-                          music.previousSong(source: 'player_swipe');
-                        }
-                      }
-                    : null,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(26),
-                  child: SizedBox(
-                    height: density.artworkHeight,
-                    child: Stack(
-                      fit: StackFit.expand,
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
+                children: [
+                  GestureDetector(
+                    onHorizontalDragEnd: density.allowHorizontalSwipe
+                        ? (details) {
+                            final v = details.primaryVelocity ?? 0;
+                            if (v < -400) {
+                              music.nextSong(source: 'player_swipe');
+                            } else if (v > 400) {
+                              music.previousSong(source: 'player_swipe');
+                            }
+                          }
+                        : null,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(26),
+                      child: SizedBox(
+                        height: density.artworkHeight,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const AudioVisualizationWidget(),
+                            Positioned(
+                              top: 12,
+                              left: 12,
+                              child: ModeArtworkBadge(mode: modes.mode),
+                            ),
+                            const Positioned(
+                              bottom: 8,
+                              left: 0,
+                              right: 0,
+                              child: _SwipeHintBadge(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _MarqueeSongTitle(title: song.title),
+                  const SizedBox(height: 5),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ArtistScreen(artist: song.artist),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      song.artist,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AlbumScreen(
+                            album: song.album,
+                            artistHint: song.artist,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      song.album,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => LyricsScreen(song: song)),
+                      ),
+                      icon: const Icon(Icons.lyrics_outlined, size: 18),
+                      label: const Text('Lyrics'),
+                    ),
+                  ),
+                  const Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      ResonateModeChip(dense: false),
+                      DjModeStatusChip(dense: false, showWhenOff: true),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  const DjTransitionReasonChip(),
+                  if (density.hintLabel != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      density.hintLabel!,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.tertiary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                  if (modes.mode.name != 'normal')
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ModeShelfScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.playlist_play_rounded, size: 18),
+                      label: const Text('Mode shelf'),
+                    ),
+                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
+                  _WaveSeekBar(
+                    value: position,
+                    max: max,
+                    hitHeight: density.seekHitHeight,
+                    strokeScale: density.seekStrokeScale,
+                    onStart: (value) {
+                      setState(() => _dragPosition = value);
+                    },
+                    onUpdate: (value) {
+                      setState(() => _dragPosition = value);
+                    },
+                    onEnd: (value) async {
+                      final target = Duration(milliseconds: value.round());
+                      setState(() => _dragPosition = null);
+                      await PlaybackAuthority.instance.userSeek(music, target);
+                    },
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const AudioVisualizationWidget(),
-                        Positioned(
-                          top: 12,
-                          left: 12,
-                          child: ModeArtworkBadge(mode: modes.mode),
+                        Text(
+                          AudioFileService.formatDuration(
+                            Duration(milliseconds: position.round()),
+                          ),
                         ),
-                        const Positioned(
-                          bottom: 8,
-                          left: 0,
-                          right: 0,
-                          child: _SwipeHintBadge(),
-                        ),
+                        Text(AudioFileService.formatDuration(duration)),
                       ],
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              _MarqueeSongTitle(title: song.title),
-              const SizedBox(height: 5),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ArtistScreen(artist: song.artist),
-                    ),
-                  );
-                },
-                child: Text(
-                  song.artist,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AlbumScreen(
-                        album: song.album,
-                        artistHint: song.artist,
-                      ),
-                    ),
-                  );
-                },
-                child: Text(
-                  song.album,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.center,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => LyricsScreen(song: song)),
-                  ),
-                  icon: const Icon(Icons.lyrics_outlined, size: 18),
-                  label: const Text('Lyrics'),
-                ),
-              ),
-              const Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  ResonateModeChip(dense: false),
-                  DjModeStatusChip(dense: false, showWhenOff: true),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const DjTransitionReasonChip(),
-              if (density.hintLabel != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  density.hintLabel!,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.tertiary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              if (modes.mode.name != 'normal')
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const ModeShelfScreen(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.playlist_play_rounded, size: 18),
-                  label: const Text('Mode shelf'),
-                ),
-              const SizedBox(height: 10),
-              const SizedBox(height: 8),
-              _WaveSeekBar(
-                value: position,
-                max: max,
-                hitHeight: density.seekHitHeight,
-                strokeScale: density.seekStrokeScale,
-                onStart: (value) {
-                  setState(() => _dragPosition = value);
-                },
-                onUpdate: (value) {
-                  setState(() => _dragPosition = value);
-                },
-                onEnd: (value) async {
-                  final target = Duration(milliseconds: value.round());
-                  setState(() => _dragPosition = null);
-                  await PlaybackAuthority.instance.userSeek(music, target);
-                },
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      AudioFileService.formatDuration(
-                        Duration(milliseconds: position.round()),
-                      ),
-                    ),
-                    Text(AudioFileService.formatDuration(duration)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              StreamBuilder<PlayerState>(
-                stream: music.audioPlayer.playerStateStream,
-                initialData: music.audioPlayer.playerState,
-                builder: (_, snapshot) {
-                  final state =
-                      snapshot.data ?? music.audioPlayer.playerState;
-                  final playing = state.playing &&
-                      state.processingState != ProcessingState.completed;
-                  final currentMs = music.currentPosition.inMilliseconds;
+                  const SizedBox(height: 8),
+                  StreamBuilder<PlayerState>(
+                    stream: music.audioPlayer.playerStateStream,
+                    initialData: music.audioPlayer.playerState,
+                    builder: (_, snapshot) {
+                      final state =
+                          snapshot.data ?? music.audioPlayer.playerState;
+                      final playing = state.playing &&
+                          state.processingState != ProcessingState.completed;
+                      final currentMs = music.currentPosition.inMilliseconds;
 
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ModeGuardedAction(
-                        action: ModeAction.previous,
-                        onAllowed: () =>
-                            PlaybackAuthority.instance.userPrevious(music),
-                        child: SizedBox(
-                          width: density.transportIconSize + 28,
-                          height: density.transportIconSize + 28,
-                          child: Icon(
-                            Icons.skip_previous_rounded,
-                            size: density.transportIconSize,
-                          ),
-                        ),
-                      ),
-                      ModeGuardedAction(
-                        action: ModeAction.seekBackward,
-                        onAllowed: () => PlaybackAuthority.instance.userSeek(
-                          music,
-                          Duration(
-                            milliseconds: math.max(0, currentMs - 10000),
-                          ),
-                        ),
-                        child: SizedBox(
-                          width: density.transportIconSize + 20,
-                          height: density.transportIconSize + 20,
-                          child: Icon(
-                            Icons.replay_10_rounded,
-                            size: density.largeControls
-                                ? density.transportIconSize - 6
-                                : 30,
-                          ),
-                        ),
-                      ),
-                      ModeGuardedAction(
-                        action: ModeAction.playPause,
-                        onAllowed: () {
-                          music.togglePlayPause();
-                        },
-                        child: SizedBox(
-                          width: density.playButtonSize,
-                          height: density.playButtonSize,
-                          child: FilledButton(
-                            onPressed: null,
-                            style: FilledButton.styleFrom(
-                              minimumSize: Size(
-                                density.playButtonSize,
-                                density.playButtonSize,
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          ModeGuardedAction(
+                            action: ModeAction.previous,
+                            onAllowed: () =>
+                                PlaybackAuthority.instance.userPrevious(music),
+                            child: SizedBox(
+                              width: density.transportIconSize + 28,
+                              height: density.transportIconSize + 28,
+                              child: Icon(
+                                Icons.skip_previous_rounded,
+                                size: density.transportIconSize,
                               ),
-                              maximumSize: Size(
-                                density.playButtonSize,
-                                density.playButtonSize,
-                              ),
-                              padding: EdgeInsets.zero,
-                              shape: const CircleBorder(),
-                              disabledBackgroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .primary,
-                              disabledForegroundColor: Theme.of(context)
-                                  .colorScheme
-                                  .onPrimary,
-                            ),
-                            child: Icon(
-                              playing
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              size: density.playIconSize,
                             ),
                           ),
+                          ModeGuardedAction(
+                            action: ModeAction.seekBackward,
+                            onAllowed: () => PlaybackAuthority.instance.userSeek(
+                              music,
+                              Duration(
+                                milliseconds: math.max(0, currentMs - 10000),
+                              ),
+                            ),
+                            child: SizedBox(
+                              width: density.transportIconSize + 20,
+                              height: density.transportIconSize + 20,
+                              child: Icon(
+                                Icons.replay_10_rounded,
+                                size: density.largeControls
+                                    ? density.transportIconSize - 6
+                                    : 30,
+                              ),
+                            ),
+                          ),
+                          ModeGuardedAction(
+                            action: ModeAction.playPause,
+                            onAllowed: () {
+                              music.togglePlayPause();
+                            },
+                            child: SizedBox(
+                              width: density.playButtonSize,
+                              height: density.playButtonSize,
+                              child: FilledButton(
+                                onPressed: null,
+                                style: FilledButton.styleFrom(
+                                  minimumSize: Size(
+                                    density.playButtonSize,
+                                    density.playButtonSize,
+                                  ),
+                                  maximumSize: Size(
+                                    density.playButtonSize,
+                                    density.playButtonSize,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  shape: const CircleBorder(),
+                                  disabledBackgroundColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary,
+                                  disabledForegroundColor: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimary,
+                                ),
+                                child: Icon(
+                                  playing
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: density.playIconSize,
+                                ),
+                              ),
+                            ),
+                          ),
+                          ModeGuardedAction(
+                            action: ModeAction.seekForward,
+                            onAllowed: () => PlaybackAuthority.instance.userSeek(
+                              music,
+                              Duration(
+                                milliseconds:
+                                    math.min(max.toInt(), currentMs + 10000),
+                              ),
+                            ),
+                            child: SizedBox(
+                              width: density.transportIconSize + 20,
+                              height: density.transportIconSize + 20,
+                              child: Icon(
+                                Icons.forward_10_rounded,
+                                size: density.largeControls
+                                    ? density.transportIconSize - 6
+                                    : 30,
+                              ),
+                            ),
+                          ),
+                          ModeGuardedAction(
+                            action: ModeAction.next,
+                            onAllowed: () => music.nextSong(),
+                            child: SizedBox(
+                              width: density.transportIconSize + 28,
+                              height: density.transportIconSize + 28,
+                              child: Icon(
+                                Icons.skip_next_rounded,
+                                size: density.transportIconSize,
+                              ),
+                            ),
+                          ),
+                                            ],
+                      );
+                    },
+                  ),
+                  if (density.requiresTwoFingerPlayback)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'Two-finger taps for play / skip / seek',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.tertiary,
                         ),
                       ),
-                      ModeGuardedAction(
-                        action: ModeAction.seekForward,
-                        onAllowed: () => PlaybackAuthority.instance.userSeek(
-                          music,
-                          Duration(
-                            milliseconds:
-                                math.min(max.toInt(), currentMs + 10000),
+                    ),
+                  const SizedBox(height: 8),
+                  if (density.showSecondaryRow)
+                  ResonateGlassCard(
+                    padding: EdgeInsets.zero,
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          IconButton(
+                            tooltip: 'Volume',
+                            icon: Icon(_volumeIcon(music.volume)),
+                            onPressed: () => _showVolume(context, music),
                           ),
-                        ),
-                        child: SizedBox(
-                          width: density.transportIconSize + 20,
-                          height: density.transportIconSize + 20,
-                          child: Icon(
-                            Icons.forward_10_rounded,
-                            size: density.largeControls
-                                ? density.transportIconSize - 6
-                                : 30,
+                          IconButton(
+                            tooltip: 'Shuffle',
+                            icon: Icon(
+                              Icons.shuffle_rounded,
+                              color: music.shuffleEnabled
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            onPressed: () =>
+                                music.setShuffleEnabled(!music.shuffleEnabled),
                           ),
-                        ),
+                          IconButton(
+                            tooltip: 'Repeat',
+                            icon: Icon(
+                              music.repeatMode == PlaybackRepeatMode.one
+                                  ? Icons.repeat_one_rounded
+                                  : Icons.repeat_rounded,
+                              color: music.repeatMode != PlaybackRepeatMode.off
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            onPressed: () {
+                              final next = music.repeatMode == PlaybackRepeatMode.off
+                                  ? PlaybackRepeatMode.all
+                                  : music.repeatMode == PlaybackRepeatMode.all
+                                      ? PlaybackRepeatMode.one
+                                      : PlaybackRepeatMode.off;
+                              music.setRepeatMode(next);
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Queue',
+                            icon: const Icon(Icons.queue_music_rounded),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const QueueScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'More options',
+                            icon: const Icon(Icons.more_vert_rounded),
+                            onPressed: () => _showMoreOptions(context),
+                          ),
+                        ],
                       ),
-                      ModeGuardedAction(
-                        action: ModeAction.next,
-                        onAllowed: () => music.nextSong(),
-                        child: SizedBox(
-                          width: density.transportIconSize + 28,
-                          height: density.transportIconSize + 28,
-                          child: Icon(
-                            Icons.skip_next_rounded,
-                            size: density.transportIconSize,
-                          ),
-                        ),
-                      ),
-                                        ],
-                  );
-                },
-              ),
-              if (density.requiresTwoFingerPlayback)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    'Two-finger taps for play / skip / seek',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.tertiary,
                     ),
                   ),
-                ),
-              const SizedBox(height: 8),
-              if (density.showSecondaryRow)
-              ResonateGlassCard(
-                padding: EdgeInsets.zero,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      IconButton(
-                        tooltip: 'Volume',
-                        icon: Icon(_volumeIcon(music.volume)),
-                        onPressed: () => _showVolume(context, music),
-                      ),
-                      IconButton(
-                        tooltip: 'Shuffle',
-                        icon: Icon(
-                          Icons.shuffle_rounded,
-                          color: music.shuffleEnabled
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        onPressed: () =>
-                            music.setShuffleEnabled(!music.shuffleEnabled),
-                      ),
-                      IconButton(
-                        tooltip: 'Repeat',
-                        icon: Icon(
-                          music.repeatMode == PlaybackRepeatMode.one
-                              ? Icons.repeat_one_rounded
-                              : Icons.repeat_rounded,
-                          color: music.repeatMode != PlaybackRepeatMode.off
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        onPressed: () {
-                          final next = music.repeatMode == PlaybackRepeatMode.off
-                              ? PlaybackRepeatMode.all
-                              : music.repeatMode == PlaybackRepeatMode.all
-                                  ? PlaybackRepeatMode.one
-                                  : PlaybackRepeatMode.off;
-                          music.setRepeatMode(next);
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'Queue',
-                        icon: const Icon(Icons.queue_music_rounded),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const QueueScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      IconButton(
-                        tooltip: 'More options',
-                        icon: const Icon(Icons.more_vert_rounded),
-                        onPressed: () => _showMoreOptions(context),
-                      ),
-                    ],
+                  const SizedBox(height: 14),
+                  if (density.showIntelligenceCards)
+                  Consumer<IntelligenceProvider>(
+                    builder: (context, intelligence, _) {
+                      final item = intelligence.anticipatedNext;
+                      if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
+                      return Column(
+                        children: [
+                          _NextCard(item: item, mode: intelligence.autonomyLabel),
+                          const SizedBox(height: 10),
+                          const AutopilotTakeoverCard(),
+                        ],
+                      );
+                    },
                   ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (density.showIntelligenceCards)
-              Consumer<IntelligenceProvider>(
-                builder: (context, intelligence, _) {
-                  final item = intelligence.anticipatedNext;
-                  if (!intelligence.isEnabled || item == null) return const SizedBox.shrink();
-                  return Column(
-                    children: [
-                      _NextCard(item: item, mode: intelligence.autonomyLabel),
-                      const SizedBox(height: 10),
-                      const AutopilotTakeoverCard(),
-                    ],
-                  );
-                },
-              ),
-              ],
+                ],
               ),
             ],
           );
