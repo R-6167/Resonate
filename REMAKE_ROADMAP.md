@@ -220,13 +220,15 @@ A checked source item means the implementation exists; a passing unit test means
 ### Phase D regression coverage — 2026-10-22
 
 - [x] PR #146 merged: Phase C focus automation state tests are in the base.
-- [x] Add focused boundary tests for crossfade fallback queue targets (including a single-item queue under repeat-all vs. repeat-off) and reject stale transition commits when the current song identity is absent.
-- [ ] Audit the live playback path for repeat-one completion, rapid next/previous during a fade, seek during fade, failed-source recovery, and mode switches; unit policy tests alone do not prove end-to-end engine ownership.
-- [ ] Device smoke: repeat-one keeps the same song and UI identity; repeat-all wraps once; rapid next/previous during crossfade lands on the requested track; seek cancels stale fade commits; screen-off and route changes do not strand playback.
-- [x] PR #146 merged; CI run #39747965004 completed successfully. Hardware checks for Phase B/C remain separate.
+- [x] PR #147 merged: crossfade fallback queue-target boundaries cover a single-item queue under repeat-all vs. repeat-off, and stale transition commits are rejected when current-song identity is absent.
+- [x] Source audit completed for repeat-one completion, rapid transport commands during fades, seek cancellation, failed-source recovery, and mode/engine ownership boundaries. Existing guards and bounded recovery are retained; no reproducible defect justified changing runtime playback sequencing in this audit.
+- [x] PR #148 merged; CI run #39752681218 passed. The stale completion callback predicate now has isolated unit coverage for current-song completion, outgoing-song completion after ownership moves, active transitions, and missing identity.
+- [x] Source review confirms repeat-one has separate self-handoff and seek-to-zero fallback paths; transition generations guard stale handoff cleanup; user transport commands are marked synchronously and receive transport priority; failed queue entries are skipped with a bounded, ID-based scan and Repeat All is the only mode that wraps.
+- [ ] Device smoke remains required: repeat-one preserves song/UI identity; repeat-all wraps once; rapid next/previous during crossfade lands on the requested track; seek cancels stale fade commits; failed media source advances to a playable item; mode switches, screen-off, and route changes do not strand playback. This is a hardware validation gate, not a code-only checkbox.
+- [x] PR #146 CI run #39747965004 and PR #147 CI run #39750629145 completed successfully. Phase B/C hardware checks remain separate.
 
-### Phase D — completion ownership guard follow-up
+### Phase D — implementation closeout
 
-- [x] PR #147 merged; CI run #39750629145 completed successfully.
-- [ ] Isolate and test the stale completion callback guard so a delayed callback from an outgoing engine cannot advance a queue after ownership has moved, while callbacks during an active crossfade remain eligible for the existing transition flow.
-- [ ] Continue reviewing repeat-one completion, failed-source recovery, and mode-boundary behavior; do not alter runtime playback behavior without a reproducible defect or a narrowly tested invariant.
+- [x] PR #147 boundary tests and PR #148 completion-ownership tests merged with green CI.
+- [x] Audited the relevant live paths without broad runtime rewrites or sound changes; the next code change should be driven by a reproducible device failure.
+- [ ] Final device smoke is still outstanding. Do not claim the whole phase is hardware-verified until the checklist above is exercised on the target Android device.
