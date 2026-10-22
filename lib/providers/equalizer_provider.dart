@@ -868,12 +868,12 @@ class EqualizerProvider extends ChangeNotifier {
       debugPrint('Ignoring unknown EQ preset: $name');
       return;
     }
+    if (persistSelection) _manualPresetRevision++;
+    _applyStudioGains(found.gains);
     if (persistSelection) {
-      _manualPresetRevision++;
       preset = name;
       await _save();
     }
-    _applyStudioGains(found.gains);
     await _pushToHardware();
     await _applyPreamp();
     notifyListeners();
