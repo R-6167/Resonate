@@ -216,3 +216,12 @@ Audit target: `Resonate-True-Apk`, merge commit `bad0261c7d36f2c5a52cd74dcff230a
 ### Audit discipline
 
 A checked source item means the implementation exists; a passing unit test means the tested contract is covered; a green CI run means the configured automation passed; a device/listening check means the behavior was actually exercised on hardware. Do not substitute one category for another. No new features, generic preset-card UI, or broad sound retuning are authorized by this audit. Preserve the existing Resonate sound identity and the 100 MiB package ceiling.
+
+### Phase D regression coverage — 2026-10-22
+
+- [x] PR #146 merged: Phase C focus automation state tests are in the base.
+- [x] Add focused boundary tests for crossfade fallback queue targets (including a single-item queue under repeat-all vs. repeat-off) and reject stale transition commits when the current song identity is absent.
+- [ ] Audit the live playback path for repeat-one completion, rapid next/previous during a fade, seek during fade, failed-source recovery, and mode switches; unit policy tests alone do not prove end-to-end engine ownership.
+- [ ] Device smoke: repeat-one keeps the same song and UI identity; repeat-all wraps once; rapid next/previous during crossfade lands on the requested track; seek cancels stale fade commits; screen-off and route changes do not strand playback.
+- [ ] Confirm post-merge CI results for PR #145 and PR #146 before treating the audio/automation baseline as green. Hardware checks for Phase B/C remain separate.
+

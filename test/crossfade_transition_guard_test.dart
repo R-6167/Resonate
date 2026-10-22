@@ -34,6 +34,18 @@ void main() {
       );
     });
 
+    test('rejects a transition when the current song identity is absent', () {
+      expect(
+        guard.matches(
+          userTransportEpoch: 4,
+          transitionGeneration: 9,
+          currentSongId: null,
+          queueIndex: 2,
+        ),
+        isFalse,
+      );
+    });
+
     test('rejects a newer transition, song, or queue index', () {
       expect(
         guard.matches(
