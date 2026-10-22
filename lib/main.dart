@@ -251,10 +251,12 @@ Future<void> main() async {
     builder: () => AudioServiceHandler(),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.aetherion.resonate.audio',
-      androidNotificationChannelName: 'Resonate Playback',
+      androidNotificationChannelName: 'Resonate • Now Playing',
+      androidNotificationChannelDescription:
+          'Resonate music playback and track controls',
+      androidNotificationColor: 0xFF9A5CFF,
       androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
-      androidNotificationChannelDescription: 'Now playing and transport controls',
       fastForwardInterval: Duration(seconds: 10),
       rewindInterval: Duration(seconds: 10),
       androidNotificationIcon: 'drawable/ic_stat_resonate',
