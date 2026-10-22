@@ -530,6 +530,15 @@ class EqualizerProvider extends ChangeNotifier {
       // calls update sticky state even if playback has not created a sink yet.
       await _applyPreamp();
       await _pushLiveDspCurve(dvcDb: canonical.dvcDb);
+      await AudioEffectsBridge.setLiveDspLimiterCeiling(
+        highDb: canonical.limiterHighCeilingDb,
+        lowDb: canonical.limiterLowCeilingDb,
+      );
+      await AudioEffectsBridge.setLiveDspCrossoverHz(canonical.crossoverHz);
+      final sessionId = _music?.audioPlayer.androidAudioSessionId;
+      if (sessionId != null && sessionId > 0) {
+        unawaited(attachNativeSession(sessionId));
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('Equalizer initialization failed: $e');
@@ -665,7 +674,7 @@ class EqualizerProvider extends ChangeNotifier {
         : preamp;
     // Conservative estimate based on the largest positive studio-band gain;
     // bounded by the DSP's supported -6 dB preamp floor.
-    final effective = isEnabled ? requestedPreamp.clamp(-6.0, 6.0).toDouble() : 0.0;
+    final effective = requestedPreamp.clamp(-6.0, 6.0).toDouble();
     try {
       await AudioEffectsBridge.setLiveDspPreampDb(effective);
     } catch (e) {
@@ -703,7 +712,7 @@ class EqualizerProvider extends ChangeNotifier {
         gainsDb: gains,
         // Send the EQ preference independently; the native registry combines
         // it with master DSP state for each live and newly registered engine.
-        enabled: isEnabled,
+        enabled: true,
       );
       final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
       await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
@@ -974,7 +983,7 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _save() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('equalizer_enabled', isEnabled);
+      await prefs.setBool('equalizer_enabled', true);
       await prefs.setString('equalizer_preset', preset);
       await prefs.setDouble('equalizer_preamp', preamp);
       for (var i = 0; i < studioBands.length; i++) {
