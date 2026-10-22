@@ -103,13 +103,15 @@ Future<void> pause({String source = 'normal_player'}) {
         _modes?.onPlaybackPaused();
         _publishServiceState();
         notifyListeners();
-        await ResonateDiagnostics.record('audio_focus_pause', {
+        // Diagnostics must not hold the serialized transport lane: a slow
+        // write here can block the next play/resume command after pause.
+        unawaited(ResonateDiagnostics.record('audio_focus_pause', {
           'source': source,
           'userWantsPlaying': _userWantsPlaying,
           'preservedIntent': fromSystemFocus,
           'hardStop': true,
           'noisy': fromNoisy,
-        });
+        }));
       } catch (_) {}
     }, command: 'pause', source: source, userInitiated: !fromSystemFocus, intentToken: intentToken);
   }
