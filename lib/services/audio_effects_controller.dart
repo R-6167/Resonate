@@ -22,35 +22,27 @@ class AudioEffectsController {
 
   Future<void> syncAll() async {
     final prefs = await SharedPreferences.getInstance();
-    final equalizerEnabled = prefs.getBool('equalizer_enabled') ?? true;
     final effectsEnabled = prefs.getBool('effects_enabled') ?? true;
     final bassBoost = prefs.getDouble('bassBoost') ?? 0.0;
     final virtualizer = prefs.getDouble('virtualizer') ?? 0.0;
     final reverb = prefs.getDouble('reverb') ?? 0.0;
-    final loudness = prefs.getDouble('loudness') ?? 0.0;
 
-    for (final pair in <(AndroidEqualizer, AndroidLoudnessEnhancer)>[
-      (equalizerA, loudnessA),
-      (equalizerB, loudnessB),
-    ]) {
-      final eq = pair.$1;
-      final loud = pair.$2;
+    // The live Resonate DSP is the sole owner of EQ. This legacy controller
+    // runs after source setup and on A/B handoffs, so restoring old Android
+    // Equalizer band preferences here could silently re-enable a second EQ
+    // after the user switched the authoritative EQ off.
+    for (final eq in <AndroidEqualizer>[equalizerA, equalizerB]) {
       try {
-        final parameters = await eq.parameters;
-        for (final band in parameters.bands) {
-          final saved = prefs.getDouble('eq_band_${band.index}');
-          if (saved != null) {
-            await band.setGain(
-              saved.clamp(parameters.minDecibels, parameters.maxDecibels).toDouble(),
-            );
-          }
-        }
-        await eq.setEnabled(equalizerEnabled);
+        await eq.setEnabled(false);
       } catch (_) {}
+    }
 
+    // LoudnessEnhancer is retired. Track leveling and the Resonate preamp/DVC
+    // path own gain; never let legacy preferences create a competing gain stage.
+    for (final loud in <AndroidLoudnessEnhancer>[loudnessA, loudnessB]) {
       try {
-        await loud.setTargetGain(effectsEnabled ? loudness * 600.0 : 0.0);
-        await loud.setEnabled(effectsEnabled && loudness > 0);
+        await loud.setTargetGain(0.0);
+        await loud.setEnabled(false);
       } catch (_) {}
     }
 
@@ -70,9 +62,9 @@ class AudioEffectsController {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('effects_enabled') ?? true;
       await AudioEffectsBridge.attachToSession(sessionId);
-      await AudioEffectsBridge.setBassBoost(
-        enabled ? (prefs.getDouble('bassBoost') ?? 0.0) : 0.0,
-      );
+      // BassBoost is retired; avoid stacking a second bass processor
+      // over the authoritative Resonate DSP path.
+      await AudioEffectsBridge.setBassBoost(0.0);
       await AudioEffectsBridge.setVirtualizer(
         enabled ? (prefs.getDouble('virtualizer') ?? 0.0) : 0.0,
       );
