@@ -207,7 +207,7 @@ Audit target: `Resonate-True-Apk`, merge commit `bad0261c7d36f2c5a52cd74dcff230a
 
 ### Phase C regression coverage — 2026-10-22
 
-- [x] PR #145 merged; the merge-triggered CI run #39747202298 was observed in progress during this update. Check its final result before treating the base as green.
+- [x] PR #145 merged; merge-triggered CI run #39747202298 completed successfully (Flutter analyze/tests, native DSP stress test, Android DSP tests, release APK build, and APK size budget).
 - [ ] Phase B listening checks remain open for DVC/preamp, EQ/headroom, leveling, limiter, crossover, and A/B transitions.
 - [ ] Phase C test slice adds regression coverage for focus-level clamping, auto-resume gating, persisted fade independence, resume-generation invalidation, the three-minute focus-loss boundary, and duck/deferred-unduck state transitions.
 - [ ] Device checks remain required for notification/navigation duck and restore, calls and other-player focus loss, no unwanted auto-resume, and pause/resume fades.
@@ -223,5 +223,10 @@ A checked source item means the implementation exists; a passing unit test means
 - [x] Add focused boundary tests for crossfade fallback queue targets (including a single-item queue under repeat-all vs. repeat-off) and reject stale transition commits when the current song identity is absent.
 - [ ] Audit the live playback path for repeat-one completion, rapid next/previous during a fade, seek during fade, failed-source recovery, and mode switches; unit policy tests alone do not prove end-to-end engine ownership.
 - [ ] Device smoke: repeat-one keeps the same song and UI identity; repeat-all wraps once; rapid next/previous during crossfade lands on the requested track; seek cancels stale fade commits; screen-off and route changes do not strand playback.
-- [ ] Confirm post-merge CI results for PR #145 and PR #146 before treating the audio/automation baseline as green. Hardware checks for Phase B/C remain separate.
+- [x] PR #146 merged; CI run #39747965004 completed successfully. Hardware checks for Phase B/C remain separate.
 
+### Phase D — completion ownership guard follow-up
+
+- [x] PR #147 merged; CI run #39750629145 completed successfully.
+- [ ] Isolate and test the stale completion callback guard so a delayed callback from an outgoing engine cannot advance a queue after ownership has moved, while callbacks during an active crossfade remain eligible for the existing transition flow.
+- [ ] Continue reviewing repeat-one completion, failed-source recovery, and mode-boundary behavior; do not alter runtime playback behavior without a reproducible defect or a narrowly tested invariant.
