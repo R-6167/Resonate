@@ -94,6 +94,11 @@ class AudioVisualizationProvider extends ChangeNotifier {
     _captureTimer?.cancel();
     _captureTimer = null;
     if (_disposed || !enabled || !_playbackActive) return;
+    if (!_permissionChecked) {
+      if (!_permissionRequestInFlight) _requestCapturePermission();
+      return;
+    }
+    if (!_capturePermissionGranted) return;
     // 15 Hz channel polling is sufficient for visual response and avoids
     // creating a high-frequency Dart/MethodChannel workload.
     _captureTimer = Timer.periodic(const Duration(milliseconds: 66), (_) => _captureSpectrum());
