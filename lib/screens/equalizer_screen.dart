@@ -739,7 +739,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Tip: turn EQ on, pick a preset, then nudge preamp if the whole mix feels quiet or loud.',
+                      'Choose a sound profile, shape the studio bands, and set preamp to taste.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurface.withValues(alpha: 0.65),
                           ),
