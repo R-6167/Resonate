@@ -55,7 +55,14 @@ class AudioVisualizationProvider extends ChangeNotifier {
     setPlaybackActive(_isPlaybackActive?.call() ?? false);
   }
 
-  void setEnabled(bool value) { enabled = value; _save(); _syncCapture(); notifyListeners(); }
+  void setEnabled(bool value) {
+    if (enabled == value) return;
+    enabled = value;
+    if (!value) frequencies = List<double>.filled(32, 0.0);
+    _save();
+    _syncCapture();
+    notifyListeners();
+  }
   void setVisualizationType(String value) { if (['bars','circular','waveform','dots','wave'].contains(value)) { visualizationType = value; _save(); notifyListeners(); } }
   void setSensitivity(double value) { sensitivity = value.clamp(0.1, 1.0).toDouble(); _save(); notifyListeners(); }
   void setSmoothing(double value) { smoothing = value.clamp(0.0, 1.0).toDouble(); _save(); notifyListeners(); }
@@ -94,7 +101,9 @@ class AudioVisualizationProvider extends ChangeNotifier {
     _captureInFlight = true;
     try {
       final next = await AudioEffectsBridge.getAudioSpectrum();
-      if (_disposed) return;
+      // A request may complete after pause, disable, or session teardown.
+      // Never let that late reply resurrect a stale spectrum.
+      if (_disposed || !enabled || !_playbackActive) return;
       if (next.isEmpty) {
         if (frequencies.any((value) => value != 0.0)) {
           frequencies = List<double>.filled(32, 0.0);
@@ -104,12 +113,18 @@ class AudioVisualizationProvider extends ChangeNotifier {
       }
       final count = next.length < frequencies.length ? next.length : frequencies.length;
       final alpha = 1.0 - smoothing * 0.88;
-      final updated = List<double>.of(frequencies);
+      final updated = List<double>.filled(32, 0.0);
+      var changed = false;
       for (var i = 0; i < count; i++) {
-        updated[i] = frequencies[i] * (1.0 - alpha) + next[i] * alpha;
+        final sample = next[i].isFinite ? next[i].clamp(0.0, 1.0) : 0.0;
+        updated[i] = frequencies[i] * (1.0 - alpha) + sample * alpha;
+        if ((updated[i] - frequencies[i]).abs() > 0.002) changed = true;
       }
-      frequencies = updated;
-      notifyListeners();
+      // Avoid rebuilding both consumers for imperceptible numerical noise.
+      if (changed) {
+        frequencies = updated;
+        notifyListeners();
+      }
     } finally {
       _captureInFlight = false;
     }
