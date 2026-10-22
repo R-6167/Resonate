@@ -473,7 +473,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                                 );
                               },
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
