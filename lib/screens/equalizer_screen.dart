@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/bluetooth_provider.dart';
 import '../providers/audio_effects_provider.dart';
 import '../providers/equalizer_provider.dart';
 import '../providers/music_provider.dart';
@@ -519,7 +518,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               const SizedBox(height: 14),
               const _HelpStep(
                 n: '1',
-                title: 'Choose a sound profile',
+                title: 'Start with Resonate sound',
                 body:
                     'Resonate tone shaping is always active. Fine-tune the studio bands and save your own custom profile when it feels right.',
               ),
@@ -541,14 +540,6 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                 title: 'Save your curve',
                 body:
                     'Use the bookmark icon to save the studio-band curve as a named custom profile.',
-              ),
-              const _HelpStep(
-                n: '5',
-                title: 'Optional extras',
-                body:
-                    'Learned leans remember a song or artist. Bluetooth profiles '
-                    'can switch presets for headphones, car, or speaker. '
-                    'Advanced is optional — everyday listening does not need it.',
               ),
               const SizedBox(height: 8),
               Text(
@@ -577,7 +568,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Save preset'),
+        title: const Text('Save custom profile'),
         content: TextField(
           controller: controller,
           autofocus: true,
