@@ -16,9 +16,14 @@ void main() {
         'Resonate Clarity',
         'Resonate Afterhours',
         'Resonate Pulse',
+        'Resonate Deep Bass',
+        'Resonate Drive',
+        'Resonate Focus',
+        'Resonate Speaker',
+        'Resonate Vocal Presence',
       });
       expect(resonateNames.intersection(classicNames), isEmpty);
-      expect(EqualizerProvider.resonatePresets, hasLength(5));
+      expect(EqualizerProvider.resonatePresets, hasLength(10));
       expect(
         EqualizerProvider.resonatePresets.every(
           (preset) => preset.category == 'Resonate',
