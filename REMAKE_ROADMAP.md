@@ -257,13 +257,16 @@ Scope guard: this phase changes presentation only. Do not retune Resonate Signat
 
 ## Phase E follow-up — restore live audio-reactive visuals
 
-- [x] Bind `AudioVisualizationProvider` to `MusicProvider` playback notifications so the shared 15 Hz spectrum capture starts when playback starts and stops/clears when playback pauses.
-- [x] Add a regression test proving measured spectrum values reach the shared provider while playing and clear on pause.
-- [ ] Confirm CI (analysis, tests, Android build, and 100 MiB APK budget) before merge.
+- [x] PR #152 merged with green CI: bind `AudioVisualizationProvider` to `MusicProvider` playback notifications so shared spectrum capture starts during playback and clears on pause.
+- [x] Add a regression test proving spectrum values reach the shared provider while playing and clear on pause.
 - [ ] Device-test the main visualizer and Ask Resonate orb against several tracks, silence/pause, track changes, and A/B crossfades. This verifies real FFT response rather than merely animated motion.
 
-### Resonate sound identities — next UI/design slice
+### Resonate sound identities — first-party card implementation
 
-- [ ] Present the five first-party profiles (Signature, Warmth, Clarity, Afterhours, Pulse) as branded, descriptive cards in the existing Equalizer screen, not a second generic presets panel.
-- [ ] Design additional first-party environment cards (starting with Deep Bass and practical listening contexts) using intentional, conservative curves and short descriptions; distinguish them from legacy generic presets and preserve custom-preset save/restore.
-- [ ] Keep audio-profile work separate from the live-spectrum fix; validate each curve on-device before describing it as tuned or preferred.
+- [x] Add branded, descriptive cards for the five core identities: Signature, Warmth, Clarity, Afterhours, and Pulse.
+- [x] Add five more first-party listening-context profiles: Deep Bass, Drive, Focus, Speaker, and Vocal Presence. They use distinct bounded curves and live in the same first-party catalog.
+- [x] Place the cards directly in the existing Equalizer screen; keep classic, utility, and custom presets below for compatibility rather than adding another generic preset panel.
+- [x] Preserve the existing `applyPreset` path and custom preset save/import/export behavior; no playback engine, storage schema, dependency, or native DSP changes.
+- [x] Expand catalog tests to verify all ten first-party curves are unique, valid, bounded, and discoverable by name.
+- [ ] Confirm CI analysis/tests, Android build, and the existing 100 MiB release APK gate before merge.
+- [ ] Device-check card readability and selected state, switching among core and environment profiles, persistence after force-stop/restart, and the audible effect across headphones, Bluetooth, and speaker output. These curves are design starting points, not yet listening-validated tuning.

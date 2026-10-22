@@ -439,6 +439,33 @@ class EqualizerProvider extends ChangeNotifier {
       category: 'Resonate',
       gains: [2.5, 2, 1, 0, -0.5, 0, 0.5, 1, 1.5, 1],
     ),
+    // Listening-context profiles are first-party Resonate curves too. Keep
+    // gains intentionally bounded; real-world validation is tracked separately.
+    EqualizerPreset(
+      name: 'Resonate Deep Bass',
+      category: 'Resonate',
+      gains: [2.5, 2.25, 1.75, 1, 0.25, -0.5, -0.5, 0, 0, 0],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Drive',
+      category: 'Resonate',
+      gains: [2.5, 2, 1, 0, 0.5, 1, 1.5, 1, 0.5, 0],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Focus',
+      category: 'Resonate',
+      gains: [-1, -0.5, 0, 1, 1.5, 1.5, 1, 0, -0.5, -1],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Speaker',
+      category: 'Resonate',
+      gains: [1.5, 1, 0.5, 0, 0, 0.5, 1, 0.5, 0, -0.5],
+    ),
+    EqualizerPreset(
+      name: 'Resonate Vocal Presence',
+      category: 'Resonate',
+      gains: [-1, -0.5, 0, 1, 2, 2, 1.5, 1, 0.5, 0],
+    ),
   ];
 
   List<EqualizerPreset> get allPresets => [

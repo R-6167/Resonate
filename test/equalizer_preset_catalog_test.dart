@@ -3,10 +3,25 @@ import 'package:resonate/providers/equalizer_provider.dart';
 
 void main() {
   group('Equalizer preset catalog', () {
-    test('all five Resonate profiles resolve to distinct curves', () {
+    test('first-party Resonate profiles resolve to distinct, bounded curves', () {
       final profiles = EqualizerProvider.resonatePresets;
-      expect(profiles, hasLength(5));
-      expect(profiles.map((p) => p.name).toSet(), hasLength(5));
+      expect(profiles, hasLength(10));
+      expect(profiles.map((p) => p.name).toSet(), hasLength(10));
+      expect(
+        profiles.map((p) => p.name),
+        containsAll([
+          'Resonate Signature',
+          'Resonate Warmth',
+          'Resonate Clarity',
+          'Resonate Afterhours',
+          'Resonate Pulse',
+          'Resonate Deep Bass',
+          'Resonate Drive',
+          'Resonate Focus',
+          'Resonate Speaker',
+          'Resonate Vocal Presence',
+        ]),
+      );
 
       final curves = <String>{};
       for (final profile in profiles) {
@@ -20,7 +35,7 @@ void main() {
         );
         curves.add(expanded.join(','));
       }
-      expect(curves, hasLength(5));
+      expect(curves, hasLength(10));
     });
 
     test('resolver returns the exact named built-in, Resonate, or custom profile', () {
