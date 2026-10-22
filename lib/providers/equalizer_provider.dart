@@ -265,10 +265,8 @@ class EqualizerProvider extends ChangeNotifier {
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
     await ResonateNativeDspBridge.setEnabled(true);
-    {
-      final sid = _music?.audioPlayer.androidAudioSessionId;
-      if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
-    }
+    final sid = _music?.audioPlayer.androidAudioSessionId;
+    if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     notifyListeners();
   }
 
