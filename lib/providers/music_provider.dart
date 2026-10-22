@@ -2581,13 +2581,16 @@ class MusicProvider extends ChangeNotifier {
           'intentToken': effectiveIntent,
         }));
       }
-      await ResonateDiagnostics.record('playback_operation_queued', {
+      // Diagnostics must never sit in front of a user transport command.
+      // Recording is queued independently so a slow disk/diagnostics lane cannot
+      // make notification or mini-player play/pause appear unresponsive.
+      unawaited(ResonateDiagnostics.record('playback_operation_queued', {
         'command': command,
         'source': source,
         'userInitiated': userInitiated,
         'intentToken': effectiveIntent,
         'lane': transportPriority ? 'transport_priority' : 'source_serialized',
-      });
+      }));
       if (transportPriority) {
         return await _playbackCoordinator.runTransport(operation);
       }
