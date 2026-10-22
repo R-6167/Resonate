@@ -44,6 +44,7 @@ import '../playback/transport_command_policy.dart';
 import '../playback/crossfade_fallback_fade.dart';
 import '../playback/crossfade_settings.dart';
 import '../playback/transport_epoch.dart';
+import '../playback/completion_ownership_policy.dart';
 import '../playback/engine_pair.dart';
 import '../playback/dj_handoff_state.dart';
 import '../playback/audio_leveling_settings.dart';
@@ -2361,10 +2362,12 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _advanceAfterCompletion(String completedSongId) {
     if (_completionAdvanceInProgress) return Future<void>.value();
     // Already moved past this track — do not double-advance.
-    if (currentSong != null &&
-        currentSong!.id != completedSongId &&
-        !_crossfadeInProgress &&
-        !_automaticCrossfadeInFlight) {
+    if (CompletionOwnershipPolicy.shouldIgnoreStaleCompletion(
+      currentSongId: currentSong?.id,
+      completedSongId: completedSongId,
+      crossfadeInProgress: _crossfadeInProgress,
+      automaticCrossfadeInFlight: _automaticCrossfadeInFlight,
+    )) {
       unawaited(ResonateDiagnostics.record('completion_advance_result', {
         'result': 'ignored_stale',
         'fromSongId': completedSongId,
