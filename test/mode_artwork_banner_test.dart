@@ -94,15 +94,14 @@ void main() {
         ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
       };
 
+      expect(find.byType(Image), findsOneWidget);
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.image, isA<ResizeImage>());
       expect(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is Image &&
-              widget.image is AssetImage &&
-              (widget.image as AssetImage).assetName == expectedAsset,
-        ),
-        findsOneWidget,
+        ((image.image as ResizeImage).imageProvider as AssetImage).assetName,
+        expectedAsset,
       );
+      expect(image.fit, BoxFit.cover);
       expect(
         find.bySemanticsLabel('${mode.label} mode background'),
         findsOneWidget,
