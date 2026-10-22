@@ -253,3 +253,17 @@ PR #150 merged on 2026-10-22. Follow-up performance polish is tracked in a separ
 - [ ] Check scrolling and mode transitions on device; the optimization must not affect spectrum response or playback.
 
 Scope guard: this phase changes presentation only. Do not retune Resonate Signature, Warmth, Clarity, Afterhours, or Pulse, add a second preset picker, or change playback ownership unless a reproducible defect is found.
+
+
+## Phase E follow-up — restore live audio-reactive visuals
+
+- [x] Bind `AudioVisualizationProvider` to `MusicProvider` playback notifications so the shared 15 Hz spectrum capture starts when playback starts and stops/clears when playback pauses.
+- [x] Add a regression test proving measured spectrum values reach the shared provider while playing and clear on pause.
+- [ ] Confirm CI (analysis, tests, Android build, and 100 MiB APK budget) before merge.
+- [ ] Device-test the main visualizer and Ask Resonate orb against several tracks, silence/pause, track changes, and A/B crossfades. This verifies real FFT response rather than merely animated motion.
+
+### Resonate sound identities — next UI/design slice
+
+- [ ] Present the five first-party profiles (Signature, Warmth, Clarity, Afterhours, Pulse) as branded, descriptive cards in the existing Equalizer screen, not a second generic presets panel.
+- [ ] Design additional first-party environment cards (starting with Deep Bass and practical listening contexts) using intentional, conservative curves and short descriptions; distinguish them from legacy generic presets and preserve custom-preset save/restore.
+- [ ] Keep audio-profile work separate from the live-spectrum fix; validate each curve on-device before describing it as tuned or preferred.
