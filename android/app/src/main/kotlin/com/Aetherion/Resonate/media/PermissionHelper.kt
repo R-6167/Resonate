@@ -15,10 +15,12 @@ class PermissionHelper(private val activity: Activity) {
     companion object {
         const val AUDIO_REQUEST_CODE = 6167
         const val NOTIFICATION_REQUEST_CODE = 6169
+        const val VISUALIZATION_REQUEST_CODE = 6171
     }
 
     private var audioResult: MethodChannel.Result? = null
     private var notificationResult: MethodChannel.Result? = null
+    private var visualizationResult: MethodChannel.Result? = null
 
     fun audioPermission(): String =
         if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -34,6 +36,15 @@ class PermissionHelper(private val activity: Activity) {
         }
         audioResult = result
         activity.requestPermissions(arrayOf(audioPermission()), AUDIO_REQUEST_CODE)
+    }
+
+    fun requestVisualizationPermission(result: MethodChannel.Result) {
+        if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            result.success(true)
+            return
+        }
+        visualizationResult = result
+        activity.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), VISUALIZATION_REQUEST_CODE)
     }
 
     fun requestNotificationPermission(result: MethodChannel.Result) {
@@ -62,6 +73,13 @@ class PermissionHelper(private val activity: Activity) {
                         grantResults[0] == PackageManager.PERMISSION_GRANTED,
                 )
                 audioResult = null
+            }
+            VISUALIZATION_REQUEST_CODE -> {
+                visualizationResult?.success(
+                    grantResults.isNotEmpty() &&
+                        grantResults[0] == PackageManager.PERMISSION_GRANTED,
+                )
+                visualizationResult = null
             }
             NOTIFICATION_REQUEST_CODE -> {
                 notificationResult?.success(
