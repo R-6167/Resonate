@@ -629,7 +629,7 @@ class EqualizerProvider extends ChangeNotifier {
       await syncStudioBandsToNativeEq(
         centersHz: centers,
         gainsDb: gains,
-        enabled: isEnabled && _nativeDspEnabled,
+        enabled: isEnabled,
       );
     } catch (e) {
       debugPrint('live DSP EQ push failed: $e');
