@@ -24,6 +24,7 @@ class AudioVisualizationWidget extends StatelessWidget {
           width: double.infinity,
           child: RepaintBoundary(
             child: CustomPaint(
+              key: const ValueKey('audio-spectrum-painter'),
               painter: _SpectrumPainter(
                 color: Theme.of(context).colorScheme.primary,
                 spectrum: List<double>.unmodifiable(settings.frequencies),
