@@ -156,3 +156,46 @@ Next: Phase 3 — audit Audio Automation, audio-focus behavior, DVC, EQ headroom
 - [x] Confirmed Audio leveling UI and service describe sampled RMS rather than LUFS/true peak and only apply conservative attenuation to cached analysis.
 - [ ] PR for AudioLevelingSettings regression tests must pass CI before merge.
 - [ ] Device validation remains necessary for interruption behavior, no surprise resume when another player takes focus, EQ headroom audibility, and leveling sound quality.
+
+
+---
+
+## Current-code audit — 2026-10-22 (authoritative status)
+
+Audit target: `Resonate-True-Apk`, merge commit `bad0261c7d36f2c5a52cd74dcff230abe1a31e3e` (PR #142). This section supersedes older “still in progress” notes above when they conflict. Historical entries are retained as history, not as current status.
+
+### Verified in source / repository
+
+- [x] **Playback architecture remains extracted, not replaced.** `MusicProvider` is still the public playback facade; queue, transport, crossfade, DJ handoff, audio-effects lifecycle, leveling runtime, and mode policy responsibilities have dedicated collaborators/part files. See `docs/MUSIC_PROVIDER_SPLITS.md`.
+- [x] **Transport/crossfade protections are present in code.** The playback audit documents generation/ownership guards, queue-driven repeat, stale-transition cancellation, and bounded failed-source skipping. This is source evidence, not proof that every OEM/device timing case is solved.
+- [x] **Nine listening modes and nine local artwork files are present.** Mode banner/widget tests exist. Manual checks of crops, contrast, shelves, badge, and large-text layouts remain open.
+- [x] **Release APK size ceiling is enforced in CI at 100 MiB.** Keep checking the measured release artifact; the earlier 76.2 MB figure is a historical baseline, not the current package size. Installed size has not been established here.
+- [x] **Five first-party Resonate profiles coexist with classic and custom presets** in the existing EQ catalog. The separate featured profile-card row was removed; profiles now use the shared category/preset picker, as intended.
+- [x] **Audio leveling settings have regression tests** for defaults, target clamping, non-finite rejection, unchanged values, and persistence. Runtime uses cached sampled RMS and bounded attenuation; it is not LUFS or true-peak normalization.
+- [x] **PR #142 merged:** EQ and master DSP are forced on; their off switches were removed from the EQ UI; persisted limiter/crossover settings are reapplied during initialization; Audio Automation explanatory copy was shortened.
+- [x] **Native DSP paths exist** for separate DVC/volume, preamp, EQ bands, limiter ceilings, and crossover frequency. The C++ engine contains a two-band crossover/limiter chain; limiter activity is peak-dependent, and crossover is protection processing rather than a tonal crossover.
+
+### Not yet proven / incomplete
+
+- [ ] **EQ preset regression — priority 1.** The catalog and application/persistence paths exist, but the reported “stuck on one preset” behavior is not considered fixed by source inspection alone. Add focused tests for all five Resonate curves, catalog uniqueness, applying a different preset, selected-state updates, band values, and restart/legacy/custom JSON compatibility. Then verify on device.
+- [ ] **DVC / limiter / crossover audible effect.** Bridge methods, registry updates, sticky state, and native processing code exist, but this does not prove the running sink receives the right value or that the user can hear the expected change. Add acknowledgement/state regression tests where possible and run controlled device checks. Limiter changes may only be audible on peaks; crossover should not be judged as a tone control.
+- [ ] **Always-on DSP lifecycle.** PR #142 forces the processing flags on, but verify the merged CI result and add/retain regression coverage for new A/B sink registration, session attach/reconnect, and legacy callers attempting to disable processing. A failed native attach must be visible in diagnostics and must not be described as successful processing.
+- [ ] **Audio leveling sound quality and persistence on real tracks/routes.** Settings and runtime tests exist; listening validation across quiet/loud material, Bluetooth/headphones, and speaker output remains outstanding.
+- [ ] **Audio focus / pause-resume fade.** Controls and persistence are present. Verify notification duck/restore, calls, other-player focus loss, no unwanted auto-resume, and fades on device. Android focus loss does not reliably identify “call” versus “another player”; do not promise call-only behavior.
+- [ ] **Engine A default (historical Phase 2 in the playback roadmap).** The roadmap defines the intended policy but does not record a completed call-site audit or focused integration test proving ordinary playback stays on the primary engine and Engine B is used only for a permitted transition/preload. Audit against current engine ownership before checking this off.
+- [ ] **Playback/crossfade lifecycle edge cases.** The October 15 playback audit is useful but has stale branch/status wording. Re-run its manual list against the current branch: repeat-one, repeat-all, mode switches, failed source, rapid next/previous during fades, seek during fade, screen-off, and route change. Add focused tests for any reproduced regression.
+- [ ] **Mode artwork and visual performance.** Tests cover rendering/accessibility cases, but manual device validation remains. Recheck For You scrolling, expensive blur/glass surfaces, library current-row retention, and navigation/player-state continuity before closing the visual phase.
+- [ ] **Current release verification.** The PR #142 post-merge CI run `39738317312` was still in progress when this audit was written. Do not mark the base green until that run concludes successfully. Confirm the 100 MiB gate on the actual successful artifact; installed size is a separate measurement.
+
+### Phase order from this audit (no new features)
+
+1. **Phase A — EQ correctness:** reproduce and fix preset selection/application/persistence; add curve/catalog and migration tests. Preserve the shared picker and custom preset formats.
+2. **Phase B — live audio chain correctness:** verify always-on processing/session attach and prove DVC, preamp, leveling, limiter, and crossover values reach current and newly registered A/B engines. Keep controls and DSP behavior separate from UI redesign.
+3. **Phase C — audio automation reliability:** focused tests and device checks for duck/restore, focus-loss policy, pause/resume fade, and persisted settings; keep copy concise and truthful.
+4. **Phase D — playback ownership regression:** complete the Engine A/Engine B call-site audit and focused transport/crossfade/repeat/mode-boundary tests; fix only reproduced failures.
+5. **Phase E — UX/performance closeout:** verify existing mode artwork, EQ identity, navigation, library position, accessibility, and scrolling on device; tune only regressions or existing rough edges.
+6. **Phase F — release gate:** green Flutter/native/Android CI, APK below 100 MiB, then a recorded device smoke pass. CI success and subjective listening results must remain separate.
+
+### Audit discipline
+
+A checked source item means the implementation exists; a passing unit test means the tested contract is covered; a green CI run means the configured automation passed; a device/listening check means the behavior was actually exercised on hardware. Do not substitute one category for another. No new features, generic preset-card UI, or broad sound retuning are authorized by this audit. Preserve the existing Resonate sound identity and the 100 MiB package ceiling.
