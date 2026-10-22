@@ -444,7 +444,7 @@ class EqualizerProvider extends ChangeNotifier {
     EqualizerPreset(
       name: 'Resonate Deep Bass',
       category: 'Resonate',
-      gains: [5.5, 4.5, 3, 1.5, 0, -1, -1, -0.5, 0, 0],
+      gains: [2.5, 2.25, 1.75, 1, 0.25, -0.5, -0.5, 0, 0, 0],
     ),
     EqualizerPreset(
       name: 'Resonate Drive',
