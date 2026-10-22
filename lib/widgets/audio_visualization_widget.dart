@@ -1,101 +1,199 @@
-import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/audio_visualization_provider.dart';
-import '../providers/music_provider.dart';
 
-class AudioVisualizationWidget extends StatefulWidget {
-  const AudioVisualizationWidget({Key? key}) : super(key: key);
-  @override State<AudioVisualizationWidget> createState() => _AudioVisualizationWidgetState();
+/// Renders the shared native FFT feed directly.
+///
+/// There is deliberately no independent phase/timer animation here: bar height,
+/// wave shape, and circular radius all come from measured spectrum values. That
+/// keeps the visualizer from appearing alive when capture is silent or stale.
+class AudioVisualizationWidget extends StatelessWidget {
+  const AudioVisualizationWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AudioVisualizationProvider>(
+      builder: (context, settings, _) {
+        if (!settings.enabled) return const SizedBox(height: 180);
+
+        return SizedBox(
+          height: 180,
+          width: double.infinity,
+          child: RepaintBoundary(
+            child: CustomPaint(
+              painter: _SpectrumPainter(
+                color: Theme.of(context).colorScheme.primary,
+                spectrum: List<double>.unmodifiable(settings.frequencies),
+                type: settings.visualizationType,
+                sensitivity: settings.sensitivity,
+                smoothing: settings.smoothing,
+                mirror: settings.mirror,
+                emphasizeBass: settings.reactToBass,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _AudioVisualizationWidgetState extends State<AudioVisualizationWidget> {
-  Timer? _timer;
-  final ValueNotifier<double> _phase = ValueNotifier<double>(0);
-  MusicProvider? _music;
-  bool _playing = false;
-  double _fps = 24;
-  bool _smoothAnimation = true;
-  bool _visualizationEnabled = true;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final music = context.read<MusicProvider>();
-    if (_music != music) {
-      _music?.removeListener(_syncPlayback);
-      _music = music;
-      _music!.addListener(_syncPlayback);
-    }
-    final settings = context.read<AudioVisualizationProvider>();
-    _fps = settings.frameRate;
-    _smoothAnimation = settings.smoothAnimation;
-    _visualizationEnabled = settings.enabled;
-    _playing = music.isPlaying;
-    _restartTimer();
-  }
-
-  void _syncPlayback() {
-    if (!mounted) return;
-    final playing = _music?.isPlaying == true;
-    if (_playing != playing) { _playing = playing; _restartTimer(); }
-  }
-
-  void _restartTimer() {
-    _timer?.cancel();
-    if (!_playing || !_smoothAnimation || !_visualizationEnabled) return;
-    final milliseconds = (1000 / _fps.clamp(12, 30)).round().clamp(33, 83);
-    _timer = Timer.periodic(Duration(milliseconds: milliseconds), (_) => _phase.value = (_phase.value + .055) % 1.0);
-  }
-
-  @override
-  void dispose() { _music?.removeListener(_syncPlayback); _timer?.cancel(); _phase.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) => Consumer2<AudioVisualizationProvider, MusicProvider>(builder: (context, settings, music, _) {
-    if (settings.frameRate != _fps || settings.smoothAnimation != _smoothAnimation || settings.enabled != _visualizationEnabled) { _fps = settings.frameRate; _smoothAnimation = settings.smoothAnimation; _visualizationEnabled = settings.enabled; WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _restartTimer(); }); }
-    if (!settings.enabled) return const Center(child: Text('Visualization Disabled'));
-    return ValueListenableBuilder<double>(valueListenable: _phase, builder: (_, phase, __) => CustomPaint(painter: _VisualizationPainter(color: Theme.of(context).colorScheme.primary, phase: phase * math.pi * 2, position: music.currentPosition.inMilliseconds / 1000.0, playing: music.isPlaying, type: settings.visualizationType, sensitivity: settings.sensitivity, mirror: settings.mirror, bass: settings.reactToBass, spectrum: settings.frequencies), size: const Size(double.infinity, 180)));
+class _SpectrumPainter extends CustomPainter {
+  const _SpectrumPainter({
+    required this.color,
+    required this.spectrum,
+    required this.type,
+    required this.sensitivity,
+    required this.smoothing,
+    required this.mirror,
+    required this.emphasizeBass,
   });
-}
 
-class _VisualizationPainter extends CustomPainter {
-  final Color color; final double phase, position, sensitivity; final bool playing, mirror, bass; final String type; final List<double> spectrum;
-  _VisualizationPainter({required this.color, required this.phase, required this.position, required this.playing, required this.type, required this.sensitivity, required this.mirror, required this.bass, required this.spectrum});
-  @override void paint(Canvas canvas, Size size) {
-    final bars = type == 'waveform' ? 48 : 28;
-    final values = List<double>.generate(bars, (i) {
-      final index = ((i / bars) * spectrum.length).floor().clamp(0, math.max(0, spectrum.length - 1)).toInt();
-      final measured = spectrum.isEmpty ? 0.0 : spectrum[index].clamp(0.0, 1.0).toDouble();
-      final bassBoost = bass ? 1.0 + (1.0 - i / bars) * .45 : 1.0;
-      return (math.sqrt(measured) * (0.45 + sensitivity * 1.35) * bassBoost).clamp(0.0, 1.0).toDouble();
+  final Color color;
+  final List<double> spectrum;
+  final String type;
+  final double sensitivity;
+  final double smoothing;
+  final bool mirror;
+  final bool emphasizeBass;
+
+  List<double> _displayBands(int count) {
+    if (spectrum.isEmpty) return List<double>.filled(count, 0);
+    return List<double>.generate(count, (index) {
+      final from = (index * spectrum.length / count).floor();
+      final until = math.max(from + 1, ((index + 1) * spectrum.length / count).ceil());
+      var peak = 0.0;
+      for (var i = from; i < until && i < spectrum.length; i++) {
+        final sample = spectrum[i].isFinite ? spectrum[i].clamp(0.0, 1.0) : 0.0;
+        peak = math.max(peak, sample);
+      }
+      // Android's FFT magnitudes are linear and typically small. The square
+      // root makes quiet-but-real bands visible without fabricating motion.
+      var level = math.sqrt(peak);
+      level *= 0.45 + sensitivity * 1.25;
+      if (emphasizeBass) {
+        level *= 1 + (1 - index / count) * 0.35;
+      }
+      return level.clamp(0.0, 1.0).toDouble();
     });
-    final center = Offset(size.width / 2, size.height / 2);
-    final paint = Paint()..color = color.withOpacity(.92)..strokeCap = StrokeCap.round;
-    if (type == 'circular') { final radius = math.min(size.width, size.height) * .20; for (var i = 0; i < values.length; i++) { final angle = i / values.length * math.pi * 2; final r2 = radius + values[i] * radius * 1.6; canvas.drawLine(Offset(center.dx + math.cos(angle) * radius, center.dy + math.sin(angle) * radius), Offset(center.dx + math.cos(angle) * r2, center.dy + math.sin(angle) * r2), paint..strokeWidth = 3); } canvas.drawCircle(center, radius * .42, Paint()..color = color.withOpacity(.12)); return; }
-    if (type == 'waveform' || type == 'wave') { final path = Path(); for (var i = 0; i < values.length; i++) { final x = i / (values.length - 1) * size.width; final y = center.dy + math.sin(i * .55 + phase + position * 2) * values[i] * size.height * .30; if (i == 0) path.moveTo(x, y); else path.lineTo(x, y); } canvas.drawPath(path, paint..style = PaintingStyle.stroke..strokeWidth = 2.5); if (mirror) { canvas.save(); canvas.translate(0, size.height); canvas.scale(1, -1); canvas.drawPath(path, paint..color = color.withOpacity(.25)); canvas.restore(); } return; }
-    final width = size.width / values.length; for (var i = 0; i < values.length; i++) { final h = values[i] * size.height * .78; final x = i * width + width / 2; canvas.drawLine(Offset(x, size.height * .92), Offset(x, size.height * .92 - h), paint..strokeWidth = math.max(2, width * .65)); }
-  }
-  bool _sameSpectrum(List<double> other) {
-    if (identical(spectrum, other)) return true;
-    if (spectrum.length != other.length) return false;
-    for (var i = 0; i < spectrum.length; i++) {
-      if (spectrum[i] != other[i]) return false;
-    }
-    return true;
   }
 
   @override
-  bool shouldRepaint(covariant _VisualizationPainter old) {
-    return old.color != color ||
-        old.phase != phase ||
-        old.position != position ||
-        old.playing != playing ||
-        old.mirror != mirror ||
-        old.bass != bass ||
-        old.type != type ||
-        old.sensitivity != sensitivity ||
-        !_sameSpectrum(old.spectrum);
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final count = type == 'waveform' || type == 'wave' ? 48 : 32;
+    final levels = _displayBands(count);
+    final hasSignal = spectrum.any((value) => value.isFinite && value > 0.012);
+    final centerY = size.height / 2;
+    final linePaint = Paint()
+      ..color = color.withValues(alpha: 0.92)
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
+    if (type == 'circular') {
+      final radius = math.min(size.width, size.height) * 0.22;
+      final maxLength = math.min(size.width, size.height) * 0.24;
+      final paint = Paint()
+        ..color = color.withValues(alpha: 0.9)
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 3;
+      for (var i = 0; i < levels.length; i++) {
+        final angle = i / levels.length * math.pi * 2;
+        final length = hasSignal ? levels[i] * maxLength : 1.5;
+        canvas.drawLine(
+          Offset(size.width / 2 + math.cos(angle) * radius,
+              centerY + math.sin(angle) * radius),
+          Offset(size.width / 2 + math.cos(angle) * (radius + length),
+              centerY + math.sin(angle) * (radius + length)),
+          paint,
+        );
+      }
+      canvas.drawCircle(
+        Offset(size.width / 2, centerY),
+        radius * 0.55,
+        Paint()..color = color.withValues(alpha: 0.10),
+      );
+      return;
+    }
+
+    if (type == 'waveform' || type == 'wave') {
+      final path = Path();
+      for (var i = 0; i < levels.length; i++) {
+        final x = i / (levels.length - 1) * size.width;
+        final displacement = hasSignal ? levels[i] * size.height * 0.34 : 0.0;
+        final y = centerY + (i.isEven ? -displacement : displacement);
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      canvas.drawPath(path, linePaint);
+      if (mirror) {
+        final reflected = Path();
+        for (var i = 0; i < levels.length; i++) {
+          final x = i / (levels.length - 1) * size.width;
+          final displacement = hasSignal ? levels[i] * size.height * 0.22 : 0.0;
+          final y = centerY + (i.isEven ? displacement : -displacement);
+          if (i == 0) {
+            reflected.moveTo(x, y);
+          } else {
+            reflected.lineTo(x, y);
+          }
+        }
+        canvas.drawPath(
+          reflected,
+          Paint()
+            ..color = color.withValues(alpha: 0.28)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
+      return;
+    }
+
+    final slotWidth = size.width / levels.length;
+    final barPaint = Paint()
+      ..color = color.withValues(alpha: 0.92)
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = math.max(2.0, slotWidth * 0.58);
+    for (var i = 0; i < levels.length; i++) {
+      final height = hasSignal ? levels[i] * size.height * 0.72 : 2.0;
+      final x = (i + 0.5) * slotWidth;
+      final baseline = mirror ? size.height * 0.78 : size.height * 0.90;
+      canvas.drawLine(
+        Offset(x, baseline),
+        Offset(x, baseline - height),
+        barPaint,
+      );
+      if (mirror) {
+        canvas.drawLine(
+          Offset(x, baseline + 2),
+          Offset(x, baseline + height * 0.48),
+          barPaint..color = color.withValues(alpha: 0.24),
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SpectrumPainter oldDelegate) {
+    if (oldDelegate.color != color ||
+        oldDelegate.type != type ||
+        oldDelegate.sensitivity != sensitivity ||
+        oldDelegate.smoothing != smoothing ||
+        oldDelegate.mirror != mirror ||
+        oldDelegate.emphasizeBass != emphasizeBass ||
+        oldDelegate.spectrum.length != spectrum.length) {
+      return true;
+    }
+    for (var i = 0; i < spectrum.length; i++) {
+      if (oldDelegate.spectrum[i] != spectrum[i]) return true;
+    }
+    return false;
   }
 }
