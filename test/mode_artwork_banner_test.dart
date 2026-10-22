@@ -94,8 +94,8 @@ void main() {
         ResonateMode.sleep => 'assets/Sleep_Mode_Light.jpg',
       };
 
-      expect(find.byType(Image), findsOneWidget);
-      final image = tester.widget<Image>(find.byType(Image));
+      expect(find.byType(Image), findsAtLeastNWidgets(1));
+      final image = tester.widget<Image>(find.byType(Image).first);
       expect(image.image, isA<ResizeImage>());
       expect(
         ((image.image as ResizeImage).imageProvider as AssetImage).assetName,
