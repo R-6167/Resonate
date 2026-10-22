@@ -701,7 +701,7 @@ class EqualizerProvider extends ChangeNotifier {
         gainsDb: gains,
         // Keep later band/DVC updates from re-enabling EQ after its master
         // switch was turned off. Both gates must agree before bands are audible.
-        enabled: isEnabled && _nativeDspEnabled,
+        enabled: isEnabled,
       );
       final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
       await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
