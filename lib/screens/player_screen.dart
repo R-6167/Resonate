@@ -137,7 +137,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
           WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowSwipeTutorial());
 
-          return ListView(
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: ModeArtworkBackground(mode: modes.mode),
+              ),
+              ListView(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
             children: [
               GestureDetector(
@@ -158,28 +164,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          ),
-                          child: const AudioVisualizationWidget(),
-                        ),
+                        const AudioVisualizationWidget(),
                         Positioned(
                           top: 12,
                           left: 12,
                           child: ModeArtworkBadge(mode: modes.mode),
-                        ),
-                        Center(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Theme.of(context).colorScheme.surface.withOpacity(.82),
-                            ),
-                            child: const Padding(
-                              padding: EdgeInsets.all(28),
-                              child: Icon(Icons.album_rounded, size: 86),
-                            ),
-                          ),
                         ),
                         const Positioned(
                           bottom: 8,
@@ -523,6 +512,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ],
                   );
                 },
+              ),
+              ],
               ),
             ],
           );
