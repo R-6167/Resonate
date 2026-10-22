@@ -492,14 +492,30 @@ class EqualizerProvider extends ChangeNotifier {
     return expandGainsToStudio(gains);
   }
 
+  /// Resolves a preset by its stable display name.
+  /// Catalog names are kept unique, so a tap always maps to one curve.
+  static EqualizerPreset? resolvePresetByName(
+    String name, {
+    Iterable<EqualizerPreset> custom = const [],
+  }) {
+    for (final candidate in [...builtInPresets, ...resonatePresets, ...custom]) {
+      if (candidate.name == name) return candidate;
+    }
+    return null;
+  }
+
   /// Returns a stable, unique custom name without shadowing a built-in profile.
-  String uniqueCustomPresetName(String requested, {String? replacingName}) {
+  static String uniqueCustomPresetName(
+    String requested, {
+    Iterable<EqualizerPreset> existingCustomPresets = const [],
+    String? replacingName,
+  }) {
     final base = requested.trim();
     if (base.isEmpty) return '';
     final occupied = <String>{
       ...builtInPresets.map((item) => item.name.toLowerCase()),
       ...resonatePresets.map((item) => item.name.toLowerCase()),
-      ...customPresets
+      ...existingCustomPresets
           .where((item) => item.name != replacingName)
           .map((item) => item.name.toLowerCase()),
     };
@@ -847,13 +863,7 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> applyPreset(String name, {bool persistSelection = true}) async {
     // Resolve the exact catalog entry before mutating anything. An unknown or
     // stale name must not silently flatten the curve while keeping that label.
-    EqualizerPreset? found;
-    for (final candidate in allPresets) {
-      if (candidate.name == name) {
-        found = candidate;
-        break;
-      }
-    }
+    final found = resolvePresetByName(name, custom: customPresets);
     if (found == null) {
       debugPrint('Ignoring unknown EQ preset: $name');
       return;
@@ -875,6 +885,7 @@ class EqualizerProvider extends ChangeNotifier {
     final replacingExisting = customPresets.any((item) => item.name == trimmed);
     final uniqueName = uniqueCustomPresetName(
       trimmed,
+      existingCustomPresets: customPresets,
       replacingName: replacingExisting ? trimmed : null,
     );
     final gains = studioBands.map((b) => b.gainDb).toList();
@@ -1022,7 +1033,10 @@ class EqualizerProvider extends ChangeNotifier {
       customPresets = [];
       for (final item in loaded) {
         final safeGains = normalizePresetGains(item.gains);
-        final safeName = uniqueCustomPresetName(item.name);
+        final safeName = uniqueCustomPresetName(
+          item.name,
+          existingCustomPresets: customPresets,
+        );
         customPresets.add(EqualizerPreset(
           name: safeName.isEmpty ? 'Custom Preset' : safeName,
           category: 'Custom',
