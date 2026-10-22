@@ -97,9 +97,9 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
             onPressed: () => _saveCustom(context),
           ),
           IconButton(
-            tooltip: 'Reset flat',
+            tooltip: 'Reset studio bands'
             icon: const Icon(Icons.restart_alt_rounded),
-            onPressed: () => context.read<EqualizerProvider>().resetToFlat(),
+            onPressed: () => context.read<EqualizerProvider>().resetStudioBandsToNeutral(),
           ),
         ],
       ),
