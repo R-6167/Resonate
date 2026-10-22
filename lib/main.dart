@@ -254,7 +254,6 @@ Future<void> main() async {
       androidNotificationChannelName: 'Resonate • Now Playing',
       androidNotificationChannelDescription:
           'Resonate music playback and track controls',
-      androidNotificationColor: 0xFF9A5CFF,
       androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
       fastForwardInterval: Duration(seconds: 10),
