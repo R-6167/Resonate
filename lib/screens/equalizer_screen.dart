@@ -778,16 +778,15 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
               const SizedBox(height: 14),
               const _HelpStep(
                 n: '1',
-                title: 'Turn it on',
+                title: 'Choose a sound profile',
                 body:
-                    'Flip the Equalizer switch at the top. Off means a flat, uncolored sound.',
+                    'Resonate tone shaping is always active. Pick a profile, then fine-tune its studio bands if you want.',
               ),
               const _HelpStep(
                 n: '2',
                 title: 'Pick a preset',
                 body:
-                    'Browse categories (Genre, Mood, …) then tap a chip. '
-                    'Start with something close to your taste.',
+                    'Browse the categories, then tap a profile chip. Start with the Resonate profiles for the app’s own sound character.',
               ),
               const _HelpStep(
                 n: '3',
@@ -858,10 +857,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
       ),
     );
     if (name == null || name.trim().isEmpty || !context.mounted) return;
-    await context.read<EqualizerProvider>().saveCustomPreset(name);
-    if (!context.mounted) return;
+    final savedName =
+        await context.read<EqualizerProvider>().saveCustomPreset(name);
+    if (!context.mounted || savedName == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Saved “${name.trim()}”')),
+      SnackBar(content: Text('Saved “$savedName”')),
     );
   }
 }
