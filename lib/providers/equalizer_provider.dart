@@ -91,7 +91,7 @@ class EqualizerProvider extends ChangeNotifier {
   final List<EqualizerBandState> bandStates = []; // hardware mirror
   final Map<String, double> bands = {}; // label → gain for legacy callers
 
-  bool isEnabled = true;
+  bool isEnabled = true; // Permanent: Resonate always processes the playback signal.
   String preset = 'Flat';
   double preamp = 0.0;
   bool autoEqHeadroom = false;
@@ -146,8 +146,8 @@ class EqualizerProvider extends ChangeNotifier {
   BluetoothProvider? _bluetooth;
   bool _learnedEqEnabled = false;
   bool _btProfilesEnabled = false;
-  /// User toggle for native DynamicsProcessing (off by default; attaches lazily).
-  bool _nativeDspEnabled = false;
+  /// The native Resonate DSP path is always enabled; no user bypass exists.
+  bool _nativeDspEnabled = true;
   String? _lastLeanSongId;
   BluetoothAudioContext? _lastBtContext;
   final Map<String, String> _btProfilePresets = {};
@@ -173,10 +173,8 @@ class EqualizerProvider extends ChangeNotifier {
     // Reconnected: session events drive native DSP only when the user has
     // enabled it. Hardware EQ still binds after playback has been running.
     _music?.onAndroidSession = (sessionId) {
-      if (_nativeDspEnabled) {
-        unawaited(attachNativeSession(sessionId));
-        unawaited(AudioOutputRouteService.instance.refreshNow());
-      }
+      unawaited(attachNativeSession(sessionId));
+    unawaited(AudioOutputRouteService.instance.refreshNow());
     };
   }
 
@@ -257,16 +255,17 @@ class EqualizerProvider extends ChangeNotifier {
   bool get nativeDspUserEnabled => _nativeDspEnabled;
 
   Future<void> setNativeDspEnabled(bool value) async {
-    _nativeDspEnabled = value;
+    // Compatibility shim for older callers: processing cannot be disabled.
+    _nativeDspEnabled = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('equalizer_native_dsp', value);
-      await DspSettings.update((settings) => settings.copyWith(masterEnabled: value));
+      await prefs.setBool('equalizer_native_dsp', true);
+      await DspSettings.update((settings) => settings.copyWith(masterEnabled: true));
     } catch (_) {}
     // Persisted master state must be applied to the registry even when no sink
     // exists yet; the registry carries it forward to future A/B engines.
-    await ResonateNativeDspBridge.setEnabled(value);
-    if (value) {
+    await ResonateNativeDspBridge.setEnabled(true);
+    {
       final sid = _music?.audioPlayer.androidAudioSessionId;
       if (sid != null && sid > 0) unawaited(attachNativeSession(sid));
     }
@@ -481,7 +480,10 @@ class EqualizerProvider extends ChangeNotifier {
       isEnabled = canonical.eqEnabled;
       preset = canonical.preset;
       await _loadBtProfiles();
-      _nativeDspEnabled = canonical.masterEnabled;
+      _nativeDspEnabled = true;
+      isEnabled = true;
+      await prefs.setBool('equalizer_native_dsp', true);
+      await DspSettings.update((settings) => settings.copyWith(masterEnabled: true, eqEnabled: true));
       preamp = canonical.preampDb;
       autoEqHeadroom = canonical.autoEqHeadroom;
       await _loadCustomPresets(prefs);
@@ -554,7 +556,7 @@ class EqualizerProvider extends ChangeNotifier {
       debugPrint('EQ re-applied after hardware bind preset=$preset preamp=$preamp');
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('equalizer_enabled', isEnabled);
+        await prefs.setBool('equalizer_enabled', true);
         await prefs.setString('equalizer_preset', preset);
       } catch (_) {}
       notifyListeners();
@@ -629,7 +631,7 @@ class EqualizerProvider extends ChangeNotifier {
       await syncStudioBandsToNativeEq(
         centersHz: centers,
         gainsDb: gains,
-        enabled: isEnabled,
+        enabled: true,
       );
     } catch (e) {
       debugPrint('live DSP EQ push failed: $e');
@@ -638,7 +640,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   /// Attach native Resonate DSP to a just_audio Android session id.
   Future<void> attachNativeSession(int sessionId) async {
-    if (!_nativeDspEnabled) return;
+    // Always attach Resonate DSP to each active Android playback session.
     try {
       final ok = await ResonateNativeDspBridge.attachSession(sessionId);
       if (ok) {
@@ -695,7 +697,7 @@ class EqualizerProvider extends ChangeNotifier {
 
       // Master bypass, EQ enable, preamp, and DVC are independent stages.
       // Apply the canonical master state even before the first sink registers.
-      await ResonateNativeDspBridge.setEnabled(_nativeDspEnabled);
+      await ResonateNativeDspBridge.setEnabled(true);
       await AudioEffectsBridge.setLiveDspEqBands(
         centersHz: centers,
         gainsDb: gains,
@@ -760,7 +762,8 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> setEnabled(bool value) async {
-    isEnabled = value;
+    // Keep the API for compatibility, but EQ remains part of the always-on chain.
+    isEnabled = true;
     // The mature live DSP is the authoritative EQ processor. The Android
     // Equalizer remains only as a read-only capability mirror for legacy UI.
     await _pushToHardware();
@@ -983,8 +986,8 @@ class EqualizerProvider extends ChangeNotifier {
       // Keep the versioned canonical snapshot aligned while legacy keys are
       // retained for compatibility during the staged migration.
       await DspSettings.update((canonical) => canonical.copyWith(
-        masterEnabled: _nativeDspEnabled,
-        eqEnabled: isEnabled,
+        masterEnabled: true,
+        eqEnabled: true,
         preset: preset,
         eqBandGainsDb: studioBands.map((band) => band.gainDb).toList(),
         preampDb: preamp,
