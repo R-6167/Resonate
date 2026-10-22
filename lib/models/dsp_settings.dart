@@ -130,7 +130,7 @@ class DspSettings {
         ? rawBands.whereType<num>().map((v) => _clamp(v.toDouble(), -12, 12)).toList()
         : <double>[];
     return DspSettings(
-      masterEnabled: json['masterEnabled'] is bool ? json['masterEnabled'] as bool : false,
+      masterEnabled: true, // DSP is a permanent part of the Resonate playback path.
       eqEnabled: json['eqEnabled'] is bool ? json['eqEnabled'] as bool : true,
       preset: json['preset'] is String ? json['preset'] as String : 'Flat',
       eqBandGainsDb: bands,
@@ -175,7 +175,7 @@ class DspSettings {
         ? List<double>.generate(31, (i) => prefs.getDouble('eq_studio_band_$i') ?? 0.0)
         : <double>[];
     return DspSettings(
-      masterEnabled: prefs.getBool('equalizer_native_dsp') ?? false,
+      masterEnabled: true, // migrate legacy installs to always-on Resonate processing.
       eqEnabled: prefs.getBool('equalizer_enabled') ?? true,
       preset: prefs.getString('equalizer_preset') ?? 'Flat',
       eqBandGainsDb: bandGains,
