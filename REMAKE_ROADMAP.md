@@ -270,3 +270,40 @@ Scope guard: this phase changes presentation only. Do not retune Resonate Signat
 - [x] Expand catalog tests to verify all ten first-party curves are unique, valid, bounded, and discoverable by name.
 - [ ] Confirm CI analysis/tests, Android build, and the existing 100 MiB release APK gate before merge.
 - [ ] Device-check card readability and selected state, switching among core and environment profiles, persistence after force-stop/restart, and the audible effect across headphones, Bluetooth, and speaker output. These curves are design starting points, not yet listening-validated tuning.
+
+
+### Real-audio FFT verification closeout — 2026-10-22
+
+#### Source audit (verified in repository; not a hardware result)
+
+- [x] `main.dart` binds one `AudioVisualizationProvider` to `MusicProvider.isPlaying`; the provider polls the Android method channel while playback is active and clears its shared 32-band array on pause.
+- [x] Android `AndroidEffectsBridge` attaches an Android `Visualizer` to each attached playback audio session, enables FFT capture, converts FFT magnitudes into 32 bands, and exposes the aggregate through `getAudioSpectrum`.
+- [x] The main `AudioVisualizationWidget` painter receives `AudioVisualizationProvider.frequencies`; the Ask Resonate orb derives low-band energy from the same shared feed. The main visualizer still uses phase animation for wave movement, so the acceptance criterion is that its amplitude/shape changes with the measured spectrum, not that every pixel is FFT-only.
+- [x] The Flutter channel regression test verifies provider polling, non-zero sample propagation, and pause clearing with a mocked method channel. This proves the Dart wiring contract only; it is not evidence that a physical device emits real FFT data.
+- [ ] **Physical-device real-audio gate remains open.** This environment cannot observe playback on the user's Android device, so no hardware result is claimed.
+
+#### Required device test matrix
+
+Record pass/fail on the merged build, with the same volume and route where practical:
+
+1. **Active music:** play three materially different tracks (bass-heavy, vocal/acoustic, and bright/percussive). Confirm the visualizer's band pattern changes between tracks and the orb visibly reacts to bass/low-band energy; it must not merely pulse at a fixed rate.
+2. **Silence and pause:** pause mid-track and wait one second. Shared bars and orb should settle to baseline; no frozen high-energy spectrum. Resume and confirm response returns.
+3. **Track handoff:** use next/previous, then allow a natural track change. Confirm the pattern follows the new track without sticking to the outgoing track.
+4. **A/B crossfade:** enable crossfade and observe the transition. Confirm no frozen spectrum, unexplained jump that persists after the fade, or stale outgoing-session bands. After the fade, the visualizer should follow the incoming track.
+5. **Route/session recovery:** repeat after connecting/disconnecting Bluetooth headphones (and on the device speaker). Unsupported capture must degrade to a calm/zero visualization and must never interrupt audio.
+6. **Orb settings and motion:** test orb audio-reactive on/off, sensitivity, reduced-motion, and the shared visualization enabled/disabled setting. The orb must remain tappable and layout-stable.
+7. **Resource stability:** leave playback running for at least 10 minutes while switching tabs and opening/closing Ask Resonate. Check for audio glitches, excessive heat, visible UI jank, or capture that continues to animate at a high rate while paused.
+
+Acceptance: every test above passes; both consumers respond to changing real tracks, settle on pause/silence, recover on resume/route changes, and never affect playback. If only one consumer fails, fix its binding/rendering path without rewriting the playback engine. If capture fails only during A/B handoff, inspect session attach/detach and stale-session aggregation first.
+
+#### Remaining roadmap, ordered by release risk (no new features)
+
+1. **Phase E FFT hardware gate:** execute the device matrix above. Do not mark this complete from mocked Flutter tests or CI alone.
+2. **Phase A EQ hardware check:** switch Signature/Warmth/Clarity, edit bands, restart after force-stop, and verify selection/curve persistence.
+3. **Phase B live DSP listening:** validate DVC/preamp, leveling/headroom, limiter on peaks, crossover, and EQ values on current and newly created A/B sessions.
+4. **Phase C audio automation:** verify notification/navigation duck and restore, call/other-player focus-loss behavior, no unwanted auto-resume, and pause/resume fade.
+5. **Phase D playback smoke:** repeat-one UI identity, repeat-all wrap, rapid next/previous during crossfade, seek during fade, failed-source recovery, mode switch, screen-off, and route change.
+6. **Phase E UI/performance:** inspect all nine player artwork crops and control readability; check scrolling, current-row retention, large text/narrow layouts, and transitions. Keep the lightweight visualizer/repaint isolation intact.
+7. **Phase F release gate:** verify latest green Flutter/native/Android CI, actual release APK below 100 MiB, then record the complete device smoke pass. CI status, package size, and subjective listening results are three separate sign-offs.
+
+No generic preset panel, broad sound retuning, or new feature work is authorized by this closeout. Keep the Resonate sound identity and the 100 MiB package ceiling.
