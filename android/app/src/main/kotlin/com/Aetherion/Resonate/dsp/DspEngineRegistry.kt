@@ -296,7 +296,10 @@ object DspEngineRegistry {
             if (gains != null && gains.isNotEmpty()) {
                 nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)
             } else {
-                nativeApi.setEnabled(handle, state.eqEnabled)
+                // With no curve yet, this legacy gate must follow the DSP
+                // master—not the separate EQ-band preference. Otherwise a
+                // newly registered engine can undo master-off during setup.
+                nativeApi.setEnabled(handle, state.dspEnabled)
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
