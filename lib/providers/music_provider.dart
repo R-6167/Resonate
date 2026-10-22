@@ -1129,7 +1129,10 @@ class MusicProvider extends ChangeNotifier {
       if (_disposed) return;
       try {
         final active = audioPlayer;
-        final vol = (_volume * _eqPreampScale).clamp(0.05, 1.0);
+        final vol = _effectiveCrossfadeMaster.clamp(0.0, 1.0).toDouble();
+        // Route recovery must respect the same master envelope as ordinary
+        // playback: EQ/leveling, sleep fade, and any active focus duck. A hard
+        // minimum volume here can undo a deliberate fade or notification duck.
         await active.setVolume(vol);
         if (_disposed) return;
         if (_userWantsPlaying && !active.playing) {
