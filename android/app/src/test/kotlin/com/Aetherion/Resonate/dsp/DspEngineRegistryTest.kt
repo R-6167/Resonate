@@ -198,6 +198,35 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun new_engine_without_eq_curve_keeps_master_bypass_authoritative() {
+        DspEngineRegistry.applyEnabledAll(false)
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.register(9, 9009L))
+
+        // Both the smoothed processing gate and the legacy engine gate must
+        // remain disabled until the DSP master is explicitly enabled.
+        assertTrue(fake.calls.contains("enabled:9009:false"))
+        assertTrue(fake.calls.contains("eq-enabled:9009:false"))
+    }
+
+    @Test
+    fun eq_band_enable_remains_independent_from_master_enable() {
+        DspEngineRegistry.applyEnabledAll(false)
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(80.0, 1000.0, 8000.0),
+            doubleArrayOf(3.0, 0.0, -2.0),
+            false
+        )
+        fake.calls.clear()
+
+        assertTrue(DspEngineRegistry.register(10, 10010L))
+
+        assertTrue(fake.calls.contains("enabled:10010:false"))
+        assertTrue(fake.calls.contains("eq:10010:3.0,0.0,-2.0:false"))
+    }
+
+    @Test
     fun limiter_and_crossover_updates_are_clamped_and_sticky_for_both_engines() {
         assertTrue(DspEngineRegistry.register(1, 1001L))
         assertTrue(DspEngineRegistry.register(2, 2002L))
