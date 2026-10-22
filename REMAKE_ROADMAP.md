@@ -232,3 +232,17 @@ A checked source item means the implementation exists; a passing unit test means
 - [x] PR #147 boundary tests and PR #148 completion-ownership tests merged with green CI.
 - [x] Audited the relevant live paths without broad runtime rewrites or sound changes; the next code change should be driven by a reproducible device failure.
 - [ ] Final device smoke is still outstanding. Do not claim the whole phase is hardware-verified until the checklist above is exercised on the target Android device.
+
+### Phase E — player-only full-screen mode artwork (2026-10-22)
+
+Implementation PR in progress; CI and device review are still pending.
+
+- [x] Reserve the nine supplied mode JPEGs for the Now Playing screen; mode pickers and shelves use lightweight drawn identity instead of the photographs.
+- [x] Add a full-screen, mode-mapped player backdrop with cover fit, restrained readability gradients, low-quality resized image decoding, and a gradient fallback if an asset fails.
+- [x] Preserve the live audio visualizer, mode badge, swipe gestures, transport controls, and existing playback behavior over the background.
+- [x] Add widget tests for all nine image mappings, semantic labels, and the absence of supplied photographs in mode-picker banners.
+- [ ] Confirm CI is green, including the existing 100 MiB release APK gate.
+- [ ] On device, inspect all nine crops, control readability, mode-switch transitions, narrow/large-text layouts, and scrolling performance. These checks remain separate from automated tests.
+- [ ] Measure the release APK from the same workflow/build variant and record it; keep the existing 100 MiB ceiling.
+
+Scope guard: this phase changes presentation only. Do not retune Resonate Signature, Warmth, Clarity, Afterhours, or Pulse, add a second preset picker, or change playback ownership unless a reproducible defect is found.
