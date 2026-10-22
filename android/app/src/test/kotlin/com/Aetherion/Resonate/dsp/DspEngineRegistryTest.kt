@@ -182,14 +182,14 @@ class DspEngineRegistryTest {
 
 
     @Test
-    fun master_enable_updates_live_engines_and_is_inherited_by_new_engines() {
+    fun processing_cannot_be_disabled_and_is_inherited_by_new_engines() {
         assertTrue(DspEngineRegistry.register(1, 1001L))
         DspEngineRegistry.applyEnabledAll(false)
-        assertTrue(fake.calls.any { it == "enabled:1001:false" })
+        assertTrue(fake.calls.any { it == "enabled:1001:true" })
 
         fake.calls.clear()
         assertTrue(DspEngineRegistry.register(2, 2002L))
-        assertTrue(fake.calls.any { it == "enabled:2002:false" })
+        assertTrue(fake.calls.any { it == "enabled:2002:true" })
 
         fake.calls.clear()
         DspEngineRegistry.applyEnabledAll(true)
@@ -198,20 +198,19 @@ class DspEngineRegistryTest {
     }
 
     @Test
-    fun new_engine_without_eq_curve_keeps_master_bypass_authoritative() {
+    fun new_engine_without_eq_curve_keeps_processing_always_on() {
         DspEngineRegistry.applyEnabledAll(false)
         fake.calls.clear()
 
         assertTrue(DspEngineRegistry.register(9, 9009L))
 
-        // Both the smoothed processing gate and the legacy engine gate must
-        // remain disabled until the DSP master is explicitly enabled.
-        assertTrue(fake.calls.contains("enabled:9009:false"))
-        assertTrue(fake.calls.contains("eq-enabled:9009:false"))
+        // Both the processing gate and EQ gate are always enabled.
+        assertTrue(fake.calls.contains("enabled:9009:true"))
+        assertTrue(fake.calls.contains("eq-enabled:9009:true"))
     }
 
     @Test
-    fun eq_preference_survives_master_off_then_on() {
+    fun eq_processing_remains_enabled_when_legacy_off_command_arrives() {
         assertTrue(DspEngineRegistry.register(1, 1001L))
         DspEngineRegistry.applyEnabledAll(false)
         DspEngineRegistry.applyEqBandsAll(
@@ -219,7 +218,7 @@ class DspEngineRegistryTest {
             doubleArrayOf(3.0, 0.0, -2.0),
             true
         )
-        assertTrue(fake.calls.contains("eq:1001:3.0,0.0,-2.0:false"))
+        assertTrue(fake.calls.contains("eq:1001:3.0,0.0,-2.0:true"))
 
         fake.calls.clear()
         DspEngineRegistry.applyEnabledAll(true)
@@ -229,7 +228,7 @@ class DspEngineRegistryTest {
     }
 
     @Test
-    fun disabled_eq_preference_stays_bypassed_when_master_toggles() {
+    fun legacy_disabled_eq_request_cannot_bypass_resonate_eq() {
         assertTrue(DspEngineRegistry.register(1, 1001L))
         DspEngineRegistry.applyEqBandsAll(
             doubleArrayOf(80.0, 1000.0, 8000.0),
@@ -241,9 +240,9 @@ class DspEngineRegistryTest {
         DspEngineRegistry.applyEnabledAll(false)
         DspEngineRegistry.applyEnabledAll(true)
 
-        assertTrue(fake.calls.any { it == "eq:1001:3.0,0.0,-2.0:false" })
+        assertTrue(fake.calls.any { it == "eq:1001:3.0,0.0,-2.0:true" })
         assertTrue(fake.calls.contains("enabled:1001:true"))
-        assertTrue(fake.calls.none { it == "eq:1001:3.0,0.0,-2.0:true" })
+        assertTrue(fake.calls.none { it == "eq:1001:3.0,0.0,-2.0:false" })
     }
 
     @Test
