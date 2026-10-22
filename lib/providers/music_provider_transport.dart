@@ -433,9 +433,11 @@ Future<void> seek(Duration position, {String source = 'normal_player'}) {
   }
 
   Future<void> togglePlayPause({String source = 'normal_player'}) {
-    // Prefer optimistic isPlaying when native lags; user pause must win.
-    final wantPause = isPlaying || audioPlayer.playing || _userWantsPlaying;
-    if (wantPause) {
+    // The UI/intent flags can remain optimistic while an OEM player has
+    // actually stopped. Decide from both engines' native state so the mini
+    // player can recover playback instead of repeatedly issuing pause.
+    final nativePlaybackActive = _playerA.playing || _playerB.playing;
+    if (nativePlaybackActive) {
       return this.pause(source: source);
     }
     return resumePlayback(source: source);
