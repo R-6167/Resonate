@@ -15,6 +15,7 @@ class AndroidEffectsBridge {
     private val virtualizers = mutableMapOf<Int, Virtualizer>()
     private val reverbs = mutableMapOf<Int, EnvironmentalReverb>()
     private val visualizers = mutableMapOf<Int, Visualizer>()
+    private val knownSessionIds = mutableSetOf<Int>()
     private val spectra = mutableMapOf<Int, FloatArray>()
     private val spectrumLock = Any()
     private val spectrumSize = 32
@@ -22,6 +23,7 @@ class AndroidEffectsBridge {
     fun attachToSession(sessionId: Int) {
         if (sessionId <= 0) return
         effectSessionId = sessionId
+        knownSessionIds.add(sessionId)
         if (visualizers.containsKey(sessionId)) return
         try {
             val range = Visualizer.getCaptureSizeRange()
@@ -64,6 +66,12 @@ class AndroidEffectsBridge {
         }
     }
 
+    fun refreshVisualizers() {
+        // Sessions can be discovered before Android grants RECORD_AUDIO. Keep
+        // their IDs and retry capture once the user grants visualization access.
+        knownSessionIds.toList().forEach(::attachToSession)
+    }
+
     fun getSpectrum(): List<Double> {
         synchronized(spectrumLock) {
             val active = spectra.values
@@ -77,6 +85,7 @@ class AndroidEffectsBridge {
         releaseVirtualizer(sessionId)
         releaseReverb(sessionId)
         releaseVisualizer(sessionId)
+        knownSessionIds.remove(sessionId)
         if (effectSessionId == sessionId) effectSessionId = 0
     }
 
@@ -124,6 +133,7 @@ class AndroidEffectsBridge {
         virtualizers.keys.toList().forEach(::releaseVirtualizer)
         reverbs.keys.toList().forEach(::releaseReverb)
         visualizers.keys.toList().forEach(::releaseVisualizer)
+        knownSessionIds.clear()
         synchronized(spectrumLock) { spectra.clear() }
         effectSessionId = 0
     }
