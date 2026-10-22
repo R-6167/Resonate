@@ -26,12 +26,6 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                   children: [
                     Text('Audio focus', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 6),
-                    Text(
-                      'Choose how Resonate responds to notification ducking, calls and other apps. '
-                      'Android does not identify every focus-loss source consistently, so automatic resume is deliberately limited by the selected level.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Automatic response'),
@@ -119,12 +113,8 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('EQ and output level', style: Theme.of(context).textTheme.titleLarge),
+                      Text('EQ headroom', style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Estimate headroom from the largest positive software EQ band and lower the effective preamp to reduce clipping risk. '
-                        'This is a conservative estimate, not a measurement of the device output; compensation is bounded by the DSP preamp floor.',
-                      ),
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Automatic EQ headroom'),
