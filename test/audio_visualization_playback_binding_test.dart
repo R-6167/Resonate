@@ -35,7 +35,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('polls live spectrum while playing and clears it when paused', () async {
+  test('forwards mocked native-channel spectrum while playing and clears on pause', () async {
     final playback = _FakePlayback();
     final visualization = AudioVisualizationProvider()
       ..bindPlayback(
@@ -49,6 +49,34 @@ void main() {
     expect(visualization.frequencies.any((value) => value > 0), isTrue);
 
     playback.setPlaying(false);
+    expect(visualization.frequencies.every((value) => value == 0), isTrue);
+
+    visualization.dispose();
+  });
+
+  test('clears the shared spectrum when native capture becomes unavailable', () async {
+    var captureAvailable = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getAudioSpectrum') {
+        return captureAvailable ? List<double>.filled(32, 0.8) : <double>[];
+      }
+      return null;
+    });
+
+    final playback = _FakePlayback();
+    final visualization = AudioVisualizationProvider()
+      ..bindPlayback(
+        listenable: playback,
+        isPlaying: () => playback.isPlaying,
+      );
+
+    playback.setPlaying(true);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(visualization.frequencies.any((value) => value > 0), isTrue);
+
+    captureAvailable = false;
+    await Future<void>.delayed(const Duration(milliseconds: 140));
     expect(visualization.frequencies.every((value) => value == 0), isTrue);
 
     visualization.dispose();
