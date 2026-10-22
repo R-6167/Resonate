@@ -166,7 +166,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            const AudioVisualizationWidget(),
+                            const RepaintBoundary(
+                              child: AudioVisualizationWidget(),
+                            ),
                             Positioned(
                               top: 12,
                               left: 12,
