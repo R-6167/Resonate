@@ -197,13 +197,27 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun applyEnabledAll(enabled: Boolean) {
+        // Keep the user's EQ preference separate from the master DSP gate.
+        // A master off/on cycle must not overwrite an enabled EQ preference.
         stickyState = stickyState.copy(dspEnabled = enabled)
+        val state = stickyState
         val list = snapshotHandles()
         for (h in list) {
             try {
                 nativeApi.setProcessingEnabled(h, enabled)
+                val gains = state.gainsDb
+                if (gains != null && gains.isNotEmpty()) {
+                    nativeApi.setEqBands(
+                        h,
+                        state.centersHz,
+                        gains,
+                        state.eqEnabled && enabled,
+                    )
+                } else {
+                    nativeApi.setEnabled(h, state.eqEnabled && enabled)
+                }
             } catch (t: Throwable) {
-                Log.w(TAG, "setEnabled failed handle=$h", t)
+                Log.w(TAG, "applyEnabledAll failed handle=$h", t)
             }
         }
         Log.i(TAG, "applyEnabledAll enabled=$enabled targets=${list.size}")
@@ -275,16 +289,29 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun applyEqBandsAll(centersHz: DoubleArray?, gainsDb: DoubleArray, enabled: Boolean) {
-        stickyState = stickyState.copy(eqEnabled = enabled, centersHz = centersHz?.copyOf(), gainsDb = gainsDb.copyOf())
+        // `enabled` is the persisted EQ preference, not the effective gate.
+        // Master DSP can be off while EQ remains selected for the next enable.
+        stickyState = stickyState.copy(
+            eqEnabled = enabled,
+            centersHz = centersHz?.copyOf(),
+            gainsDb = gainsDb.copyOf(),
+        )
+        val state = stickyState
+        val effectiveEqEnabled = state.eqEnabled && state.dspEnabled
         val list = snapshotHandles()
         for (h in list) {
             try {
-                nativeApi.setEqBands(h, centersHz, gainsDb, enabled)
+                nativeApi.setEqBands(
+                    h,
+                    state.centersHz,
+                    state.gainsDb ?: gainsDb,
+                    effectiveEqEnabled,
+                )
             } catch (t: Throwable) {
                 Log.w(TAG, "setEqBands failed handle=$h", t)
             }
         }
-        Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} enabled=$enabled targets=${list.size}")
+        Log.i(TAG, "applyEqBandsAll bands=${gainsDb.size} eqEnabled=$enabled effective=$effectiveEqEnabled targets=${list.size}")
     }
 
     private fun applyStickyToHandle(handle: Long): Boolean {
@@ -294,12 +321,12 @@ object DspEngineRegistry {
             nativeApi.setProcessingEnabled(handle, state.dspEnabled)
             val gains = state.gainsDb
             if (gains != null && gains.isNotEmpty()) {
-                nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled)
+                nativeApi.setEqBands(handle, state.centersHz, gains, state.eqEnabled && state.dspEnabled)
             } else {
                 // With no curve yet, this legacy gate must follow the DSP
                 // master—not the separate EQ-band preference. Otherwise a
                 // newly registered engine can undo master-off during setup.
-                nativeApi.setEnabled(handle, state.dspEnabled)
+                nativeApi.setEnabled(handle, state.eqEnabled && state.dspEnabled)
             }
             nativeApi.setSpeakerMode(handle, state.speakerMode)
             nativeApi.setVirtualBass(handle, state.virtualBass)
