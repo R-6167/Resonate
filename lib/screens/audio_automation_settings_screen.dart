@@ -26,19 +26,13 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                   children: [
                     Text('Audio focus', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 6),
-                    Text(
-                      'Choose how Resonate responds to notification ducking, calls and other apps. '
-                      'Android does not identify every focus-loss source consistently, so automatic resume is deliberately limited by the selected level.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 8),
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Automatic response'),
                       subtitle: Text(
                         music.audioFocusAutomationEnabled
-                            ? 'Resonate applies the selected focus level automatically.'
-                            : 'Manual mode: Resonate still pauses on full focus loss for safety, but will not automatically duck or resume.',
+                            ? 'Use the selected response level automatically.'
+                            : 'Manual mode; no automatic ducking or resume.',
                       ),
                       value: music.audioFocusAutomationEnabled,
                       onChanged: (value) => music.setAudioFocusAutomation(automatic: value),
@@ -49,8 +43,8 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                       title: const Text('Pause/resume fade'),
                       subtitle: Text(
                         music.pauseResumeFadeEnabled
-                            ? 'Fade down briefly on manual pause and fade up on resume.'
-                            : 'Pause and resume immediately without a transport fade.',
+                            ? 'Brief fade on pause and resume.'
+                            : 'Pause and resume immediately.',
                       ),
                       value: music.pauseResumeFadeEnabled,
                       onChanged: music.setPauseResumeFadeEnabled,
@@ -74,28 +68,28 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                       music,
                       1,
                       'Level 1 · Gentle',
-                      'Duck notifications more deeply. Pause on full focus loss; require manual resume.',
+                      'Stronger notification ducking; manual resume after full focus loss.',
                     ),
                     _level(
                       context,
                       music,
                       2,
                       'Level 2 · Conservative',
-                      'Duck notifications moderately. Pause on calls or other full focus loss; do not auto-resume.',
+                      'Moderate ducking; no automatic resume after full focus loss.',
                     ),
                     _level(
                       context,
                       music,
                       3,
                       'Level 3 · Short auto-resume',
-                      'Resume only after focus returns from a short interruption (up to 30 seconds).',
+                      'Auto-resume only after interruptions up to 30 seconds.',
                     ),
                     _level(
                       context,
                       music,
                       4,
                       'Level 4 · Adaptive',
-                      'Resume after focus returns from an interruption of up to 3 minutes. Longer interruptions require manual resume.',
+                      'Auto-resume up to 3 minutes; longer interruptions need manual resume.',
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -119,12 +113,8 @@ class AudioAutomationSettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('EQ and output level', style: Theme.of(context).textTheme.titleLarge),
+                      Text('EQ headroom', style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Estimate headroom from the largest positive software EQ band and lower the effective preamp to reduce clipping risk. '
-                        'This is a conservative estimate, not a measurement of the device output; compensation is bounded by the DSP preamp floor.',
-                      ),
                       SwitchListTile.adaptive(
                         contentPadding: EdgeInsets.zero,
                         title: const Text('Automatic EQ headroom'),

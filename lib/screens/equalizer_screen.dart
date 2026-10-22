@@ -224,26 +224,14 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SwitchListTile.adaptive(
+                          ListTile(
                             contentPadding: EdgeInsets.zero,
-                            secondary: Icon(
-                              Icons.graphic_eq_rounded,
-                              color: eq.isEnabled ? _cBlue : scheme.outline,
-                            ),
+                            leading: const Icon(Icons.graphic_eq_rounded, color: _cBlue),
                             title: const Text(
-                              'Equalizer',
+                              'Resonate tone shaping',
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
-                            subtitle: Text(
-                              eq.isEnabled
-                                  ? 'Tone shaping on · ${eq.studioBandCount} studio bands'
-                                  : 'Off — music plays with a flat curve',
-                            ),
-                            value: eq.isEnabled,
-                            onChanged: (v) async {
-                              await eq.setEnabled(v);
-                              await _refreshLiveStatus();
-                            },
+                            subtitle: Text('Always active · ${eq.studioBandCount} studio bands'),
                           ),
                           const Divider(height: 20),
                           _EngineStrip(
@@ -698,16 +686,11 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                           ),
                           if (_showAdvanced) ...[
                             const SizedBox(height: 12),
-                            SwitchListTile.adaptive(
+                            const ListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text('Extra multi-band path'),
-                              subtitle: const Text(
-                                'Uses an additional device path when available. '
-                                'Leave off if playback ever stutters — '
-                                'Resonate DSP Engine still shapes the sound.',
-                              ),
-                              value: eq.nativeDspUserEnabled,
-                              onChanged: eq.setNativeDspEnabled,
+                              leading: Icon(Icons.check_circle_outline_rounded),
+                              title: Text('Resonate DSP engine'),
+                              subtitle: Text('Always active. Processing follows playback automatically.'),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -756,7 +739,7 @@ class _EqualizerScreenState extends State<EqualizerScreen> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'Tip: turn EQ on, pick a preset, then nudge preamp if the whole mix feels quiet or loud.',
+                      'Choose a sound profile, shape the studio bands, and set preamp to taste.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: scheme.onSurface.withValues(alpha: 0.65),
                           ),

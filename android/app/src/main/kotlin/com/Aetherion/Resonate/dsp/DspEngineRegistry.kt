@@ -197,30 +197,25 @@ object DspEngineRegistry {
     @JvmStatic
     @Synchronized
     fun applyEnabledAll(enabled: Boolean) {
-        // Keep the user's EQ preference separate from the master DSP gate.
-        // A master off/on cycle must not overwrite an enabled EQ preference.
-        stickyState = stickyState.copy(dspEnabled = enabled)
+        // Compatibility entry point only: Resonate's processing chain is
+        // intentionally always on. No caller can bypass EQ/DSP at runtime.
+        stickyState = stickyState.copy(dspEnabled = true, eqEnabled = true)
         val state = stickyState
         val list = snapshotHandles()
         for (h in list) {
             try {
-                nativeApi.setProcessingEnabled(h, enabled)
+                nativeApi.setProcessingEnabled(h, true)
                 val gains = state.gainsDb
                 if (gains != null && gains.isNotEmpty()) {
-                    nativeApi.setEqBands(
-                        h,
-                        state.centersHz,
-                        gains,
-                        state.eqEnabled && enabled,
-                    )
+                    nativeApi.setEqBands(h, state.centersHz, gains, true)
                 } else {
-                    nativeApi.setEnabled(h, state.eqEnabled && enabled)
+                    nativeApi.setEnabled(h, true)
                 }
             } catch (t: Throwable) {
                 Log.w(TAG, "applyEnabledAll failed handle=$h", t)
             }
         }
-        Log.i(TAG, "applyEnabledAll enabled=$enabled targets=${list.size}")
+        Log.i(TAG, "applyEnabledAll forced-on (requested=$enabled) targets=${list.size}")
     }
 
     /** True preamp (v0.4) — separate from DVC/volume. */
@@ -292,12 +287,13 @@ object DspEngineRegistry {
         // `enabled` is the persisted EQ preference, not the effective gate.
         // Master DSP can be off while EQ remains selected for the next enable.
         stickyState = stickyState.copy(
-            eqEnabled = enabled,
+            eqEnabled = true,
+            dspEnabled = true,
             centersHz = centersHz?.copyOf(),
             gainsDb = gainsDb.copyOf(),
         )
         val state = stickyState
-        val effectiveEqEnabled = state.eqEnabled && state.dspEnabled
+        val effectiveEqEnabled = true
         val list = snapshotHandles()
         for (h in list) {
             try {

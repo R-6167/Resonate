@@ -31,7 +31,7 @@ class DspSettings {
   final double virtualizerAmount;
 
   DspSettings({
-    this.masterEnabled = false,
+    this.masterEnabled = true,
     this.eqEnabled = true,
     this.preset = 'Flat',
     List<double> eqBandGainsDb = const [],
@@ -130,8 +130,8 @@ class DspSettings {
         ? rawBands.whereType<num>().map((v) => _clamp(v.toDouble(), -12, 12)).toList()
         : <double>[];
     return DspSettings(
-      masterEnabled: json['masterEnabled'] is bool ? json['masterEnabled'] as bool : false,
-      eqEnabled: json['eqEnabled'] is bool ? json['eqEnabled'] as bool : true,
+      masterEnabled: true, // DSP is a permanent part of the Resonate playback path.
+      eqEnabled: true, // EQ is always active in the Resonate playback chain.
       preset: json['preset'] is String ? json['preset'] as String : 'Flat',
       eqBandGainsDb: bands,
       preampDb: number('preampDb', 0, -6, 6),
@@ -175,8 +175,8 @@ class DspSettings {
         ? List<double>.generate(31, (i) => prefs.getDouble('eq_studio_band_$i') ?? 0.0)
         : <double>[];
     return DspSettings(
-      masterEnabled: prefs.getBool('equalizer_native_dsp') ?? false,
-      eqEnabled: prefs.getBool('equalizer_enabled') ?? true,
+      masterEnabled: true, // migrate legacy installs to always-on Resonate processing.
+      eqEnabled: true, // migrate legacy installs to always-on EQ.
       preset: prefs.getString('equalizer_preset') ?? 'Flat',
       eqBandGainsDb: bandGains,
       preampDb: prefs.getDouble('equalizer_preamp') ?? 0,
