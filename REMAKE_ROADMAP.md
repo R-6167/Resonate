@@ -205,6 +205,14 @@ Audit target: `Resonate-True-Apk`, merge commit `bad0261c7d36f2c5a52cd74dcff230a
 - [ ] Device validation still needs to confirm DVC/preamp changes on the active route and across an A/B transition; limiter profile differences on peak-heavy audio; crossover settings surviving a newly created engine; and EQ/headroom plus leveling behavior.
 - [ ] Do not close Phase B until CI and device checks are separately recorded.
 
+### Phase C regression coverage — 2026-10-22
+
+- [x] PR #145 merged; the merge-triggered CI run #39747202298 was observed in progress during this update. Check its final result before treating the base as green.
+- [ ] Phase B listening checks remain open for DVC/preamp, EQ/headroom, leveling, limiter, crossover, and A/B transitions.
+- [ ] Phase C test slice adds regression coverage for focus-level clamping, auto-resume gating, persisted fade independence, resume-generation invalidation, the three-minute focus-loss boundary, and duck/deferred-unduck state transitions.
+- [ ] Device checks remain required for notification/navigation duck and restore, calls and other-player focus loss, no unwanted auto-resume, and pause/resume fades.
+
+
 ### Audit discipline
 
 A checked source item means the implementation exists; a passing unit test means the tested contract is covered; a green CI run means the configured automation passed; a device/listening check means the behavior was actually exercised on hardware. Do not substitute one category for another. No new features, generic preset-card UI, or broad sound retuning are authorized by this audit. Preserve the existing Resonate sound identity and the 100 MiB package ceiling.
