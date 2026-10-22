@@ -83,19 +83,19 @@ void main() {
       );
 
       final expectedAsset = switch (mode) {
-        ResonateMode.normal => 'assets/Normal_Mode.jpg',
-        ResonateMode.running => 'assets/Running_Mode.jpg',
-        ResonateMode.workout => 'assets/Workout_Mode.jpg',
-        ResonateMode.driving => 'assets/Driving_Mode.jpg',
-        ResonateMode.work => 'assets/Work_Mode.jpg',
-        ResonateMode.podcast => 'assets/Podcast_Mode.jpg',
-        ResonateMode.motivation => 'assets/Motivation_Mode.jpg',
-        ResonateMode.audiobook => 'assets/Audiobook_Mode.jpg',
-        ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
+        ResonateMode.normal => 'assets/Normal_Mode_Light.jpg',
+        ResonateMode.running => 'assets/Running_Mode_Light.jpg',
+        ResonateMode.workout => 'assets/Workout_Mode_Light.jpg',
+        ResonateMode.driving => 'assets/Driving_Mode_Light.jpg',
+        ResonateMode.work => 'assets/Work_Mode_Light.jpg',
+        ResonateMode.podcast => 'assets/Podcast_Mode_Light.jpg',
+        ResonateMode.motivation => 'assets/Motivation_Mode_Light.jpg',
+        ResonateMode.audiobook => 'assets/Audiobook_Mode_Light.jpg',
+        ResonateMode.sleep => 'assets/Sleep_Mode_Light.jpg',
       };
 
-      expect(find.byType(Image), findsOneWidget);
-      final image = tester.widget<Image>(find.byType(Image));
+      expect(find.byType(Image), findsAtLeastNWidgets(1));
+      final image = tester.widget<Image>(find.byType(Image).first);
       expect(image.image, isA<ResizeImage>());
       expect(
         ((image.image as ResizeImage).imageProvider as AssetImage).assetName,
@@ -108,6 +108,26 @@ void main() {
       );
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('requests dark-theme artwork when the app theme is dark',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: const Scaffold(
+          body: ModeArtworkBackground(mode: ResonateMode.normal),
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image).first);
+    final provider = image.image as ResizeImage;
+    expect(
+      (provider.imageProvider as AssetImage).assetName,
+      'assets/Normal_Mode_Dark.jpg',
+    );
+    expect(tester.takeException(), isNull);
   });
 
 }

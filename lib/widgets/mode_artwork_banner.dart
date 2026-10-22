@@ -125,6 +125,16 @@ class ModeArtworkBanner extends StatelessWidget {
         ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
       };
 
+  /// Theme-paired assets use names such as `Normal_Mode_Dark.jpg` and
+  /// `Normal_Mode_Light.jpg`. Existing single-image assets remain a fallback
+  /// until a matching theme-specific image is supplied.
+  static String _themeAsset(ResonateMode mode, Brightness brightness) {
+    final base = _asset(mode);
+    final dot = base.lastIndexOf('.');
+    final suffix = brightness == Brightness.dark ? '_Dark' : '_Light';
+    return '${base.substring(0, dot)}$suffix${base.substring(dot)}';
+  }
+
   static Alignment _alignment(ResonateMode mode) => switch (mode) {
         ResonateMode.normal => const Alignment(0, 0),
         ResonateMode.running => const Alignment(0, 0),
@@ -193,18 +203,26 @@ class ModeArtworkBackground extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           Image.asset(
-            ModeArtworkBanner._asset(mode),
+            ModeArtworkBanner._themeAsset(mode, Theme.of(context).brightness),
             fit: BoxFit.cover,
             alignment: ModeArtworkBanner._alignment(mode),
             filterQuality: FilterQuality.low,
             cacheWidth: cacheWidth,
             gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: ModeArtworkBanner._colors(mode),
+            errorBuilder: (context, error, stackTrace) => Image.asset(
+              ModeArtworkBanner._asset(mode),
+              fit: BoxFit.cover,
+              alignment: ModeArtworkBanner._alignment(mode),
+              filterQuality: FilterQuality.low,
+              cacheWidth: cacheWidth,
+              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) => DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: ModeArtworkBanner._colors(mode),
+                  ),
                 ),
               ),
             ),

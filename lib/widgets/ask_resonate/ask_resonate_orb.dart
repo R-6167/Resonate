@@ -3,9 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/intelligence_provider.dart';
 import '../../providers/audio_visualization_provider.dart';
-import '../animated_companion_mark.dart';
 import 'ask_resonate_controller.dart';
 
 /// Persistent floating entry for Ask Resonate.
@@ -37,7 +35,6 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<AskResonateController>();
-    final intelligence = context.watch<IntelligenceProvider>();
     final viz = context.watch<AudioVisualizationProvider>();
     final lowBandEnergy =
         viz.enabled && viz.orbAudioReactive && viz.frequencies.isNotEmpty
@@ -47,7 +44,7 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
                 .toDouble()
             : 0.0;
     final audioScale =
-        1.0 + (lowBandEnergy * viz.sensitivity * 0.28).clamp(0.0, 0.28).toDouble();
+        1.0 + (lowBandEnergy * viz.sensitivity * 0.48).clamp(0.0, 0.32).toDouble();
     final scheme = Theme.of(context).colorScheme;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
@@ -80,10 +77,15 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
           ],
         ),
         child: Center(
-          child: AnimatedCompanionMark(
-            mode: intelligence.autonomyLabel,
-            size: 28,
-            audioEnergy: reduceMotion ? 0.0 : lowBandEnergy * viz.sensitivity,
+          child: CustomPaint(
+            size: const Size(32, 32),
+            painter: _OrbSpectrumPainter(
+              color: Colors.white,
+              bands: viz.enabled && viz.orbAudioReactive
+                  ? List<double>.unmodifiable(viz.frequencies.take(7))
+                  : const <double>[],
+              sensitivity: reduceMotion ? 0.0 : viz.sensitivity,
+            ),
           ),
         ),
       ),
@@ -106,5 +108,59 @@ class _AskResonateOrbState extends State<AskResonateOrb> {
         ),
       ),
     );
+  }
+}
+
+
+/// Compact FFT mark: its seven strokes are driven by the same measured bands
+/// as the main visualizer. No independent animation or idle pulse is used.
+class _OrbSpectrumPainter extends CustomPainter {
+  const _OrbSpectrumPainter({
+    required this.color,
+    required this.bands,
+    required this.sensitivity,
+  });
+
+  final Color color;
+  final List<double> bands;
+  final double sensitivity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.96)
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 2.8;
+    const count = 7;
+    final slot = size.width / (count + 1);
+    for (var i = 0; i < count; i++) {
+      final raw = i < bands.length && bands[i].isFinite
+          ? bands[i].clamp(0.0, 1.0)
+          : 0.0;
+      final energy = raw <= 0.0
+          ? 0.0
+          : math.sqrt(raw) * (0.45 + sensitivity * 1.1);
+      final height = (3.0 + energy.clamp(0.0, 1.0) * size.height * 0.62)
+          .clamp(3.0, size.height * 0.82).toDouble();
+      final x = slot * (i + 1);
+      canvas.drawLine(
+        Offset(x, (size.height + height) / 2),
+        Offset(x, (size.height - height) / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrbSpectrumPainter oldDelegate) {
+    if (oldDelegate.color != color ||
+        oldDelegate.sensitivity != sensitivity ||
+        oldDelegate.bands.length != bands.length) {
+      return true;
+    }
+    for (var i = 0; i < bands.length; i++) {
+      if (oldDelegate.bands[i] != bands[i]) return true;
+    }
+    return false;
   }
 }
