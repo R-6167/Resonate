@@ -62,9 +62,9 @@ class AudioEffectsController {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('effects_enabled') ?? true;
       await AudioEffectsBridge.attachToSession(sessionId);
-      await AudioEffectsBridge.setBassBoost(
-        enabled ? (prefs.getDouble('bassBoost') ?? 0.0) : 0.0,
-      );
+      // BassBoost is retired; avoid stacking a second bass processor
+      // over the authoritative Resonate DSP path.
+      await AudioEffectsBridge.setBassBoost(0.0);
       await AudioEffectsBridge.setVirtualizer(
         enabled ? (prefs.getDouble('virtualizer') ?? 0.0) : 0.0,
       );
