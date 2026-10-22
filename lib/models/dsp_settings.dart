@@ -131,7 +131,7 @@ class DspSettings {
         : <double>[];
     return DspSettings(
       masterEnabled: true, // DSP is a permanent part of the Resonate playback path.
-      eqEnabled: json['eqEnabled'] is bool ? json['eqEnabled'] as bool : true,
+      eqEnabled: true, // EQ is always active in the Resonate playback chain.
       preset: json['preset'] is String ? json['preset'] as String : 'Flat',
       eqBandGainsDb: bands,
       preampDb: number('preampDb', 0, -6, 6),
@@ -176,7 +176,7 @@ class DspSettings {
         : <double>[];
     return DspSettings(
       masterEnabled: true, // migrate legacy installs to always-on Resonate processing.
-      eqEnabled: prefs.getBool('equalizer_enabled') ?? true,
+      eqEnabled: true, // migrate legacy installs to always-on EQ.
       preset: prefs.getString('equalizer_preset') ?? 'Flat',
       eqBandGainsDb: bandGains,
       preampDb: prefs.getDouble('equalizer_preamp') ?? 0,
