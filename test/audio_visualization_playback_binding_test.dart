@@ -12,34 +12,6 @@ class _FakePlayback extends ChangeNotifier {
     isPlaying = value;
     notifyListeners();
   }
-  test('clears the shared spectrum when native capture becomes unavailable', () async {
-    var captureAvailable = true;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'getAudioSpectrum') {
-        return captureAvailable ? List<double>.filled(32, 0.8) : <double>[];
-      }
-      return null;
-    });
-
-    final playback = _FakePlayback();
-    final visualization = AudioVisualizationProvider()
-      ..bindPlayback(
-        listenable: playback,
-        isPlaying: () => playback.isPlaying,
-      );
-
-    playback.setPlaying(true);
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    expect(visualization.frequencies.any((value) => value > 0), isTrue);
-
-    captureAvailable = false;
-    await Future<void>.delayed(const Duration(milliseconds: 140));
-    expect(visualization.frequencies.every((value) => value == 0), isTrue);
-
-    visualization.dispose();
-  });
-
 }
 
 void main() {
@@ -77,6 +49,34 @@ void main() {
     expect(visualization.frequencies.any((value) => value > 0), isTrue);
 
     playback.setPlaying(false);
+    expect(visualization.frequencies.every((value) => value == 0), isTrue);
+
+    visualization.dispose();
+  });
+
+  test('clears the shared spectrum when native capture becomes unavailable', () async {
+    var captureAvailable = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getAudioSpectrum') {
+        return captureAvailable ? List<double>.filled(32, 0.8) : <double>[];
+      }
+      return null;
+    });
+
+    final playback = _FakePlayback();
+    final visualization = AudioVisualizationProvider()
+      ..bindPlayback(
+        listenable: playback,
+        isPlaying: () => playback.isPlaying,
+      );
+
+    playback.setPlaying(true);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(visualization.frequencies.any((value) => value > 0), isTrue);
+
+    captureAvailable = false;
+    await Future<void>.delayed(const Duration(milliseconds: 140));
     expect(visualization.frequencies.every((value) => value == 0), isTrue);
 
     visualization.dispose();
