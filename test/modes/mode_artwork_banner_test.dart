@@ -4,34 +4,23 @@ import 'package:resonate/modes/models/resonate_mode.dart';
 import 'package:resonate/widgets/mode_artwork_banner.dart';
 
 void main() {
-  testWidgets('each mode banner uses its matching bundled image and label',
+  testWidgets('mode banners keep photographs reserved for Now Playing',
       (tester) async {
-    const expectedAssets = <ResonateMode, String>{
-      ResonateMode.normal: 'assets/Normal_Mode.jpg',
-      ResonateMode.running: 'assets/Running_Mode.jpg',
-      ResonateMode.workout: 'assets/Workout_Mode.jpg',
-      ResonateMode.driving: 'assets/Driving_Mode.jpg',
-      ResonateMode.work: 'assets/Work_Mode.jpg',
-      ResonateMode.podcast: 'assets/Podcast_Mode.jpg',
-      ResonateMode.motivation: 'assets/Motivation_Mode.jpg',
-      ResonateMode.audiobook: 'assets/Audiobook_Mode.jpg',
-      ResonateMode.sleep: 'assets/Sleep_Mode.jpg',
-    };
-
-    for (final entry in expectedAssets.entries) {
+    for (final mode in ResonateMode.values) {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: ModeArtworkBanner(mode: entry.key),
+            body: ModeArtworkBanner(mode: mode),
           ),
         ),
       );
-      expect(find.text(entry.key.label.toUpperCase()), findsOneWidget);
-      final image = tester.widget<Image>(find.byType(Image).first);
-      expect(image.image, isA<AssetImage>());
-      expect((image.image as AssetImage).assetName, entry.value);
-      expect(image.fit, BoxFit.cover);
-      await tester.pumpAndSettle();
+      expect(find.text(mode.label.toUpperCase()), findsOneWidget);
+      expect(find.byType(Image), findsNothing);
+      expect(
+        find.bySemanticsLabel(RegExp('${mode.label} mode artwork')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
     }
   });
 

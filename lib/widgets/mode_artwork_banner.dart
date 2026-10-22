@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../modes/models/resonate_mode.dart';
 
-/// Shared, image-led artwork for mode selection and mode shelves.
-/// Supplied artwork is portrait-oriented, so it gets its own near-native-ratio
-/// panel instead of being cropped across a wide background. The drawn gradient
-/// remains available if an image cannot load.
+/// Lightweight drawn identity for mode pickers and shelves.
+/// User-supplied mode photographs are intentionally reserved for Now Playing.
 class ModeArtworkBanner extends StatelessWidget {
   const ModeArtworkBanner({super.key, required this.mode});
 
@@ -19,7 +17,7 @@ class ModeArtworkBanner extends StatelessWidget {
 
     return Semantics(
       image: true,
-      label: title + ' mode artwork. ' + description,
+      label: '$title mode artwork. $description',
       child: Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 172),
@@ -33,148 +31,83 @@ class ModeArtworkBanner extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: LayoutBuilder(
-          builder: (context, constraints) {
-            final artWidth = constraints.maxWidth < 360
-                ? 100.0
-                : constraints.maxWidth < 520
-                    ? 128.0
-                    : 168.0;
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          colors.first.withValues(alpha: .98),
-                          colors.last.withValues(alpha: .94),
-                          colors.last.withValues(alpha: .78),
-                        ],
-                        stops: const [0, .56, 1],
-                      ),
+          builder: (context, constraints) => Stack(
+            children: [
+              Positioned(
+                right: -28,
+                top: -48,
+                child: Container(
+                  width: 176,
+                  height: 176,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .16),
+                      width: 24,
                     ),
                   ),
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: SizedBox(
-                    width: artWidth,
-                    height: 172,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.asset(
-                            _asset(mode),
-                            fit: BoxFit.cover,
-                            alignment: _alignment(mode),
-                            filterQuality: FilterQuality.medium,
-                            errorBuilder: (context, error, stackTrace) =>
-                                DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: colors,
-                                ),
-                              ),
-                              child: Stack(
-                                children: [
-                                  Positioned(
-                                    right: -24,
-                                    top: -42,
-                                    child: Container(
-                                      width: 176,
-                                      height: 176,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Colors.white.withValues(
-                                            alpha: .14,
-                                          ),
-                                          width: 24,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: 12,
-                                    bottom: -36,
-                                    child: Container(
-                                      width: 100,
-                                      height: 100,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.white.withValues(
-                                          alpha: .08,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                                colors: [
-                                  Color(0x66000000),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+              ),
+              Positioned(
+                right: 18,
+                bottom: -42,
+                child: Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: .08),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 12, 18),
-                  child: SizedBox(
-                    width: constraints.maxWidth - artWidth - 30,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          title.toUpperCase(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Colors.white.withValues(alpha: .84),
-                            letterSpacing: 1.5,
-                            fontWeight: FontWeight.w800,
-                          ),
+              ),
+              Positioned(
+                right: 42,
+                top: 18,
+                child: Icon(
+                  _icon(mode),
+                  size: 64,
+                  color: Colors.white.withValues(alpha: .13),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: SizedBox(
+                  width: constraints.maxWidth - 36,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        title.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Colors.white.withValues(alpha: .86),
+                          letterSpacing: 1.5,
+                          fontWeight: FontWeight.w800,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          description,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            height: 1.18,
-                            shadows: const [
-                              Shadow(color: Colors.black45, blurRadius: 8),
-                            ],
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        description,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          height: 1.18,
+                          shadows: const [
+                            Shadow(color: Colors.black45, blurRadius: 8),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            );
-          },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -239,6 +172,62 @@ class ModeArtworkBanner extends StatelessWidget {
         ResonateMode.motivation => const [Color(0xFFD66B28), Color(0xFF8C3E45)],
         ResonateMode.normal => const [Color(0xFF347A95), Color(0xFF373C78)],
       };
+}
+
+/// Full-screen mode photography. This widget is used only by Now Playing.
+class ModeArtworkBackground extends StatelessWidget {
+  const ModeArtworkBackground({super.key, required this.mode});
+
+  final ResonateMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final cacheWidth =
+        (media.size.width * media.devicePixelRatio).round().clamp(360, 1440).toInt();
+
+    return Semantics(
+      image: true,
+      label: '${mode.label} mode background',
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            ModeArtworkBanner._asset(mode),
+            fit: BoxFit.cover,
+            alignment: ModeArtworkBanner._alignment(mode),
+            filterQuality: FilterQuality.low,
+            cacheWidth: cacheWidth,
+            gaplessPlayback: true,
+            errorBuilder: (context, error, stackTrace) => DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: ModeArtworkBanner._colors(mode),
+                ),
+              ),
+            ),
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0x99000000),
+                  Color(0x55000000),
+                  Color(0x88000000),
+                  Color(0xDD000000),
+                ],
+                stops: [0, .30, .70, 1],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Compact mode identity for the player surface; preserves playback-control space.

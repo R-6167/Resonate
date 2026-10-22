@@ -58,4 +58,56 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+  testWidgets('keeps supplied photographs out of mode picker banners',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ModeArtworkBanner(mode: ResonateMode.running),
+        ),
+      ),
+    );
+
+    expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('uses the matching supplied photograph for the player backdrop',
+      (tester) async {
+    for (final mode in ResonateMode.values) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ModeArtworkBackground(mode: mode),
+          ),
+        ),
+      );
+
+      final expectedAsset = switch (mode) {
+        ResonateMode.normal => 'assets/Normal_Mode.jpg',
+        ResonateMode.running => 'assets/Running_Mode.jpg',
+        ResonateMode.workout => 'assets/Workout_Mode.jpg',
+        ResonateMode.driving => 'assets/Driving_Mode.jpg',
+        ResonateMode.work => 'assets/Work_Mode.jpg',
+        ResonateMode.podcast => 'assets/Podcast_Mode.jpg',
+        ResonateMode.motivation => 'assets/Motivation_Mode.jpg',
+        ResonateMode.audiobook => 'assets/Audiobook_Mode.jpg',
+        ResonateMode.sleep => 'assets/Sleep_Mode.jpg',
+      };
+
+      expect(find.byType(Image), findsOneWidget);
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.image, isA<ResizeImage>());
+      expect(
+        ((image.image as ResizeImage).imageProvider as AssetImage).assetName,
+        expectedAsset,
+      );
+      expect(image.fit, BoxFit.cover);
+      expect(
+        find.bySemanticsLabel('${mode.label} mode background'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
 }
