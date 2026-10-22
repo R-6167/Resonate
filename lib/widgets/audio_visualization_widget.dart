@@ -68,7 +68,7 @@ class _SpectrumPainter extends CustomPainter {
       var peak = 0.0;
       for (var i = from; i < until && i < spectrum.length; i++) {
         final sample = spectrum[i].isFinite ? spectrum[i].clamp(0.0, 1.0) : 0.0;
-        peak = math.max(peak, sample);
+        peak = math.max(peak, sample).toDouble();
       }
       // Android's FFT magnitudes are linear and typically small. The square
       // root makes quiet-but-real bands visible without fabricating motion.
@@ -160,7 +160,7 @@ class _SpectrumPainter extends CustomPainter {
     final barPaint = Paint()
       ..color = color.withValues(alpha: 0.92)
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = math.max(2.0, slotWidth * 0.58);
+      ..strokeWidth = math.max(2.0, slotWidth * 0.58).toDouble();
     for (var i = 0; i < levels.length; i++) {
       final height = hasSignal ? levels[i] * size.height * 0.72 : 2.0;
       final x = (i + 0.5) * slotWidth;
