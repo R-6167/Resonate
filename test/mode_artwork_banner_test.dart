@@ -110,4 +110,24 @@ void main() {
     }
   });
 
+  testWidgets('requests dark-theme artwork when the app theme is dark',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: const Scaffold(
+          body: ModeArtworkBackground(mode: ResonateMode.normal),
+        ),
+      ),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image).first);
+    final provider = image.image as ResizeImage;
+    expect(
+      (provider.imageProvider as AssetImage).assetName,
+      'assets/Normal_Mode_Dark.jpg',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
 }
