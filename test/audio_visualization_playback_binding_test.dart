@@ -35,7 +35,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('polls live spectrum while playing and clears it when paused', () async {
+  test('forwards mocked native-channel spectrum while playing and clears on pause', () async {
     final playback = _FakePlayback();
     final visualization = AudioVisualizationProvider()
       ..bindPlayback(
