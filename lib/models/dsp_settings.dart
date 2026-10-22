@@ -31,7 +31,7 @@ class DspSettings {
   final double virtualizerAmount;
 
   DspSettings({
-    this.masterEnabled = false,
+    this.masterEnabled = true,
     this.eqEnabled = true,
     this.preset = 'Flat',
     List<double> eqBandGainsDb = const [],
