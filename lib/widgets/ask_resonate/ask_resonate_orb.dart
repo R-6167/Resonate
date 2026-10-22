@@ -141,7 +141,7 @@ class _OrbSpectrumPainter extends CustomPainter {
           ? 0.0
           : math.sqrt(raw) * (0.45 + sensitivity * 1.1);
       final height = (3.0 + energy.clamp(0.0, 1.0) * size.height * 0.62)
-          .clamp(3.0, size.height * 0.82);
+          .clamp(3.0, size.height * 0.82).toDouble();
       final x = slot * (i + 1);
       canvas.drawLine(
         Offset(x, (size.height + height) / 2),
