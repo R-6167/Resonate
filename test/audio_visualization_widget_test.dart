@@ -25,7 +25,7 @@ void main() {
     );
 
     final firstPainter =
-        tester.widget<CustomPaint>(find.byType(CustomPaint)).painter!;
+        tester.widget<CustomPaint>(find.byKey(const ValueKey('audio-spectrum-painter'))).painter!;
     settings.frequencies = List<double>.filled(32, 0.0);
     settings.notifyListeners();
     await tester.pump();
