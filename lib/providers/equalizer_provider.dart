@@ -310,7 +310,11 @@ class EqualizerProvider extends ChangeNotifier {
   Future<void> _loadBtProfiles() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _btProfilesEnabled = prefs.getBool('equalizer_bt_profiles') ?? false;
+      // The preset-driven Bluetooth switch has been removed from the product
+      // UI. Keep old profile data for compatibility, but do not silently change
+      // the listener's sound when a route changes.
+      _btProfilesEnabled = false;
+      await prefs.setBool('equalizer_bt_profiles', false);
       final raw = prefs.getString('equalizer_bt_profiles_map');
       if (raw != null) {
         final decoded = jsonDecode(raw);
@@ -907,6 +911,20 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> resetToFlat() => applyPreset('Flat');
+
+  /// Return the editable studio curve to neutral without selecting a preset.
+  Future<void> resetStudioBandsToNeutral() async {
+    _manualPresetRevision++;
+    for (final band in studioBands) {
+      band.gainDb = 0.0;
+      bands[band.label] = 0.0;
+    }
+    preset = 'Custom';
+    await _save();
+    await _pushToHardware();
+    await _applyPreamp();
+    notifyListeners();
+  }
 
   Future<String?> saveCustomPreset(String name) async {
     final trimmed = name.trim();
