@@ -116,7 +116,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
       final updated = List<double>.filled(32, 0.0);
       var changed = false;
       for (var i = 0; i < count; i++) {
-        final sample = next[i].isFinite ? next[i].clamp(0.0, 1.0) : 0.0;
+        final sample = next[i].isFinite ? next[i].clamp(0.0, 1.0).toDouble() : 0.0;
         updated[i] = frequencies[i] * (1.0 - alpha) + sample * alpha;
         if ((updated[i] - frequencies[i]).abs() > 0.002) changed = true;
       }
