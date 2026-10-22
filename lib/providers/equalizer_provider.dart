@@ -215,10 +215,18 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> _applyLeanForCurrent() async {
+    final requestRevision = ++_leanRequestRevision;
+    final manualRevision = _manualPresetRevision;
     final song = _music?.currentSong;
     String? lean;
     if (_learnedEqEnabled && song != null) {
       lean = await EqLeanStore.presetFor(songId: song.id, artist: song.artist);
+    }
+    // A slow lookup for a previous track must never overwrite a newer track
+    // or a profile the listener selected while the lookup was in flight.
+    if (requestRevision != _leanRequestRevision ||
+        manualRevision != _manualPresetRevision) {
+      return;
     }
     lean ??= _btProfilePresetName();
     if (lean == null || lean == preset) return;
@@ -468,6 +476,42 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   bool _hardwareBound = false;
+  int _leanRequestRevision = 0;
+  int _manualPresetRevision = 0;
+
+  /// Expands legacy ten-band curves and validates against the current studio grid.
+  static List<double> normalizePresetGains(List<double> gains) {
+    if (gains.length != 10 && gains.length != studioFrequencies.length) {
+      throw FormatException(
+        'Expected 10 legacy bands or ${studioFrequencies.length} studio bands.',
+      );
+    }
+    if (gains.any((gain) => !gain.isFinite || gain < studioMinDb || gain > studioMaxDb)) {
+      throw FormatException('Preset gains must be finite values from -12 to +12 dB.');
+    }
+    return expandGainsToStudio(gains);
+  }
+
+  /// Returns a stable, unique custom name without shadowing a built-in profile.
+  String uniqueCustomPresetName(String requested, {String? replacingName}) {
+    final base = requested.trim();
+    if (base.isEmpty) return '';
+    final occupied = <String>{
+      ...builtInPresets.map((item) => item.name.toLowerCase()),
+      ...resonatePresets.map((item) => item.name.toLowerCase()),
+      ...customPresets
+          .where((item) => item.name != replacingName)
+          .map((item) => item.name.toLowerCase()),
+    };
+    if (!occupied.contains(base.toLowerCase())) return base;
+    var candidate = '$base (Custom)';
+    var suffix = 2;
+    while (occupied.contains(candidate.toLowerCase())) {
+      candidate = '$base (Custom $suffix)';
+      suffix++;
+    }
+    return candidate;
+  }
 
   Future<void> _initialize() async {
     try {
@@ -730,6 +774,7 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> setStudioBandGain(int index, double gainDb) async {
     if (index < 0 || index >= studioBands.length) return;
+    _manualPresetRevision++;
     studioBands[index].gainDb = gainDb.clamp(studioMinDb, studioMaxDb);
     bands[studioBands[index].label] = studioBands[index].gainDb;
     preset = 'Custom';
@@ -800,18 +845,23 @@ class EqualizerProvider extends ChangeNotifier {
   }
 
   Future<void> applyPreset(String name, {bool persistSelection = true}) async {
+    // Resolve the exact catalog entry before mutating anything. An unknown or
+    // stale name must not silently flatten the curve while keeping that label.
     EqualizerPreset? found;
-    for (final p in allPresets) {
-      if (p.name == name) {
-        found = p;
+    for (final candidate in allPresets) {
+      if (candidate.name == name) {
+        found = candidate;
         break;
       }
     }
-    _applyStudioGains(found?.gains ?? builtInPresets.first.gains);
-    if (persistSelection) {
-      preset = name;
-      await _save();
+    if (found == null) {
+      debugPrint('Ignoring unknown EQ preset: $name');
+      return;
     }
+    if (persistSelection) _manualPresetRevision++;
+    _applyStudioGains(found.gains);
+    preset = name;
+    if (persistSelection) await _save();
     await _pushToHardware();
     await _applyPreamp();
     notifyListeners();
@@ -819,21 +869,28 @@ class EqualizerProvider extends ChangeNotifier {
 
   Future<void> resetToFlat() => applyPreset('Flat');
 
-  Future<void> saveCustomPreset(String name) async {
+  Future<String?> saveCustomPreset(String name) async {
     final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return null;
+    final replacingExisting = customPresets.any((item) => item.name == trimmed);
+    final uniqueName = uniqueCustomPresetName(
+      trimmed,
+      replacingName: replacingExisting ? trimmed : null,
+    );
     final gains = studioBands.map((b) => b.gainDb).toList();
-    customPresets.removeWhere((p) => p.name == trimmed);
+    customPresets.removeWhere((item) => item.name == trimmed);
     customPresets.add(EqualizerPreset(
-      name: trimmed,
+      name: uniqueName,
       category: 'Custom',
       gains: gains,
       isCustom: true,
     ));
-    preset = trimmed;
+    _manualPresetRevision++;
+    preset = uniqueName;
     await _saveCustomPresets();
     await _save();
     notifyListeners();
+    return uniqueName;
   }
 
   Future<void> deleteCustomPreset(String name) async {
@@ -895,12 +952,13 @@ class EqualizerProvider extends ChangeNotifier {
       final rawGains = raw['gains'];
       if (name is! String || name.trim().isEmpty || name.length > 64 ||
           category is! String || category.trim().isEmpty ||
-          rawGains is! List || rawGains.length != studioBands.length) {
-        throw const FormatException(
-          'Each preset needs a name, category, and all 10 EQ bands.',
+          rawGains is! List ||
+          (rawGains.length != 10 && rawGains.length != studioBands.length)) {
+        throw FormatException(
+          'Each preset needs a name, category, and either 10 legacy bands or ${studioBands.length} studio bands.',
         );
       }
-      final gains = <double>[];
+      final rawValues = <double>[];
       for (final value in rawGains) {
         if (value is! num || !value.toDouble().isFinite) {
           throw const FormatException('Preset gains must be finite numbers.');
@@ -912,12 +970,12 @@ class EqualizerProvider extends ChangeNotifier {
             '${studioMinDb.toStringAsFixed(0)} to ${studioMaxDb.toStringAsFixed(0)} dB.',
           );
         }
-        gains.add(gain);
+        rawValues.add(gain);
       }
       incoming.add(EqualizerPreset(
         name: name.trim(),
         category: 'Custom',
-        gains: gains,
+        gains: normalizePresetGains(rawValues),
         isCustom: true,
       ));
     }
@@ -927,6 +985,7 @@ class EqualizerProvider extends ChangeNotifier {
 
     final occupied = <String>{
       ...builtInPresets.map((p) => p.name.toLowerCase()),
+      ...resonatePresets.map((p) => p.name.toLowerCase()),
       ...customPresets.map((p) => p.name.toLowerCase()),
     };
     var imported = 0;
@@ -956,10 +1015,28 @@ class EqualizerProvider extends ChangeNotifier {
       final raw = prefs.getString('equalizer_custom_presets_v1');
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List<dynamic>;
-      customPresets = list
+      final loaded = list
           .whereType<Map>()
           .map((e) => EqualizerPreset.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      customPresets = [];
+      for (final item in loaded) {
+        final safeGains = normalizePresetGains(item.gains);
+        final safeName = uniqueCustomPresetName(item.name);
+        customPresets.add(EqualizerPreset(
+          name: safeName.isEmpty ? 'Custom Preset' : safeName,
+          category: 'Custom',
+          gains: safeGains,
+          isCustom: true,
+        ));
+      }
+      // Persist repairs so names and legacy curve shapes stay stable on restart.
+      if (customPresets.length != loaded.length ||
+          customPresets.asMap().entries.any((entry) =>
+              entry.value.name != loaded[entry.key].name ||
+              entry.value.gains.length != loaded[entry.key].gains.length)) {
+        await _saveCustomPresets();
+      }
     } catch (e) {
       debugPrint('custom presets load failed: $e');
       customPresets = [];
