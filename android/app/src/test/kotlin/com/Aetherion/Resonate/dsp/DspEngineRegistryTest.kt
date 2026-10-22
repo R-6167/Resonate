@@ -211,8 +211,26 @@ class DspEngineRegistryTest {
     }
 
     @Test
-    fun eq_band_enable_remains_independent_from_master_enable() {
+    fun eq_preference_survives_master_off_then_on() {
+        assertTrue(DspEngineRegistry.register(1, 1001L))
         DspEngineRegistry.applyEnabledAll(false)
+        DspEngineRegistry.applyEqBandsAll(
+            doubleArrayOf(80.0, 1000.0, 8000.0),
+            doubleArrayOf(3.0, 0.0, -2.0),
+            true
+        )
+        assertTrue(fake.calls.contains("eq:1001:3.0,0.0,-2.0:false"))
+
+        fake.calls.clear()
+        DspEngineRegistry.applyEnabledAll(true)
+
+        assertTrue(fake.calls.contains("enabled:1001:true"))
+        assertTrue(fake.calls.contains("eq:1001:3.0,0.0,-2.0:true"))
+    }
+
+    @Test
+    fun disabled_eq_preference_stays_bypassed_when_master_toggles() {
+        assertTrue(DspEngineRegistry.register(1, 1001L))
         DspEngineRegistry.applyEqBandsAll(
             doubleArrayOf(80.0, 1000.0, 8000.0),
             doubleArrayOf(3.0, 0.0, -2.0),
@@ -220,10 +238,12 @@ class DspEngineRegistryTest {
         )
         fake.calls.clear()
 
-        assertTrue(DspEngineRegistry.register(10, 10010L))
+        DspEngineRegistry.applyEnabledAll(false)
+        DspEngineRegistry.applyEnabledAll(true)
 
-        assertTrue(fake.calls.contains("enabled:10010:false"))
-        assertTrue(fake.calls.contains("eq:10010:3.0,0.0,-2.0:false"))
+        assertTrue(fake.calls.any { it == "eq:1001:3.0,0.0,-2.0:false" })
+        assertTrue(fake.calls.contains("enabled:1001:true"))
+        assertTrue(fake.calls.none { it == "eq:1001:3.0,0.0,-2.0:true" })
     }
 
     @Test

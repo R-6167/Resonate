@@ -629,7 +629,7 @@ class EqualizerProvider extends ChangeNotifier {
       await syncStudioBandsToNativeEq(
         centersHz: centers,
         gainsDb: gains,
-        enabled: isEnabled && _nativeDspEnabled,
+        enabled: isEnabled,
       );
     } catch (e) {
       debugPrint('live DSP EQ push failed: $e');
@@ -699,9 +699,9 @@ class EqualizerProvider extends ChangeNotifier {
       await AudioEffectsBridge.setLiveDspEqBands(
         centersHz: centers,
         gainsDb: gains,
-        // Keep later band/DVC updates from re-enabling EQ after its master
-        // switch was turned off. Both gates must agree before bands are audible.
-        enabled: isEnabled && _nativeDspEnabled,
+        // Send the EQ preference independently; the native registry combines
+        // it with master DSP state for each live and newly registered engine.
+        enabled: isEnabled,
       );
       final resolvedDvcDb = dvcDb ?? (await DspSettings.load()).dvcDb;
       await AudioEffectsBridge.setLiveDspDvcDb(resolvedDvcDb);
