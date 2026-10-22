@@ -246,6 +246,22 @@ class DspEngineRegistryTest {
     }
 
     @Test
+    fun status_reports_last_requested_dvc_preamp_limiter_and_crossover_values() {
+        DspEngineRegistry.applyVolumeAll(0.5011872336)
+        DspEngineRegistry.applyPreampAll(1.2589254118)
+        DspEngineRegistry.applyLimiterCeilingAll(-1.2f, -2.4f)
+        DspEngineRegistry.applyCrossoverHzAll(135f)
+
+        val status = DspEngineRegistry.statusMap()
+        assertEquals(0.5011872336, status["linearGain"])
+        assertEquals(1.2589254118, status["preampLinearGain"])
+        assertEquals(-1.2f, status["limiterHighDb"])
+        assertEquals(-2.4f, status["limiterLowDb"])
+        assertEquals(135f, status["crossoverHz"])
+        assertEquals(0, status["activeEngines"])
+    }
+
+    @Test
     fun limiter_and_crossover_updates_are_clamped_and_sticky_for_both_engines() {
         assertTrue(DspEngineRegistry.register(1, 1001L))
         assertTrue(DspEngineRegistry.register(2, 2002L))

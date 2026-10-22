@@ -187,6 +187,12 @@ object DspEngineRegistry {
             "eqBands" to (stickyState.gainsDb?.size ?: 0),
             "speakerMode" to stickyState.speakerMode,
             "virtualBass" to stickyState.virtualBass,
+            // These are the registry's last-requested values and the defaults
+            // inherited by new engines, not a hardware measurement.
+            "preampLinearGain" to stickyState.preamp,
+            "limiterHighDb" to stickyState.limiterHigh,
+            "limiterLowDb" to stickyState.limiterLow,
+            "crossoverHz" to stickyState.crossoverHz,
         )
         base.putAll(latencySnapshot())
         return base

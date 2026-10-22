@@ -196,6 +196,15 @@ Audit target: `Resonate-True-Apk`, merge commit `bad0261c7d36f2c5a52cd74dcff230a
 5. **Phase E — UX/performance closeout:** verify existing mode artwork, EQ identity, navigation, library position, accessibility, and scrolling on device; tune only regressions or existing rough edges.
 6. **Phase F — release gate:** green Flutter/native/Android CI, APK below 100 MiB, then a recorded device smoke pass. CI success and subjective listening results must remain separate.
 
+### Phase A/B execution update — 2026-10-22
+
+- [x] PR #144 merged with green CI (run #39743601042): exact EQ preset resolution, stale automatic-selection guards, custom-name uniqueness, legacy 10-band curve migration, and focused catalog/curve tests.
+- [ ] **Phase A device verification remains open.** No post-merge device result has been reported yet for Signature → Warmth → Clarity, band edits, profile switching, and persistence after force-stop/restart. Source/CI evidence does not replace this check.
+- [x] Phase B source audit confirms the registry retains DVC gain, EQ curve, speaker policy, preamp, limiter ceilings, and crossover as sticky state; new engines are configured before registration and live updates are serialized with registration.
+- [ ] Phase B PR adds explicit diagnostic fields for the last-requested preamp, limiter ceilings, and crossover frequency, plus JVM regression coverage. These fields describe registry state inherited by new engines, not measured audio output or proof of audibility.
+- [ ] Device validation still needs to confirm DVC/preamp changes on the active route and across an A/B transition; limiter profile differences on peak-heavy audio; crossover settings surviving a newly created engine; and EQ/headroom plus leveling behavior.
+- [ ] Do not close Phase B until CI and device checks are separately recorded.
+
 ### Audit discipline
 
 A checked source item means the implementation exists; a passing unit test means the tested contract is covered; a green CI run means the configured automation passed; a device/listening check means the behavior was actually exercised on hardware. Do not substitute one category for another. No new features, generic preset-card UI, or broad sound retuning are authorized by this audit. Preserve the existing Resonate sound identity and the 100 MiB package ceiling.
