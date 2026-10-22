@@ -36,6 +36,25 @@ void main() {
       );
     });
 
+    test('single-entry queues wrap only when repeat-all is enabled', () {
+      expect(
+        CrossfadeFallbackTarget.nextIndex(
+          currentIndex: 0,
+          queueLength: 1,
+          repeatAll: false,
+        ),
+        -1,
+      );
+      expect(
+        CrossfadeFallbackTarget.nextIndex(
+          currentIndex: 0,
+          queueLength: 1,
+          repeatAll: true,
+        ),
+        0,
+      );
+    });
+
     test('returns no target for an empty or invalid queue position', () {
       expect(
         CrossfadeFallbackTarget.nextIndex(
