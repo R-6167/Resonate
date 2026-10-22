@@ -235,14 +235,21 @@ A checked source item means the implementation exists; a passing unit test means
 
 ### Phase E — player-only full-screen mode artwork (2026-10-22)
 
-Implementation PR in progress; CI and device review are still pending.
+PR #150 merged on 2026-10-22. Follow-up performance polish is tracked in a separate PR; device review remains outstanding.
 
 - [x] Reserve the nine supplied mode JPEGs for the Now Playing screen; mode pickers and shelves use lightweight drawn identity instead of the photographs.
-- [x] Add a full-screen, mode-mapped player backdrop with cover fit, restrained readability gradients, low-quality resized image decoding, and a gradient fallback if an asset fails.
+- [x] Add a full-screen, mode-mapped player backdrop with cover fit, restrained readability gradients, bounded resized image decoding, and a gradient fallback if an asset fails.
 - [x] Preserve the live audio visualizer, mode badge, swipe gestures, transport controls, and existing playback behavior over the background.
 - [x] Add widget tests for all nine image mappings, semantic labels, and the absence of supplied photographs in mode-picker banners.
-- [ ] Confirm CI is green, including the existing 100 MiB release APK gate.
+- [ ] Confirm the merged PR's CI results, including the existing 100 MiB release APK gate, from the workflow records.
 - [ ] On device, inspect all nine crops, control readability, mode-switch transitions, narrow/large-text layouts, and scrolling performance. These checks remain separate from automated tests.
 - [ ] Measure the release APK from the same workflow/build variant and record it; keep the existing 100 MiB ceiling.
+
+### Phase E follow-up — isolate visualizer painting
+
+- [x] Compare painter inputs before requesting a repaint, including audio-spectrum values, instead of unconditionally repainting on every widget update.
+- [x] Put the animated player visualizer behind a repaint boundary so its canvas updates are isolated from the surrounding player layout.
+- [ ] Confirm analysis/tests and release APK budget in CI before merge.
+- [ ] Check scrolling and mode transitions on device; the optimization must not affect spectrum response or playback.
 
 Scope guard: this phase changes presentation only. Do not retune Resonate Signature, Warmth, Clarity, Afterhours, or Pulse, add a second preset picker, or change playback ownership unless a reproducible defect is found.

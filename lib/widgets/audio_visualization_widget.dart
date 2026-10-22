@@ -77,5 +77,25 @@ class _VisualizationPainter extends CustomPainter {
     if (type == 'waveform' || type == 'wave') { final path = Path(); for (var i = 0; i < values.length; i++) { final x = i / (values.length - 1) * size.width; final y = center.dy + math.sin(i * .55 + phase + position * 2) * values[i] * size.height * .30; if (i == 0) path.moveTo(x, y); else path.lineTo(x, y); } canvas.drawPath(path, paint..style = PaintingStyle.stroke..strokeWidth = 2.5); if (mirror) { canvas.save(); canvas.translate(0, size.height); canvas.scale(1, -1); canvas.drawPath(path, paint..color = color.withOpacity(.25)); canvas.restore(); } return; }
     final width = size.width / values.length; for (var i = 0; i < values.length; i++) { final h = values[i] * size.height * .78; final x = i * width + width / 2; canvas.drawLine(Offset(x, size.height * .92), Offset(x, size.height * .92 - h), paint..strokeWidth = math.max(2, width * .65)); }
   }
-  @override bool shouldRepaint(covariant _VisualizationPainter old) => true;
+  bool _sameSpectrum(List<double> other) {
+    if (identical(spectrum, other)) return true;
+    if (spectrum.length != other.length) return false;
+    for (var i = 0; i < spectrum.length; i++) {
+      if (spectrum[i] != other[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  bool shouldRepaint(covariant _VisualizationPainter old) {
+    return old.color != color ||
+        old.phase != phase ||
+        old.position != position ||
+        old.playing != playing ||
+        old.mirror != mirror ||
+        old.bass != bass ||
+        old.type != type ||
+        old.sensitivity != sensitivity ||
+        !_sameSpectrum(old.spectrum);
+  }
 }
