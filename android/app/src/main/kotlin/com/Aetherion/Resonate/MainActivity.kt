@@ -33,6 +33,7 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestAudioPermission" -> permissionHelper.requestAudioPermission(result)
+                "requestVisualizationPermission" -> permissionHelper.requestVisualizationPermission(result)
                 "requestNotificationPermission" -> permissionHelper.requestNotificationPermission(result)
                 "getSystemVolume" -> getSystemVolume(result)
                 "setSystemVolume" -> setSystemVolume(call.argument<Double>("value") ?: 1.0, result)

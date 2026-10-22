@@ -48,6 +48,10 @@ internal class AudioEffectsChannelHandler {
                     "setLiveDspSpeakerMode",
                     "setLiveDspVirtualBass",
                     "getLiveDspStatus" -> liveDspChannelHandler.handle(call, result)
+                    "refreshVisualizers" -> {
+                        effectsBridge.refreshVisualizers()
+                        result.success(true)
+                    }
                     "getAudioSpectrum" -> result.success(effectsBridge.getSpectrum())
                     "release" -> {
                         release()

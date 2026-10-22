@@ -18,9 +18,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const channel = MethodChannel('com.aetherion.resonate/audio_effects');
+  const mediaChannel = MethodChannel('com.aetherion.resonate/media_store');
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(mediaChannel, (call) async {
+      if (call.method == 'requestVisualizationPermission') return true;
+      return null;
+    });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'getAudioSpectrum') {
@@ -33,6 +39,8 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(mediaChannel, null);
   });
 
   test('forwards mocked native-channel spectrum while playing and clears on pause', () async {

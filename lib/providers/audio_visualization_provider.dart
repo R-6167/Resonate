@@ -22,6 +22,9 @@ class AudioVisualizationProvider extends ChangeNotifier {
   Timer? _captureTimer;
   bool _playbackActive = false;
   bool _captureInFlight = false;
+  bool _permissionRequestInFlight = false;
+  bool _permissionChecked = false;
+  bool _capturePermissionGranted = false;
   bool _disposed = false;
   Listenable? _playbackListenable;
   VoidCallback? _playbackListener;
@@ -58,6 +61,7 @@ class AudioVisualizationProvider extends ChangeNotifier {
   void setEnabled(bool value) {
     if (enabled == value) return;
     enabled = value;
+    if (value) _permissionChecked = false;
     if (!value) frequencies = List<double>.filled(32, 0.0);
     _save();
     _syncCapture();
@@ -90,10 +94,31 @@ class AudioVisualizationProvider extends ChangeNotifier {
     _captureTimer?.cancel();
     _captureTimer = null;
     if (_disposed || !enabled || !_playbackActive) return;
+    if (!_permissionChecked) {
+      if (!_permissionRequestInFlight) _requestCapturePermission();
+      return;
+    }
+    if (!_capturePermissionGranted) return;
     // 15 Hz channel polling is sufficient for visual response and avoids
     // creating a high-frequency Dart/MethodChannel workload.
     _captureTimer = Timer.periodic(const Duration(milliseconds: 66), (_) => _captureSpectrum());
     _captureSpectrum();
+  }
+
+  Future<void> _requestCapturePermission() async {
+    _permissionRequestInFlight = true;
+    try {
+      final granted = await AudioEffectsBridge.requestVisualizationPermission();
+      if (_disposed) return;
+      _permissionChecked = true;
+      _capturePermissionGranted = granted;
+      if (granted) {
+        await AudioEffectsBridge.refreshVisualizers();
+        _syncCapture();
+      }
+    } finally {
+      _permissionRequestInFlight = false;
+    }
   }
 
   Future<void> _captureSpectrum() async {
