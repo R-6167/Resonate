@@ -30,13 +30,13 @@ void main() {
     settings.notifyListeners();
     await tester.pump();
     final silentPainter =
-        tester.widget<CustomPaint>(find.byType(CustomPaint)).painter!;
+        tester.widget<CustomPaint>(find.byKey(const ValueKey('audio-spectrum-painter'))).painter!;
 
     settings.frequencies = List<double>.generate(32, (i) => (i + 1) / 32);
     settings.notifyListeners();
     await tester.pump();
     final audioPainter =
-        tester.widget<CustomPaint>(find.byType(CustomPaint)).painter!;
+        tester.widget<CustomPaint>(find.byKey(const ValueKey('audio-spectrum-painter'))).painter!;
 
     expect(audioPainter.shouldRepaint(silentPainter), isTrue);
     expect(firstPainter, isNot(same(audioPainter)));
@@ -45,7 +45,7 @@ void main() {
     // all motion now comes from the native spectrum, not an independent ticker.
     await tester.pump(const Duration(seconds: 1));
     final settledPainter =
-        tester.widget<CustomPaint>(find.byType(CustomPaint)).painter!;
+        tester.widget<CustomPaint>(find.byKey(const ValueKey('audio-spectrum-painter'))).painter!;
     expect(identical(audioPainter, settledPainter), isTrue);
     expect(tester.takeException(), isNull);
   });
