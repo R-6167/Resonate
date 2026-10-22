@@ -33,7 +33,7 @@ void main() {
         jsonDecode(jsonEncode(settings.toJson())) as Map<String, dynamic>,
       );
       expect(restored.masterEnabled, isTrue);
-      expect(restored.eqEnabled, isFalse);
+      expect(restored.eqEnabled, isTrue);
       expect(restored.preset, 'Custom');
       expect(restored.preampDb, -4);
       expect(restored.autoEqHeadroom, isTrue);
@@ -97,7 +97,7 @@ void main() {
       });
       final settings = await DspSettings.load();
       expect(settings.dvcDb, 3);
-      expect(settings.eqEnabled, isFalse);
+      expect(settings.eqEnabled, isTrue);
       expect(settings.preampDb, -2);
       expect(settings.eqBandGainsDb.length, 31);
       expect(settings.eqBandGainsDb[0], 0);
