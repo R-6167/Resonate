@@ -4,6 +4,27 @@ import 'package:flutter/services.dart';
 class AudioEffectsBridge {
   static const MethodChannel _channel =
       MethodChannel('com.aetherion.resonate/audio_effects');
+  static const MethodChannel _mediaChannel =
+      MethodChannel('com.aetherion.resonate/media_store');
+
+  /// Android Visualizer reads a limited playback spectrum, not microphone
+  /// recordings. Request permission only when the user is using visualization.
+  static Future<bool> requestVisualizationPermission() async {
+    try {
+      return await _mediaChannel.invokeMethod<bool>('requestVisualizationPermission') ?? false;
+    } catch (e) {
+      debugPrint('Visualization permission request failed: $e');
+      return false;
+    }
+  }
+
+  static Future<void> refreshVisualizers() async {
+    try {
+      await _channel.invokeMethod('refreshVisualizers');
+    } catch (e) {
+      debugPrint('Refreshing playback visualizers failed: $e');
+    }
+  }
 
   static Future<void> attachToSession(int sessionId) async {
     if (sessionId <= 0) return;
