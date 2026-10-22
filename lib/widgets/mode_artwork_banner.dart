@@ -184,7 +184,7 @@ class ModeArtworkBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final cacheWidth =
-        (media.size.width * media.devicePixelRatio).round().clamp(360, 1440);
+        (media.size.width * media.devicePixelRatio).round().clamp(360, 1440).toInt();
 
     return Semantics(
       image: true,
