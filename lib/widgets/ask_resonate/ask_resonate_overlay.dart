@@ -198,14 +198,34 @@ class _AskResonateOverlayState extends State<AskResonateOverlay>
                                 ),
                               ),
                             ),
+                            // Keep interactive controls in a responsive inner
+                            // surface instead of stretching buttons to the irregular
+                            // outer silhouette. This preserves a clear safe area for
+                            // blob, capsule, edge-dock, and orbital shapes alike.
                             Padding(
                               padding: EdgeInsets.all(
-                                ctrl.shape == AskResonateShape.semicircle ? 28 : 24,
+                                ctrl.shape == AskResonateShape.semicircle
+                                    ? 30
+                                    : ctrl.shape == AskResonateShape.orbital
+                                        ? 34
+                                        : 22,
                               ),
-                              child: _AskResonateContent(
-                                contextLabel: ctrl.contextLabel,
-                                onClose: _close,
-                                reduceMotion: reduceMotion,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: scheme.surface.withValues(alpha: 0.32),
+                                  borderRadius: BorderRadius.circular(26),
+                                  border: Border.all(
+                                    color: scheme.onSurface.withValues(alpha: 0.08),
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: _AskResonateContent(
+                                    contextLabel: ctrl.contextLabel,
+                                    onClose: _close,
+                                    reduceMotion: reduceMotion,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
