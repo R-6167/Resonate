@@ -279,7 +279,7 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
                       const Icon(Icons.volume_down_rounded),
                       Expanded(
                         child: Slider(
-                          value: _volume.clamp(0.0, 1.0),
+                          value: _volume.clamp(0.0, 1.0).toDouble(),
                           onChanged: !_hasSource || _busy
                               ? null
                               : (value) => setState(() => _volume = value),
