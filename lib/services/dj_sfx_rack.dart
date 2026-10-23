@@ -106,7 +106,8 @@ class DjSfxRack {
     DjSfxPreset.scratch,
     DjSfxPreset.stutter,
     DjSfxPreset.brake,
-    DjSfxPreset.repeat,
+    // Repeat SFX seeks the outgoing player during a live fade; keep it out
+    // of the automatic candidate pool until that interaction is redesigned.
     DjSfxPreset.airHorn,
     DjSfxPreset.gunshot,
     DjSfxPreset.beatRepeat,
@@ -184,7 +185,7 @@ class DjSfxRack {
     final generation = ++_engageGen;
     final score =
         energyScore.isFinite ? energyScore.clamp(0.0, 1.0).toDouble() : 0.5;
-    final preferred = preset ??
+    final requested = preset ??
         _pickPhraseAwarePreset(
           energyScore: score,
           transitionKind: transitionKind,
@@ -192,6 +193,19 @@ class DjSfxRack {
           positionMs: outgoing?.position.inMilliseconds ?? 0,
           aggressiveness: aggressiveness,
         );
+
+    // Repeat/repeat-restart seek the *outgoing player* several times during
+    // the crossfade. That can rewind audible music while the fade clock keeps
+    // advancing, resembling a failed transition followed by a restart. Keep
+    // those track-mutating SFX out of automatic playback for now, including
+    // when a caller explicitly requests one. Use a non-seeking effect instead.
+    final preferred = switch (requested) {
+      DjSfxPreset.repeat || DjSfxPreset.repeatRestart =>
+        aggressiveness == DjAggressiveness.safe
+            ? DjSfxPreset.tightGlue
+            : (score >= 0.75 ? DjSfxPreset.whoosh : DjSfxPreset.echo),
+      _ => requested,
+    };
     activePreset = _applyUsageFairness(preferred, aggressiveness: aggressiveness);
     _usageCounts[activePreset!] = (_usageCounts[activePreset!] ?? 0) + 1;
     engaged = true;

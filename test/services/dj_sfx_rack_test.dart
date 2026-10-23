@@ -62,6 +62,43 @@ void main() {
         await rack.restore();
       }
     });
+
+    test('repeat and repeat-restart requests use non-seeking SFX instead', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      for (final requested in <DjSfxPreset>[
+        DjSfxPreset.repeat,
+        DjSfxPreset.repeatRestart,
+      ]) {
+        await rack.engage(
+          energyScore: 0.5,
+          preset: requested,
+          aggressiveness: DjAggressiveness.balanced,
+        );
+        expect(
+          rack.activePreset,
+          isNot(anyOf(DjSfxPreset.repeat, DjSfxPreset.repeatRestart)),
+          reason: '$requested must not seek/restart the outgoing track during a fade',
+        );
+        await rack.restore();
+      }
+    });
+
+    test('phrase blends never choose repeat/restart SFX in musical mode', () async {
+      final rack = DjSfxRack(random: _SequenceRandom());
+      for (var i = 0; i < 20; i++) {
+        await rack.engage(
+          energyScore: 0.5,
+          transitionKind: DjTransitionKind.phraseBlend,
+          aggressiveness: DjAggressiveness.musical,
+        );
+        expect(
+          rack.activePreset,
+          isNot(anyOf(DjSfxPreset.repeat, DjSfxPreset.repeatRestart)),
+          reason: 'phrase blend $i must use a non-seeking effect',
+        );
+        await rack.restore();
+      }
+    });
   });
 }
 
