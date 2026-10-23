@@ -30,5 +30,5 @@ Make AndroidX Media3/ExoPlayer the authoritative playback engine for Resonate, t
 - The user reports build #777's native two-deck crossfade sounds excellent and works correctly in their current test.
 - The provider-facing adapter now maps `Song` queues, metadata, artwork, local file paths and MediaStore `content://` URIs into the Media3 client contract, and exposes native transport/state calls. Tests cover URI mapping and invalid queue/index inputs.
 - **Media3 is not yet the production provider's default engine.** The next implementation step is wiring this adapter into `MusicProvider` without leaving the legacy players as a second playback authority.
-- The prototype currently applies deck gain directly to player volume. The production migration must combine crossfade gain with master volume, leveling, sleep fade and ducking before cutover.
+- The native crossfade now applies each deck's equal-power envelope on top of a separately retained master-volume value; cancelling or completing a fade no longer restores full volume. The master-gain boundary is only the first layer: production cutover must compose it with track leveling/preamp, sleep fade, and audio-focus ducking through one policy before any legacy engine is removed.
 - Keep Android 7 compatibility and low-memory performance as release requirements.
