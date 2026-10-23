@@ -194,7 +194,7 @@ class _Media3CrossfadeLabScreenState extends State<Media3CrossfadeLabScreen> {
                     children: [
                       Expanded(
                         child: FilledButton.icon(
-                          onPressed: _busy || _currentUri == null || _nextUri == null
+                          onPressed: _busy || _currentUri == null || _nextUri == null || _fadeStatus != 'ready'
                               ? null
                               : () => _command(() => _client.crossfade(
                                     duration: Duration(milliseconds: (_durationSeconds * 1000).round()),
@@ -225,7 +225,7 @@ class _Media3CrossfadeLabScreenState extends State<Media3CrossfadeLabScreen> {
                   const SizedBox(height: 8),
                   _line('Transition', _fadeStatus),
                   _line('Current position', _format(_state?.position ?? Duration.zero)),
-                  _line('Incoming prepared', _nextName == null ? 'No' : 'Requested'),
+                  _line('Incoming deck', _nextName == null ? 'Not selected' : _fadeStatus == 'ready' ? 'Ready' : _fadeStatus),
                   _line('Playback state', _state?.isPlaying == true ? 'Playing' : 'Paused / idle'),
                   const SizedBox(height: 8),
                   const Text('Stress cases: cancel during fade; start a second fade; rapidly change tracks; lock the screen during a fade; pause or stop during a fade. Listen for dips, spikes, doubled audio and stale track controls.'),
