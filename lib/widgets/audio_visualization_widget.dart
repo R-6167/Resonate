@@ -122,38 +122,71 @@ class _SpectrumPainter extends CustomPainter {
     }
 
     if (type == 'waveform' || type == 'wave') {
-      final path = Path();
+      // FFT magnitudes are an envelope, not signed PCM samples. Alternating
+      // their sign made the old line jump above/below center at every band,
+      // producing a jagged, hand-sketched look. Draw a smooth, mirrored
+      // spectral ribbon instead, using quadratic midpoints for a calm curve.
+      final upper = <Offset>[];
+      final lower = <Offset>[];
       for (var i = 0; i < levels.length; i++) {
         final x = i / (levels.length - 1) * size.width;
-        final displacement = hasSignal ? levels[i] * size.height * 0.34 : 0.0;
-        final y = centerY + (i.isEven ? -displacement : displacement);
-        if (i == 0) {
-          path.moveTo(x, y);
-        } else {
-          path.lineTo(x, y);
-        }
+        final amplitude = hasSignal
+            ? levels[i] * size.height * (type == 'waveform' ? 0.27 : 0.20)
+            : 0.0;
+        upper.add(Offset(x, centerY - amplitude));
+        lower.add(Offset(x, centerY + amplitude * (mirror ? 1.0 : 0.58)));
       }
-      canvas.drawPath(path, linePaint);
-      if (mirror) {
-        final reflected = Path();
-        for (var i = 0; i < levels.length; i++) {
-          final x = i / (levels.length - 1) * size.width;
-          final displacement = hasSignal ? levels[i] * size.height * 0.22 : 0.0;
-          final y = centerY + (i.isEven ? displacement : -displacement);
-          if (i == 0) {
-            reflected.moveTo(x, y);
-          } else {
-            reflected.lineTo(x, y);
+
+      Path smoothCurve(List<Offset> points) {
+        final path = Path()..moveTo(points.first.dx, points.first.dy);
+        for (var i = 1; i < points.length; i++) {
+          final previous = points[i - 1];
+          final current = points[i];
+          final midX = (previous.dx + current.dx) / 2;
+          final midY = (previous.dy + current.dy) / 2;
+          path.quadraticBezierTo(previous.dx, previous.dy, midX, midY);
+          if (i == points.length - 1) {
+            path.quadraticBezierTo(midX, midY, current.dx, current.dy);
           }
         }
-        canvas.drawPath(
-          reflected,
-          Paint()
-            ..color = color.withValues(alpha: 0.28)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2,
-        );
+        return path;
       }
+
+      final topPath = smoothCurve(upper);
+      final bottomPath = smoothCurve(lower);
+      // Use a soft fill so the wave reads as a designed surface rather than
+      // a single thin scribble. Keep all effects inexpensive on older devices.
+      final fill = Path()..moveTo(upper.first.dx, upper.first.dy);
+      fill.addPath(topPath, Offset.zero);
+      fill.lineTo(lower.last.dx, lower.last.dy);
+      for (var i = lower.length - 1; i >= 0; i--) {
+        fill.lineTo(lower[i].dx, lower[i].dy);
+      }
+      fill.close();
+      canvas.drawPath(
+        fill,
+        Paint()
+          ..color = color.withValues(alpha: hasSignal ? 0.13 : 0.035)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawPath(
+        topPath,
+        Paint()
+          ..color = color.withValues(alpha: hasSignal ? 0.96 : 0.28)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = 2.4,
+      );
+      canvas.drawPath(
+        bottomPath,
+        Paint()
+          ..color = color.withValues(alpha: hasSignal ? 0.46 : 0.14)
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = 1.7,
+      );
       return;
     }
 

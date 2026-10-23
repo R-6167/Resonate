@@ -45,7 +45,11 @@ internal class FolderScanHandler(
             if (!hasAudioPermission()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
             val prefixes = selectedPrefixes(folders)
             if (prefixes.isEmpty() && folders.isNotEmpty()) return if (includeSize) 0L else emptyList<Map<String, Any?>>()
-            val projection = arrayOf(
+            // RELATIVE_PATH was added in Android 10 (API 29). Including it in
+            // the projection on Android 7/8 makes MediaStore queries fail before
+            // any tracks are returned, even though mode-folder playback can work.
+            // Keep the older DATA column as the compatibility fallback.
+            val projectionColumns = mutableListOf(
                 MediaStore.Audio.Media._ID,
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
@@ -54,8 +58,11 @@ internal class FolderScanHandler(
                 MediaStore.Audio.Media.DATE_ADDED,
                 MediaStore.Audio.Media.SIZE,
                 MediaStore.Audio.Media.DATA,
-                MediaStore.Audio.Media.RELATIVE_PATH,
             )
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                projectionColumns.add(MediaStore.Audio.Media.RELATIVE_PATH)
+            }
+            val projection = projectionColumns.toTypedArray()
             val selection = StringBuilder(if (includeNonMusic && folders.isNotEmpty()) "1=1" else "${MediaStore.Audio.Media.IS_MUSIC} != 0")
             if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
             val selectionArgs = if (minimumDurationMs > 0) arrayOf(minimumDurationMs.toString()) else null
@@ -75,11 +82,11 @@ internal class FolderScanHandler(
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val sizeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
-                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                val relativeCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.RELATIVE_PATH)
+                val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val relativeCol = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
                 while (cursor.moveToNext()) {
-                    val relativePath = cursor.getString(relativeCol)
-                    val dataPath = cursor.getString(dataCol)
+                    val relativePath = if (relativeCol >= 0) cursor.getString(relativeCol) else null
+                    val dataPath = if (dataCol >= 0) cursor.getString(dataCol) else null
                     if (folders.isNotEmpty() && !isInSelectedFolder(relativePath, dataPath, prefixes)) continue
                     val size = cursor.getLong(sizeCol)
                     if (includeSize) { totalSize += size; continue }
