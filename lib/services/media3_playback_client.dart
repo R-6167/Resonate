@@ -3,9 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 /// Immutable snapshot from the isolated native Media3 prototype.
-///
-/// This API is intentionally not wired into MusicProvider. The production
-/// just_audio path remains authoritative until migration parity is proven.
 class Media3PlaybackState {
   const Media3PlaybackState({
     required this.connected,
@@ -49,9 +46,7 @@ class Media3PlaybackState {
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
       ),
       duration: rawDuration is num && rawDuration >= 0
-          ? Duration(
-              milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt(),
-            )
+          ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
@@ -62,9 +57,6 @@ class Media3PlaybackState {
 }
 
 /// Thin typed client for the experimental Media3 bridge.
-///
-/// Creating this client does not connect to or start the service. A connection
-/// is only requested when a command is sent or [states] is listened to.
 class Media3PlaybackClient {
   Media3PlaybackClient({
     MethodChannel? methodChannel,
@@ -116,6 +108,34 @@ class Media3PlaybackClient {
       'setVolume',
       <String, Object>{'value': volume.clamp(0.0, 1.0).toDouble()},
     );
+  }
+
+  Future<void> preloadNext(Uri uri) async {
+    if (!uri.hasScheme) {
+      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'preloadNext',
+      <String, Object>{'uri': uri.toString()},
+    );
+  }
+
+  Future<void> crossfade({Duration duration = const Duration(seconds: 5)}) async {
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'crossfade',
+      <String, Object>{'durationMs': duration.inMilliseconds},
+    );
+  }
+
+  Future<void> cancelCrossfade() => _command('cancelCrossfade');
+
+  Future<Map<Object?, Object?>> getCrossfadeState() async {
+    final state = await _methodChannel.invokeMapMethod<Object?, Object?>('crossfadeState');
+    return state ?? <Object?, Object?>{'status': 'unknown'};
   }
 
   Future<Media3PlaybackState> getState() async {
