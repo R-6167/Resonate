@@ -2,9 +2,9 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk]
+    branches: [Resonate-True-Apk, media3-native-engine]
   pull_request:
-    branches: [Resonate-True-Apk]
+    branches: [Resonate-True-Apk, media3-native-engine]
   workflow_dispatch:
 
 permissions:
