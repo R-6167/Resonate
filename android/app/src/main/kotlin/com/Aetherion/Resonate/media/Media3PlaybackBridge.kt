@@ -73,7 +73,8 @@ class Media3PlaybackBridge(
                         return
                     }
                     val uri = Uri.parse(source)
-                    val title = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+                    val title = uri.lastPathSegment?.substringAfterLast('/')
+                        ?.takeIf { it.isNotBlank() }
                         ?: "Media3 Engine Lab test audio"
                     val item = MediaItem.Builder()
                         .setUri(uri)
