@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../models/song.dart';
+
 /// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
   const Media3PlaybackState({
@@ -222,6 +224,28 @@ class Media3QueueItem {
   final String? artist;
   final String? album;
   final Uri? artworkUri;
+
+  factory Media3QueueItem.fromSong(Song song) {
+    final rawPath = song.filePath.trim();
+    if (rawPath.isEmpty) {
+      throw ArgumentError.value(song.filePath, 'song.filePath', 'Media path must not be empty.');
+    }
+    Uri asUri(String value) {
+      final parsed = Uri.tryParse(value);
+      if (parsed != null && parsed.hasScheme) return parsed;
+      return Uri.file(value);
+    }
+
+    final art = song.albumArt?.trim() ?? '';
+    return Media3QueueItem(
+      id: song.id,
+      uri: asUri(rawPath),
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      artworkUri: art.isEmpty ? null : asUri(art),
+    );
+  }
 
   Map<String, Object?> toMap() {
     if (id.trim().isEmpty) {
