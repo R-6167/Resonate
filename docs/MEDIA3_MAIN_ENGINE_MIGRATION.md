@@ -23,6 +23,8 @@ Make AndroidX Media3/ExoPlayer the authoritative playback engine for Resonate, t
 
 ## Current status
 
+- The bridge now emits position snapshots every 250 ms while the Flutter state stream is subscribed and Media3 is playing. The ticker is stopped on pause/stream cancellation/release to avoid unnecessary background work.
+- This supplies the live position updates a provider needs for the progress bar, resume persistence, listening history, and system-state mirroring; it is event plumbing, not the production provider cutover.
 - Media3 single-player playback, seeking, background playback, notification controls, and an audio-focus interruption were reported clean by the user on Bluetooth.
 - The user reports build #777's native two-deck crossfade sounds excellent and works correctly in their current test.
 - This change adds a queue-capable bridge contract; **it does not yet make Media3 the production provider's default engine**. The provider cutover is the next required implementation step, not an assumption.
