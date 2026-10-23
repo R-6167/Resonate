@@ -356,7 +356,21 @@ Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType =
     final nextIndex = _crossfadeTargetIndex;
     final nextSong = _crossfadeTargetSong;
     if (nextSong == null || nextSong.filePath.trim().isEmpty) return false;
-    _crossfadeInProgress = true; _transitionArmedAt = DateTime.now(); final outgoing = audioPlayer; final outgoingSong = currentSong; final incoming = inactivePlayer; final incomingEq = inactiveEqualizer; final incomingLoud = inactiveLoudnessEnhancer; final master = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
+    _crossfadeInProgress = true;
+    final transitionStartedAt = DateTime.now();
+    _transitionArmedAt = transitionStartedAt;
+    final outgoing = audioPlayer;
+    final outgoingSong = currentSong;
+    final incoming = inactivePlayer;
+    final incomingEq = inactiveEqualizer;
+    final incomingLoud = inactiveLoudnessEnhancer;
+    final master = _effectiveCrossfadeMaster.clamp(0.05, 1.0).toDouble();
+    double outgoingVolumeAtStart;
+    try {
+      outgoingVolumeAtStart = outgoing.volume.clamp(0.0, 1.0);
+    } catch (_) {
+      outgoingVolumeAtStart = _volume.clamp(0.0, 1.0);
+    }
     try {
       await _clearDjStretchSpeeds(outgoing: outgoing, incoming: incoming);
       await outgoing.setLoopMode(LoopMode.off);
@@ -640,6 +654,25 @@ Future<bool> _performTrueCrossfade({required int milliseconds, String fadeType =
       final gentle = Platform.isAndroid;
       final stepMs = gentle ? 36 : 24;
       final fadeStartedAt = DateTime.now();
+      // Capture whether the outgoing engine lost gain during transition
+      // preparation. This is diagnostic-only: never force master volume here,
+      // because focus ducking and user volume changes must be preserved.
+      unawaited(ResonateDiagnostics.record('crossfade_pre_fade_volume_check', {
+        'preparationMs': fadeStartedAt.difference(transitionStartedAt).inMilliseconds,
+        'outgoingVolumeAtStart': outgoingVolumeAtStart,
+        'outgoingVolumeBeforeFade': base,
+        'outgoingVolumeDelta': base - outgoingVolumeAtStart,
+        'incomingVolumeBeforeFade': incoming.volume,
+        'outgoingPositionMs': outgoing.position.inMilliseconds,
+        'incomingPositionMs': incoming.position.inMilliseconds,
+        'incomingPlaying': incoming.playing,
+        'djActive': djActive,
+        'djSfxActive': _djSfxActive,
+        'fadeMs': total,
+        'fadeType': fadeType,
+        'outgoingSongId': outgoingSong?.id,
+        'incomingSongId': nextSong.id,
+      }));
       var lastOut = base;
       var lastIncomingPositionMs = incoming.position.inMilliseconds;
       var lastIncomingProgressAt = fadeStartedAt;
