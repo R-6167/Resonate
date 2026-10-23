@@ -69,6 +69,7 @@ class Media3PlaybackService : MediaSessionService() {
             })
         }
         mediaSession = MediaSession.Builder(this, activePlayer).build()
+        applyDeckVolumes()
     }
 
     private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(this).build().apply {
