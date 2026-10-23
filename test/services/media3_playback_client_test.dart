@@ -80,7 +80,7 @@ void main() {
     test('rejects an out-of-range queue index before channel invocation', () async {
       await expectLater(
         client.setQueue(
-          const <Media3QueueItem>[
+          <Media3QueueItem>[
             Media3QueueItem(
               id: 'track-1',
               uri: Uri(scheme: 'file', path: '/music/one.mp3'),
@@ -98,7 +98,7 @@ void main() {
     });
 
     test('queue item requires a URI scheme', () {
-      const item = Media3QueueItem(
+      final item = Media3QueueItem(
         id: 'track-1',
         uri: Uri(path: '/music/one.mp3'),
         title: 'One',
