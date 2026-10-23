@@ -65,6 +65,66 @@ class Media3PlaybackBridge(
     ) {
         try {
             when (call.method) {
+                "setQueue" -> {
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    if (rawItems.isNullOrEmpty()) {
+                        result.error("INVALID_QUEUE", "At least one playable queue item is required.", null)
+                        return
+                    }
+                    if (rawItems.size > 500) {
+                        result.error("INVALID_QUEUE", "Queue is too large; maximum is 500 items.", null)
+                        return
+                    }
+                    if (startIndex !in rawItems.indices) {
+                        result.error("INVALID_QUEUE_INDEX", "startIndex must identify an item in the queue.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    connected.setMediaItems(items, startIndex, 0L)
+                    connected.prepare()
+                    result.success(true)
+                }
+                "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
+                "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
+                "setRepeatMode" -> {
+                    val mode = call.argument<String>("mode")
+                    connected.repeatMode = when (mode) {
+                        "one" -> Player.REPEAT_MODE_ONE
+                        "all" -> Player.REPEAT_MODE_ALL
+                        "off" -> Player.REPEAT_MODE_OFF
+                        else -> {
+                            result.error("INVALID_REPEAT_MODE", "mode must be off, one, or all.", null)
+                            return
+                        }
+                    }
+                    result.success(true)
+                }
                 "setSource" -> {
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {
@@ -205,6 +265,11 @@ class Media3PlaybackBridge(
         "positionMs" to player.currentPosition.coerceAtLeast(0L),
         "durationMs" to player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L),
         "mediaId" to player.currentMediaItem?.mediaId,
+        "title" to player.mediaMetadata.title?.toString(),
+        "artist" to player.mediaMetadata.artist?.toString(),
+        "album" to player.mediaMetadata.albumTitle?.toString(),
+        "currentMediaItemIndex" to player.currentMediaItemIndex,
+        "mediaItemCount" to player.mediaItemCount,
         "volume" to player.volume,
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
