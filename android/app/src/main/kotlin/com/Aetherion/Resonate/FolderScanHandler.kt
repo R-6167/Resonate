@@ -49,19 +49,20 @@ internal class FolderScanHandler(
             // the projection on Android 7/8 makes MediaStore queries fail before
             // any tracks are returned, even though mode-folder playback can work.
             // Keep the older DATA column as the compatibility fallback.
-            val projection = buildList {
-                add(MediaStore.Audio.Media._ID)
-                add(MediaStore.Audio.Media.TITLE)
-                add(MediaStore.Audio.Media.ARTIST)
-                add(MediaStore.Audio.Media.ALBUM)
-                add(MediaStore.Audio.Media.DURATION)
-                add(MediaStore.Audio.Media.DATE_ADDED)
-                add(MediaStore.Audio.Media.SIZE)
-                add(MediaStore.Audio.Media.DATA)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    add(MediaStore.Audio.Media.RELATIVE_PATH)
-                }
-            }.toTypedArray()
+            val projectionColumns = mutableListOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.DATE_ADDED,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATA,
+            )
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                projectionColumns.add(MediaStore.Audio.Media.RELATIVE_PATH)
+            }
+            val projection = projectionColumns.toTypedArray()
             val selection = StringBuilder(if (includeNonMusic && folders.isNotEmpty()) "1=1" else "${MediaStore.Audio.Media.IS_MUSIC} != 0")
             if (minimumDurationMs > 0) selection.append(" AND ${MediaStore.Audio.Media.DURATION} >= ?")
             val selectionArgs = if (minimumDurationMs > 0) arrayOf(minimumDurationMs.toString()) else null
