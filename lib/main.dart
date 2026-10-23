@@ -256,7 +256,7 @@ Future<void> main() async {
           'Resonate • your music, sound, and playback controls',
       // Brand the system media card with Resonate violet while retaining the
       // track's album artwork as the large media image.
-      androidNotificationColor: 0xFF6B4EFF,
+      notificationColor: const Color(0xFF6B4EFF),
       androidNotificationOngoing: false,
       androidStopForegroundOnPause: false,
       fastForwardInterval: Duration(seconds: 10),
