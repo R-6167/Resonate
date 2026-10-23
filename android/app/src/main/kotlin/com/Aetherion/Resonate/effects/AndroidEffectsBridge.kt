@@ -3,6 +3,7 @@ package com.Aetherion.Resonate.effects
 import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.Visualizer
 import android.media.audiofx.Virtualizer
+import android.os.SystemClock
 
 /**
  * Thin bridge for optional system-level creative effects (Virtualizer / Reverb).
@@ -17,6 +18,8 @@ class AndroidEffectsBridge {
     private val visualizers = mutableMapOf<Int, Visualizer>()
     private val knownSessionIds = mutableSetOf<Int>()
     private val spectra = mutableMapOf<Int, FloatArray>()
+    private val lastSpectrumAtMs = mutableMapOf<Int, Long>()
+    private val lastRetryAtMs = mutableMapOf<Int, Long>()
     private val spectrumLock = Any()
     private val spectrumSize = 32
 
@@ -25,6 +28,9 @@ class AndroidEffectsBridge {
         effectSessionId = sessionId
         knownSessionIds.add(sessionId)
         if (visualizers.containsKey(sessionId)) return
+        synchronized(spectrumLock) {
+            lastSpectrumAtMs.putIfAbsent(sessionId, SystemClock.elapsedRealtime())
+        }
         try {
             val range = Visualizer.getCaptureSizeRange()
             val size = Integer.highestOneBit(range[1].coerceAtMost(1024)).coerceAtLeast(range[0])
@@ -55,7 +61,10 @@ class AndroidEffectsBridge {
                         }
                         bands[band] = (peak / 180.0).coerceIn(0.0, 1.0).toFloat()
                     }
-                    synchronized(spectrumLock) { spectra[sessionId] = bands }
+                    synchronized(spectrumLock) {
+                        spectra[sessionId] = bands
+                        lastSpectrumAtMs[sessionId] = SystemClock.elapsedRealtime()
+                    }
                 }
             }, (Visualizer.getMaxCaptureRate() / 2).coerceAtMost(20000), false, true)
             visualizer.enabled = true
@@ -73,10 +82,31 @@ class AndroidEffectsBridge {
     }
 
     fun getSpectrum(): List<Double> {
+        // Some devices occasionally stop delivering FFT callbacks after a
+        // session handoff. Retry a stale visualizer at a bounded rate; never
+        // touch the player or audio effects path. The retry is deliberately
+        // slow so a silent track is cheap on low-RAM devices.
+        val now = SystemClock.elapsedRealtime()
+        val staleSessions = synchronized(spectrumLock) {
+            knownSessionIds.filter { sessionId ->
+                val lastSample = lastSpectrumAtMs[sessionId] ?: 0L
+                val lastRetry = lastRetryAtMs[sessionId] ?: 0L
+                now - lastSample >= 3000L && now - lastRetry >= 3000L
+            }.also { sessions ->
+                sessions.forEach { lastRetryAtMs[it] = now }
+            }
+        }
+        staleSessions.forEach { sessionId ->
+            releaseVisualizer(sessionId)
+            attachToSession(sessionId)
+        }
+
         synchronized(spectrumLock) {
             val active = spectra.values
             if (active.isEmpty()) return List(spectrumSize) { 0.0 }
-            return List(spectrumSize) { i -> active.maxOfOrNull { it.getOrElse(i) { 0f }.toDouble() } ?: 0.0 }
+            return List(spectrumSize) { i ->
+                active.maxOfOrNull { it.getOrElse(i) { 0f }.toDouble() } ?: 0.0
+            }
         }
     }
 
@@ -134,7 +164,11 @@ class AndroidEffectsBridge {
         reverbs.keys.toList().forEach(::releaseReverb)
         visualizers.keys.toList().forEach(::releaseVisualizer)
         knownSessionIds.clear()
-        synchronized(spectrumLock) { spectra.clear() }
+        synchronized(spectrumLock) {
+            spectra.clear()
+            lastSpectrumAtMs.clear()
+            lastRetryAtMs.clear()
+        }
         effectSessionId = 0
     }
 
@@ -146,7 +180,10 @@ class AndroidEffectsBridge {
                 it.release()
             }
         } catch (_: Throwable) {}
-        synchronized(spectrumLock) { spectra.remove(sessionId) }
+        synchronized(spectrumLock) {
+            spectra.remove(sessionId)
+            lastSpectrumAtMs.remove(sessionId)
+        }
     }
 
     private fun releaseVirtualizer(sessionId: Int) {
