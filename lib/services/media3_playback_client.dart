@@ -12,6 +12,11 @@ class Media3PlaybackState {
     required this.position,
     required this.duration,
     required this.mediaId,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.currentMediaItemIndex,
+    required this.mediaItemCount,
     required this.volume,
     required this.hasError,
     required this.error,
@@ -24,6 +29,11 @@ class Media3PlaybackState {
   final Duration position;
   final Duration? duration;
   final String? mediaId;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final int currentMediaItemIndex;
+  final int mediaItemCount;
   final double volume;
   final bool hasError;
   final String? error;
@@ -49,6 +59,11 @@ class Media3PlaybackState {
           ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
+      title: stringValue(map['title']),
+      artist: stringValue(map['artist']),
+      album: stringValue(map['album']),
+      currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
+      mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
@@ -83,6 +98,44 @@ class Media3PlaybackClient {
     await _methodChannel.invokeMethod<bool>(
       'setSource',
       <String, Object>{'uri': uri.toString()},
+    );
+  }
+
+  /// Loads a native Media3 queue and selects [startIndex] as the active item.
+  /// Queue items are immutable metadata + URI descriptors; native Player objects
+  /// never cross the Flutter boundary.
+  Future<void> setQueue(
+    List<Media3QueueItem> items, {
+    int startIndex = 0,
+  }) async {
+    if (items.isEmpty) {
+      throw ArgumentError.value(items, 'items', 'Queue must not be empty.');
+    }
+    if (items.length > 500) {
+      throw ArgumentError.value(items.length, 'items', 'Queue cannot exceed 500 items.');
+    }
+    if (startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must point to an item in the queue.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'setQueue',
+      <String, Object>{
+        'items': items.map((item) => item.toMap()).toList(growable: false),
+        'startIndex': startIndex,
+      },
+    );
+  }
+
+  Future<void> skipToNext() => _command('skipToNext');
+  Future<void> skipToPrevious() => _command('skipToPrevious');
+
+  Future<void> setRepeatMode(String mode) async {
+    if (!const {'off', 'one', 'all'}.contains(mode)) {
+      throw ArgumentError.value(mode, 'mode', 'Must be off, one, or all.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'setRepeatMode',
+      <String, Object>{'mode': mode},
     );
   }
 
@@ -148,5 +201,45 @@ class Media3PlaybackClient {
 
   Future<void> _command(String method) async {
     await _methodChannel.invokeMethod<bool>(method);
+  }
+}
+
+
+/// Queue descriptor sent to the native Media3 session.
+class Media3QueueItem {
+  const Media3QueueItem({
+    required this.id,
+    required this.uri,
+    required this.title,
+    this.artist,
+    this.album,
+    this.artworkUri,
+  });
+
+  final String id;
+  final Uri uri;
+  final String title;
+  final String? artist;
+  final String? album;
+  final Uri? artworkUri;
+
+  Map<String, Object?> toMap() {
+    if (id.trim().isEmpty) {
+      throw ArgumentError.value(id, 'id', 'Queue item ID must not be empty.');
+    }
+    if (!uri.hasScheme) {
+      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
+    }
+    if (artworkUri != null && !artworkUri!.hasScheme) {
+      throw ArgumentError.value(artworkUri, 'artworkUri', 'Artwork URI must have a scheme.');
+    }
+    return <String, Object?>{
+      'id': id,
+      'uri': uri.toString(),
+      'title': title,
+      if (artist != null) 'artist': artist!,
+      if (album != null) 'album': album!,
+      if (artworkUri != null) 'artworkUri': artworkUri.toString(),
+    };
   }
 }
