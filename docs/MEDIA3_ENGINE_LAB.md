@@ -10,6 +10,10 @@ This is an isolated developer test path on the `media3-engine-lab` branch. It mu
 - The lab uses the experimental Media3 service and does not replace or call `MusicProvider`. The production `just_audio` playback path remains unchanged.
 - Leaving the lab requests stop for the lab player only.
 
+## Getting an installable debug APK
+
+After the experimental branch CI run succeeds, open that GitHub Actions run and download the `media3-engine-lab-debug-apk` artifact. Install `app-debug.apk` on the test device. This is a development build, not a release APK; keep it for validation only.
+
 ## Test sequence
 
 1. Install a debug APK built from `media3-engine-lab`.
