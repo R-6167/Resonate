@@ -1,0 +1,55 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:resonate/services/media3_playback_client.dart';
+
+void main() {
+  group('Media3PlaybackState.fromMap', () {
+    test('parses a normal native state snapshot', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'connected': true,
+        'isPlaying': true,
+        'playbackState': 3,
+        'playWhenReady': true,
+        'positionMs': 1250,
+        'durationMs': 9000,
+        'mediaId': 'content://media/track/1',
+        'volume': 0.65,
+        'hasError': false,
+        'error': null,
+      });
+
+      expect(state.connected, isTrue);
+      expect(state.isPlaying, isTrue);
+      expect(state.playbackState, 3);
+      expect(state.position, const Duration(milliseconds: 1250));
+      expect(state.duration, const Duration(milliseconds: 9000));
+      expect(state.mediaId, 'content://media/track/1');
+      expect(state.volume, 0.65);
+      expect(state.hasError, isFalse);
+    });
+
+    test('clamps invalid negative time and out-of-range volume', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': -50,
+        'durationMs': -1,
+        'volume': 4.0,
+      });
+
+      expect(state.position, Duration.zero);
+      expect(state.duration, isNull);
+      expect(state.volume, 1.0);
+    });
+
+    test('uses safe defaults for malformed snapshot values', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': 'unknown',
+        'volume': double.nan,
+        'isPlaying': 'yes',
+      });
+
+      expect(state.position, Duration.zero);
+      expect(state.volume, 1.0);
+      expect(state.isPlaying, isFalse);
+      expect(state.mediaId, isNull);
+    });
+  });
+}
