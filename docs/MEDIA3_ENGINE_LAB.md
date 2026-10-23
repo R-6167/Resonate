@@ -14,7 +14,7 @@ This is an isolated developer test path on the `media3-engine-lab` branch. It mu
 
 1. Install a debug APK built from `media3-engine-lab`.
 2. Open **Settings → Developer tools → Media3 Engine Lab**.
-3. Choose a local audio file. Confirm the selected filename appears and the native state reaches **Ready**.
+3. Choose a local audio file. The file picker may supply an app-readable cache path; the lab passes that path to Media3 as a file URI. Confirm the selected filename appears and the native state reaches **Ready**.
 4. Press Play; verify audible playback and that the state changes to playing.
 5. Pause, resume, seek to a different position, change volume, and Stop. Check the displayed position/state and note any error text.
 6. With Media3 playing, send Resonate to the background and lock the screen. Inspect the Android media notification/lock-screen controls.
