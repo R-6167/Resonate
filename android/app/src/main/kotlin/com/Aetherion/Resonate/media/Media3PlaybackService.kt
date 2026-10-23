@@ -30,24 +30,17 @@ class Media3PlaybackService : MediaSessionService() {
     private var fadeDurationMs = 0L
     private var crossfadeStatus = "idle"
 
-    // Master gain is independent from the per-deck crossfade envelope. Never
-    // let a transition or cancellation reset a user's volume to full scale.
-    private var masterVolume = 1f
-    private var activeDeckGain = 1f
-    private var standbyDeckGain = 0f
+    // All Media3 output gain changes pass through one policy. Future leveling,
+    // preamp, sleep fade and focus-duck factors belong in this composition point.
+    private val gainPolicy = Media3GainPolicy()
 
     private fun applyDeckVolumes() {
-        if (::activePlayer.isInitialized) {
-            activePlayer.volume = (masterVolume * activeDeckGain).coerceIn(0f, 1f)
-        }
-        if (::standbyPlayer.isInitialized) {
-            standbyPlayer.volume = (masterVolume * standbyDeckGain).coerceIn(0f, 1f)
-        }
+        if (::activePlayer.isInitialized) activePlayer.volume = gainPolicy.activeVolume()
+        if (::standbyPlayer.isInitialized) standbyPlayer.volume = gainPolicy.standbyVolume()
     }
 
     fun setMasterVolume(value: Float): Boolean {
-        if (!value.isFinite()) return false
-        masterVolume = value.coerceIn(0f, 1f)
+        if (!gainPolicy.setMasterVolume(value)) return false
         applyDeckVolumes()
         return true
     }
@@ -98,7 +91,7 @@ class Media3PlaybackService : MediaSessionService() {
         val parsed = android.net.Uri.parse(uri)
         val title = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: "Media3 crossfade incoming track"
-        standbyDeckGain = 0f
+        gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
         standbyPlayer.setMediaItem(
             MediaItem.Builder()
@@ -128,8 +121,7 @@ class Media3PlaybackService : MediaSessionService() {
         fadeStartedAt = android.os.SystemClock.elapsedRealtime()
         val generation = ++fadeGeneration
         crossfadeStatus = "fading"
-        activeDeckGain = 1f
-        standbyDeckGain = 0f
+        gainPolicy.resetDecks()
         applyDeckVolumes()
         standbyPlayer.play()
         val task = object : Runnable {
@@ -137,8 +129,10 @@ class Media3PlaybackService : MediaSessionService() {
                 if (generation != fadeGeneration || isDestroyed) return
                 val elapsed = (android.os.SystemClock.elapsedRealtime() - fadeStartedAt).coerceAtLeast(0L)
                 val progress = (elapsed.toFloat() / fadeDurationMs.toFloat()).coerceIn(0f, 1f)
-                activeDeckGain = cos(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
-                standbyDeckGain = sin(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
+                gainPolicy.setCrossfadeGains(
+                    active = cos(progress * Math.PI.toFloat() / 2f),
+                    standby = sin(progress * Math.PI.toFloat() / 2f),
+                )
                 applyDeckVolumes()
                 if (progress >= 1f) {
                     val oldPlayer = activePlayer
@@ -147,8 +141,7 @@ class Media3PlaybackService : MediaSessionService() {
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
                     activePlayer.setAudioAttributes(audioAttributes(), true)
                     mediaSession?.setPlayer(activePlayer)
-                    activeDeckGain = 1f
-                    standbyDeckGain = 0f
+                    gainPolicy.resetDecks()
                     applyDeckVolumes()
                     standbyPlayer.pause()
                     standbyPlayer.clearMediaItems()
@@ -171,8 +164,7 @@ class Media3PlaybackService : MediaSessionService() {
         if (::activePlayer.isInitialized && ::standbyPlayer.isInitialized) {
             // Cancellation preserves the current deck; the incoming deck is silenced
             // and paused so a second request cannot leave two audible players.
-            activeDeckGain = 1f
-            standbyDeckGain = 0f
+            gainPolicy.resetDecks()
             applyDeckVolumes()
             standbyPlayer.pause()
         }
@@ -180,8 +172,7 @@ class Media3PlaybackService : MediaSessionService() {
             crossfadeStatus = "cancelled"
         }
         if (::activePlayer.isInitialized) {
-            activeDeckGain = 1f
-            standbyDeckGain = 0f
+            gainPolicy.resetDecks()
             applyDeckVolumes()
         }
         return true
