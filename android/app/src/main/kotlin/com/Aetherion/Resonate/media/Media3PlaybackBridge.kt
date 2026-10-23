@@ -21,9 +21,8 @@ import java.util.concurrent.Executor
 /**
  * Narrow Flutter boundary for the isolated Media3 prototype.
  *
- * Connection is lazy: merely launching Resonate does not create a second player
- * or bind the experimental service. Native Media3 objects stay native; Flutter
- * receives commands and immutable state snapshots rather than mutable objects.
+ * Native Media3 objects stay native; Flutter receives commands and immutable
+ * state snapshots rather than mutable player objects.
  */
 class Media3PlaybackBridge(
     private val context: Context,
@@ -86,7 +85,11 @@ class Media3PlaybackBridge(
                 }
                 "play" -> { connected.play(); result.success(true) }
                 "pause" -> { connected.pause(); result.success(true) }
-                "stop" -> { connected.stop(); result.success(true) }
+                "stop" -> {
+                    Media3PlaybackService.instance?.cancelCrossfade()
+                    connected.stop()
+                    result.success(true)
+                }
                 "seekTo" -> {
                     val positionMs = call.argument<Number>("positionMs")?.toLong()
                     if (positionMs == null || positionMs < 0L) {
@@ -105,6 +108,29 @@ class Media3PlaybackBridge(
                     connected.volume = volume.coerceIn(0f, 1f)
                     result.success(true)
                 }
+                "preloadNext" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri.isNullOrBlank()) {
+                        result.error("INVALID_URI", "A non-empty incoming URI is required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.preloadNext(uri) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
+                }
+                "crossfade" -> {
+                    val durationMs = call.argument<Number>("durationMs")?.toLong()
+                    if (durationMs == null || durationMs !in 250L..15000L) {
+                        result.error("INVALID_CROSSFADE_DURATION", "Crossfade duration must be 250–15000 ms.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.startCrossfade(durationMs) == true
+                    if (accepted) result.success(true)
+                    else result.error("CROSSFADE_NOT_READY", "Load an incoming track and wait until it is ready.", null)
+                }
+                "cancelCrossfade" -> result.success(Media3PlaybackService.instance?.cancelCrossfade() == true)
+                "crossfadeState" -> result.success(Media3PlaybackService.instance?.crossfadeState()
+                    ?: mapOf("status" to "service_unavailable"))
                 "getState" -> result.success(stateSnapshot(connected))
                 else -> result.notImplemented()
             }
