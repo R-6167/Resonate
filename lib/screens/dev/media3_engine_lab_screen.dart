@@ -41,7 +41,7 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
     _stateSubscription?.cancel();
     // Stop the isolated test player when leaving the lab; production playback
     // uses a different engine and is not touched.
-    unawaited(_client.stop().catchError((_) {}));
+    if (_source != null) unawaited(_client.stop().catchError((_) {}));
     super.dispose();
   }
 
@@ -68,6 +68,10 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
       final uri = path.startsWith('content://') || path.startsWith('file://')
           ? Uri.parse(path)
           : Uri.file(path);
+      setState(() {
+        _source = uri;
+        _fileName = file.name;
+      });
       await _client.setSource(uri);
       _stateSubscription ??= _client.states.listen(
         (state) {
@@ -101,8 +105,8 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
     }
   }
 
-  Future<void> _refreshState() async {
-    if (!_hasSource || _busy) return;
+  Future<void> _refreshState({bool force = false}) async {
+    if (!_hasSource || (_busy && !force)) return;
     try {
       final state = await _client.getState();
       if (mounted) setState(() => _state = state);
@@ -121,7 +125,7 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
     });
     try {
       await command();
-      await _refreshState();
+      await _refreshState(force: true);
       if (successMessage != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(successMessage)),
