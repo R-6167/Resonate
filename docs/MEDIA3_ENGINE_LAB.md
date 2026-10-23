@@ -43,7 +43,7 @@ After the experimental branch CI run succeeds, open that GitHub Actions run and 
 
 ## Current limitations
 
-The single-player lab validates the native playback vertical slice. The separate crossfade lab adds a first dual-deck prototype with an equal-power gain ramp, but does not yet establish production-grade transition cancellation under all races, queue/metadata parity, DSP and leveling integration, spectrum extraction from Media3 output, full external-control parity, or acceptable resource use. The fade prototype is experimental: user volume and crossfade gain are not yet combined through a shared master-volume policy. Do not cut production over based on this screen or CI alone.
+The single-player lab validates the native playback vertical slice. The separate crossfade lab adds a first dual-deck prototype with an equal-power gain ramp, but does not yet establish production-grade transition cancellation under all races, queue/metadata parity, DSP and leveling integration, spectrum extraction from Media3 output, full external-control parity, or acceptable resource use. The fade prototype is experimental. Master volume is now composed with the per-deck crossfade envelope, and cancelling/completing a fade should restore the chosen master volume rather than force full volume. Track leveling/preamp, sleep fade, and audio-focus ducking are not yet composed into this native policy. Do not cut production over based on this screen or CI alone.
 
 ## Merge gate
 
@@ -64,7 +64,7 @@ On `media3-crossfade-lab`, open **Settings → Developer tools → Media3 Crossf
 2. Choose an incoming track. Wait until the incoming deck reports **Ready**.
 3. Select a fade duration and press **Crossfade now**.
 4. Listen for volume dips/spikes, gaps, overlapping voices, or the wrong track remaining active.
-5. During separate runs, press **Cancel** during the fade, start a second transition, pause/stop during a fade, and lock the screen while fading.
+5. During separate runs, lower the master volume before the fade, change it during the fade, press **Cancel**, start a second transition, pause/stop during a fade, and lock the screen while fading. Confirm the volume never jumps to full scale on cancel or completion.
 6. After a successful fade, verify notification Play/Pause and seek now control the incoming track. Load another incoming track and repeat.
 
 The coordinator uses a cancellable 32 ms main-thread ramp and equal-power sine/cosine gain curves. This is a prototype, not the final Resonate transition engine. Report any issue with device model, Android version, duration, and the exact stress case.
