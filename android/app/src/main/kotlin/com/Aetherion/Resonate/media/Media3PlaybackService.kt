@@ -30,6 +30,28 @@ class Media3PlaybackService : MediaSessionService() {
     private var fadeDurationMs = 0L
     private var crossfadeStatus = "idle"
 
+    // Master gain is independent from the per-deck crossfade envelope. Never
+    // let a transition or cancellation reset a user's volume to full scale.
+    private var masterVolume = 1f
+    private var activeDeckGain = 1f
+    private var standbyDeckGain = 0f
+
+    private fun applyDeckVolumes() {
+        if (::activePlayer.isInitialized) {
+            activePlayer.volume = (masterVolume * activeDeckGain).coerceIn(0f, 1f)
+        }
+        if (::standbyPlayer.isInitialized) {
+            standbyPlayer.volume = (masterVolume * standbyDeckGain).coerceIn(0f, 1f)
+        }
+    }
+
+    fun setMasterVolume(value: Float): Boolean {
+        if (!value.isFinite()) return false
+        masterVolume = value.coerceIn(0f, 1f)
+        applyDeckVolumes()
+        return true
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -76,7 +98,8 @@ class Media3PlaybackService : MediaSessionService() {
         val parsed = android.net.Uri.parse(uri)
         val title = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
             ?: "Media3 crossfade incoming track"
-        standbyPlayer.volume = 0f
+        standbyDeckGain = 0f
+        applyDeckVolumes()
         standbyPlayer.setMediaItem(
             MediaItem.Builder()
                 .setUri(parsed)
@@ -105,15 +128,18 @@ class Media3PlaybackService : MediaSessionService() {
         fadeStartedAt = android.os.SystemClock.elapsedRealtime()
         val generation = ++fadeGeneration
         crossfadeStatus = "fading"
-        standbyPlayer.volume = 0f
+        activeDeckGain = 1f
+        standbyDeckGain = 0f
+        applyDeckVolumes()
         standbyPlayer.play()
         val task = object : Runnable {
             override fun run() {
                 if (generation != fadeGeneration || isDestroyed) return
                 val elapsed = (android.os.SystemClock.elapsedRealtime() - fadeStartedAt).coerceAtLeast(0L)
                 val progress = (elapsed.toFloat() / fadeDurationMs.toFloat()).coerceIn(0f, 1f)
-                activePlayer.volume = cos(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
-                standbyPlayer.volume = sin(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
+                activeDeckGain = cos(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
+                standbyDeckGain = sin(progress * Math.PI.toFloat() / 2f).coerceIn(0f, 1f)
+                applyDeckVolumes()
                 if (progress >= 1f) {
                     val oldPlayer = activePlayer
                     activePlayer = standbyPlayer
@@ -121,8 +147,9 @@ class Media3PlaybackService : MediaSessionService() {
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
                     activePlayer.setAudioAttributes(audioAttributes(), true)
                     mediaSession?.setPlayer(activePlayer)
-                    activePlayer.volume = 1f
-                    standbyPlayer.volume = 0f
+                    activeDeckGain = 1f
+                    standbyDeckGain = 0f
+                    applyDeckVolumes()
                     standbyPlayer.pause()
                     standbyPlayer.clearMediaItems()
                     crossfadeStatus = "completed"
@@ -144,13 +171,19 @@ class Media3PlaybackService : MediaSessionService() {
         if (::activePlayer.isInitialized && ::standbyPlayer.isInitialized) {
             // Cancellation preserves the current deck; the incoming deck is silenced
             // and paused so a second request cannot leave two audible players.
-            standbyPlayer.volume = 0f
+            activeDeckGain = 1f
+            standbyDeckGain = 0f
+            applyDeckVolumes()
             standbyPlayer.pause()
         }
         if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
             crossfadeStatus = "cancelled"
         }
-        if (::activePlayer.isInitialized) activePlayer.volume = 1f
+        if (::activePlayer.isInitialized) {
+            activeDeckGain = 1f
+            standbyDeckGain = 0f
+            applyDeckVolumes()
+        }
         return true
     }
 
