@@ -43,12 +43,16 @@ class Media3PlaybackState {
       isPlaying: boolValue(map['isPlaying']),
       playbackState: integerValue(map['playbackState']),
       playWhenReady: boolValue(map['playWhenReady']),
-      position: Duration(milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff)),
+      position: Duration(
+        milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
+      ),
       duration: rawDuration is num && rawDuration >= 0
-          ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff))
+          ? Duration(
+              milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt(),
+            )
           : null,
       mediaId: stringValue(map['mediaId']),
-      volume: doubleValue(map['volume']).clamp(0.0, 1.0),
+      volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );
@@ -108,7 +112,7 @@ class Media3PlaybackClient {
     }
     await _methodChannel.invokeMethod<bool>(
       'setVolume',
-      <String, Object>{'value': volume.clamp(0.0, 1.0)},
+      <String, Object>{'value': volume.clamp(0.0, 1.0).toDouble()},
     );
   }
 
