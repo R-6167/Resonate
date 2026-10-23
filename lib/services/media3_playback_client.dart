@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Immutable snapshot from the isolated native Media3 prototype.
+/// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
   const Media3PlaybackState({
     required this.connected,
@@ -71,7 +71,7 @@ class Media3PlaybackState {
   }
 }
 
-/// Thin typed client for the experimental Media3 bridge.
+/// Typed command/state boundary for native Media3 playback.
 class Media3PlaybackClient {
   Media3PlaybackClient({
     MethodChannel? methodChannel,
