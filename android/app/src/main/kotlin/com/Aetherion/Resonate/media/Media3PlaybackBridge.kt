@@ -196,8 +196,14 @@ class Media3PlaybackBridge(
                         result.error("INVALID_VOLUME", "A finite volume value is required.", null)
                         return
                     }
-                    connected.volume = volume.coerceIn(0f, 1f)
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.setMasterVolume(
+                        volume.coerceIn(0f, 1f),
+                    ) ?: run {
+                        // Defensive fallback if the service is being torn down.
+                        connected.volume = volume.coerceIn(0f, 1f)
+                        true
+                    }
+                    result.success(accepted)
                 }
                 "preloadNext" -> {
                     val uri = call.argument<String>("uri")
