@@ -154,10 +154,6 @@ class _SpectrumPainter extends CustomPainter {
 
       final topPath = smoothCurve(upper);
       final bottomPath = smoothCurve(lower);
-      final ribbon = Path()
-        ..addPath(topPath, Offset.zero)
-        ..lineTo(lower.last.dx, lower.last.dy)
-        ..addPath(bottomPath, Offset.zero);
       // Use a soft fill so the wave reads as a designed surface rather than
       // a single thin scribble. Keep all effects inexpensive on older devices.
       final fill = Path()..moveTo(upper.first.dx, upper.first.dy);
