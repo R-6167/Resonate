@@ -52,4 +52,26 @@ void main() {
       expect(state.mediaId, isNull);
     });
   });
+  group('Media3PlaybackClient input validation', () {
+    final client = Media3PlaybackClient();
+
+    test('rejects source URIs without a scheme before channel invocation', () async {
+      await expectLater(
+        client.setSource(Uri.parse('/storage/emulated/0/Music/song.mp3')),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects negative seek positions before channel invocation', () async {
+      await expectLater(
+        client.seekTo(const Duration(milliseconds: -1)),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects non-finite volume before channel invocation', () async {
+      await expectLater(client.setVolume(double.nan), throwsArgumentError);
+    });
+  });
+
 }
