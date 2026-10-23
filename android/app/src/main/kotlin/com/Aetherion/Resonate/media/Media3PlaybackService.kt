@@ -34,7 +34,22 @@ class Media3PlaybackService : MediaSessionService() {
         super.onCreate()
         instance = this
         activePlayer = newPlayer()
-        standbyPlayer = newPlayer()
+        standbyPlayer = newPlayer().apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (crossfadeStatus == "preparing") {
+                        crossfadeStatus = when (playbackState) {
+                            Player.STATE_READY -> "ready"
+                            Player.STATE_IDLE -> "preparing"
+                            Player.STATE_BUFFERING -> "preparing"
+                            Player.STATE_ENDED -> "incoming_ended"
+                            else -> crossfadeStatus
+                        }
+                    }
+                    if (playerError != null) crossfadeStatus = "incoming_error"
+                }
+            })
+        }
         mediaSession = MediaSession.Builder(this, activePlayer).build()
     }
 
@@ -128,9 +143,10 @@ class Media3PlaybackService : MediaSessionService() {
             standbyPlayer.volume = 0f
             standbyPlayer.pause()
         }
-        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing") {
+        if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
             crossfadeStatus = "cancelled"
         }
+        if (::activePlayer.isInitialized) activePlayer.volume = 1f
         return true
     }
 
