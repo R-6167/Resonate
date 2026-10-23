@@ -106,7 +106,8 @@ class DjSfxRack {
     DjSfxPreset.scratch,
     DjSfxPreset.stutter,
     DjSfxPreset.brake,
-    DjSfxPreset.repeat,
+    // Repeat SFX seeks the outgoing player during a live fade; keep it out
+    // of the automatic candidate pool until that interaction is redesigned.
     DjSfxPreset.airHorn,
     DjSfxPreset.gunshot,
     DjSfxPreset.beatRepeat,
