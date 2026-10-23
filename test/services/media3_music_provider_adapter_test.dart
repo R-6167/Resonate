@@ -29,7 +29,9 @@ void main() {
       expect(item.artist, 'Resonate Artist');
       expect(item.album, 'Resonate Album');
       expect(item.uri.scheme, 'file');
-      expect(item.uri.path, '/storage/emulated/0/Music/one song.mp3');
+      // Uri.path is percent-encoded for spaces; toFilePath returns the
+      // filesystem path that the native Media3 source should resolve.
+      expect(item.uri.toFilePath(), '/storage/emulated/0/Music/one song.mp3');
     });
 
     test('preserves content URIs for Android MediaStore items', () {
