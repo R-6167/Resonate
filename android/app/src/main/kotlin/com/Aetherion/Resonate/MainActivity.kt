@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.provider.DocumentsContract
 import com.Aetherion.Resonate.media.PermissionHelper
+import com.Aetherion.Resonate.media.Media3PlaybackBridge
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +26,7 @@ class MainActivity : AudioServiceActivity() {
     private var pendingDiagnosticMime: String = "application/json"
     private val permissionHelper by lazy { PermissionHelper(this) }
     private val effectsChannelHandler = AudioEffectsChannelHandler()
+    private var media3PlaybackBridge: Media3PlaybackBridge? = null
     private val pcmAnalysisHandler = PcmAnalysisHandler(this)
     private val folderScanHandler = FolderScanHandler(this) { permissionHelper.hasAudioPermission() }
 
@@ -58,6 +60,8 @@ class MainActivity : AudioServiceActivity() {
             }
         }
         effectsChannelHandler.register(flutterEngine.dartExecutor.binaryMessenger)
+        media3PlaybackBridge?.release()
+        media3PlaybackBridge = Media3PlaybackBridge(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun getSystemVolume(result: MethodChannel.Result) {
@@ -160,6 +164,8 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        media3PlaybackBridge?.release()
+        media3PlaybackBridge = null
         effectsChannelHandler.release()
         pcmAnalysisHandler.release()
         folderScanHandler.release()
