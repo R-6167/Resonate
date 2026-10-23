@@ -4,7 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../services/media3_playback_client.dart';
+import '../../services/media3_playback_client.dart';
 
 /// Developer-only surface for testing the native Media3 prototype.
 ///
@@ -307,7 +307,12 @@ class _Media3EngineLabScreenState extends State<Media3EngineLabScreen> {
                   _stateLine('Service connected', _state?.connected),
                   _stateLine('Playing', _state?.isPlaying),
                   _stateLine('Play when ready', _state?.playWhenReady),
-                  _stateLine('Playback state', _playbackLabel),
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Playback state'),
+                    trailing: Text(_playbackLabel),
+                  ),
                   _stateLine('Duration known', _state?.duration != null),
                   _stateLine('Native error flag', _state?.hasError),
                   if (_state?.error != null && _state!.error!.isNotEmpty)
