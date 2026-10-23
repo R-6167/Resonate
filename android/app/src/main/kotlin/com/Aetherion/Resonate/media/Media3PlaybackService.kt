@@ -33,8 +33,8 @@ class Media3PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        activePlayer = newPlayer()
-        standbyPlayer = newPlayer().apply {
+        activePlayer = newPlayer(handleAudioFocus = true)
+        standbyPlayer = newPlayer(handleAudioFocus = false).apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (crossfadeStatus == "preparing") {
@@ -56,19 +56,18 @@ class Media3PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, activePlayer).build()
     }
 
-    private fun newPlayer() = ExoPlayer.Builder(this).build().apply {
-        setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(C.USAGE_MEDIA)
-                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                .build(),
-            /* handleAudioFocus = */ true,
-        )
+    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(this).build().apply {
+        setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
+
+    private fun audioAttributes() = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
 
     /** Prepares the inactive deck without disturbing current playback. */
     fun preloadNext(uri: String): Boolean {
@@ -95,7 +94,7 @@ class Media3PlaybackService : MediaSessionService() {
      */
     fun startCrossfade(durationMs: Long): Boolean {
         if (durationMs !in 250L..15000L) return false
-        if (standbyPlayer.mediaItemCount == 0 ||
+        if (!activePlayer.isPlaying || standbyPlayer.mediaItemCount == 0 ||
             standbyPlayer.playbackState != Player.STATE_READY
         ) {
             crossfadeStatus = "incoming_not_ready"
@@ -119,6 +118,8 @@ class Media3PlaybackService : MediaSessionService() {
                     val oldPlayer = activePlayer
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
+                    oldPlayer.setAudioAttributes(audioAttributes(), false)
+                    activePlayer.setAudioAttributes(audioAttributes(), true)
                     mediaSession?.setPlayer(activePlayer)
                     activePlayer.volume = 1f
                     standbyPlayer.volume = 0f
