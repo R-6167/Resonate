@@ -10,6 +10,7 @@ import '../providers/intelligence_provider.dart';
 import '../providers/theme_provider.dart';
 import 'about_screen.dart';
 import 'dev/media3_engine_lab_screen.dart';
+import 'dev/media3_crossfade_lab_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
@@ -102,6 +103,7 @@ class SettingsScreen extends StatelessWidget {
             if (kDebugMode)
               _section(context, 'Developer tools', Icons.developer_mode_rounded, [
                 _item(context, 'Media3 Engine Lab', 'Test native ExoPlayer without changing normal playback', Icons.science_outlined, const Media3EngineLabScreen()),
+                _item(context, 'Media3 Crossfade Lab', 'Stress-test isolated native two-deck transitions', Icons.compare_arrows_rounded, const Media3CrossfadeLabScreen()),
               ]),
             _section(context, 'About', Icons.info_outline_rounded, [
               _item(context, 'About & How to use', 'Guide, privacy notes and copyright', Icons.menu_book_outlined, const AboutScreen()),
