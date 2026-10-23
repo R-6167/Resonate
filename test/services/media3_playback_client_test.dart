@@ -72,6 +72,39 @@ void main() {
     test('rejects non-finite volume before channel invocation', () async {
       await expectLater(client.setVolume(double.nan), throwsArgumentError);
     });
+
+    test('rejects an empty native queue before channel invocation', () async {
+      await expectLater(client.setQueue(const <Media3QueueItem>[]), throwsArgumentError);
+    });
+
+    test('rejects an out-of-range queue index before channel invocation', () async {
+      await expectLater(
+        client.setQueue(
+          const <Media3QueueItem>[
+            Media3QueueItem(
+              id: 'track-1',
+              uri: Uri(scheme: 'file', path: '/music/one.mp3'),
+              title: 'One',
+            ),
+          ],
+          startIndex: 1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects repeat modes not supported by Media3 queue policy', () async {
+      await expectLater(client.setRepeatMode('random'), throwsArgumentError);
+    });
+
+    test('queue item requires a URI scheme', () {
+      const item = Media3QueueItem(
+        id: 'track-1',
+        uri: Uri(path: '/music/one.mp3'),
+        title: 'One',
+      );
+      expect(item.toMap, throwsArgumentError);
+    });
   });
 
 }
