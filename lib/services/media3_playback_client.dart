@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
 
 /// Immutable snapshot from the isolated native Media3 prototype.
 ///
