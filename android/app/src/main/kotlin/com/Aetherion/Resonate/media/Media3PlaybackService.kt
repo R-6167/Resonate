@@ -46,7 +46,10 @@ class Media3PlaybackService : MediaSessionService() {
                             else -> crossfadeStatus
                         }
                     }
-                    if (playerError != null) crossfadeStatus = "incoming_error"
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    crossfadeStatus = "incoming_error"
                 }
             })
         }
