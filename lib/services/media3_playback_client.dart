@@ -2,10 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-/// Immutable snapshot from the isolated native Media3 prototype.
-///
-/// This API is intentionally not wired into MusicProvider. The production
-/// just_audio path remains authoritative until migration parity is proven.
+/// Immutable playback snapshot published by the native Media3 session.
 class Media3PlaybackState {
   const Media3PlaybackState({
     required this.connected,
@@ -15,6 +12,11 @@ class Media3PlaybackState {
     required this.position,
     required this.duration,
     required this.mediaId,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.currentMediaItemIndex,
+    required this.mediaItemCount,
     required this.volume,
     required this.hasError,
     required this.error,
@@ -27,6 +29,11 @@ class Media3PlaybackState {
   final Duration position;
   final Duration? duration;
   final String? mediaId;
+  final String? title;
+  final String? artist;
+  final String? album;
+  final int currentMediaItemIndex;
+  final int mediaItemCount;
   final double volume;
   final bool hasError;
   final String? error;
@@ -49,11 +56,14 @@ class Media3PlaybackState {
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
       ),
       duration: rawDuration is num && rawDuration >= 0
-          ? Duration(
-              milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt(),
-            )
+          ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
+      title: stringValue(map['title']),
+      artist: stringValue(map['artist']),
+      album: stringValue(map['album']),
+      currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
+      mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
@@ -61,10 +71,7 @@ class Media3PlaybackState {
   }
 }
 
-/// Thin typed client for the experimental Media3 bridge.
-///
-/// Creating this client does not connect to or start the service. A connection
-/// is only requested when a command is sent or [states] is listened to.
+/// Typed command/state boundary for native Media3 playback.
 class Media3PlaybackClient {
   Media3PlaybackClient({
     MethodChannel? methodChannel,
@@ -94,6 +101,44 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Loads a native Media3 queue and selects [startIndex] as the active item.
+  /// Queue items are immutable metadata + URI descriptors; native Player objects
+  /// never cross the Flutter boundary.
+  Future<void> setQueue(
+    List<Media3QueueItem> items, {
+    int startIndex = 0,
+  }) async {
+    if (items.isEmpty) {
+      throw ArgumentError.value(items, 'items', 'Queue must not be empty.');
+    }
+    if (items.length > 500) {
+      throw ArgumentError.value(items.length, 'items', 'Queue cannot exceed 500 items.');
+    }
+    if (startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must point to an item in the queue.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'setQueue',
+      <String, Object>{
+        'items': items.map((item) => item.toMap()).toList(growable: false),
+        'startIndex': startIndex,
+      },
+    );
+  }
+
+  Future<void> skipToNext() => _command('skipToNext');
+  Future<void> skipToPrevious() => _command('skipToPrevious');
+
+  Future<void> setRepeatMode(String mode) async {
+    if (!const {'off', 'one', 'all'}.contains(mode)) {
+      throw ArgumentError.value(mode, 'mode', 'Must be off, one, or all.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'setRepeatMode',
+      <String, Object>{'mode': mode},
+    );
+  }
+
   Future<void> play() => _command('play');
   Future<void> pause() => _command('pause');
   Future<void> stop() => _command('stop');
@@ -118,6 +163,34 @@ class Media3PlaybackClient {
     );
   }
 
+  Future<void> preloadNext(Uri uri) async {
+    if (!uri.hasScheme) {
+      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'preloadNext',
+      <String, Object>{'uri': uri.toString()},
+    );
+  }
+
+  Future<void> crossfade({Duration duration = const Duration(seconds: 5)}) async {
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
+    }
+    await _methodChannel.invokeMethod<bool>(
+      'crossfade',
+      <String, Object>{'durationMs': duration.inMilliseconds},
+    );
+  }
+
+  Future<void> cancelCrossfade() => _command('cancelCrossfade');
+
+  Future<Map<Object?, Object?>> getCrossfadeState() async {
+    final state = await _methodChannel.invokeMapMethod<Object?, Object?>('crossfadeState');
+    return state ?? <Object?, Object?>{'status': 'unknown'};
+  }
+
   Future<Media3PlaybackState> getState() async {
     final value = await _methodChannel.invokeMapMethod<Object?, Object?>('getState');
     if (value == null) {
@@ -128,5 +201,45 @@ class Media3PlaybackClient {
 
   Future<void> _command(String method) async {
     await _methodChannel.invokeMethod<bool>(method);
+  }
+}
+
+
+/// Queue descriptor sent to the native Media3 session.
+class Media3QueueItem {
+  const Media3QueueItem({
+    required this.id,
+    required this.uri,
+    required this.title,
+    this.artist,
+    this.album,
+    this.artworkUri,
+  });
+
+  final String id;
+  final Uri uri;
+  final String title;
+  final String? artist;
+  final String? album;
+  final Uri? artworkUri;
+
+  Map<String, Object?> toMap() {
+    if (id.trim().isEmpty) {
+      throw ArgumentError.value(id, 'id', 'Queue item ID must not be empty.');
+    }
+    if (!uri.hasScheme) {
+      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
+    }
+    if (artworkUri != null && !artworkUri!.hasScheme) {
+      throw ArgumentError.value(artworkUri, 'artworkUri', 'Artwork URI must have a scheme.');
+    }
+    return <String, Object?>{
+      'id': id,
+      'uri': uri.toString(),
+      'title': title,
+      if (artist != null) 'artist': artist!,
+      if (album != null) 'album': album!,
+      if (artworkUri != null) 'artworkUri': artworkUri.toString(),
+    };
   }
 }
