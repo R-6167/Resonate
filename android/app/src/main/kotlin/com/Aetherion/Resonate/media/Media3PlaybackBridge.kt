@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -71,7 +72,14 @@ class Media3PlaybackBridge(
                         result.error("INVALID_URI", "A non-empty media URI is required.", null)
                         return
                     }
-                    connected.setMediaItem(MediaItem.fromUri(Uri.parse(source)))
+                    val uri = Uri.parse(source)
+                    val title = uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { null }
+                        ?: "Media3 Engine Lab test audio"
+                    val item = MediaItem.Builder()
+                        .setUri(uri)
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+                        .build()
+                    connected.setMediaItem(item)
                     connected.prepare()
                     result.success(true)
                 }
