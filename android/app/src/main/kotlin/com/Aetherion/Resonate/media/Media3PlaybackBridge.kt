@@ -28,6 +28,10 @@ class Media3PlaybackBridge(
     private val context: Context,
     messenger: BinaryMessenger,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
+
+    companion object {
+        private const val POSITION_UPDATE_INTERVAL_MS = 250L
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
     private val methodChannel = MethodChannel(messenger, "com.aetherion.resonate/media3")
@@ -37,10 +41,37 @@ class Media3PlaybackBridge(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var released = false
 
+    private val positionTicker = object : Runnable {
+        override fun run() {
+            val player = controller
+            if (released || eventSink == null || player == null || !player.isPlaying) {
+                return
+            }
+            publishState()
+            mainHandler.postDelayed(this, POSITION_UPDATE_INTERVAL_MS)
+        }
+    }
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             publishState()
+            if (player.isPlaying) {
+                schedulePositionUpdates()
+            } else {
+                stopPositionUpdates()
+            }
         }
+    }
+
+    private fun schedulePositionUpdates() {
+        stopPositionUpdates()
+        if (!released && eventSink != null && controller?.isPlaying == true) {
+            mainHandler.postDelayed(positionTicker, POSITION_UPDATE_INTERVAL_MS)
+        }
+    }
+
+    private fun stopPositionUpdates() {
+        mainHandler.removeCallbacks(positionTicker)
     }
 
     init {
@@ -243,6 +274,7 @@ class Media3PlaybackBridge(
                     eventSink?.error("MEDIA3_NOT_READY", "Could not connect to the native Media3 session.", null)
                 } else {
                     publishState()
+                    schedulePositionUpdates()
                 }
             }
         }
@@ -250,6 +282,7 @@ class Media3PlaybackBridge(
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
+        stopPositionUpdates()
     }
 
     private fun publishState() {
@@ -277,6 +310,7 @@ class Media3PlaybackBridge(
 
     fun release() {
         released = true
+        stopPositionUpdates()
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         eventSink = null
