@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+
 /// Immutable snapshot from the isolated native Media3 prototype.
 ///
 /// This API is intentionally not wired into MusicProvider. The production
