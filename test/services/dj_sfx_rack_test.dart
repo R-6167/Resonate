@@ -85,16 +85,19 @@ void main() {
 
     test('phrase blends never choose repeat/restart SFX in musical mode', () async {
       final rack = DjSfxRack(random: _SequenceRandom());
-      await rack.engage(
-        energyScore: 0.5,
-        transitionKind: DjTransitionKind.phraseBlend,
-        aggressiveness: DjAggressiveness.musical,
-      );
-      expect(
-        rack.activePreset,
-        isNot(anyOf(DjSfxPreset.repeat, DjSfxPreset.repeatRestart)),
-      );
-      await rack.restore();
+      for (var i = 0; i < 20; i++) {
+        await rack.engage(
+          energyScore: 0.5,
+          transitionKind: DjTransitionKind.phraseBlend,
+          aggressiveness: DjAggressiveness.musical,
+        );
+        expect(
+          rack.activePreset,
+          isNot(anyOf(DjSfxPreset.repeat, DjSfxPreset.repeatRestart)),
+          reason: 'phrase blend $i must use a non-seeking effect',
+        );
+        await rack.restore();
+      }
     });
   });
 }
