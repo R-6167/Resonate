@@ -1,16 +1,16 @@
 import '../models/song.dart';
-import 'media3_playback_client.dart';
+import 'playback_snapshot.dart';
 
 /// The transport/state contract a playback engine must provide to Resonate.
 ///
-/// This intentionally excludes engine-specific DSP, session IDs, and
-/// crossfade orchestration. Those responsibilities must be migrated as a
-/// coordinated unit before MusicProvider can switch its production authority.
+/// This contract is engine-neutral. DSP, audio-session routing, leveling,
+/// focus ducking, and crossfade must be integrated into the chosen backend's
+/// runtime before MusicProvider switches production playback authority.
 abstract interface class PlaybackBackend {
-  Stream<Media3PlaybackState> get states;
+  Stream<PlaybackSnapshot> get states;
 
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
-  Future<Media3PlaybackState> currentState();
+  Future<PlaybackSnapshot> currentState();
 
   Future<void> play();
   Future<void> pause();

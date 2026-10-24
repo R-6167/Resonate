@@ -3,6 +3,7 @@ import 'package:resonate/models/song.dart';
 import 'package:resonate/services/media3_music_provider_adapter.dart';
 import 'package:resonate/services/media3_playback_client.dart';
 import 'package:resonate/services/playback_backend.dart';
+import 'package:resonate/services/playback_snapshot.dart';
 
 Song song({
   String id = 'track-1',
@@ -65,7 +66,9 @@ void main() {
       final PlaybackBackend backend = Media3MusicProviderAdapter(
         client: Media3PlaybackClient(),
       );
+      final Stream<PlaybackSnapshot> snapshots = backend.states;
       expect(backend, isA<Media3MusicProviderAdapter>());
+      expect(snapshots, isA<Stream<PlaybackSnapshot>>());
     });
 
     test('repeat policy has explicit backend values', () {
