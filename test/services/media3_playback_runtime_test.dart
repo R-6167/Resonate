@@ -47,6 +47,7 @@ class FakePlaybackBackend implements PlaybackBackend {
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  Map<String, double?> lastGainFactors = const {};
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
@@ -72,6 +73,10 @@ class FakePlaybackBackend implements PlaybackBackend {
   Future<void> previous() async {}
   @override
   Future<void> setVolume(double value) async {}
+  @override
+  Future<void> setGainFactors({double? trackLevel, double? preamp, double? sleepFade, double? focusDuck}) async {
+    lastGainFactors = {'trackLevel': trackLevel, 'preamp': preamp, 'sleepFade': sleepFade, 'focusDuck': focusDuck};
+  }
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
 }
@@ -131,6 +136,13 @@ void main() {
       final state = await seen;
       expect(state.currentQueueIndex, isNull);
       expect(state.currentSong, isNull);
+    });
+
+    test('forwards composed gain factors atomically to the backend', () async {
+      await runtime.setGainFactors(trackLevel: 0.8, preamp: 0.7, sleepFade: 0.5, focusDuck: 1.0);
+      expect(backend.lastGainFactors, {
+        'trackLevel': 0.8, 'preamp': 0.7, 'sleepFade': 0.5, 'focusDuck': 1.0,
+      });
     });
 
     test('forwards transport commands to the backend', () async {
