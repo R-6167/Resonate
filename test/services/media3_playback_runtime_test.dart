@@ -49,6 +49,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   bool playing = false;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
+  List<Song>? preloadedQueue;
+  int? preloadedQueueIndex;
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
 
@@ -83,7 +85,11 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
   @override
-  Future<void> preloadNext(Song song) async { preloadedSong = song; }
+  Future<void> preloadNext(Song song, {List<Song>? queue, int? startIndex}) async {
+    preloadedSong = song;
+    preloadedQueue = queue;
+    preloadedQueueIndex = startIndex;
+  }
   @override
   Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
   @override
@@ -163,6 +169,18 @@ void main() {
       expect(backend.preloadedSong?.id, 'incoming');
       expect(backend.crossfadeDuration, const Duration(seconds: 4));
       expect(backend.cancelCrossfadeCalls, 1);
+    });
+
+    test('preloads the full queue at the incoming occurrence for seamless handoff', () async {
+      final first = makeSong('first');
+      final incoming = makeSong('incoming');
+      final last = makeSong('last');
+      await runtime.loadQueue([first, incoming, last], startIndex: 0);
+      await runtime.preloadNext(incoming);
+
+      expect(backend.preloadedSong?.id, 'incoming');
+      expect(backend.preloadedQueue?.map((song) => song.id), ['first', 'incoming', 'last']);
+      expect(backend.preloadedQueueIndex, 1);
     });
 
     test('rejects crossfade durations outside native supported range', () async {
