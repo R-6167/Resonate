@@ -85,6 +85,23 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             })
         }
+        // A prepared or fading standby deck must never continue independently
+        // after the active deck is paused by the user, audio focus, or a noisy
+        // route transition. Attach to both players because their roles swap at
+        // crossfade completion; only the current active deck may cancel a fade.
+        val activeDeckInterruptionListener = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (player !== activePlayer || player.isPlaying) return
+                if (crossfadeStatus == "fading" ||
+                    crossfadeStatus == "preparing" ||
+                    crossfadeStatus == "ready"
+                ) {
+                    cancelCrossfade()
+                }
+            }
+        }
+        activePlayer.addListener(activeDeckInterruptionListener)
+        standbyPlayer.addListener(activeDeckInterruptionListener)
         mediaSession = MediaSession.Builder(this, activePlayer).build()
         applyDeckVolumes()
     }
