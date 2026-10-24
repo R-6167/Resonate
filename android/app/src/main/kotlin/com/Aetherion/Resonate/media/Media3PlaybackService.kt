@@ -1,5 +1,6 @@
 package com.Aetherion.Resonate.media
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -7,7 +8,11 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
+import com.aetherion.resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlin.math.cos
@@ -84,7 +89,20 @@ class Media3PlaybackService : MediaSessionService() {
         applyDeckVolumes()
     }
 
-    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(this).build().apply {
+    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
+        this,
+        object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(DspEngineSinkHook.createProcessors())
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
+                .build()
+        },
+    ).build().apply {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
     }
