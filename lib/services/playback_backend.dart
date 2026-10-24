@@ -19,6 +19,12 @@ abstract interface class PlaybackBackend {
   Future<void> next();
   Future<void> previous();
   Future<void> setVolume(double value);
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  });
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
 }
 
