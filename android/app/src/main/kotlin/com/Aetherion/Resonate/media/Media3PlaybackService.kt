@@ -7,7 +7,9 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import com.Aetherion.Resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlin.math.cos
@@ -84,7 +86,10 @@ class Media3PlaybackService : MediaSessionService() {
         applyDeckVolumes()
     }
 
-    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(this).build().apply {
+    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
+        this,
+        DefaultRenderersFactory(this).setAudioProcessors(DspEngineSinkHook.createProcessors()),
+    ).build().apply {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
     }
