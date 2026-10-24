@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/services/media3_music_provider_adapter.dart';
 import 'package:resonate/services/media3_playback_client.dart';
+import 'package:resonate/services/playback_backend.dart';
 
 Song song({
   String id = 'track-1',
@@ -56,6 +57,21 @@ void main() {
         () => Media3QueueItem.fromSong(song(filePath: '  ')),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('PlaybackBackend contract', () {
+    test('Media3 adapter implements the shared transport contract', () {
+      final PlaybackBackend backend = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(),
+      );
+      expect(backend, isA<Media3MusicProviderAdapter>());
+    });
+
+    test('repeat policy has explicit backend values', () {
+      expect(PlaybackQueueRepeatMode.off.nativeValue, 'off');
+      expect(PlaybackQueueRepeatMode.one.nativeValue, 'one');
+      expect(PlaybackQueueRepeatMode.all.nativeValue, 'all');
     });
   });
 
@@ -218,12 +234,6 @@ void main() {
         ),
         isNull,
       );
-    });
-
-    test('repeat policy has explicit native values', () {
-      expect(PlaybackQueueRepeatMode.off.nativeValue, 'off');
-      expect(PlaybackQueueRepeatMode.one.nativeValue, 'one');
-      expect(PlaybackQueueRepeatMode.all.nativeValue, 'all');
     });
   });
 }
