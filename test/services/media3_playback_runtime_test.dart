@@ -81,9 +81,10 @@ void main() {
     late FakePlaybackBackend backend;
     late Media3PlaybackRuntime runtime;
 
-    setUp(() {
+    setUp(() async {
       backend = FakePlaybackBackend();
       runtime = Media3PlaybackRuntime(backend);
+      await runtime.connect();
     });
 
     tearDown(() async {
