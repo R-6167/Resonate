@@ -237,21 +237,43 @@ class Media3PlaybackBridge(
                         result.error("INVALID_URI", "An incoming queue item with a URI is required.", null)
                         return
                     }
-                    val metadata = MediaMetadata.Builder()
-                        .setTitle((raw["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Unknown track")
-                        .setArtist(raw["artist"] as? String)
-                        .setAlbumTitle(raw["album"] as? String)
-                        .apply {
-                            val artwork = raw["artworkUri"] as? String
-                            if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    val descriptors = rawItems ?: listOf(raw)
+                    if (descriptors.isEmpty() || descriptors.size > 500 || startIndex !in descriptors.indices) {
+                        result.error("INVALID_QUEUE", "Incoming queue must contain 1–500 items and a valid start index.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (descriptor in descriptors) {
+                        val descriptorUri = descriptor["uri"] as? String
+                        if (descriptorUri.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every incoming queue item needs a URI.", null)
+                            return
                         }
-                        .build()
-                    val item = MediaItem.Builder()
-                        .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
-                        .setUri(Uri.parse(source))
-                        .setMediaMetadata(metadata)
-                        .build()
-                    val accepted = Media3PlaybackService.instance?.preloadNext(item) == true
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle((descriptor["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Unknown track")
+                            .setArtist(descriptor["artist"] as? String)
+                            .setAlbumTitle(descriptor["album"] as? String)
+                            .apply {
+                                val artwork = descriptor["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((descriptor["id"] as? String)?.takeIf { it.isNotBlank() } ?: descriptorUri)
+                            .setUri(Uri.parse(descriptorUri))
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    val incoming = items[startIndex]
+                    if (incoming.mediaId != ((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source) ||
+                        incoming.localConfiguration?.uri?.toString() != source
+                    ) {
+                        result.error("INVALID_QUEUE_INDEX", "The selected queue occurrence must match the incoming item.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.preloadNext(items, startIndex) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }
