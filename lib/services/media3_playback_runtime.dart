@@ -82,13 +82,43 @@ class Media3PlaybackRuntime {
 
   /// Prepares the incoming song on the Media3 standby deck without disturbing
   /// the current deck. Only a backend with native dual-deck support may do this.
-  Future<void> preloadNext(Song song) async {
+  Future<void> preloadNext(Song song, {int? queueIndex}) async {
     _ensureAlive();
     if (_backend is! PlaybackCrossfadeBackend) {
       throw UnsupportedError('This playback backend does not support native crossfade.');
     }
+
+    final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
+    if (_queue.isNotEmpty && resolvedIndex != null) {
+      await (_backend as PlaybackCrossfadeBackend).preloadNext(
+        song,
+        queue: _queue,
+        startIndex: resolvedIndex,
+      );
+      return;
+    }
     await (_backend as PlaybackCrossfadeBackend).preloadNext(song);
   }
+
+  int? _resolveIncomingQueueIndex(Song song) {
+    if (_queue.isEmpty) return null;
+    final currentIndex = _current.currentQueueIndex ?? -1;
+    // Prefer the next matching occurrence after the current item. This preserves
+    // queue occurrence identity when a playlist contains the same song twice.
+    for (var i = currentIndex + 1; i < _queue.length; i++) {
+      if (_sameTrack(_queue[i], song)) return i;
+    }
+    int? uniqueMatch;
+    for (var i = 0; i < _queue.length; i++) {
+      if (!_sameTrack(_queue[i], song)) continue;
+      if (uniqueMatch != null) return null;
+      uniqueMatch = i;
+    }
+    return uniqueMatch;
+  }
+
+  bool _sameTrack(Song left, Song right) =>
+      left.id == right.id && left.filePath.trim() == right.filePath.trim();
 
   Future<void> crossfade({required Duration duration}) async {
     _ensureAlive();
