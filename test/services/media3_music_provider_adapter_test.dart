@@ -118,7 +118,7 @@ void main() {
       expect(Media3MusicProviderAdapter.resolveOriginalQueueIndex(queue, -1), isNull);
     });
 
-    test('resolves current track by stable media ID before queue index', () {
+    test('resolves current track by stable media ID when index disagrees', () {
       final queue = <Song>[
         song(id: 'first', filePath: '/music/first.mp3'),
         song(id: 'second', filePath: '/music/second.mp3'),
@@ -132,9 +132,67 @@ void main() {
         )?.id,
         'second',
       );
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          queue,
+          mediaId: 'second',
+          playableIndex: 0,
+        ),
+        1,
+      );
     });
 
-    test('falls back to native queue index when media ID is unavailable', () {
+    test('uses native index to distinguish repeated occurrences of the same song', () {
+      final repeated = song(id: 'same', filePath: '/music/same.mp3');
+      final queue = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          queue,
+          mediaId: 'same',
+          playableIndex: 2,
+        ),
+        2,
+      );
+    });
+
+    test('does not guess when duplicate IDs cannot be disambiguated', () {
+      final queue = <Song>[
+        song(id: 'same', filePath: '/music/one.mp3'),
+        song(id: 'same', filePath: '/music/two.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          queue,
+          mediaId: 'same',
+          playableIndex: 10,
+        ),
+        isNull,
+      );
+    });
+
+    test('does not fall back to an unrelated index when media ID is stale', () {
+      final queue = <Song>[
+        song(id: 'first', filePath: '/music/first.mp3'),
+        song(id: 'second', filePath: '/music/second.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentSong(
+          queue,
+          mediaId: 'removed-track',
+          playableIndex: 1,
+        ),
+        isNull,
+      );
+    });
+
+    test('falls back to native queue index only when media ID is unavailable', () {
       final queue = <Song>[
         song(id: 'invalid', filePath: ''),
         song(id: 'first', filePath: '/music/first.mp3'),
