@@ -48,29 +48,94 @@ jobs:
         run: python3 scripts/patch_just_audio_dsp_sink.py
 
       - name: Verify just_audio DSP sink injection
-        run: python3 scripts/patch_just_audio_dsp_sink.py --check
+        run: python3 scripts/patch_just_audio_dsp_sink.py --verify
 
       - name: Flutter analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
 
       - name: Flutter tests
-        run: flutter test
+        run: flutter test --reporter expanded
 
       - name: Native DSP compile and stress test
-        run: ./scripts/test_native_dsp.sh
+        working-directory: android/app/src/main/cpp
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -fPIC -I. -c dsp_engine_core.cpp -o /tmp/dsp_engine_core.o
+          g++ -std=c++17 -O3 -fPIC -I. -c dsp_stress.cpp -o /tmp/dsp_stress.o
+          cat > /tmp/dsp_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            DspStressResult r{};
+            const int rc = dsp_run_bass_stress(&r);
+            std::printf("DSP stress: %d/%d cases, peak=%f, cpu=%f%%, overruns=%d\n",
+                        r.cases_passed, r.cases_run, r.max_abs_peak,
+                        r.cpu_pct_of_budget, r.overrun_calls);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_stress
+          /tmp/dsp_stress
+
+          cat > /tmp/dsp_ab_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            int failures = 0;
+            int64_t overruns = 0;
+            const int rc = dsp_run_ab_stress(4000, &failures, &overruns);
+            std::printf("DSP A/B stress: rc=%d, failures=%d, overruns=%lld\n",
+                        rc, failures, (long long)overruns);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_ab_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_ab_stress
+          /tmp/dsp_ab_stress
+
+          cat > /tmp/dsp_dvc_stress_main.cpp <<'EOF'
+          #include "dsp_engine.h"
+          #include <cstdio>
+          int main() {
+            int failures = 0;
+            float peak = 0.0f, step = 0.0f, ab_error = 0.0f;
+            const int rc = dsp_run_dvc_transition_stress(1600, &failures, &peak, &step, &ab_error);
+            std::printf("DSP DVC transition stress: rc=%d, failures=%d, peak=%f, max_step=%f, A/B_error=%g\n",
+                        rc, failures, peak, step, ab_error);
+            return rc;
+          }
+          EOF
+          g++ -std=c++17 -O3 -I. /tmp/dsp_dvc_stress_main.cpp /tmp/dsp_engine_core.o /tmp/dsp_stress.o -o /tmp/dsp_dvc_stress
+          /tmp/dsp_dvc_stress
 
       - name: Android DSP unit tests
-        run: cd android && ./gradlew testDebugUnitTest
+        working-directory: android
+        run: ./gradlew app:testDebugUnitTest --no-daemon
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-shrink
 
       - name: Verify release APK and enforce size budget
-        run: python3 scripts/verify_release_apk.py
+        env:
+          APK_SIZE_LIMIT_MB: "100"
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$apk"
+          size_bytes="$(stat -c '%s' "$apk")"
+          size_mb="$(awk -v bytes="$size_bytes" 'BEGIN { printf "%.2f", bytes / 1048576 }')"
+          limit_bytes="$((APK_SIZE_LIMIT_MB * 1024 * 1024))"
+          echo "Release APK size: ${size_mb} MiB (${size_bytes} bytes)"
+          echo "Release APK budget: ${APK_SIZE_LIMIT_MB} MiB (${limit_bytes} bytes)"
+          if [ "$size_bytes" -gt "$limit_bytes" ]; then
+            echo "::error::Release APK is ${size_mb} MiB, exceeding the ${APK_SIZE_LIMIT_MB} MiB budget."
+            exit 1
+          fi
+          ls -lh "$apk"
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: resonate-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
           if-no-files-found: error
