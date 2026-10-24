@@ -195,13 +195,11 @@ class Media3PlaybackClient {
     await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
   }
 
-  Future<void> preloadNext(Uri uri) async {
-    if (!uri.hasScheme) {
-      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
-    }
+  Future<void> preloadNext(Media3QueueItem item) async {
+    final descriptor = item.toMap();
     await _methodChannel.invokeMethod<bool>(
       'preloadNext',
-      <String, Object>{'uri': uri.toString()},
+      <String, Object?>{'item': descriptor},
     );
   }
 
