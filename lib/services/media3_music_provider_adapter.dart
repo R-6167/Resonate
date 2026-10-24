@@ -135,6 +135,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       _client.setRepeatMode(mode.nativeValue);
 
   @override
+  Future<void> setShuffleMode(bool enabled) => _client.setShuffleMode(enabled);
+
+  @override
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
