@@ -28,14 +28,37 @@ class Media3GainPolicyTest {
     }
 
     @Test
-    fun resetAfterCompletionOrCancellationRestoresMasterNotFullVolume() {
+    fun resetAfterCompletionOrCancellationRestoresComposedBaseGain() {
         val policy = Media3GainPolicy(initialMasterVolume = 0.35f)
+        assertTrue(policy.setGainFactors(trackLevel = 0.8f, preamp = 0.5f, sleepFade = 0.6f, focusDuck = 0.5f))
         policy.setCrossfadeGains(active = 0f, standby = 1f)
 
         policy.resetDecks()
 
-        assertEquals(0.35f, policy.activeVolume(), 0.0001f)
-        assertEquals(0f, policy.standbyVolume(), 0.0001f)
+        assertEquals(0.35f * 0.8f * 0.5f * 0.6f * 0.5f, policy.activeVolume(), 0.0001f)
+        assertEquals(0f, policy.standbyVolume(), 0f)
+    }
+
+    @Test
+    fun gainFactorsComposeWithCrossfadeOnBothDecks() {
+        val policy = Media3GainPolicy(initialMasterVolume = 0.8f)
+        assertTrue(policy.setGainFactors(trackLevel = 0.5f, preamp = 0.8f, sleepFade = 0.75f, focusDuck = 0.5f))
+        policy.setCrossfadeGains(active = 0.6f, standby = 0.8f)
+
+        val base = 0.8f * 0.5f * 0.8f * 0.75f * 0.5f
+        assertEquals(base * 0.6f, policy.activeVolume(), 0.0001f)
+        assertEquals(base * 0.8f, policy.standbyVolume(), 0.0001f)
+    }
+
+    @Test
+    fun invalidGainFactorUpdateIsRejectedAtomically() {
+        val policy = Media3GainPolicy(initialMasterVolume = 0.5f)
+        assertTrue(policy.setGainFactors(trackLevel = 0.7f, preamp = 0.8f, sleepFade = 0.9f, focusDuck = 1f))
+        val before = policy.activeVolume()
+
+        assertFalse(policy.setGainFactors(trackLevel = 0.2f, preamp = Float.NaN, sleepFade = 0.1f, focusDuck = 0.3f))
+        assertEquals(before, policy.activeVolume(), 0f)
+        assertFalse(policy.setGainFactors(trackLevel = 1.1f, preamp = 1f, sleepFade = 1f, focusDuck = 1f))
     }
 
     @Test
