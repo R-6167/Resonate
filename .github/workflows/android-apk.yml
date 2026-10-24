@@ -2,7 +2,7 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-queue-index-safety, media3-provider-state-contract, media3-queue-occurrence-safety, media3-playback-backend-contract, media3-engine-neutral-state]
+    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-queue-index-safety, media3-provider-state-contract, media3-queue-occurrence-safety, media3-playback-backend-contract, media3-engine-neutral-state, media3-playback-runtime]
   pull_request:
     branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-queue-index-safety, media3-provider-state-contract, media3-queue-occurrence-safety, media3-playback-backend-contract, media3-engine-neutral-state]
   workflow_dispatch:
