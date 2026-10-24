@@ -60,19 +60,47 @@ class Media3MusicProviderAdapter {
     return null;
   }
 
-  /// Resolve native state by stable media ID when possible. IDs are the
-  /// canonical identity; indices can move when a queue is filtered or edited.
+  /// Resolves the original queue occurrence represented by a native snapshot.
+  ///
+  /// Media IDs are authoritative when present. The native index disambiguates
+  /// repeated occurrences of the same song; a unique ID can recover from a
+  /// stale index. If an ID is present but cannot be reconciled, return null
+  /// rather than silently binding state to a different song.
+  static int? resolveCurrentQueueIndex(
+    List<Song> originalQueue, {
+    required String? mediaId,
+    required int playableIndex,
+  }) {
+    final indexedOriginal = resolveOriginalQueueIndex(originalQueue, playableIndex);
+    final hasMediaId = mediaId != null && mediaId.isNotEmpty;
+
+    if (!hasMediaId) return indexedOriginal;
+
+    if (indexedOriginal != null && originalQueue[indexedOriginal].id == mediaId) {
+      return indexedOriginal;
+    }
+
+    int? uniqueMatch;
+    for (var i = 0; i < originalQueue.length; i++) {
+      final song = originalQueue[i];
+      if (song.filePath.trim().isEmpty || song.id != mediaId) continue;
+      if (uniqueMatch != null) return null;
+      uniqueMatch = i;
+    }
+    return uniqueMatch;
+  }
+
+  /// Resolves native state by stable media ID and queue occurrence.
   static Song? resolveCurrentSong(
     List<Song> originalQueue, {
     required String? mediaId,
     required int playableIndex,
   }) {
-    if (mediaId != null && mediaId.isNotEmpty) {
-      for (final song in originalQueue) {
-        if (song.id == mediaId && song.filePath.trim().isNotEmpty) return song;
-      }
-    }
-    final originalIndex = resolveOriginalQueueIndex(originalQueue, playableIndex);
+    final originalIndex = resolveCurrentQueueIndex(
+      originalQueue,
+      mediaId: mediaId,
+      playableIndex: playableIndex,
+    );
     if (originalIndex == null) return null;
     return originalQueue[originalIndex];
   }
