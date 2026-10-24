@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/services/media3_music_provider_adapter.dart';
 import 'package:resonate/services/media3_playback_client.dart';
+import 'package:resonate/services/playback_backend.dart';
 
 Song song({
   String id = 'track-1',
