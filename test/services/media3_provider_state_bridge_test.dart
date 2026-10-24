@@ -132,7 +132,7 @@ void main() {
       expect((await first).isPlaying, isTrue);
 
       await bridge.dispose();
-      expect(() => bridge.start(), throwsStateError);
+      await expectLater(bridge.start(), throwsStateError);
     });
   });
 }
