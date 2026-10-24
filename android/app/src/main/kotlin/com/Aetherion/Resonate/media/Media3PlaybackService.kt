@@ -45,6 +45,18 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /** Apply track leveling, DSP preamp, sleep fade and focus ducking together. */
+    fun setGainFactors(
+        trackLevel: Float,
+        preamp: Float,
+        sleepFade: Float,
+        focusDuck: Float,
+    ): Boolean {
+        if (!gainPolicy.setGainFactors(trackLevel, preamp, sleepFade, focusDuck)) return false
+        applyDeckVolumes()
+        return true
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
