@@ -166,7 +166,8 @@ class Media3PlaybackClient {
   }
 
   /// Sets the non-crossfade output factors as one atomic gain-policy update.
-  /// Values are normalized to [0, 1]; non-finite values are rejected.
+  /// Track level, sleep fade and focus duck are normalized to [0, 1]. Preamp
+  /// is a linear gain in [0, 4] so positive preamp can boost before output cap.
   Future<void> setGainFactors({
     double trackLevel = 1.0,
     double preamp = 1.0,
@@ -180,8 +181,15 @@ class Media3PlaybackClient {
       'focusDuck': focusDuck,
     };
     for (final entry in factors.entries) {
-      if (!entry.value.isFinite || entry.value < 0 || entry.value > 1) {
-        throw ArgumentError.value(entry.value, entry.key, 'Must be finite and between 0 and 1.');
+      final max = entry.key == 'preamp' ? 4.0 : 1.0;
+      if (!entry.value.isFinite || entry.value < 0 || entry.value > max) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          entry.key == 'preamp'
+              ? 'Must be finite and between 0 and 4.'
+              : 'Must be finite and between 0 and 1.',
+        );
       }
     }
     await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
