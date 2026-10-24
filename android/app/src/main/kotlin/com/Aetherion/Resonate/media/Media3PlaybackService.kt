@@ -124,9 +124,11 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
-        // Keep the complete queue on the standby deck. After the deck swap,
-        // next/previous/repeat continue to work without reconstructing the
-        // playlist mid-playback or briefly reloading the incoming track.
+        // Keep the complete queue and transport policy on the standby deck.
+        // After the deck swap, next/previous/repeat continue to work without
+        // reconstructing the playlist mid-playback or reloading the incoming track.
+        standbyPlayer.repeatMode = activePlayer.repeatMode
+        standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
         standbyPlayer.setMediaItems(items, startIndex, 0L)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
