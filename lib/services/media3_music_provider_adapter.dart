@@ -150,7 +150,7 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   @override
   Future<void> preloadNext(Song song) async {
     final item = Media3QueueItem.fromSong(song);
-    await _client.preloadNext(item.uri);
+    await _client.preloadNext(item);
   }
 
   @override
