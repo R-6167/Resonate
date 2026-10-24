@@ -66,6 +66,17 @@ class Media3PlaybackRuntime {
   Future<void> next() => _run(_backend.next);
   Future<void> previous() => _run(_backend.previous);
   Future<void> setVolume(double value) => _run(() => _backend.setVolume(value));
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  }) => _run(() => _backend.setGainFactors(
+        trackLevel: trackLevel,
+        preamp: preamp,
+        sleepFade: sleepFade,
+        focusDuck: focusDuck,
+      ));
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
 
