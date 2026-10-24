@@ -151,6 +151,22 @@ void main() {
       expect(backend.loaded.map((song) => song.id), ['old']);
     });
 
+    test('command lane remains usable after a queue load fails', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failLoad = true;
+
+      final failedLoad = runtime.loadQueue([makeSong('rejected')]);
+      final playAfterFailure = runtime.play();
+
+      await expectLater(failedLoad, throwsA(isA<StateError>()));
+      await playAfterFailure;
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.commandOrder, ['play']);
+      expect(backend.playing, isTrue);
+    });
+
     test('serializes transport commands in invocation order', () async {
       backend.pauseGate = Completer<void>();
       final pause = runtime.pause();
