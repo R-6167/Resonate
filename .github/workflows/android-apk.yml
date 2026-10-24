@@ -2,9 +2,9 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff]
+    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge]
   pull_request:
-    branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff]
+    branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge]
   workflow_dispatch:
 
 permissions:
