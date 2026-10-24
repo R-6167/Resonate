@@ -178,6 +178,21 @@ void main() {
         'focusDuck': 0.5,
       });
       expect(calls[4].arguments, {'positionMs': 17000});
+
+      await adapter.setGainFactors(focusDuck: 0.25);
+      expect(calls.last.arguments, {
+        'trackLevel': 0.8,
+        'preamp': 1.2,
+        'sleepFade': 0.9,
+        'focusDuck': 0.25,
+      });
+      await adapter.setGainFactors(trackLevel: 0.7);
+      expect(calls.last.arguments, {
+        'trackLevel': 0.7,
+        'preamp': 1.2,
+        'sleepFade': 0.9,
+        'focusDuck': 0.25,
+      });
     });
 
     test('repeat policy has explicit native values', () {
