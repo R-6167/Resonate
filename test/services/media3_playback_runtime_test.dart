@@ -47,6 +47,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
   List<Song>? preloadedQueue;
@@ -84,6 +85,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   }
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
+  @override
+  Future<void> setShuffleMode(bool enabled) async { lastShuffleMode = enabled; }
   @override
   Future<void> preloadNext(Song song, {List<Song>? queue, int? startIndex}) async {
     preloadedSong = song;
@@ -193,6 +196,13 @@ void main() {
         throwsArgumentError,
       );
       expect(backend.crossfadeDuration, isNull);
+    });
+
+    test('forwards shuffle policy to the backend', () async {
+      await runtime.setShuffleMode(true);
+      expect(backend.lastShuffleMode, isTrue);
+      await runtime.setShuffleMode(false);
+      expect(backend.lastShuffleMode, isFalse);
     });
 
     test('forwards transport commands to the backend', () async {
