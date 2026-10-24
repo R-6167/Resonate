@@ -205,6 +205,29 @@ class Media3PlaybackBridge(
                     }
                     result.success(accepted)
                 }
+                "setGainFactors" -> {
+                    val trackLevel = call.argument<Number>("trackLevel")?.toFloat()
+                    val preamp = call.argument<Number>("preamp")?.toFloat()
+                    val sleepFade = call.argument<Number>("sleepFade")?.toFloat()
+                    val focusDuck = call.argument<Number>("focusDuck")?.toFloat()
+                    val factors = listOf(trackLevel, preamp, sleepFade, focusDuck)
+                    if (factors.any { it == null || !it.isFinite() || it !in 0f..1f }) {
+                        result.error(
+                            "INVALID_GAIN_FACTORS",
+                            "All gain factors must be finite numbers from 0 to 1.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setGainFactors(
+                        trackLevel = trackLevel!!,
+                        preamp = preamp!!,
+                        sleepFade = sleepFade!!,
+                        focusDuck = focusDuck!!,
+                    ) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_GAIN_UNAVAILABLE", "Media3 gain policy is unavailable.", null)
+                }
                 "preloadNext" -> {
                     val uri = call.argument<String>("uri")
                     if (uri.isNullOrBlank()) {
