@@ -116,20 +116,12 @@ class Media3PlaybackService : MediaSessionService() {
         .build()
 
     /** Prepares the inactive deck without disturbing current playback. */
-    fun preloadNext(uri: String): Boolean {
-        if (!::standbyPlayer.isInitialized || uri.isBlank()) return false
+    fun preloadNext(item: MediaItem): Boolean {
+        if (!::standbyPlayer.isInitialized || item.localConfiguration?.uri == null) return false
         cancelCrossfade()
-        val parsed = android.net.Uri.parse(uri)
-        val title = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "Media3 crossfade incoming track"
         gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
-        standbyPlayer.setMediaItem(
-            MediaItem.Builder()
-                .setUri(parsed)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
-                .build(),
-        )
+        standbyPlayer.setMediaItem(item)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
         return true
