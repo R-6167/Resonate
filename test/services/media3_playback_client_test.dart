@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/services/media3_playback_client.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Media3PlaybackState.fromMap', () {
     test('parses a normal native state snapshot', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
