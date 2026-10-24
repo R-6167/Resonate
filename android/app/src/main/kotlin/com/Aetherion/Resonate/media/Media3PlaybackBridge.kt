@@ -231,12 +231,27 @@ class Media3PlaybackBridge(
                     else result.error("MEDIA3_GAIN_UNAVAILABLE", "Media3 gain policy is unavailable.", null)
                 }
                 "preloadNext" -> {
-                    val uri = call.argument<String>("uri")
-                    if (uri.isNullOrBlank()) {
-                        result.error("INVALID_URI", "A non-empty incoming URI is required.", null)
+                    val raw = call.argument<Map<String, Any?>>("item")
+                    val source = raw?.get("uri") as? String
+                    if (raw == null || source.isNullOrBlank()) {
+                        result.error("INVALID_URI", "An incoming queue item with a URI is required.", null)
                         return
                     }
-                    val accepted = Media3PlaybackService.instance?.preloadNext(uri) == true
+                    val metadata = MediaMetadata.Builder()
+                        .setTitle((raw["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Unknown track")
+                        .setArtist(raw["artist"] as? String)
+                        .setAlbumTitle(raw["album"] as? String)
+                        .apply {
+                            val artwork = raw["artworkUri"] as? String
+                            if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                        }
+                        .build()
+                    val item = MediaItem.Builder()
+                        .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                        .setUri(Uri.parse(source))
+                        .setMediaMetadata(metadata)
+                        .build()
+                    val accepted = Media3PlaybackService.instance?.preloadNext(item) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }
