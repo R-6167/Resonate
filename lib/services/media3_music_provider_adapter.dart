@@ -141,10 +141,10 @@ class Media3MusicProviderAdapter implements PlaybackBackend {
     double? sleepFade,
     double? focusDuck,
   }) => _client.setGainFactors(
-        trackLevel: trackLevel,
-        preamp: preamp,
-        sleepFade: sleepFade,
-        focusDuck: focusDuck,
+        trackLevel: trackLevel ?? 1.0,
+        preamp: preamp ?? 1.0,
+        sleepFade: sleepFade ?? 1.0,
+        focusDuck: focusDuck ?? 1.0,
       );
 
   @override
