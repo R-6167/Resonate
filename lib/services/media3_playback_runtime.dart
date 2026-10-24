@@ -79,6 +79,8 @@ class Media3PlaybackRuntime {
       ));
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
+  Future<void> setShuffleMode(bool enabled) =>
+      _run(() => _backend.setShuffleMode(enabled));
 
   /// Prepares the incoming song on the Media3 standby deck without disturbing
   /// the current deck. Only a backend with native dual-deck support may do this.
