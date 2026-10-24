@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -48,6 +48,9 @@ class FakePlaybackBackend implements PlaybackBackend {
   int loadedIndex = -1;
   bool playing = false;
   Map<String, double?> lastGainFactors = const {};
+  Song? preloadedSong;
+  Duration? crossfadeDuration;
+  int cancelCrossfadeCalls = 0;
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
@@ -79,6 +82,12 @@ class FakePlaybackBackend implements PlaybackBackend {
   }
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
+  @override
+  Future<void> preloadNext(Song song) async { preloadedSong = song; }
+  @override
+  Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
+  @override
+  Future<void> cancelCrossfade() async { cancelCrossfadeCalls++; }
 }
 
 void main() {
@@ -143,6 +152,29 @@ void main() {
       expect(backend.lastGainFactors, {
         'trackLevel': 0.8, 'preamp': 0.7, 'sleepFade': 0.5, 'focusDuck': 1.0,
       });
+    });
+
+    test('forwards native preload, crossfade and cancellation to dual-deck backend', () async {
+      final incoming = makeSong('incoming');
+      await runtime.preloadNext(incoming);
+      await runtime.crossfade(duration: const Duration(seconds: 4));
+      await runtime.cancelCrossfade();
+
+      expect(backend.preloadedSong?.id, 'incoming');
+      expect(backend.crossfadeDuration, const Duration(seconds: 4));
+      expect(backend.cancelCrossfadeCalls, 1);
+    });
+
+    test('rejects crossfade durations outside native supported range', () async {
+      await expectLater(
+        runtime.crossfade(duration: const Duration(milliseconds: 100)),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.crossfade(duration: const Duration(seconds: 16)),
+        throwsArgumentError,
+      );
+      expect(backend.crossfadeDuration, isNull);
     });
 
     test('forwards transport commands to the backend', () async {

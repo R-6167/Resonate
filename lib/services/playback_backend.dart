@@ -28,6 +28,15 @@ abstract interface class PlaybackBackend {
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
 }
 
+/// Optional crossfade capability for engines that own two synchronized decks.
+/// A backend without this capability must not emulate a crossfade by starting a
+/// second independent playback authority.
+abstract interface class PlaybackCrossfadeBackend {
+  Future<void> preloadNext(Song song);
+  Future<void> crossfade({required Duration duration});
+  Future<void> cancelCrossfade();
+}
+
 /// Repeat behavior shared by backend implementations.
 enum PlaybackQueueRepeatMode {
   off('off'),

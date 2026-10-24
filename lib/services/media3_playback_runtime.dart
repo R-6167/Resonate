@@ -80,6 +80,36 @@ class Media3PlaybackRuntime {
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
 
+  /// Prepares the incoming song on the Media3 standby deck without disturbing
+  /// the current deck. Only a backend with native dual-deck support may do this.
+  Future<void> preloadNext(Song song) async {
+    _ensureAlive();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await (_backend as PlaybackCrossfadeBackend).preloadNext(song);
+  }
+
+  Future<void> crossfade({required Duration duration}) async {
+    _ensureAlive();
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
+    }
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await (_backend as PlaybackCrossfadeBackend).crossfade(duration: duration);
+  }
+
+  Future<void> cancelCrossfade() async {
+    _ensureAlive();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+  }
+
   Future<void> _run(Future<void> Function() command) async {
     _ensureAlive();
     await command();
