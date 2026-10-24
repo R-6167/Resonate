@@ -51,6 +51,18 @@ class Media3GainPolicyTest {
     }
 
     @Test
+    fun preampCanBoostWhileFinalDeckOutputRemainsCapped() {
+        val policy = Media3GainPolicy(initialMasterVolume = 1f)
+        assertTrue(policy.setGainFactors(trackLevel = 0.25f, preamp = 2f, sleepFade = 1f, focusDuck = 1f))
+        assertEquals(0.5f, policy.activeVolume(), 0.0001f)
+        assertFalse(policy.setGainFactors(trackLevel = 1f, preamp = 4.1f, sleepFade = 1f, focusDuck = 1f))
+        assertEquals(0.5f, policy.activeVolume(), 0f)
+
+        assertTrue(policy.setGainFactors(trackLevel = 1f, preamp = 4f, sleepFade = 1f, focusDuck = 1f))
+        assertEquals(1f, policy.activeVolume(), 0f)
+    }
+
+    @Test
     fun invalidGainFactorUpdateIsRejectedAtomically() {
         val policy = Media3GainPolicy(initialMasterVolume = 0.5f)
         assertTrue(policy.setGainFactors(trackLevel = 0.7f, preamp = 0.8f, sleepFade = 0.9f, focusDuck = 1f))
@@ -59,6 +71,7 @@ class Media3GainPolicyTest {
         assertFalse(policy.setGainFactors(trackLevel = 0.2f, preamp = Float.NaN, sleepFade = 0.1f, focusDuck = 0.3f))
         assertEquals(before, policy.activeVolume(), 0f)
         assertFalse(policy.setGainFactors(trackLevel = 1.1f, preamp = 1f, sleepFade = 1f, focusDuck = 1f))
+        assertFalse(policy.setGainFactors(trackLevel = 1f, preamp = -0.1f, sleepFade = 1f, focusDuck = 1f))
     }
 
     @Test
