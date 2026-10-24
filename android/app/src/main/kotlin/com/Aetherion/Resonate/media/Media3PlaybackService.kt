@@ -97,9 +97,9 @@ class Media3PlaybackService : MediaSessionService() {
                 enableFloatOutput: Boolean,
                 enableAudioOutputPlaybackParams: Boolean,
             ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(*DspEngineSinkHook.createProcessors())
+                .setAudioProcessors(DspEngineSinkHook.createProcessors())
                 .setEnableFloatOutput(enableFloatOutput)
-                .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
                 .build()
         },
     ).build().apply {
