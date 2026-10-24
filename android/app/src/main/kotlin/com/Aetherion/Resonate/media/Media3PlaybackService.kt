@@ -1,5 +1,6 @@
 package com.Aetherion.Resonate.media
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -8,6 +9,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import com.aetherion.resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
@@ -88,7 +91,17 @@ class Media3PlaybackService : MediaSessionService() {
 
     private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
         this,
-        DefaultRenderersFactory(this).setAudioProcessors(DspEngineSinkHook.createProcessors()),
+        object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(*DspEngineSinkHook.createProcessors())
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                .build()
+        },
     ).build().apply {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
