@@ -83,6 +83,45 @@ void main() {
       );
     });
 
+    test('maps original queue indices around unplayable entries', () {
+      final songs = <Song>[
+        song(id: 'first'),
+        song(id: 'unavailable', filePath: '  '),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolvePlayableStartIndex(songs, 2),
+        1,
+      );
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'third',
+          playableIndex: 1,
+        ),
+        2,
+      );
+    });
+
+    test('does not guess duplicate queue occurrences when native ID conflicts', () {
+      final repeated = song(id: 'duplicate');
+      final songs = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'missing',
+          playableIndex: 0,
+        ),
+        isNull,
+      );
+    });
+
     test('repeat policy has explicit native values', () {
       expect(PlaybackQueueRepeatMode.off.nativeValue, 'off');
       expect(PlaybackQueueRepeatMode.one.nativeValue, 'one');
