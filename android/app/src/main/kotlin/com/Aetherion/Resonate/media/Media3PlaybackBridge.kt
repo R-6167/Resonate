@@ -210,11 +210,13 @@ class Media3PlaybackBridge(
                     val preamp = call.argument<Number>("preamp")?.toFloat()
                     val sleepFade = call.argument<Number>("sleepFade")?.toFloat()
                     val focusDuck = call.argument<Number>("focusDuck")?.toFloat()
-                    val factors = listOf(trackLevel, preamp, sleepFade, focusDuck)
-                    if (factors.any { it == null || !it.isFinite() || it !in 0f..1f }) {
+                    val normalizedFactors = listOf(trackLevel, sleepFade, focusDuck)
+                    if (normalizedFactors.any { it == null || !it.isFinite() || it !in 0f..1f } ||
+                        preamp == null || !preamp.isFinite() || preamp !in 0f..4f
+                    ) {
                         result.error(
                             "INVALID_GAIN_FACTORS",
-                            "All gain factors must be finite numbers from 0 to 1.",
+                            "Track level, sleep fade, and focus duck must be 0–1; preamp must be 0–4.",
                             null,
                         )
                         return
