@@ -151,17 +151,27 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     double? preamp,
     double? sleepFade,
     double? focusDuck,
-  }) {
-    if (trackLevel != null) _trackLevel = trackLevel;
-    if (preamp != null) _preamp = preamp;
-    if (sleepFade != null) _sleepFade = sleepFade;
-    if (focusDuck != null) _focusDuck = focusDuck;
-    return _client.setGainFactors(
-      trackLevel: _trackLevel,
-      preamp: _preamp,
-      sleepFade: _sleepFade,
-      focusDuck: _focusDuck,
+  }) async {
+    // Build a candidate set first. The client validates every value before
+    // crossing the platform channel, so an invalid partial update must not
+    // poison the adapter's last-known-good factors.
+    final nextTrackLevel = trackLevel ?? _trackLevel;
+    final nextPreamp = preamp ?? _preamp;
+    final nextSleepFade = sleepFade ?? _sleepFade;
+    final nextFocusDuck = focusDuck ?? _focusDuck;
+
+    await _client.setGainFactors(
+      trackLevel: nextTrackLevel,
+      preamp: nextPreamp,
+      sleepFade: nextSleepFade,
+      focusDuck: nextFocusDuck,
     );
+
+    // Commit only after the complete atomic update was accepted.
+    _trackLevel = nextTrackLevel;
+    _preamp = nextPreamp;
+    _sleepFade = nextSleepFade;
+    _focusDuck = nextFocusDuck;
   }
 
   @override
