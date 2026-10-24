@@ -90,13 +90,36 @@ class Media3PlaybackService : MediaSessionService() {
         // route transition. Attach to both players because their roles swap at
         // crossfade completion; only the current active deck may cancel a fade.
         val activeDeckInterruptionListener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                if (player !== activePlayer || player.isPlaying) return
+            private fun cancelTransitionForActiveDeck(player: Player) {
+                if (player !== activePlayer) return
                 if (crossfadeStatus == "fading" ||
                     crossfadeStatus == "preparing" ||
                     crossfadeStatus == "ready"
                 ) {
                     cancelCrossfade()
+                }
+            }
+
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (!player.isPlaying) cancelTransitionForActiveDeck(player)
+            }
+
+            // Notification, headset, and other MediaSession controllers can issue
+            // transport commands directly to the player, bypassing the Flutter
+            // bridge. Treat explicit seeks and track skips as transition overrides.
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    cancelTransitionForActiveDeck(activePlayer)
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                    cancelTransitionForActiveDeck(activePlayer)
                 }
             }
         }
