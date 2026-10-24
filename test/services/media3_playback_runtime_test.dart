@@ -132,7 +132,8 @@ void main() {
 
       expect(backend.loaded.map((s) => s.id), ['a', 'b']);
       expect(backend.loadedIndex, 1);
-      expect(runtime.current.currentSong, isNull);
+      expect(runtime.current.currentSong?.id, 'b');
+      expect(runtime.current.currentQueueIndex, 1);
       expect(runtime.current.isPlaying, isFalse);
     });
 
