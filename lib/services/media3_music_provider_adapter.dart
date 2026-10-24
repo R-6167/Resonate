@@ -38,6 +38,20 @@ class Media3MusicProviderAdapter {
   Future<void> next() => _client.skipToNext();
   Future<void> previous() => _client.skipToPrevious();
   Future<void> setVolume(double value) => _client.setVolume(value);
+  /// Updates the Media3-owned gain composition point without replacing the
+  /// crossfade deck envelope or issuing competing per-player volume writes.
+  Future<void> setGainFactors({
+    double trackLevel = 1.0,
+    double preamp = 1.0,
+    double sleepFade = 1.0,
+    double focusDuck = 1.0,
+  }) =>
+      _client.setGainFactors(
+        trackLevel: trackLevel,
+        preamp: preamp,
+        sleepFade: sleepFade,
+        focusDuck: focusDuck,
+      );
 
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _client.setRepeatMode(mode.nativeValue);
