@@ -2,9 +2,9 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge, media3-runtime-command-serialization, media3-provider-state-projection, media3-gain-factor-state, media3-gain-factor-transaction-safety]
+    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge, media3-runtime-command-serialization, media3-provider-state-projection, media3-gain-factor-state, media3-gain-factor-transaction-safety, media3-dual-deck-transport-policy, media3-cutover-command-order-tests]
   pull_request:
-    branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge, media3-runtime-command-serialization, media3-provider-state-projection, media3-gain-factor-state, media3-gain-factor-transaction-safety]
+    branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors, media3-provider-gain-routing, media3-provider-runtime-cutover, media3-native-dsp-renderer, media3-preamp-gain-range, media3-provider-crossfade-runtime, media3-crossfade-queue-handoff, media3-provider-state-bridge, media3-runtime-command-serialization, media3-provider-state-projection, media3-gain-factor-state, media3-gain-factor-transaction-safety, media3-dual-deck-transport-policy]
   workflow_dispatch:
 
 permissions:
@@ -68,7 +68,7 @@ jobs:
           int main() {
             DspStressResult r{};
             const int rc = dsp_run_bass_stress(&r);
-            std::printf("DSP stress: %d/%d cases, peak=%f, cpu=%f%%, overruns=%d\n",
+            std::printf("DSP stress: %d/%d cases, peak=%f, cpu=%f%%, overruns=%d\\n",
                         r.cases_passed, r.cases_run, r.max_abs_peak,
                         r.cpu_pct_of_budget, r.overrun_calls);
             return rc;
@@ -84,7 +84,7 @@ jobs:
             int failures = 0;
             int64_t overruns = 0;
             const int rc = dsp_run_ab_stress(4000, &failures, &overruns);
-            std::printf("DSP A/B stress: rc=%d, failures=%d, overruns=%lld\n",
+            std::printf("DSP A/B stress: rc=%d, failures=%d, overruns=%lld\\n",
                         rc, failures, (long long)overruns);
             return rc;
           }
@@ -99,7 +99,7 @@ jobs:
             int failures = 0;
             float peak = 0.0f, step = 0.0f, ab_error = 0.0f;
             const int rc = dsp_run_dvc_transition_stress(1600, &failures, &peak, &step, &ab_error);
-            std::printf("DSP DVC transition stress: rc=%d, failures=%d, peak=%f, max_step=%f, A/B_error=%g\n",
+            std::printf("DSP DVC transition stress: rc=%d, failures=%d, peak=%f, max_step=%f, A/B_error=%g\\n",
                         rc, failures, peak, step, ab_error);
             return rc;
           }
