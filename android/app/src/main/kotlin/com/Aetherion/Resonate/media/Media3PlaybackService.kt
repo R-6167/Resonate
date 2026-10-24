@@ -9,7 +9,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import com.Aetherion.Resonate.dsp.DspEngineSinkHook
+import com.aetherion.resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlin.math.cos
