@@ -101,8 +101,10 @@ class Media3PlaybackRuntime {
       throw UnsupportedError('This playback backend does not support native crossfade.');
     }
 
-    final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
     await _run(() async {
+      // Resolve against the queue that actually precedes this command in the
+      // serialized lane, not a stale queue captured before a pending load.
+      final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
       if (_queue.isNotEmpty && resolvedIndex != null) {
         await (_backend as PlaybackCrossfadeBackend).preloadNext(
           song,
