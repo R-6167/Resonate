@@ -229,6 +229,8 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
         currentQueueIndex: state.currentMediaItemIndex,
         queueLength: state.mediaItemCount,
         volume: state.volume,
+        repeatMode: state.repeatMode,
+        shuffleModeEnabled: state.shuffleModeEnabled,
         hasError: state.hasError,
         error: state.error,
       );
