@@ -45,6 +45,11 @@ class Media3ProviderStateBridge {
       position: state.position,
       duration: state.duration,
       connected: state.connected,
+      isReady: snapshot?.isReady ?? false,
+      playWhenReady: snapshot?.playWhenReady ?? false,
+      mediaId: snapshot?.mediaId,
+      queueLength: snapshot?.queueLength ?? 0,
+      volume: snapshot?.volume ?? 1.0,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -72,6 +77,11 @@ class Media3ProviderState {
     required this.position,
     required this.duration,
     required this.connected,
+    required this.isReady,
+    required this.playWhenReady,
+    required this.mediaId,
+    required this.queueLength,
+    required this.volume,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -85,6 +95,11 @@ class Media3ProviderState {
         position = Duration.zero,
         duration = null,
         connected = false,
+        isReady = false,
+        playWhenReady = false,
+        mediaId = null,
+        queueLength = 0,
+        volume = 1.0,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -96,6 +111,11 @@ class Media3ProviderState {
   final Duration position;
   final Duration? duration;
   final bool connected;
+  final bool isReady;
+  final bool playWhenReady;
+  final String? mediaId;
+  final int queueLength;
+  final double volume;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;
