@@ -156,6 +156,15 @@ class Media3PlaybackBridge(
                     }
                     result.success(true)
                 }
+                "setShuffleMode" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled == null) {
+                        result.error("INVALID_SHUFFLE_MODE", "enabled must be a boolean.", null)
+                        return
+                    }
+                    connected.shuffleModeEnabled = enabled
+                    result.success(true)
+                }
                 "setSource" -> {
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {
@@ -231,12 +240,49 @@ class Media3PlaybackBridge(
                     else result.error("MEDIA3_GAIN_UNAVAILABLE", "Media3 gain policy is unavailable.", null)
                 }
                 "preloadNext" -> {
-                    val uri = call.argument<String>("uri")
-                    if (uri.isNullOrBlank()) {
-                        result.error("INVALID_URI", "A non-empty incoming URI is required.", null)
+                    val raw = call.argument<Map<String, Any?>>("item")
+                    val source = raw?.get("uri") as? String
+                    if (raw == null || source.isNullOrBlank()) {
+                        result.error("INVALID_URI", "An incoming queue item with a URI is required.", null)
                         return
                     }
-                    val accepted = Media3PlaybackService.instance?.preloadNext(uri) == true
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    val descriptors = rawItems ?: listOf(raw)
+                    if (descriptors.isEmpty() || descriptors.size > 500 || startIndex !in descriptors.indices) {
+                        result.error("INVALID_QUEUE", "Incoming queue must contain 1–500 items and a valid start index.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (descriptor in descriptors) {
+                        val descriptorUri = descriptor["uri"] as? String
+                        if (descriptorUri.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every incoming queue item needs a URI.", null)
+                            return
+                        }
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle((descriptor["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Unknown track")
+                            .setArtist(descriptor["artist"] as? String)
+                            .setAlbumTitle(descriptor["album"] as? String)
+                            .apply {
+                                val artwork = descriptor["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((descriptor["id"] as? String)?.takeIf { it.isNotBlank() } ?: descriptorUri)
+                            .setUri(Uri.parse(descriptorUri))
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    val incoming = items[startIndex]
+                    if (incoming.mediaId != ((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source) ||
+                        incoming.localConfiguration?.uri?.toString() != source
+                    ) {
+                        result.error("INVALID_QUEUE_INDEX", "The selected queue occurrence must match the incoming item.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.preloadNext(items, startIndex) == true
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
                 }

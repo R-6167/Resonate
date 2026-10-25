@@ -21,6 +21,7 @@ class Media3PlaybackRuntime {
   List<Song> _queue = const <Song>[];
   Media3RuntimeState _current = const Media3RuntimeState.empty();
   bool _disposed = false;
+  Future<void> _commandTail = Future<void>.value();
 
   Stream<Media3RuntimeState> get states => _states.stream;
   Media3RuntimeState get current => _current;
@@ -53,10 +54,20 @@ class Media3PlaybackRuntime {
       throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
     }
 
-    _queue = List<Song>.unmodifiable(songs);
-    await _backend.loadQueue(_queue, startIndex: startIndex);
-    // Do not optimistically claim a song is playing. The backend state stream
-    // remains authoritative for current item and transport state.
+    final nextQueue = List<Song>.unmodifiable(songs);
+    await _run(() async {
+      // Commit queue identity only after the backend accepted the queue. This
+      // prevents failed loads from leaving snapshots mapped to a queue that
+      // the engine never actually installed.
+      await _backend.loadQueue(nextQueue, startIndex: startIndex);
+      _queue = nextQueue;
+      try {
+        _acceptSnapshot(await _backend.currentState());
+      } catch (_) {
+        // The native event stream remains authoritative if a snapshot read is
+        // temporarily unavailable after a successful queue load.
+      }
+    });
   }
 
   Future<void> play() => _run(_backend.play);
@@ -79,10 +90,89 @@ class Media3PlaybackRuntime {
       ));
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
+  Future<void> setShuffleMode(bool enabled) =>
+      _run(() => _backend.setShuffleMode(enabled));
 
-  Future<void> _run(Future<void> Function() command) async {
+  /// Prepares the incoming song on the Media3 standby deck without disturbing
+  /// the current deck. Only a backend with native dual-deck support may do this.
+  Future<void> preloadNext(Song song, {int? queueIndex}) async {
     _ensureAlive();
-    await command();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+
+    await _run(() async {
+      // Resolve against the queue that actually precedes this command in the
+      // serialized lane, not a stale queue captured before a pending load.
+      final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
+      if (_queue.isNotEmpty && resolvedIndex != null) {
+        await (_backend as PlaybackCrossfadeBackend).preloadNext(
+          song,
+          queue: _queue,
+          startIndex: resolvedIndex,
+        );
+        return;
+      }
+      await (_backend as PlaybackCrossfadeBackend).preloadNext(song);
+    });
+  }
+
+  int? _resolveIncomingQueueIndex(Song song) {
+    if (_queue.isEmpty) return null;
+    final currentIndex = _current.currentQueueIndex ?? -1;
+    // Prefer the next matching occurrence after the current item. This preserves
+    // queue occurrence identity when a playlist contains the same song twice.
+    for (var i = currentIndex + 1; i < _queue.length; i++) {
+      if (_sameTrack(_queue[i], song)) return i;
+    }
+    int? uniqueMatch;
+    for (var i = 0; i < _queue.length; i++) {
+      if (!_sameTrack(_queue[i], song)) continue;
+      if (uniqueMatch != null) return null;
+      uniqueMatch = i;
+    }
+    return uniqueMatch;
+  }
+
+  bool _sameTrack(Song left, Song right) =>
+      left.id == right.id && left.filePath.trim() == right.filePath.trim();
+
+  Future<void> crossfade({required Duration duration}) async {
+    _ensureAlive();
+    if (duration < const Duration(milliseconds: 250) ||
+        duration > const Duration(seconds: 15)) {
+      throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
+    }
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await _run(() => (_backend as PlaybackCrossfadeBackend).crossfade(duration: duration));
+  }
+
+  Future<void> cancelCrossfade() async {
+    _ensureAlive();
+    if (_backend is! PlaybackCrossfadeBackend) {
+      throw UnsupportedError('This playback backend does not support native crossfade.');
+    }
+    await _run(() => (_backend as PlaybackCrossfadeBackend).cancelCrossfade());
+  }
+
+  /// Serializes every command that can mutate native playback state. Rapid
+  /// UI taps, queue replacement and a crossfade request must not race each
+  /// other across the Flutter/native boundary.
+  Future<void> _run(Future<void> Function() command) {
+    _ensureAlive();
+    final result = _commandTail.then((_) {
+      _ensureAlive();
+      return command();
+    });
+    // Keep the lane usable after one failed command while still returning that
+    // failure to the caller that issued it.
+    _commandTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
   }
 
   void _acceptSnapshot(PlaybackSnapshot snapshot) {
