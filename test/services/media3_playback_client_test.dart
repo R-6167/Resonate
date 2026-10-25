@@ -85,8 +85,26 @@ void main() {
         throwsArgumentError,
       );
       await expectLater(
+        client.setGainFactors(preamp: 4.01),
+        throwsArgumentError,
+      );
+      await expectLater(
         client.setGainFactors(focusDuck: 1.01),
         throwsArgumentError,
+      );
+    });
+
+    test('accepts positive preamp boost up to 4x without requiring native playback', () async {
+      await expectLater(
+        client.setGainFactors(trackLevel: 0.25, preamp: 2.0),
+        throwsA(isA<MissingPluginException>()),
+      );
+    });
+
+    test('validates shuffle mode and reaches the platform channel', () async {
+      await expectLater(
+        client.setShuffleMode(true),
+        throwsA(isA<MissingPluginException>()),
       );
     });
 

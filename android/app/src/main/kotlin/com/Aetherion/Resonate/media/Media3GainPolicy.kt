@@ -30,8 +30,11 @@ internal class Media3GainPolicy(initialMasterVolume: Float = 1f) {
         sleepFade: Float,
         focusDuck: Float,
     ): Boolean {
-        val values = listOf(trackLevel, preamp, sleepFade, focusDuck)
-        if (values.any { !it.isFinite() || it !in 0f..1f }) return false
+        // Output-normalized factors stay in [0, 1]. Preamp is a linear gain
+        // stage and may boost up to 4x; final deck output is still capped at 1.
+        val normalized = listOf(trackLevel, sleepFade, focusDuck)
+        if (normalized.any { !it.isFinite() || it !in 0f..1f }) return false
+        if (!preamp.isFinite() || preamp !in 0f..4f) return false
         trackLevelGain = trackLevel
         preampGain = preamp
         sleepFadeGain = sleepFade

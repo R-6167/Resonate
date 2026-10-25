@@ -116,20 +116,20 @@ class Media3PlaybackService : MediaSessionService() {
         .build()
 
     /** Prepares the inactive deck without disturbing current playback. */
-    fun preloadNext(uri: String): Boolean {
-        if (!::standbyPlayer.isInitialized || uri.isBlank()) return false
+    fun preloadNext(items: List<MediaItem>, startIndex: Int): Boolean {
+        if (!::standbyPlayer.isInitialized || items.isEmpty() ||
+            startIndex !in items.indices ||
+            items.any { it.localConfiguration?.uri == null }
+        ) return false
         cancelCrossfade()
-        val parsed = android.net.Uri.parse(uri)
-        val title = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "Media3 crossfade incoming track"
         gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
-        standbyPlayer.setMediaItem(
-            MediaItem.Builder()
-                .setUri(parsed)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
-                .build(),
-        )
+        // Keep the complete queue and transport policy on the standby deck.
+        // After the deck swap, next/previous/repeat continue to work without
+        // reconstructing the playlist mid-playback or reloading the incoming track.
+        standbyPlayer.repeatMode = activePlayer.repeatMode
+        standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        standbyPlayer.setMediaItems(items, startIndex, 0L)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
         return true
