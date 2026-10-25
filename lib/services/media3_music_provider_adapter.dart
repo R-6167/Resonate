@@ -28,9 +28,9 @@ class Media3MusicProviderAdapter {
     );
   }
 
-  /// Resolves an index in the caller's original queue to the filtered native
-  /// queue. A selected unplayable song is rejected instead of silently
-  /// starting a different track.
+  /// Maps an original Resonate queue index into the filtered native queue.
+  /// A selected unplayable song is rejected instead of silently starting a
+  /// different track.
   static int resolvePlayableStartIndex(List<Song> songs, int startIndex) {
     if (startIndex < 0 || startIndex >= songs.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify an item in the original queue.');
@@ -45,6 +45,36 @@ class Media3MusicProviderAdapter {
         .take(startIndex)
         .where((song) => song.filePath.trim().isNotEmpty)
         .length;
+  }
+
+  /// Maps a native playable-queue index back to Resonate's original queue.
+  /// Returns null for an invalid native index; callers must not guess a track.
+  static int? resolveOriginalQueueIndex(List<Song> songs, int playableIndex) {
+    if (playableIndex < 0) return null;
+    var nativeIndex = 0;
+    for (var originalIndex = 0; originalIndex < songs.length; originalIndex++) {
+      if (songs[originalIndex].filePath.trim().isEmpty) continue;
+      if (nativeIndex == playableIndex) return originalIndex;
+      nativeIndex++;
+    }
+    return null;
+  }
+
+  /// Resolve native state by stable media ID when possible. IDs are the
+  /// canonical identity; indices can move when a queue is filtered or edited.
+  static Song? resolveCurrentSong(
+    List<Song> originalQueue, {
+    required String? mediaId,
+    required int playableIndex,
+  }) {
+    if (mediaId != null && mediaId.isNotEmpty) {
+      for (final song in originalQueue) {
+        if (song.id == mediaId && song.filePath.trim().isNotEmpty) return song;
+      }
+    }
+    final originalIndex = resolveOriginalQueueIndex(originalQueue, playableIndex);
+    if (originalIndex == null) return null;
+    return originalQueue[originalIndex];
   }
 
   Future<void> play() => _client.play();

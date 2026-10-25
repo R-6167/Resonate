@@ -29,8 +29,6 @@ void main() {
       expect(item.artist, 'Resonate Artist');
       expect(item.album, 'Resonate Album');
       expect(item.uri.scheme, 'file');
-      // Uri.path is percent-encoded for spaces; toFilePath returns the
-      // filesystem path that the native Media3 source should resolve.
       expect(item.uri.toFilePath(), '/storage/emulated/0/Music/one song.mp3');
     });
 
@@ -90,10 +88,7 @@ void main() {
         song(id: 'selected', filePath: '/music/selected.mp3'),
       ];
 
-      expect(
-        Media3MusicProviderAdapter.resolvePlayableStartIndex(queue, 3),
-        1,
-      );
+      expect(Media3MusicProviderAdapter.resolvePlayableStartIndex(queue, 3), 1);
     });
 
     test('rejects selection of an unplayable original queue item', () {
@@ -106,6 +101,64 @@ void main() {
       expect(
         () => Media3MusicProviderAdapter.resolvePlayableStartIndex(queue, 1),
         throwsArgumentError,
+      );
+    });
+
+    test('maps native index back to original index when invalid items are filtered', () {
+      final queue = <Song>[
+        song(id: 'invalid-a', filePath: ''),
+        song(id: 'first', filePath: '/music/first.mp3'),
+        song(id: 'invalid-b', filePath: ' '),
+        song(id: 'second', filePath: '/music/second.mp3'),
+      ];
+
+      expect(Media3MusicProviderAdapter.resolveOriginalQueueIndex(queue, 0), 1);
+      expect(Media3MusicProviderAdapter.resolveOriginalQueueIndex(queue, 1), 3);
+      expect(Media3MusicProviderAdapter.resolveOriginalQueueIndex(queue, 2), isNull);
+      expect(Media3MusicProviderAdapter.resolveOriginalQueueIndex(queue, -1), isNull);
+    });
+
+    test('resolves current track by stable media ID before queue index', () {
+      final queue = <Song>[
+        song(id: 'first', filePath: '/music/first.mp3'),
+        song(id: 'second', filePath: '/music/second.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentSong(
+          queue,
+          mediaId: 'second',
+          playableIndex: 0,
+        )?.id,
+        'second',
+      );
+    });
+
+    test('falls back to native queue index when media ID is unavailable', () {
+      final queue = <Song>[
+        song(id: 'invalid', filePath: ''),
+        song(id: 'first', filePath: '/music/first.mp3'),
+        song(id: 'second', filePath: '/music/second.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentSong(
+          queue,
+          mediaId: null,
+          playableIndex: 1,
+        )?.id,
+        'second',
+      );
+    });
+
+    test('does not resolve a current track from an invalid native index', () {
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentSong(
+          <Song>[song()],
+          mediaId: null,
+          playableIndex: 10,
+        ),
+        isNull,
       );
     });
 
