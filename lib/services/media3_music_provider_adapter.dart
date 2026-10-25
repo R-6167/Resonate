@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../models/song.dart';
 import 'media3_playback_client.dart';
+import 'playback_backend.dart';
 
 /// Provider-facing command/state facade for the native Media3 session.
 ///
@@ -9,14 +10,16 @@ import 'media3_playback_client.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter {
+class Media3MusicProviderAdapter implements PlaybackBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
   final Media3PlaybackClient _client;
 
+  @override
   Stream<Media3PlaybackState> get states => _client.states;
 
+  @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     final resolvedStartIndex = resolvePlayableStartIndex(songs, startIndex);
     final playable = songs
@@ -105,17 +108,32 @@ class Media3MusicProviderAdapter {
     return originalQueue[originalIndex];
   }
 
+  @override
   Future<void> play() => _client.play();
+
+  @override
   Future<void> pause() => _client.pause();
+
+  @override
   Future<void> stop() => _client.stop();
+
+  @override
   Future<void> seek(Duration position) => _client.seekTo(position);
+
+  @override
   Future<void> next() => _client.skipToNext();
+
+  @override
   Future<void> previous() => _client.skipToPrevious();
+
+  @override
   Future<void> setVolume(double value) => _client.setVolume(value);
 
+  @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _client.setRepeatMode(mode.nativeValue);
 
+  @override
   Future<Media3PlaybackState> currentState() => _client.getState();
 
   static Uri sourceUriForPath(String path) {
@@ -135,13 +153,4 @@ class Media3MusicProviderAdapter {
     if (parsed != null && parsed.hasScheme) return parsed;
     return Uri.file(trimmed);
   }
-}
-
-enum PlaybackQueueRepeatMode {
-  off('off'),
-  one('one'),
-  all('all');
-
-  const PlaybackQueueRepeatMode(this.nativeValue);
-  final String nativeValue;
 }
