@@ -102,6 +102,16 @@ class MusicProvider extends ChangeNotifier {
   bool get _activeIsA => _engines.activeIsA;
   set _activeIsA(bool value) => _engines.activeIsA = value;
   AudioPlayer get audioPlayer => _engines.active;
+  /// UI-facing playback observations. Consumers should subscribe through the
+  /// provider instead of binding widgets directly to the concrete player.
+  /// These currently adapt just_audio; the Media3 cutover can replace this
+  /// boundary without changing widget subscriptions.
+  Stream<Duration> get playbackPositionStream => audioPlayer.positionStream;
+  Stream<Duration?> get playbackDurationStream => audioPlayer.durationStream;
+  Stream<bool> get playbackPlayingStream => audioPlayer.playerStateStream.map(
+        (state) => state.playing &&
+            state.processingState != ProcessingState.completed,
+      );
   /// Both players own independent Android audio sessions; session-based
   /// auxiliary effects must be reapplied to either engine across handoffs.
   List<AudioPlayer> get audioSessionPlayers => [_playerA, _playerB];
