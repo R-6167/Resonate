@@ -141,6 +141,13 @@ class Media3PlaybackClient {
     );
   }
 
+  Future<void> setShuffleMode(bool enabled) async {
+    await _methodChannel.invokeMethod<bool>(
+      'setShuffleMode',
+      <String, Object>{'enabled': enabled},
+    );
+  }
+
   Future<void> play() => _command('play');
   Future<void> pause() => _command('pause');
   Future<void> stop() => _command('stop');

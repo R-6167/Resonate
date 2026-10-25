@@ -156,6 +156,15 @@ class Media3PlaybackBridge(
                     }
                     result.success(true)
                 }
+                "setShuffleMode" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (enabled == null) {
+                        result.error("INVALID_SHUFFLE_MODE", "enabled must be a boolean.", null)
+                        return
+                    }
+                    connected.shuffleModeEnabled = enabled
+                    result.success(true)
+                }
                 "setSource" -> {
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {

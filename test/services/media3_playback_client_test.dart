@@ -101,6 +101,13 @@ void main() {
       );
     });
 
+    test('validates shuffle mode and reaches the platform channel', () async {
+      await expectLater(
+        client.setShuffleMode(true),
+        throwsA(isA<MissingPluginException>()),
+      );
+    });
+
     test('accepts normalized gain factors without requiring native playback', () async {
       // Validation completes before the platform call; a missing platform
       // implementation is expected only after valid values are accepted.
