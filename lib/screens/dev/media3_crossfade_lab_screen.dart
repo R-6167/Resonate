@@ -86,7 +86,11 @@ class _Media3CrossfadeLabScreenState extends State<Media3CrossfadeLabScreen> {
           ? Uri.parse(path)
           : Uri.file(path);
       if (incoming) {
-        await _client.preloadNext(uri);
+        await _client.preloadNext(Media3QueueItem(
+          id: 'lab-${uri.toString()}',
+          uri: uri,
+          title: file.name,
+        ));
       } else {
         await _client.setSource(uri);
       }
