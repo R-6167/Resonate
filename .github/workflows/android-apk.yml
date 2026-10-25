@@ -2,7 +2,7 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-composed-gain-factors]
+    branches: [Resonate-True-Apk, media3-main-engine, media3-music-provider-cutover, media3-gain-policy, media3-queue-index-safety]
   pull_request:
     branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine, media3-music-provider-cutover, media3-gain-policy]
   workflow_dispatch:
