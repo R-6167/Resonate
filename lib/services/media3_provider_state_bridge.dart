@@ -45,6 +45,8 @@ class Media3ProviderStateBridge {
       position: state.position,
       duration: state.duration,
       connected: state.connected,
+      repeatMode: snapshot?.repeatMode ?? 'off',
+      shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
       error: state.error,
     );
@@ -70,6 +72,8 @@ class Media3ProviderState {
     required this.position,
     required this.duration,
     required this.connected,
+    this.repeatMode = 'off',
+    this.shuffleModeEnabled = false,
     required this.hasError,
     required this.error,
   });
@@ -81,6 +85,8 @@ class Media3ProviderState {
         position = Duration.zero,
         duration = null,
         connected = false,
+        repeatMode = 'off',
+        shuffleModeEnabled = false,
         hasError = false,
         error = null;
 
@@ -90,6 +96,8 @@ class Media3ProviderState {
   final Duration position;
   final Duration? duration;
   final bool connected;
+  final String repeatMode;
+  final bool shuffleModeEnabled;
   final bool hasError;
   final String? error;
 }
