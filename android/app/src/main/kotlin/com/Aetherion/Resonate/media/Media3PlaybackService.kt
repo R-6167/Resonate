@@ -50,6 +50,27 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /**
+     * Keep transport policy identical on both decks. A prepared standby deck
+     * can become active after crossfade, so policy changes must not be lost
+     * when the MediaSession swaps its player.
+     */
+    fun setRepeatMode(mode: Int): Boolean {
+        if (mode != Player.REPEAT_MODE_OFF &&
+            mode != Player.REPEAT_MODE_ONE &&
+            mode != Player.REPEAT_MODE_ALL
+        ) return false
+        activePlayer.repeatMode = mode
+        standbyPlayer.repeatMode = mode
+        return true
+    }
+
+    fun setShuffleMode(enabled: Boolean): Boolean {
+        activePlayer.shuffleModeEnabled = enabled
+        standbyPlayer.shuffleModeEnabled = enabled
+        return true
+    }
+
     /** Apply track leveling, DSP preamp, sleep fade and focus ducking together. */
     fun setGainFactors(
         trackLevel: Float,
