@@ -106,6 +106,39 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             })
         }
+        // Keep the incoming deck from continuing independently when the active deck
+        // is interrupted through the MediaSession (notification/headset/audio focus).
+        // This listener is attached to both players because their roles swap on fade.
+        val activeDeckInterruptionListener = object : Player.Listener {
+            private fun cancelTransitionForActiveDeck(player: Player) {
+                if (player !== activePlayer) return
+                if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
+                    cancelCrossfade()
+                }
+            }
+
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (!player.isPlaying) cancelTransitionForActiveDeck(player)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    cancelTransitionForActiveDeck(activePlayer)
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                    cancelTransitionForActiveDeck(activePlayer)
+                }
+            }
+        }
+        activePlayer.addListener(activeDeckInterruptionListener)
+        standbyPlayer.addListener(activeDeckInterruptionListener)
         mediaSession = MediaSession.Builder(this, activePlayer).build()
         applyDeckVolumes()
     }
