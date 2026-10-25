@@ -274,36 +274,65 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   const SizedBox(height: 10),
                   const SizedBox(height: 8),
-                  _WaveSeekBar(
-                    value: position,
-                    max: max,
-                    hitHeight: density.seekHitHeight,
-                    strokeScale: density.seekStrokeScale,
-                    onStart: (value) {
-                      setState(() => _dragPosition = value);
+                  StreamBuilder<Duration>(
+                    stream: music.playbackPositionStream,
+                    initialData: music.currentPosition,
+                    builder: (context, positionSnapshot) {
+                      return StreamBuilder<Duration?>(
+                        stream: music.playbackDurationStream,
+                        initialData: music.currentDuration ?? song.duration,
+                        builder: (context, durationSnapshot) {
+                          final streamDuration = durationSnapshot.data ??
+                              music.currentDuration ??
+                              song.duration;
+                          final streamMax = streamDuration.inMilliseconds > 0
+                              ? streamDuration.inMilliseconds.toDouble()
+                              : 1.0;
+                          final streamPosition = (_dragPosition ??
+                                  (positionSnapshot.data ?? music.currentPosition)
+                                      .inMilliseconds
+                                      .toDouble())
+                              .clamp(0.0, streamMax)
+                              .toDouble();
+
+                          return Column(
+                            children: [
+                              _WaveSeekBar(
+                                value: streamPosition,
+                                max: streamMax,
+                                hitHeight: density.seekHitHeight,
+                                strokeScale: density.seekStrokeScale,
+                                onStart: (value) {
+                                  setState(() => _dragPosition = value);
+                                },
+                                onUpdate: (value) {
+                                  setState(() => _dragPosition = value);
+                                },
+                                onEnd: (value) async {
+                                  final target = Duration(milliseconds: value.round());
+                                  setState(() => _dragPosition = null);
+                                  await PlaybackAuthority.instance.userSeek(music, target);
+                                },
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      AudioFileService.formatDuration(
+                                        Duration(milliseconds: streamPosition.round()),
+                                      ),
+                                    ),
+                                    Text(AudioFileService.formatDuration(streamDuration)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
                     },
-                    onUpdate: (value) {
-                      setState(() => _dragPosition = value);
-                    },
-                    onEnd: (value) async {
-                      final target = Duration(milliseconds: value.round());
-                      setState(() => _dragPosition = null);
-                      await PlaybackAuthority.instance.userSeek(music, target);
-                    },
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          AudioFileService.formatDuration(
-                            Duration(milliseconds: position.round()),
-                          ),
-                        ),
-                        Text(AudioFileService.formatDuration(duration)),
-                      ],
-                    ),
                   ),
                   const SizedBox(height: 8),
                   StreamBuilder<bool>(
