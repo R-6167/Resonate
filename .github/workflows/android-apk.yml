@@ -2,9 +2,9 @@ name: Resonate CI
 
 on:
   push:
-    branches: [Resonate-True-Apk, media3-main-engine]
-  pull_request:
     branches: [Resonate-True-Apk, media3-native-engine, media3-main-engine]
+  pull_request:
+    branches: [Resonate-True-Apk, media3-native-engine]
   workflow_dispatch:
 
 permissions:
@@ -137,5 +137,20 @@ jobs:
         with:
           name: resonate-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+          if-no-files-found: error
+
+      # The experimental Media3 lab is intentionally debug-only. Keep its
+      # installable APK artifact confined to the isolated development branch.
+      - name: Build Media3 Engine Lab debug APK
+        if: github.ref == 'refs/heads/media3-native-engine' || github.base_ref == 'media3-native-engine'
+        run: flutter build apk --debug
+
+      - name: Upload Media3 Engine Lab debug APK
+        if: github.ref == 'refs/heads/media3-native-engine' || github.base_ref == 'media3-native-engine'
+        uses: actions/upload-artifact@v4
+        with:
+          name: media3-engine-lab-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
           if-no-files-found: error
