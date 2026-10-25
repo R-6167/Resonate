@@ -6,7 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import '../ui/resonate_glass.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/blur_sheet.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import '../models/intelligence_recommendation.dart';
@@ -307,14 +306,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                   ),
                   const SizedBox(height: 8),
-                  StreamBuilder<PlayerState>(
-                    stream: music.audioPlayer.playerStateStream,
-                    initialData: music.audioPlayer.playerState,
+                  StreamBuilder<bool>(
+                    stream: music.playbackPlayingStream,
+                    initialData: music.isPlaying,
                     builder: (_, snapshot) {
-                      final state =
-                          snapshot.data ?? music.audioPlayer.playerState;
-                      final playing = state.playing &&
-                          state.processingState != ProcessingState.completed;
+                      final playing = snapshot.data ?? music.isPlaying;
                       final currentMs = music.currentPosition.inMilliseconds;
 
                       return Row(
