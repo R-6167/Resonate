@@ -3,6 +3,7 @@ import 'dart:async';
 import '../models/song.dart';
 import 'media3_playback_client.dart';
 import 'playback_backend.dart';
+import 'playback_snapshot.dart';
 
 /// Provider-facing command/state facade for the native Media3 session.
 ///
@@ -17,7 +18,7 @@ class Media3MusicProviderAdapter implements PlaybackBackend {
   final Media3PlaybackClient _client;
 
   @override
-  Stream<Media3PlaybackState> get states => _client.states;
+  Stream<PlaybackSnapshot> get states => _client.states.map(_snapshotFromMedia3);
 
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
@@ -134,7 +135,27 @@ class Media3MusicProviderAdapter implements PlaybackBackend {
       _client.setRepeatMode(mode.nativeValue);
 
   @override
-  Future<Media3PlaybackState> currentState() => _client.getState();
+  Future<PlaybackSnapshot> currentState() async =>
+      _snapshotFromMedia3(await _client.getState());
+
+  static PlaybackSnapshot _snapshotFromMedia3(Media3PlaybackState state) =>
+      PlaybackSnapshot(
+        connected: state.connected,
+        isPlaying: state.isPlaying,
+        isReady: state.playbackState == 3,
+        playWhenReady: state.playWhenReady,
+        position: state.position,
+        duration: state.duration,
+        mediaId: state.mediaId,
+        title: state.title,
+        artist: state.artist,
+        album: state.album,
+        currentQueueIndex: state.currentMediaItemIndex,
+        queueLength: state.mediaItemCount,
+        volume: state.volume,
+        hasError: state.hasError,
+        error: state.error,
+      );
 
   static Uri sourceUriForPath(String path) {
     final trimmed = path.trim();
