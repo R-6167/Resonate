@@ -165,6 +165,28 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Sets the non-crossfade output factors as one atomic gain-policy update.
+  /// Values are normalized to [0, 1]; non-finite values are rejected.
+  Future<void> setGainFactors({
+    double trackLevel = 1.0,
+    double preamp = 1.0,
+    double sleepFade = 1.0,
+    double focusDuck = 1.0,
+  }) async {
+    final factors = <String, double>{
+      'trackLevel': trackLevel,
+      'preamp': preamp,
+      'sleepFade': sleepFade,
+      'focusDuck': focusDuck,
+    };
+    for (final entry in factors.entries) {
+      if (!entry.value.isFinite || entry.value < 0 || entry.value > 1) {
+        throw ArgumentError.value(entry.value, entry.key, 'Must be finite and between 0 and 1.');
+      }
+    }
+    await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
+  }
+
   Future<void> preloadNext(Uri uri) async {
     if (!uri.hasScheme) {
       throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');

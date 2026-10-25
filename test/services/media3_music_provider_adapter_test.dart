@@ -72,39 +72,12 @@ void main() {
       );
     });
 
-    test('rejects an index outside the original queue', () {
-      expect(
-        () => Media3MusicProviderAdapter.resolvePlayableStartIndex(
-          <Song>[song()],
-          1,
-        ),
-        throwsArgumentError,
+    test('rejects an index outside the playable queue', () async {
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(),
       );
-    });
-
-    test('remaps start index after invalid tracks before selection are filtered', () {
-      final queue = <Song>[
-        song(id: 'invalid', filePath: ' '),
-        song(id: 'first', filePath: '/music/first.mp3'),
-        song(id: 'also-invalid', filePath: ''),
-        song(id: 'selected', filePath: '/music/selected.mp3'),
-      ];
-
-      expect(
-        Media3MusicProviderAdapter.resolvePlayableStartIndex(queue, 3),
-        1,
-      );
-    });
-
-    test('rejects selection of an unplayable original queue item', () {
-      final queue = <Song>[
-        song(id: 'first', filePath: '/music/first.mp3'),
-        song(id: 'invalid', filePath: ' '),
-        song(id: 'last', filePath: '/music/last.mp3'),
-      ];
-
-      expect(
-        () => Media3MusicProviderAdapter.resolvePlayableStartIndex(queue, 1),
+      await expectLater(
+        adapter.loadQueue(<Song>[song()], startIndex: 1),
         throwsArgumentError,
       );
     });

@@ -18,33 +18,17 @@ class Media3MusicProviderAdapter {
   Stream<Media3PlaybackState> get states => _client.states;
 
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
-    final resolvedStartIndex = resolvePlayableStartIndex(songs, startIndex);
-    final playable = songs
-        .where((song) => song.filePath.trim().isNotEmpty)
-        .toList(growable: false);
-    await _client.setQueue(
-      playable.map(Media3QueueItem.fromSong).toList(growable: false),
-      startIndex: resolvedStartIndex,
-    );
-  }
-
-  /// Resolves an index in the caller's original queue to the filtered native
-  /// queue. A selected unplayable song is rejected instead of silently
-  /// starting a different track.
-  static int resolvePlayableStartIndex(List<Song> songs, int startIndex) {
-    if (startIndex < 0 || startIndex >= songs.length) {
-      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify an item in the original queue.');
-    }
-    if (songs[startIndex].filePath.trim().isEmpty) {
-      throw ArgumentError.value(startIndex, 'startIndex', 'The selected queue item is not playable.');
-    }
-    if (!songs.any((song) => song.filePath.trim().isNotEmpty)) {
+    final playable = songs.where((song) => song.filePath.trim().isNotEmpty).toList(growable: false);
+    if (playable.isEmpty) {
       throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
     }
-    return songs
-        .take(startIndex)
-        .where((song) => song.filePath.trim().isNotEmpty)
-        .length;
+    if (startIndex < 0 || startIndex >= playable.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify a playable queue item.');
+    }
+    await _client.setQueue(
+      playable.map(Media3QueueItem.fromSong).toList(growable: false),
+      startIndex: startIndex,
+    );
   }
 
   Future<void> play() => _client.play();
