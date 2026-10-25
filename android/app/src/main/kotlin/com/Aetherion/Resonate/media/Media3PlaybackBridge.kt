@@ -142,19 +142,11 @@ class Media3PlaybackBridge(
                     connected.prepare()
                     result.success(true)
                 }
-                "skipToNext" -> {
-                    Media3PlaybackService.instance?.cancelCrossfade()
-                    connected.seekToNextMediaItem()
-                    result.success(true)
-                }
-                "skipToPrevious" -> {
-                    Media3PlaybackService.instance?.cancelCrossfade()
-                    connected.seekToPreviousMediaItem()
-                    result.success(true)
-                }
+                "skipToNext" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.seekToNextMediaItem(); result.success(true) }
+                "skipToPrevious" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.seekToPreviousMediaItem(); result.success(true) }
                 "setRepeatMode" -> {
                     val mode = call.argument<String>("mode")
-                    connected.repeatMode = when (mode) {
+                    val nativeMode = when (mode) {
                         "one" -> Player.REPEAT_MODE_ONE
                         "all" -> Player.REPEAT_MODE_ALL
                         "off" -> Player.REPEAT_MODE_OFF
@@ -163,7 +155,9 @@ class Media3PlaybackBridge(
                             return
                         }
                     }
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.setRepeatMode(nativeMode) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 repeat policy is unavailable.", null)
                 }
                 "setShuffleMode" -> {
                     val enabled = call.argument<Boolean>("enabled")
@@ -171,8 +165,9 @@ class Media3PlaybackBridge(
                         result.error("INVALID_SHUFFLE_MODE", "enabled must be a boolean.", null)
                         return
                     }
-                    connected.shuffleModeEnabled = enabled
-                    result.success(true)
+                    val accepted = Media3PlaybackService.instance?.setShuffleMode(enabled) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 shuffle policy is unavailable.", null)
                 }
                 "setSource" -> {
                     Media3PlaybackService.instance?.cancelCrossfade()
@@ -194,11 +189,7 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "play" -> { connected.play(); result.success(true) }
-                "pause" -> {
-                    Media3PlaybackService.instance?.cancelCrossfade()
-                    connected.pause()
-                    result.success(true)
-                }
+                "pause" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.pause(); result.success(true) }
                 "stop" -> {
                     Media3PlaybackService.instance?.cancelCrossfade()
                     connected.stop()

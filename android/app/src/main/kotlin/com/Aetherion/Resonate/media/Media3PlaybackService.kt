@@ -50,6 +50,27 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /**
+     * Keep transport policy identical on both decks. A prepared standby deck
+     * can become active after crossfade, so policy changes must not be lost
+     * when the MediaSession swaps its player.
+     */
+    fun setRepeatMode(mode: Int): Boolean {
+        if (mode != Player.REPEAT_MODE_OFF &&
+            mode != Player.REPEAT_MODE_ONE &&
+            mode != Player.REPEAT_MODE_ALL
+        ) return false
+        activePlayer.repeatMode = mode
+        standbyPlayer.repeatMode = mode
+        return true
+    }
+
+    fun setShuffleMode(enabled: Boolean): Boolean {
+        activePlayer.shuffleModeEnabled = enabled
+        standbyPlayer.shuffleModeEnabled = enabled
+        return true
+    }
+
     /** Apply track leveling, DSP preamp, sleep fade and focus ducking together. */
     fun setGainFactors(
         trackLevel: Float,
@@ -85,17 +106,13 @@ class Media3PlaybackService : MediaSessionService() {
                 }
             })
         }
-        // A prepared or fading standby deck must never continue independently
-        // after the active deck is paused by the user, audio focus, or a noisy
-        // route transition. Attach to both players because their roles swap at
-        // crossfade completion; only the current active deck may cancel a fade.
+        // Keep the incoming deck from continuing independently when the active deck
+        // is interrupted through the MediaSession (notification/headset/audio focus).
+        // This listener is attached to both players because their roles swap on fade.
         val activeDeckInterruptionListener = object : Player.Listener {
             private fun cancelTransitionForActiveDeck(player: Player) {
                 if (player !== activePlayer) return
-                if (crossfadeStatus == "fading" ||
-                    crossfadeStatus == "preparing" ||
-                    crossfadeStatus == "ready"
-                ) {
+                if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
                     cancelCrossfade()
                 }
             }
@@ -104,9 +121,6 @@ class Media3PlaybackService : MediaSessionService() {
                 if (!player.isPlaying) cancelTransitionForActiveDeck(player)
             }
 
-            // Notification, headset, and other MediaSession controllers can issue
-            // transport commands directly to the player, bypassing the Flutter
-            // bridge. Treat explicit seeks and track skips as transition overrides.
             override fun onPositionDiscontinuity(
                 oldPosition: Player.PositionInfo,
                 newPosition: Player.PositionInfo,
