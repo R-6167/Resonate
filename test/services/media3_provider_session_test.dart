@@ -118,6 +118,24 @@ void main() {
       expect(backend.calls, ['loadQueue']);
     });
 
+    test('projects legacy playback observations from Media3 snapshots', () async {
+      await session.start();
+      final position = session.positionStream.firstWhere(
+        (value) => value == const Duration(seconds: 12),
+      );
+      final duration = session.durationStream.firstWhere(
+        (value) => value == const Duration(minutes: 3),
+      );
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      expect(await position, const Duration(seconds: 12));
+      expect(await duration, const Duration(minutes: 3));
+
+      final playing = session.playingStream.firstWhere((value) => value);
+      await session.play();
+      expect(await playing, isTrue);
+    });
+
     test('forwards transport through the serialized runtime', () async {
       await session.start();
       await session.loadQueue(<Song>[_song('track-1')]);
