@@ -26,6 +26,20 @@ abstract interface class PlaybackBackend {
     double? focusDuck,
   });
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
+  Future<void> setShuffleMode(bool enabled);
+}
+
+/// Optional crossfade capability for engines that own two synchronized decks.
+/// A backend without this capability must not emulate a crossfade by starting a
+/// second independent playback authority.
+abstract interface class PlaybackCrossfadeBackend {
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  });
+  Future<void> crossfade({required Duration duration});
+  Future<void> cancelCrossfade();
 }
 
 /// Repeat behavior shared by backend implementations.

@@ -40,14 +40,24 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
+  Song? preloadedSong;
+  List<Song>? preloadedQueue;
+  int? preloadedQueueIndex;
+  Duration? crossfadeDuration;
+  int cancelCrossfadeCalls = 0;
+  Completer<void>? loadGate;
+  bool failLoad = false;
+  Completer<void>? pauseGate;
+  final List<String> commandOrder = <String>[];
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
@@ -55,14 +65,21 @@ class FakePlaybackBackend implements PlaybackBackend {
   Future<PlaybackSnapshot> currentState() async => value;
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    await loadGate?.future;
+    if (failLoad) throw StateError('simulated queue load failure');
     loaded = List<Song>.of(songs);
     loadedIndex = startIndex;
     value = snapshot(mediaId: songs[startIndex].id, index: startIndex, queueLength: songs.length);
   }
   @override
-  Future<void> play() async { playing = true; }
+  Future<void> play() async { commandOrder.add('play'); playing = true; }
   @override
-  Future<void> pause() async { playing = false; }
+  Future<void> pause() async {
+    commandOrder.add('pause-start');
+    await pauseGate?.future;
+    playing = false;
+    commandOrder.add('pause-end');
+  }
   @override
   Future<void> stop() async { playing = false; }
   @override
@@ -79,6 +96,18 @@ class FakePlaybackBackend implements PlaybackBackend {
   }
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async {}
+  @override
+  Future<void> setShuffleMode(bool enabled) async { lastShuffleMode = enabled; }
+  @override
+  Future<void> preloadNext(Song song, {List<Song>? queue, int? startIndex}) async {
+    preloadedSong = song;
+    preloadedQueue = queue;
+    preloadedQueueIndex = startIndex;
+  }
+  @override
+  Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
+  @override
+  Future<void> cancelCrossfade() async { cancelCrossfadeCalls++; }
 }
 
 void main() {
@@ -103,8 +132,36 @@ void main() {
 
       expect(backend.loaded.map((s) => s.id), ['a', 'b']);
       expect(backend.loadedIndex, 1);
-      expect(runtime.current.currentSong, isNull);
+      expect(runtime.current.currentSong?.id, 'b');
+      expect(runtime.current.currentQueueIndex, 1);
       expect(runtime.current.isPlaying, isFalse);
+    });
+
+    test('does not commit queue identity when the backend rejects a load', () async {
+      final original = [makeSong('old')];
+      await runtime.loadQueue(original);
+      backend.failLoad = true;
+
+      await expectLater(
+        runtime.loadQueue([makeSong('new')]),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(runtime.queue.map((song) => song.id), ['old']);
+      expect(backend.loaded.map((song) => song.id), ['old']);
+    });
+
+    test('serializes transport commands in invocation order', () async {
+      backend.pauseGate = Completer<void>();
+      final pause = runtime.pause();
+      final play = runtime.play();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(backend.commandOrder, ['pause-start']);
+      backend.pauseGate!.complete();
+      await Future.wait([pause, play]);
+      expect(backend.commandOrder, ['pause-start', 'pause-end', 'play']);
+      expect(backend.playing, isTrue);
     });
 
     test('rejects invalid and unplayable selected entries before dispatch', () async {
@@ -143,6 +200,48 @@ void main() {
       expect(backend.lastGainFactors, {
         'trackLevel': 0.8, 'preamp': 0.7, 'sleepFade': 0.5, 'focusDuck': 1.0,
       });
+    });
+
+    test('forwards native preload, crossfade and cancellation to dual-deck backend', () async {
+      final incoming = makeSong('incoming');
+      await runtime.preloadNext(incoming);
+      await runtime.crossfade(duration: const Duration(seconds: 4));
+      await runtime.cancelCrossfade();
+
+      expect(backend.preloadedSong?.id, 'incoming');
+      expect(backend.crossfadeDuration, const Duration(seconds: 4));
+      expect(backend.cancelCrossfadeCalls, 1);
+    });
+
+    test('preloads the full queue at the incoming occurrence for seamless handoff', () async {
+      final first = makeSong('first');
+      final incoming = makeSong('incoming');
+      final last = makeSong('last');
+      await runtime.loadQueue([first, incoming, last], startIndex: 0);
+      await runtime.preloadNext(incoming);
+
+      expect(backend.preloadedSong?.id, 'incoming');
+      expect(backend.preloadedQueue?.map((song) => song.id), ['first', 'incoming', 'last']);
+      expect(backend.preloadedQueueIndex, 1);
+    });
+
+    test('rejects crossfade durations outside native supported range', () async {
+      await expectLater(
+        runtime.crossfade(duration: const Duration(milliseconds: 100)),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.crossfade(duration: const Duration(seconds: 16)),
+        throwsArgumentError,
+      );
+      expect(backend.crossfadeDuration, isNull);
+    });
+
+    test('forwards shuffle policy to the backend', () async {
+      await runtime.setShuffleMode(true);
+      expect(backend.lastShuffleMode, isTrue);
+      await runtime.setShuffleMode(false);
+      expect(backend.lastShuffleMode, isFalse);
     });
 
     test('forwards transport commands to the backend', () async {

@@ -1,5 +1,6 @@
 package com.Aetherion.Resonate.media
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.AudioAttributes
@@ -7,7 +8,11 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
+import com.aetherion.resonate.dsp.DspEngineSinkHook
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlin.math.cos
@@ -84,7 +89,20 @@ class Media3PlaybackService : MediaSessionService() {
         applyDeckVolumes()
     }
 
-    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(this).build().apply {
+    private fun newPlayer(handleAudioFocus: Boolean) = ExoPlayer.Builder(
+        this,
+        object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioOutputPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(DspEngineSinkHook.createProcessors())
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioOutputPlaybackParams)
+                .build()
+        },
+    ).build().apply {
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
     }
@@ -98,20 +116,20 @@ class Media3PlaybackService : MediaSessionService() {
         .build()
 
     /** Prepares the inactive deck without disturbing current playback. */
-    fun preloadNext(uri: String): Boolean {
-        if (!::standbyPlayer.isInitialized || uri.isBlank()) return false
+    fun preloadNext(items: List<MediaItem>, startIndex: Int): Boolean {
+        if (!::standbyPlayer.isInitialized || items.isEmpty() ||
+            startIndex !in items.indices ||
+            items.any { it.localConfiguration?.uri == null }
+        ) return false
         cancelCrossfade()
-        val parsed = android.net.Uri.parse(uri)
-        val title = parsed.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-            ?: "Media3 crossfade incoming track"
         gainPolicy.setCrossfadeGains(active = 1f, standby = 0f)
         applyDeckVolumes()
-        standbyPlayer.setMediaItem(
-            MediaItem.Builder()
-                .setUri(parsed)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
-                .build(),
-        )
+        // Keep the complete queue and transport policy on the standby deck.
+        // After the deck swap, next/previous/repeat continue to work without
+        // reconstructing the playlist mid-playback or reloading the incoming track.
+        standbyPlayer.repeatMode = activePlayer.repeatMode
+        standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        standbyPlayer.setMediaItems(items, startIndex, 0L)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
         return true

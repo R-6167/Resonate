@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -135,6 +135,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend {
       _client.setRepeatMode(mode.nativeValue);
 
   @override
+  Future<void> setShuffleMode(bool enabled) => _client.setShuffleMode(enabled);
+
+  @override
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
@@ -146,6 +149,44 @@ class Media3MusicProviderAdapter implements PlaybackBackend {
         sleepFade: sleepFade ?? 1.0,
         focusDuck: focusDuck ?? 1.0,
       );
+
+  @override
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  }) async {
+    final item = Media3QueueItem.fromSong(song);
+    final songs = queue;
+    if (songs == null || songs.isEmpty) {
+      await _client.preloadNext(item);
+      return;
+    }
+    if (startIndex == null || startIndex < 0 || startIndex >= songs.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming queue occurrence.');
+    }
+    final playable = songs.where((entry) => entry.filePath.trim().isNotEmpty).toList(growable: false);
+    final selectedSong = songs[startIndex];
+    if (selectedSong.id != song.id || selectedSong.filePath.trim() != song.filePath.trim()) {
+      throw ArgumentError('The incoming song must match the selected queue occurrence.');
+    }
+    final nativeStartIndex = songs
+        .take(startIndex)
+        .where((entry) => entry.filePath.trim().isNotEmpty)
+        .length;
+    await _client.preloadNext(
+      item,
+      queue: playable.map(Media3QueueItem.fromSong).toList(growable: false),
+      startIndex: nativeStartIndex,
+    );
+  }
+
+  @override
+  Future<void> crossfade({required Duration duration}) =>
+      _client.crossfade(duration: duration);
+
+  @override
+  Future<void> cancelCrossfade() => _client.cancelCrossfade();
 
   @override
   Future<PlaybackSnapshot> currentState() async =>
