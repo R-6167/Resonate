@@ -1,0 +1,144 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:resonate/models/song.dart';
+import 'package:resonate/services/media3_provider_session.dart';
+import 'package:resonate/services/playback_backend.dart';
+import 'package:resonate/services/playback_snapshot.dart';
+
+Song _song(String id) => Song(
+      id: id,
+      title: id,
+      artist: 'Artist',
+      album: 'Album',
+      filePath: '/music/$id.mp3',
+      duration: const Duration(minutes: 3),
+      dateAdded: DateTime.utc(2026, 1, 1),
+    );
+
+PlaybackSnapshot _snapshot({
+  String? mediaId,
+  int index = 0,
+  bool playing = false,
+}) =>
+    PlaybackSnapshot(
+      connected: true,
+      isPlaying: playing,
+      isReady: true,
+      playWhenReady: playing,
+      position: const Duration(seconds: 12),
+      duration: const Duration(minutes: 3),
+      mediaId: mediaId,
+      title: mediaId,
+      artist: 'Artist',
+      album: 'Album',
+      currentQueueIndex: index,
+      queueLength: 1,
+      volume: 0.75,
+      hasError: false,
+      error: null,
+    );
+
+class _Backend implements PlaybackBackend {
+  final StreamController<PlaybackSnapshot> controller =
+      StreamController<PlaybackSnapshot>.broadcast();
+  final List<String> calls = <String>[];
+  PlaybackSnapshot value = _snapshot();
+
+  @override
+  Stream<PlaybackSnapshot> get states => controller.stream;
+  @override
+  Future<PlaybackSnapshot> currentState() async => value;
+  @override
+  Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    calls.add('loadQueue');
+    value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
+    controller.add(value);
+  }
+  @override
+  Future<void> play() async {
+    calls.add('play');
+    value = _snapshot(mediaId: value.mediaId, playing: true);
+    controller.add(value);
+  }
+  @override
+  Future<void> pause() async => calls.add('pause');
+  @override
+  Future<void> stop() async => calls.add('stop');
+  @override
+  Future<void> seek(Duration position) async => calls.add('seek');
+  @override
+  Future<void> next() async => calls.add('next');
+  @override
+  Future<void> previous() async => calls.add('previous');
+  @override
+  Future<void> setVolume(double value) async => calls.add('volume');
+  @override
+  Future<void> setGainFactors({
+    double? trackLevel,
+    double? preamp,
+    double? sleepFade,
+    double? focusDuck,
+  }) async => calls.add('gain');
+  @override
+  Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) async =>
+      calls.add('repeat');
+  @override
+  Future<void> setShuffleMode(bool enabled) async => calls.add('shuffle');
+}
+
+void main() {
+  group('Media3ProviderSession', () {
+    late _Backend backend;
+    late Media3ProviderSession session;
+
+    setUp(() {
+      backend = _Backend();
+      session = Media3ProviderSession(backend: backend);
+    });
+
+    tearDown(() async {
+      await session.dispose();
+      await backend.controller.close();
+    });
+
+    test('composes runtime and state projection around one backend', () async {
+      await session.start();
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      expect(session.queue.map((song) => song.id), ['track-1']);
+      expect(session.current.currentSong?.id, 'track-1');
+      expect(session.current.isReady, isTrue);
+      expect(session.current.volume, 0.75);
+      expect(backend.calls, ['loadQueue']);
+    });
+
+    test('forwards transport through the serialized runtime', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+      await Future.wait<void>([
+        session.play(),
+        session.setRepeatMode(PlaybackQueueRepeatMode.all),
+        session.setShuffleMode(true),
+        session.setGainFactors(preamp: 1.1),
+        session.seek(const Duration(seconds: 20)),
+      ]);
+
+      expect(backend.calls, [
+        'loadQueue',
+        'play',
+        'repeat',
+        'shuffle',
+        'gain',
+        'seek',
+      ]);
+    });
+
+    test('dispose prevents later startup and commands', () async {
+      await session.dispose();
+      await expectLater(session.start(), throwsStateError);
+      await expectLater(session.play(), throwsStateError);
+    });
+  });
+}
