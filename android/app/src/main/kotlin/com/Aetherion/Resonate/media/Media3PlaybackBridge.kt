@@ -97,6 +97,7 @@ class Media3PlaybackBridge(
         try {
             when (call.method) {
                 "setQueue" -> {
+                    Media3PlaybackService.instance?.cancelCrossfade()
                     val rawItems = call.argument<List<Map<String, Any?>>>("items")
                     val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
                     if (rawItems.isNullOrEmpty()) {
@@ -141,8 +142,8 @@ class Media3PlaybackBridge(
                     connected.prepare()
                     result.success(true)
                 }
-                "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
-                "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
+                "skipToNext" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.seekToNextMediaItem(); result.success(true) }
+                "skipToPrevious" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.seekToPreviousMediaItem(); result.success(true) }
                 "setRepeatMode" -> {
                     val mode = call.argument<String>("mode")
                     val nativeMode = when (mode) {
@@ -169,6 +170,7 @@ class Media3PlaybackBridge(
                     else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 shuffle policy is unavailable.", null)
                 }
                 "setSource" -> {
+                    Media3PlaybackService.instance?.cancelCrossfade()
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {
                         result.error("INVALID_URI", "A non-empty media URI is required.", null)
@@ -187,13 +189,14 @@ class Media3PlaybackBridge(
                     result.success(true)
                 }
                 "play" -> { connected.play(); result.success(true) }
-                "pause" -> { connected.pause(); result.success(true) }
+                "pause" -> { Media3PlaybackService.instance?.cancelCrossfade(); connected.pause(); result.success(true) }
                 "stop" -> {
                     Media3PlaybackService.instance?.cancelCrossfade()
                     connected.stop()
                     result.success(true)
                 }
                 "seekTo" -> {
+                    Media3PlaybackService.instance?.cancelCrossfade()
                     val positionMs = call.argument<Number>("positionMs")?.toLong()
                     if (positionMs == null || positionMs < 0L) {
                         result.error("INVALID_POSITION", "positionMs must be non-negative.", null)
