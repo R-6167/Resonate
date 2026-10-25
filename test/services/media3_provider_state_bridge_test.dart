@@ -21,6 +21,8 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  String repeatMode = 'off',
+  bool shuffleModeEnabled = false,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -36,6 +38,8 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 1,
+      repeatMode: repeatMode,
+      shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
       error: null,
     );
@@ -108,6 +112,8 @@ void main() {
       expect(bridge.current.isPlaying, isFalse);
       expect(bridge.current.position, const Duration(seconds: 18));
       expect(bridge.current.connected, isTrue);
+      expect(bridge.current.repeatMode, 'off');
+      expect(bridge.current.shuffleModeEnabled, isFalse);
     });
 
     test('forwards later native state updates', () async {
@@ -115,12 +121,19 @@ void main() {
       await bridge.start();
 
       final nextState = bridge.states.first;
-      backend.controller.add(_snapshot(mediaId: 'track-1', playing: true));
+      backend.controller.add(_snapshot(
+        mediaId: 'track-1',
+        playing: true,
+        repeatMode: 'one',
+        shuffleModeEnabled: true,
+      ));
 
       final projected = await nextState;
       expect(projected.currentSong?.id, 'track-1');
       expect(projected.isPlaying, isTrue);
       expect(projected.position, const Duration(seconds: 18));
+      expect(projected.repeatMode, 'one');
+      expect(projected.shuffleModeEnabled, isTrue);
     });
 
     test('start is idempotent and disposal stops projection', () async {
