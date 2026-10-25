@@ -105,14 +105,16 @@ void main() {
     test('composes runtime and state projection around one backend', () async {
       await session.start();
       await session.start();
+      final projectedState = session.states.firstWhere(
+        (state) => state.currentSong?.id == 'track-1',
+      );
       await session.loadQueue(<Song>[_song('track-1')]);
-      // The bridge consumes the runtime's broadcast state asynchronously.
-      await Future<void>.delayed(Duration.zero);
+      final state = await projectedState;
 
       expect(session.queue.map((song) => song.id), ['track-1']);
-      expect(session.current.currentSong?.id, 'track-1');
-      expect(session.current.isReady, isTrue);
-      expect(session.current.volume, 0.75);
+      expect(state.currentSong?.id, 'track-1');
+      expect(state.isReady, isTrue);
+      expect(state.volume, 0.75);
       expect(backend.calls, ['loadQueue']);
     });
 
@@ -140,7 +142,7 @@ void main() {
     test('dispose prevents later startup and commands', () async {
       await session.dispose();
       await expectLater(session.start(), throwsStateError);
-      expect(session.play, throwsStateError);
+      expect(() => session.play(), throwsStateError);
     });
   });
 }
