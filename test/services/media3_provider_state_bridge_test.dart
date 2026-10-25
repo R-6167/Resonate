@@ -112,6 +112,12 @@ void main() {
       expect(bridge.current.isPlaying, isFalse);
       expect(bridge.current.position, const Duration(seconds: 18));
       expect(bridge.current.connected, isTrue);
+      expect(bridge.current.isReady, isTrue);
+      expect(bridge.current.playWhenReady, isFalse);
+      expect(bridge.current.mediaId, 'track-1');
+      expect(bridge.current.queueLength, 1);
+      expect(bridge.current.volume, 1.0);
+      expect(bridge.current.duration, const Duration(minutes: 3));
       expect(bridge.current.repeatMode, 'off');
       expect(bridge.current.shuffleModeEnabled, isFalse);
     });
@@ -132,6 +138,10 @@ void main() {
       expect(projected.currentSong?.id, 'track-1');
       expect(projected.isPlaying, isTrue);
       expect(projected.position, const Duration(seconds: 18));
+      expect(projected.isReady, isTrue);
+      expect(projected.playWhenReady, isTrue);
+      expect(projected.mediaId, 'track-1');
+      expect(projected.queueLength, 1);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
     });
