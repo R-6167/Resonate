@@ -20,6 +20,8 @@ class Media3PlaybackState {
     required this.currentMediaItemIndex,
     required this.mediaItemCount,
     required this.volume,
+    this.repeatMode = 'off',
+    this.shuffleModeEnabled = false,
     required this.hasError,
     required this.error,
   });
@@ -37,6 +39,8 @@ class Media3PlaybackState {
   final int currentMediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  final String repeatMode;
+  final bool shuffleModeEnabled;
   final bool hasError;
   final String? error;
 
@@ -67,6 +71,10 @@ class Media3PlaybackState {
       currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
       mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
+      repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
+          ? map['repeatMode'] as String
+          : 'off',
+      shuffleModeEnabled: boolValue(map['shuffleModeEnabled']),
       hasError: boolValue(map['hasError']),
       error: stringValue(map['error']),
     );

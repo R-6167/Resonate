@@ -15,6 +15,8 @@ void main() {
         'durationMs': 9000,
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
+        'repeatMode': 'all',
+        'shuffleModeEnabled': true,
         'hasError': false,
         'error': null,
       });
@@ -26,6 +28,8 @@ void main() {
       expect(state.duration, const Duration(milliseconds: 9000));
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
+      expect(state.repeatMode, 'all');
+      expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
     });
 
@@ -52,6 +56,8 @@ void main() {
       expect(state.volume, 1.0);
       expect(state.isPlaying, isFalse);
       expect(state.mediaId, isNull);
+      expect(state.repeatMode, 'off');
+      expect(state.shuffleModeEnabled, isFalse);
     });
   });
   group('Media3PlaybackClient input validation', () {

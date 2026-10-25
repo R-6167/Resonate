@@ -383,6 +383,12 @@ class Media3PlaybackBridge(
         "album" to player.mediaMetadata.albumTitle?.toString(),
         "currentMediaItemIndex" to player.currentMediaItemIndex,
         "mediaItemCount" to player.mediaItemCount,
+        "repeatMode" to when (player.repeatMode) {
+            Player.REPEAT_MODE_ONE -> "one"
+            Player.REPEAT_MODE_ALL -> "all"
+            else -> "off"
+        },
+        "shuffleModeEnabled" to player.shuffleModeEnabled,
         "volume" to player.volume,
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,

@@ -17,6 +17,8 @@ class PlaybackSnapshot {
     required this.currentQueueIndex,
     required this.queueLength,
     required this.volume,
+    this.repeatMode = 'off',
+    this.shuffleModeEnabled = false,
     required this.hasError,
     required this.error,
   });
@@ -34,6 +36,9 @@ class PlaybackSnapshot {
   final int currentQueueIndex;
   final int queueLength;
   final double volume;
+  /// Current queue repeat policy: `off`, `one`, or `all`.
+  final String repeatMode;
+  final bool shuffleModeEnabled;
   final bool hasError;
   final String? error;
 }
