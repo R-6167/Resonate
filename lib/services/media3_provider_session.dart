@@ -27,6 +27,17 @@ class Media3ProviderSession {
 
   Stream<Media3ProviderState> get states => _bridge.states;
   Media3ProviderState get current => _bridge.current;
+
+  /// Compatibility observations for UI consumers that previously subscribed
+  /// directly to just_audio's active-player streams. Values are projected from
+  /// reconciled Media3 snapshots; they never issue playback commands.
+  Stream<Duration> get positionStream =>
+      states.map((state) => state.position);
+  Stream<Duration?> get durationStream =>
+      states.map((state) => state.duration);
+  Stream<bool> get playingStream =>
+      states.map((state) => state.isPlaying);
+
   List<Song> get queue => _runtime.queue;
 
   /// Connects the backend before publishing its initial reconciled state.
