@@ -141,6 +141,13 @@ class Media3PlaybackClient {
     );
   }
 
+  Future<void> setShuffleMode(bool enabled) async {
+    await _methodChannel.invokeMethod<bool>(
+      'setShuffleMode',
+      <String, Object>{'enabled': enabled},
+    );
+  }
+
   Future<void> play() => _command('play');
   Future<void> pause() => _command('pause');
   Future<void> stop() => _command('stop');
@@ -166,7 +173,8 @@ class Media3PlaybackClient {
   }
 
   /// Sets the non-crossfade output factors as one atomic gain-policy update.
-  /// Values are normalized to [0, 1]; non-finite values are rejected.
+  /// Track level, sleep fade and focus duck are normalized to [0, 1]. Preamp
+  /// is a linear gain in [0, 4] so positive preamp can boost before output cap.
   Future<void> setGainFactors({
     double trackLevel = 1.0,
     double preamp = 1.0,
@@ -180,20 +188,42 @@ class Media3PlaybackClient {
       'focusDuck': focusDuck,
     };
     for (final entry in factors.entries) {
-      if (!entry.value.isFinite || entry.value < 0 || entry.value > 1) {
-        throw ArgumentError.value(entry.value, entry.key, 'Must be finite and between 0 and 1.');
+      final max = entry.key == 'preamp' ? 4.0 : 1.0;
+      if (!entry.value.isFinite || entry.value < 0 || entry.value > max) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          entry.key == 'preamp'
+              ? 'Must be finite and between 0 and 4.'
+              : 'Must be finite and between 0 and 1.',
+        );
       }
     }
     await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
   }
 
-  Future<void> preloadNext(Uri uri) async {
-    if (!uri.hasScheme) {
-      throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
+  Future<void> preloadNext(
+    Media3QueueItem item, {
+    List<Media3QueueItem>? queue,
+    int startIndex = 0,
+  }) async {
+    final items = queue ?? <Media3QueueItem>[item];
+    if (items.isEmpty || items.length > 500) {
+      throw ArgumentError.value(items.length, 'queue', 'Queue must contain 1–500 items.');
+    }
+    if (startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming item.');
+    }
+    if (items[startIndex].id != item.id || items[startIndex].uri != item.uri) {
+      throw ArgumentError('The selected queue occurrence must match the incoming item.');
     }
     await _methodChannel.invokeMethod<bool>(
       'preloadNext',
-      <String, Object>{'uri': uri.toString()},
+      <String, Object?>{
+        'item': item.toMap(),
+        'items': items.map((entry) => entry.toMap()).toList(growable: false),
+        'startIndex': startIndex,
+      },
     );
   }
 

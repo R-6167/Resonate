@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/services/media3_playback_client.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('Media3PlaybackState.fromMap', () {
     test('parses a normal native state snapshot', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
@@ -71,6 +73,53 @@ void main() {
 
     test('rejects non-finite volume before channel invocation', () async {
       await expectLater(client.setVolume(double.nan), throwsArgumentError);
+    });
+
+    test('rejects invalid gain factors before channel invocation', () async {
+      await expectLater(
+        client.setGainFactors(trackLevel: double.nan),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setGainFactors(preamp: -0.01),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setGainFactors(preamp: 4.01),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setGainFactors(focusDuck: 1.01),
+        throwsArgumentError,
+      );
+    });
+
+    test('accepts positive preamp boost up to 4x without requiring native playback', () async {
+      await expectLater(
+        client.setGainFactors(trackLevel: 0.25, preamp: 2.0),
+        throwsA(isA<MissingPluginException>()),
+      );
+    });
+
+    test('validates shuffle mode and reaches the platform channel', () async {
+      await expectLater(
+        client.setShuffleMode(true),
+        throwsA(isA<MissingPluginException>()),
+      );
+    });
+
+    test('accepts normalized gain factors without requiring native playback', () async {
+      // Validation completes before the platform call; a missing platform
+      // implementation is expected only after valid values are accepted.
+      await expectLater(
+        client.setGainFactors(
+          trackLevel: 0.8,
+          preamp: 0.7,
+          sleepFade: 0.5,
+          focusDuck: 1.0,
+        ),
+        throwsA(isA<MissingPluginException>()),
+      );
     });
 
     test('rejects an empty native queue before channel invocation', () async {
