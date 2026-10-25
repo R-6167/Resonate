@@ -13,18 +13,22 @@ Make AndroidX Media3/ExoPlayer the authoritative playback engine for Resonate, t
 
 ## Migration sequence
 
-1. **Native queue/session contract (this change).** Add typed queue descriptors and metadata to the Flutter bridge, native queue loading, skip-next/previous, repeat modes, and richer immutable state snapshots. Native player objects remain inside the Android service.
-2. **Single playback authority.** Refactor `MusicProvider` to issue commands to Media3 and consume Media3 state events. Avoid a dual-authority period where Flutter UI says one track is active while a different player is audible.
-3. **Native crossfade and queue progression.** Replace Dart-side two-`AudioPlayer` transitions with the already tested native dual-deck transition. Preserve queue order, repeat-one/all, next/previous, preloading, cancellation, and track identity through consecutive fades.
-4. **MediaSession ownership.** Make the Media3 session authoritative for notification, lock-screen, Bluetooth/headset and external transport commands. Remove duplicate playback-session ownership only after parity is verified.
-5. **Audio policy and effects.** Route user volume, track leveling, EQ preamp, sleep fade, audio-focus ducking, DSP/session IDs, and visualization capture through the active Media3 output. No independent gain path may overwrite another.
-6. **Remove `just_audio`.** Delete its dependency and legacy engine code only after all production imports, tests, scripts, and runtime paths have been migrated. Remove obsolete workflows or assets only when confirmed unused.
-7. **Device and CI gate.** Green Flutter analysis/tests and Android debug APK build; verify consecutive crossfades, cancellation, repeat modes, queue changes, background controls, Bluetooth controls, audio focus, DSP/DVC, visualization, restore after force-stop, Android 7 behavior, and comparable memory scenarios.
+1. **Native queue/session contract (completed).** Add typed queue descriptors and metadata to the Flutter bridge, native queue loading, skip-next/previous, repeat modes, and richer immutable state snapshots. Native player objects remain inside the Android service.
+2. **Provider-facing adapter (in progress).** Map `Song` metadata and local paths/MediaStore `content://` URIs to native queue descriptors; expose Media3 state and transport commands through a provider-facing facade. Next, wire this facade into `MusicProvider` and make its state transitions Media3-authoritative.
+3. **Single playback authority.** Refactor `MusicProvider` to issue commands to Media3 and consume Media3 state events. Avoid a dual-authority period where Flutter UI says one track is active while a different player is audible.
+4. **Native crossfade and queue progression.** Replace Dart-side two-`AudioPlayer` transitions with the already tested native dual-deck transition. Preserve queue order, repeat-one/all, next/previous, preloading, cancellation, and track identity through consecutive fades.
+5. **MediaSession ownership.** Make the Media3 session authoritative for notification, lock-screen, Bluetooth/headset and external transport commands. Remove duplicate playback-session ownership only after parity is verified.
+6. **Audio policy and effects.** Route user volume, track leveling, EQ preamp, sleep fade, audio-focus ducking, DSP/session IDs, and visualization capture through the active Media3 output. No independent gain path may overwrite another.
+7. **Remove `just_audio`.** Delete its dependency and legacy engine code only after all production imports, tests, scripts, and runtime paths have been migrated. Remove obsolete workflows or assets only when confirmed unused.
+8. **Device and CI gate.** Green Flutter analysis/tests and Android debug APK build; verify consecutive crossfades, cancellation, repeat modes, queue changes, background controls, Bluetooth controls, audio focus, DSP/DVC, visualization, restore after force-stop, Android 7 behavior, and comparable memory scenarios.
 
 ## Current status
 
+- The bridge now emits position snapshots every 250 ms while the Flutter state stream is subscribed and Media3 is playing. The ticker is stopped on pause/stream cancellation/release to avoid unnecessary background work.
+- This supplies the live position updates a provider needs for the progress bar, resume persistence, listening history, and system-state mirroring; it is event plumbing, not the production provider cutover.
 - Media3 single-player playback, seeking, background playback, notification controls, and an audio-focus interruption were reported clean by the user on Bluetooth.
 - The user reports build #777's native two-deck crossfade sounds excellent and works correctly in their current test.
-- This change adds a queue-capable bridge contract; **it does not yet make Media3 the production provider's default engine**. The provider cutover is the next required implementation step, not an assumption.
+- The provider-facing adapter now maps `Song` queues, metadata, artwork, local file paths and MediaStore `content://` URIs into the Media3 client contract, and exposes native transport/state calls. Tests cover URI mapping and invalid queue/index inputs.
+- **Media3 is not yet the production provider's default engine.** The next implementation step is wiring this adapter into `MusicProvider` without leaving the legacy players as a second playback authority.
 - The prototype currently applies deck gain directly to player volume. The production migration must combine crossfade gain with master volume, leveling, sleep fade and ducking before cutover.
 - Keep Android 7 compatibility and low-memory performance as release requirements.
