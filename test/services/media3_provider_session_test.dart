@@ -106,6 +106,8 @@ void main() {
       await session.start();
       await session.start();
       await session.loadQueue(<Song>[_song('track-1')]);
+      // The bridge consumes the runtime's broadcast state asynchronously.
+      await Future<void>.delayed(Duration.zero);
 
       expect(session.queue.map((song) => song.id), ['track-1']);
       expect(session.current.currentSong?.id, 'track-1');
@@ -138,7 +140,7 @@ void main() {
     test('dispose prevents later startup and commands', () async {
       await session.dispose();
       await expectLater(session.start(), throwsStateError);
-      await expectLater(session.play(), throwsStateError);
+      expect(session.play, throwsStateError);
     });
   });
 }
