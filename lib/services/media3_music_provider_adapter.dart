@@ -17,6 +17,13 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
 
   final Media3PlaybackClient _client;
 
+  // Native gain updates replace the complete factor set atomically. Retain the
+  // last applied values so partial updates cannot reset other active factors.
+  double _trackLevel = 1.0;
+  double _preamp = 1.0;
+  double _sleepFade = 1.0;
+  double _focusDuck = 1.0;
+
   @override
   Stream<PlaybackSnapshot> get states => _client.states.map(_snapshotFromMedia3);
 
@@ -143,12 +150,27 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     double? preamp,
     double? sleepFade,
     double? focusDuck,
-  }) => _client.setGainFactors(
-        trackLevel: trackLevel ?? 1.0,
-        preamp: preamp ?? 1.0,
-        sleepFade: sleepFade ?? 1.0,
-        focusDuck: focusDuck ?? 1.0,
-      );
+  }) async {
+    // Validate and apply a candidate before mutating the cached state. If the
+    // native command rejects it, the next partial update still uses the last
+    // known-good factor set.
+    final nextTrackLevel = trackLevel ?? _trackLevel;
+    final nextPreamp = preamp ?? _preamp;
+    final nextSleepFade = sleepFade ?? _sleepFade;
+    final nextFocusDuck = focusDuck ?? _focusDuck;
+
+    await _client.setGainFactors(
+      trackLevel: nextTrackLevel,
+      preamp: nextPreamp,
+      sleepFade: nextSleepFade,
+      focusDuck: nextFocusDuck,
+    );
+
+    _trackLevel = nextTrackLevel;
+    _preamp = nextPreamp;
+    _sleepFade = nextSleepFade;
+    _focusDuck = nextFocusDuck;
+  }
 
   @override
   Future<void> preloadNext(

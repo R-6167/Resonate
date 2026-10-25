@@ -180,6 +180,45 @@ void main() {
       expect(calls[4].arguments, {'positionMs': 17000});
     });
 
+    test('rejected partial gain update does not poison later updates', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/gain-transaction');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      await adapter.setGainFactors(
+        trackLevel: 0.8,
+        preamp: 1.2,
+        sleepFade: 0.9,
+        focusDuck: 0.5,
+      );
+
+      await expectLater(
+        adapter.setGainFactors(preamp: 5.0),
+        throwsArgumentError,
+      );
+      await adapter.setGainFactors(focusDuck: 0.2);
+
+      expect(calls, hasLength(2));
+      expect(calls.last.arguments, {
+        'trackLevel': 0.8,
+        'preamp': 1.2,
+        'sleepFade': 0.9,
+        'focusDuck': 0.2,
+      });
+    });
+
     test('repeat policy has explicit native values', () {
       expect(PlaybackQueueRepeatMode.off.nativeValue, 'off');
       expect(PlaybackQueueRepeatMode.one.nativeValue, 'one');
