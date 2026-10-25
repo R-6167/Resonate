@@ -135,6 +135,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       _client.setRepeatMode(mode.nativeValue);
 
   @override
+  Future<void> setShuffleMode(bool enabled) => _client.setShuffleMode(enabled);
+
+  @override
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
@@ -148,9 +151,34 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       );
 
   @override
-  Future<void> preloadNext(Song song) async {
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  }) async {
     final item = Media3QueueItem.fromSong(song);
-    await _client.preloadNext(item);
+    final songs = queue;
+    if (songs == null || songs.isEmpty) {
+      await _client.preloadNext(item);
+      return;
+    }
+    if (startIndex == null || startIndex < 0 || startIndex >= songs.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming queue occurrence.');
+    }
+    final playable = songs.where((entry) => entry.filePath.trim().isNotEmpty).toList(growable: false);
+    final selectedSong = songs[startIndex];
+    if (selectedSong.id != song.id || selectedSong.filePath.trim() != song.filePath.trim()) {
+      throw ArgumentError('The incoming song must match the selected queue occurrence.');
+    }
+    final nativeStartIndex = songs
+        .take(startIndex)
+        .where((entry) => entry.filePath.trim().isNotEmpty)
+        .length;
+    await _client.preloadNext(
+      item,
+      queue: playable.map(Media3QueueItem.fromSong).toList(growable: false),
+      startIndex: nativeStartIndex,
+    );
   }
 
   @override

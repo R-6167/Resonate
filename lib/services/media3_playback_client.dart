@@ -141,6 +141,13 @@ class Media3PlaybackClient {
     );
   }
 
+  Future<void> setShuffleMode(bool enabled) async {
+    await _methodChannel.invokeMethod<bool>(
+      'setShuffleMode',
+      <String, Object>{'enabled': enabled},
+    );
+  }
+
   Future<void> play() => _command('play');
   Future<void> pause() => _command('pause');
   Future<void> stop() => _command('stop');
@@ -195,11 +202,28 @@ class Media3PlaybackClient {
     await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
   }
 
-  Future<void> preloadNext(Media3QueueItem item) async {
-    final descriptor = item.toMap();
+  Future<void> preloadNext(
+    Media3QueueItem item, {
+    List<Media3QueueItem>? queue,
+    int startIndex = 0,
+  }) async {
+    final items = queue ?? <Media3QueueItem>[item];
+    if (items.isEmpty || items.length > 500) {
+      throw ArgumentError.value(items.length, 'queue', 'Queue must contain 1–500 items.');
+    }
+    if (startIndex < 0 || startIndex >= items.length) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming item.');
+    }
+    if (items[startIndex].id != item.id || items[startIndex].uri != item.uri) {
+      throw ArgumentError('The selected queue occurrence must match the incoming item.');
+    }
     await _methodChannel.invokeMethod<bool>(
       'preloadNext',
-      <String, Object?>{'item': descriptor},
+      <String, Object?>{
+        'item': item.toMap(),
+        'items': items.map((entry) => entry.toMap()).toList(growable: false),
+        'startIndex': startIndex,
+      },
     );
   }
 
