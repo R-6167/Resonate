@@ -1,6 +1,7 @@
 import '../modes/screens/modes_screen.dart';
 import '../modes/providers/mode_provider.dart';
 import '../modes/integration/resonate_mode_ports.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../ui/resonate_glass.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,8 @@ import '../providers/bluetooth_provider.dart';
 import '../providers/intelligence_provider.dart';
 import '../providers/theme_provider.dart';
 import 'about_screen.dart';
+import 'dev/media3_engine_lab_screen.dart';
+import 'dev/media3_crossfade_lab_screen.dart';
 import 'audio_visualization_settings_screen.dart';
 import 'crossfade_screen.dart';
 import 'dj_mode_settings_screen.dart';
@@ -97,6 +100,11 @@ class SettingsScreen extends StatelessWidget {
               _item(context, 'Listening history', 'Browse, understand or clear playback events', Icons.history_rounded, const ListeningHistoryScreen()),
               _confirmItem(context, 'Delete Intelligence history', 'Erase recommendation feedback', Icons.delete_outline_rounded, 'Clear recommendation feedback now?', Icons.delete_outline_rounded, () => context.read<IntelligenceProvider>().clearRecommendationFeedback()),
             ]),
+            if (kDebugMode)
+              _section(context, 'Developer tools', Icons.developer_mode_rounded, [
+                _item(context, 'Media3 Engine Lab', 'Test native ExoPlayer without changing normal playback', Icons.science_outlined, const Media3EngineLabScreen()),
+                _item(context, 'Media3 Crossfade Lab', 'Stress-test isolated native two-deck transitions', Icons.compare_arrows_rounded, const Media3CrossfadeLabScreen()),
+              ]),
             _section(context, 'About', Icons.info_outline_rounded, [
               _item(context, 'About & How to use', 'Guide, privacy notes and copyright', Icons.menu_book_outlined, const AboutScreen()),
             ]),

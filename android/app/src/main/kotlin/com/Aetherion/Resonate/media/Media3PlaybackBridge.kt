@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -20,9 +21,8 @@ import java.util.concurrent.Executor
 /**
  * Narrow Flutter boundary for the isolated Media3 prototype.
  *
- * Connection is lazy: merely launching Resonate does not create a second player
- * or bind the experimental service. Native Media3 objects stay native; Flutter
- * receives commands and immutable state snapshots rather than mutable objects.
+ * Native Media3 objects stay native; Flutter receives commands and immutable
+ * state snapshots rather than mutable player objects.
  */
 class Media3PlaybackBridge(
     private val context: Context,
@@ -65,19 +65,91 @@ class Media3PlaybackBridge(
     ) {
         try {
             when (call.method) {
+                "setQueue" -> {
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
+                    if (rawItems.isNullOrEmpty()) {
+                        result.error("INVALID_QUEUE", "At least one playable queue item is required.", null)
+                        return
+                    }
+                    if (rawItems.size > 500) {
+                        result.error("INVALID_QUEUE", "Queue is too large; maximum is 500 items.", null)
+                        return
+                    }
+                    if (startIndex !in rawItems.indices) {
+                        result.error("INVALID_QUEUE_INDEX", "startIndex must identify an item in the queue.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                    connected.setMediaItems(items, startIndex, 0L)
+                    connected.prepare()
+                    result.success(true)
+                }
+                "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
+                "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
+                "setRepeatMode" -> {
+                    val mode = call.argument<String>("mode")
+                    connected.repeatMode = when (mode) {
+                        "one" -> Player.REPEAT_MODE_ONE
+                        "all" -> Player.REPEAT_MODE_ALL
+                        "off" -> Player.REPEAT_MODE_OFF
+                        else -> {
+                            result.error("INVALID_REPEAT_MODE", "mode must be off, one, or all.", null)
+                            return
+                        }
+                    }
+                    result.success(true)
+                }
                 "setSource" -> {
                     val source = call.argument<String>("uri")
                     if (source.isNullOrBlank()) {
                         result.error("INVALID_URI", "A non-empty media URI is required.", null)
                         return
                     }
-                    connected.setMediaItem(MediaItem.fromUri(Uri.parse(source)))
+                    val uri = Uri.parse(source)
+                    val title = uri.lastPathSegment?.substringAfterLast('/')
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Media3 Engine Lab test audio"
+                    val item = MediaItem.Builder()
+                        .setUri(uri)
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+                        .build()
+                    connected.setMediaItem(item)
                     connected.prepare()
                     result.success(true)
                 }
                 "play" -> { connected.play(); result.success(true) }
                 "pause" -> { connected.pause(); result.success(true) }
-                "stop" -> { connected.stop(); result.success(true) }
+                "stop" -> {
+                    Media3PlaybackService.instance?.cancelCrossfade()
+                    connected.stop()
+                    result.success(true)
+                }
                 "seekTo" -> {
                     val positionMs = call.argument<Number>("positionMs")?.toLong()
                     if (positionMs == null || positionMs < 0L) {
@@ -96,6 +168,29 @@ class Media3PlaybackBridge(
                     connected.volume = volume.coerceIn(0f, 1f)
                     result.success(true)
                 }
+                "preloadNext" -> {
+                    val uri = call.argument<String>("uri")
+                    if (uri.isNullOrBlank()) {
+                        result.error("INVALID_URI", "A non-empty incoming URI is required.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.preloadNext(uri) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_PRELOAD_FAILED", "The incoming deck could not be prepared.", null)
+                }
+                "crossfade" -> {
+                    val durationMs = call.argument<Number>("durationMs")?.toLong()
+                    if (durationMs == null || durationMs !in 250L..15000L) {
+                        result.error("INVALID_CROSSFADE_DURATION", "Crossfade duration must be 250–15000 ms.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.startCrossfade(durationMs) == true
+                    if (accepted) result.success(true)
+                    else result.error("CROSSFADE_NOT_READY", "Load an incoming track and wait until it is ready.", null)
+                }
+                "cancelCrossfade" -> result.success(Media3PlaybackService.instance?.cancelCrossfade() == true)
+                "crossfadeState" -> result.success(Media3PlaybackService.instance?.crossfadeState()
+                    ?: mapOf("status" to "service_unavailable"))
                 "getState" -> result.success(stateSnapshot(connected))
                 else -> result.notImplemented()
             }
@@ -170,6 +265,11 @@ class Media3PlaybackBridge(
         "positionMs" to player.currentPosition.coerceAtLeast(0L),
         "durationMs" to player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L),
         "mediaId" to player.currentMediaItem?.mediaId,
+        "title" to player.mediaMetadata.title?.toString(),
+        "artist" to player.mediaMetadata.artist?.toString(),
+        "album" to player.mediaMetadata.albumTitle?.toString(),
+        "currentMediaItemIndex" to player.currentMediaItemIndex,
+        "mediaItemCount" to player.mediaItemCount,
         "volume" to player.volume,
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
