@@ -137,9 +137,12 @@ void main() {
       backend.value = stale;
       backend.stateGate = Completer<PlaybackSnapshot>();
 
+      final freshState = runtime.states.firstWhere(
+        (state) => state.snapshot?.mediaId == 'fresh',
+      );
       final reconnect = runtime.connect();
       backend.controller.add(fresh);
-      await Future<void>.delayed(Duration.zero);
+      await freshState;
       backend.stateGate!.complete(stale);
       await reconnect;
 
