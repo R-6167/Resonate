@@ -32,6 +32,8 @@ class Media3PlaybackService : MediaSessionService() {
     private var fadeRunnable: Runnable? = null
     private var fadeGeneration = 0
     private var fadeStartedAt = 0L
+    private var fadeElapsedBeforePause = 0L
+    private var fadePaused = false
     private var fadeDurationMs = 0L
     private var crossfadeStatus = "idle"
 
@@ -170,6 +172,8 @@ class Media3PlaybackService : MediaSessionService() {
         cancelCrossfade()
         fadeDurationMs = durationMs
         fadeStartedAt = android.os.SystemClock.elapsedRealtime()
+        fadeElapsedBeforePause = 0L
+        fadePaused = false
         val generation = ++fadeGeneration
         crossfadeStatus = "fading"
         gainPolicy.resetDecks()
@@ -178,7 +182,9 @@ class Media3PlaybackService : MediaSessionService() {
         val task = object : Runnable {
             override fun run() {
                 if (generation != fadeGeneration || isDestroyed) return
-                val elapsed = (android.os.SystemClock.elapsedRealtime() - fadeStartedAt).coerceAtLeast(0L)
+                if (fadePaused) return
+                val elapsed = (fadeElapsedBeforePause +
+                    (android.os.SystemClock.elapsedRealtime() - fadeStartedAt).coerceAtLeast(0L))
                 val progress = (elapsed.toFloat() / fadeDurationMs.toFloat()).coerceIn(0f, 1f)
                 gainPolicy.setCrossfadeGains(
                     active = cos(progress * Math.PI.toFloat() / 2f),
@@ -198,6 +204,8 @@ class Media3PlaybackService : MediaSessionService() {
                     standbyPlayer.clearMediaItems()
                     crossfadeStatus = "completed"
                     fadeRunnable = null
+                    fadeElapsedBeforePause = 0L
+                    fadePaused = false
                 } else {
                     mainHandler.postDelayed(this, 32L)
                 }
@@ -205,6 +213,32 @@ class Media3PlaybackService : MediaSessionService() {
         }
         fadeRunnable = task
         mainHandler.post(task)
+        return true
+    }
+
+    /**
+     * Freeze an in-flight transition when transport pauses. The active deck is
+     * paused by the MediaSession command; this method freezes the ramp clock and
+     * pauses the standby deck so neither audio nor fade progress advances silently.
+     */
+    fun pauseCrossfade(): Boolean {
+        if (crossfadeStatus != "fading" || fadePaused) return false
+        fadeElapsedBeforePause = (fadeElapsedBeforePause +
+            (android.os.SystemClock.elapsedRealtime() - fadeStartedAt).coerceAtLeast(0L))
+            .coerceAtMost(fadeDurationMs)
+        fadePaused = true
+        fadeRunnable?.let(mainHandler::removeCallbacks)
+        standbyPlayer.pause()
+        return true
+    }
+
+    /** Resume both decks from the exact gain-ramp position at which they paused. */
+    fun resumeCrossfade(): Boolean {
+        if (crossfadeStatus != "fading" || !fadePaused || fadeRunnable == null) return false
+        fadeStartedAt = android.os.SystemClock.elapsedRealtime()
+        fadePaused = false
+        standbyPlayer.play()
+        mainHandler.post(fadeRunnable!!)
         return true
     }
 
@@ -225,6 +259,8 @@ class Media3PlaybackService : MediaSessionService() {
         fadeGeneration++
         fadeRunnable?.let(mainHandler::removeCallbacks)
         fadeRunnable = null
+        fadeElapsedBeforePause = 0L
+        fadePaused = false
         if (::activePlayer.isInitialized && ::standbyPlayer.isInitialized) {
             // Cancellation preserves the current deck; the incoming deck is silenced
             // and paused so a second request cannot leave two audible players.
