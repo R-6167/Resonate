@@ -45,12 +45,16 @@ class _Backend implements PlaybackBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
+  int currentStateCalls = 0;
   PlaybackSnapshot value = _snapshot();
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
   @override
-  Future<PlaybackSnapshot> currentState() async => value;
+  Future<PlaybackSnapshot> currentState() async {
+    currentStateCalls++;
+    return value;
+  }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     calls.add('loadQueue');
@@ -118,6 +122,16 @@ void main() {
       expect(state.isReady, isTrue);
       expect(state.volume, 0.75);
       expect(backend.calls, ['loadQueue']);
+    });
+
+    test('coalesces concurrent startup requests into one backend connection', () async {
+      await Future.wait<void>([
+        session.start(),
+        session.start(),
+        session.start(),
+      ]);
+
+      expect(backend.currentStateCalls, 1);
     });
 
     test('implements one contract for commands and observations', () async {

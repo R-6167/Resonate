@@ -25,6 +25,7 @@ class Media3ProviderSession implements PlaybackEngineSession {
   late final Media3ProviderStateBridge _bridge;
   bool _started = false;
   bool _disposed = false;
+  Future<void>? _startFuture;
 
   Stream<Media3ProviderState> get states => _bridge.states;
   Media3ProviderState get current => _bridge.current;
@@ -49,12 +50,38 @@ class Media3ProviderSession implements PlaybackEngineSession {
   /// Safe to call repeatedly; the runtime and bridge both make startup
   /// idempotent.
   @override
-  Future<void> start() async {
-    _ensureAlive();
-    if (_started) return;
-    await _runtime.connect();
-    await _bridge.start();
-    _started = true;
+  Future<void> start() {
+    // Preserve the Future-based contract: callers observe disposed startup
+    // as an asynchronous StateError rather than a synchronous throw.
+    if (_disposed) {
+      return Future<void>.error(
+        StateError('Media3ProviderSession is disposed.'),
+      );
+    }
+    if (_started) return Future<void>.value();
+    final pending = _startFuture;
+    if (pending != null) return pending;
+
+    // Publish the in-flight future before yielding. Concurrent owners must
+    // share one connection attempt instead of serially reconnecting the
+    // backend and racing bridge initialization.
+    final starting = _startOnce();
+    _startFuture = starting;
+    return starting;
+  }
+
+  Future<void> _startOnce() async {
+    try {
+      await _runtime.connect();
+      _ensureAlive();
+      await _bridge.start();
+      _ensureAlive();
+      _started = true;
+    } catch (_) {
+      // A failed connection must not permanently poison retries.
+      _startFuture = null;
+      rethrow;
+    }
   }
 
   @override
