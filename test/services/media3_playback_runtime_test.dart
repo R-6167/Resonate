@@ -201,6 +201,19 @@ void main() {
       expect(runtime.current.isPlaying, isFalse);
     });
 
+    test('does not commit a queue when disposed during native load', () async {
+      backend.loadGate = Completer<void>();
+      final replacement = runtime.loadQueue([makeSong('late')]);
+      await Future<void>.delayed(Duration.zero);
+
+      await runtime.dispose();
+      backend.loadGate!.complete();
+
+      await expectLater(replacement, throwsA(isA<StateError>()));
+      expect(runtime.queue, isEmpty);
+      expect(runtime.current.currentSong, isNull);
+    });
+
     test('buffers snapshots until replacement queue identity is committed', () async {
       await runtime.loadQueue([makeSong('old')]);
       final observed = <Media3RuntimeState>[];
