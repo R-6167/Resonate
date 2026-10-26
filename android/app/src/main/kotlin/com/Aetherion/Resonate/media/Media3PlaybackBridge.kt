@@ -190,8 +190,16 @@ class Media3PlaybackBridge(
                     connected.prepare()
                     result.success(true)
                 }
-                "play" -> { connected.play(); result.success(true) }
-                "pause" -> { connected.pause(); result.success(true) }
+                "play" -> {
+                    connected.play()
+                    Media3PlaybackService.instance?.resumeCrossfade()
+                    result.success(true)
+                }
+                "pause" -> {
+                    Media3PlaybackService.instance?.pauseCrossfade()
+                    connected.pause()
+                    result.success(true)
+                }
                 "stop" -> {
                     Media3PlaybackService.instance?.clearPreload()
                     connected.stop()
