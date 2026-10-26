@@ -5,6 +5,7 @@ import 'media3_music_provider_adapter.dart';
 import 'media3_playback_runtime.dart';
 import 'media3_provider_state_bridge.dart';
 import 'playback_backend.dart';
+import 'playback_observation_source.dart';
 
 /// Composition root for the Media3 provider migration.
 ///
@@ -12,7 +13,7 @@ import 'playback_backend.dart';
 /// MusicProvider can adopt this session behind its existing compatibility
 /// boundary without constructing multiple clients or listening to native
 /// snapshots independently. It is not wired into production MusicProvider yet.
-class Media3ProviderSession {
+class Media3ProviderSession implements PlaybackObservationSource {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -31,10 +32,13 @@ class Media3ProviderSession {
   /// Compatibility observations for UI consumers that previously subscribed
   /// directly to just_audio's active-player streams. Values are projected from
   /// reconciled Media3 snapshots; they never issue playback commands.
+  @override
   Stream<Duration> get positionStream =>
       states.map((state) => state.position);
+  @override
   Stream<Duration?> get durationStream =>
       states.map((state) => state.duration);
+  @override
   Stream<bool> get playingStream =>
       states.map((state) => state.isPlaying);
 
