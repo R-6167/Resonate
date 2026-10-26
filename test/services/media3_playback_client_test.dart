@@ -60,6 +60,68 @@ void main() {
       expect(state.shuffleModeEnabled, isFalse);
     });
   });
+  group('Media3PlaybackClient native acknowledgements', () {
+    const channel = MethodChannel('resonate/media3_test_ack');
+    late Media3PlaybackClient client;
+
+    setUp(() {
+      client = Media3PlaybackClient(methodChannel: channel);
+    });
+
+    tearDown(() {
+      channel.setMockMethodCallHandler(null);
+    });
+
+    test('rejects a queue command explicitly refused by native Media3', () async {
+      channel.setMockMethodCallHandler((call) async => false);
+
+      await expectLater(
+        client.setQueue(
+          <Media3QueueItem>[
+            Media3QueueItem(
+              id: 'track-1',
+              uri: Uri.file('/music/one.mp3'),
+              title: 'One',
+            ),
+          ],
+        ),
+        throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            'code',
+            'MEDIA3_COMMAND_REJECTED',
+          ),
+        ),
+      );
+    });
+
+    test('rejects a volume command when native gain policy declines it', () async {
+      channel.setMockMethodCallHandler((call) async => false);
+
+      await expectLater(
+        client.setVolume(0.5),
+        throwsA(isA<PlatformException>().having(
+          (error) => error.code,
+          'code',
+          'MEDIA3_COMMAND_REJECTED',
+        )),
+      );
+    });
+
+    test('does not report crossfade cancellation success when service refuses', () async {
+      channel.setMockMethodCallHandler((call) async => false);
+
+      await expectLater(
+        client.cancelCrossfade(),
+        throwsA(isA<PlatformException>().having(
+          (error) => error.code,
+          'code',
+          'MEDIA3_COMMAND_REJECTED',
+        )),
+      );
+    });
+  });
+
   group('Media3PlaybackClient input validation', () {
     final client = Media3PlaybackClient();
 
