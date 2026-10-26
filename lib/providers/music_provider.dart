@@ -23,7 +23,6 @@ import '../dj_engine/dj_engine.dart';
 import '../dj_engine/core/dj_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
-import '../services/playback_observation_source.dart';
 import '../services/just_audio_playback_observation_source.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
@@ -104,10 +103,10 @@ class MusicProvider extends ChangeNotifier {
   bool get _activeIsA => _engines.activeIsA;
   set _activeIsA(bool value) => _engines.activeIsA = value;
   AudioPlayer get audioPlayer => _engines.active;
-  /// Read-only UI observations are isolated from the concrete playback engine.
-  /// The current adapter reads just_audio; Media3ProviderSession implements the
-  /// same contract for the eventual staged cutover.
-  late final PlaybackObservationSource _playbackObservations;
+  /// Read-only UI observations follow the active legacy engine until the
+  /// complete engine-session command boundary is integrated. Do not inject a
+  /// Media3 observation stream alone: that would split UI state from commands.
+  late final JustAudioPlaybackObservationSource _playbackObservations;
   Stream<Duration> get playbackPositionStream =>
       _playbackObservations.positionStream;
   Stream<Duration?> get playbackDurationStream =>
@@ -638,15 +637,11 @@ class MusicProvider extends ChangeNotifier {
   static const _repeatModeKey = 'playback_repeat_mode';
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
-  MusicProvider({
-    this.audioHandler,
-    PlaybackObservationSource? playbackObservationSource,
-  }) {
-    // Keep legacy playback as the default until command ownership, DSP, focus,
-    // history, modes, and handoff parity are ready for the Media3 cutover.
-    // Injection lets the provider boundary be validated without silently
-    // selecting Media3 for production playback.
-    _playbackObservations = playbackObservationSource ??
+  MusicProvider({this.audioHandler}) {
+    // Observations remain bound to the same legacy engine that owns transport.
+    // Reintroduce engine injection only when MusicProvider can route commands,
+    // DSP, focus, history, modes, and handoff through that same session.
+    _playbackObservations =
         JustAudioPlaybackObservationSource(() => audioPlayer);
     // Players + Android effects are constructed by [EnginePair].
     _audioEffectsController = AudioEffectsController(
