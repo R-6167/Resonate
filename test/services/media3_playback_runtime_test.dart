@@ -201,6 +201,40 @@ void main() {
       expect(runtime.current.isPlaying, isFalse);
     });
 
+    test('buffers snapshots until replacement queue identity is committed', () async {
+      await runtime.loadQueue([makeSong('old')]);
+      final observed = <Media3RuntimeState>[];
+      final acceptedState = Completer<void>();
+      final subscription = runtime.states.listen((state) {
+        observed.add(state);
+        if (state.currentSong?.id == 'new' && !acceptedState.isCompleted) {
+          acceptedState.complete();
+        }
+      });
+      addTearDown(subscription.cancel);
+
+      backend.loadGate = Completer<void>();
+      final replacement = runtime.loadQueue([makeSong('new')]);
+      await Future<void>.delayed(Duration.zero);
+
+      // A late event from the outgoing queue must not be published against
+      // the old Dart queue while the native queue replacement is in flight.
+      backend.controller.add(snapshot(mediaId: 'old', index: 0));
+      await Future<void>.delayed(Duration.zero);
+      expect(observed, isEmpty);
+
+      backend.loadGate!.complete();
+      await replacement;
+      // Broadcast stream delivery is asynchronous; wait for the runtime to
+      // publish the accepted queue's reconciled state before asserting it.
+      await acceptedState.future;
+
+      expect(runtime.queue.map((song) => song.id), ['new']);
+      expect(runtime.current.currentSong?.id, 'new');
+      expect(observed, isNotEmpty);
+      expect(observed.every((state) => state.currentSong?.id != 'old'), isTrue);
+    });
+
     test('does not commit queue identity when the backend rejects a load', () async {
       final original = [makeSong('old')];
       await runtime.loadQueue(original);

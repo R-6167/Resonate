@@ -22,6 +22,8 @@ class Media3PlaybackRuntime {
   Media3RuntimeState _current = const Media3RuntimeState.empty();
   bool _disposed = false;
   int _snapshotRevision = 0;
+  bool _queueLoadInProgress = false;
+  PlaybackSnapshot? _pendingQueueSnapshot;
   Future<void> _connectTail = Future<void>.value();
   Future<void> _commandTail = Future<void>.value();
 
@@ -53,6 +55,13 @@ class Media3PlaybackRuntime {
     _subscription = _backend.states.listen((snapshot) {
       if (_disposed) return;
       _snapshotRevision++;
+      if (_queueLoadInProgress) {
+        // Do not publish a native event against the old queue while a new
+        // queue is being installed. The latest event is reconciled once the
+        // backend has either accepted or rejected the replacement.
+        _pendingQueueSnapshot = snapshot;
+        return;
+      }
       _acceptSnapshot(snapshot);
     });
     final revisionBeforeRead = _snapshotRevision;
@@ -88,11 +97,39 @@ class Media3PlaybackRuntime {
 
     final nextQueue = List<Song>.unmodifiable(songs);
     await _run(() async {
-      // Commit queue identity only after the backend accepted the queue. This
-      // prevents failed loads from leaving snapshots mapped to a queue that
-      // the engine never actually installed.
-      await _backend.loadQueue(nextQueue, startIndex: startIndex);
+      // Buffer native snapshots while queue identity is changing. Publishing
+      // them immediately would reconcile a new native index against the old
+      // Dart queue and briefly expose the wrong current song.
+      _queueLoadInProgress = true;
+      _pendingQueueSnapshot = null;
+      try {
+        await _backend.loadQueue(nextQueue, startIndex: startIndex);
+      } catch (_) {
+        _queueLoadInProgress = false;
+        final pending = _pendingQueueSnapshot;
+        _pendingQueueSnapshot = null;
+        if (pending != null) _acceptSnapshot(pending);
+        rethrow;
+      }
+
+      // Commit queue identity only after the backend accepted the queue.
       _queue = nextQueue;
+      _queueLoadInProgress = false;
+      final pending = _pendingQueueSnapshot;
+      _pendingQueueSnapshot = null;
+      if (pending != null) {
+        final pendingIndex =
+            Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        // Drop an outgoing-queue snapshot rather than briefly clearing or
+        // misidentifying the newly selected track. A fresh state read below
+        // or the next native event will publish the accepted queue's state.
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
+
       final revisionBeforeRead = _snapshotRevision;
       try {
         final loadedState = await _backend.currentState();
