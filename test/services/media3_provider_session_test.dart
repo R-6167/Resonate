@@ -5,6 +5,7 @@ import 'package:resonate/models/song.dart';
 import 'package:resonate/services/media3_provider_session.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_snapshot.dart';
+import 'package:resonate/services/playback_observation_source.dart';
 
 Song _song(String id) => Song(
       id: id,
@@ -118,12 +119,13 @@ void main() {
       expect(backend.calls, ['loadQueue']);
     });
 
-    test('projects legacy playback observations from Media3 snapshots', () async {
+    test('implements the shared playback observation contract', () async {
+      final PlaybackObservationSource observations = session;
       await session.start();
-      final position = session.positionStream.firstWhere(
+      final position = observations.positionStream.firstWhere(
         (value) => value == const Duration(seconds: 12),
       );
-      final duration = session.durationStream.firstWhere(
+      final duration = observations.durationStream.firstWhere(
         (value) => value == const Duration(minutes: 3),
       );
       await session.loadQueue(<Song>[_song('track-1')]);
@@ -131,7 +133,7 @@ void main() {
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
 
-      final playing = session.playingStream.firstWhere((value) => value);
+      final playing = observations.playingStream.firstWhere((value) => value);
       await session.play();
       expect(await playing, isTrue);
     });
