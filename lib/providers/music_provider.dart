@@ -23,6 +23,8 @@ import '../dj_engine/dj_engine.dart';
 import '../dj_engine/core/dj_policy.dart';
 import '../dj_engine/intelligence/dj_autopilot_planner.dart';
 import '../services/playback_authority.dart';
+import '../services/playback_observation_source.dart';
+import '../services/just_audio_playback_observation_source.dart';
 import '../services/playback_intent_gate.dart';
 import '../services/resonate_diagnostics.dart';
 import '../services/library_visibility_store.dart';
