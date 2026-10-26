@@ -5,7 +5,7 @@ import 'media3_music_provider_adapter.dart';
 import 'media3_playback_runtime.dart';
 import 'media3_provider_state_bridge.dart';
 import 'playback_backend.dart';
-import 'playback_observation_source.dart';
+import 'playback_engine_session.dart';
 
 /// Composition root for the Media3 provider migration.
 ///
@@ -13,7 +13,7 @@ import 'playback_observation_source.dart';
 /// MusicProvider can adopt this session behind its existing compatibility
 /// boundary without constructing multiple clients or listening to native
 /// snapshots independently. It is not wired into production MusicProvider yet.
-class Media3ProviderSession implements PlaybackObservationSource {
+class Media3ProviderSession implements PlaybackEngineSession {
   Media3ProviderSession({PlaybackBackend? backend})
       : _runtime = Media3PlaybackRuntime(
           backend ?? Media3MusicProviderAdapter(),
@@ -42,11 +42,13 @@ class Media3ProviderSession implements PlaybackObservationSource {
   Stream<bool> get playingStream =>
       states.map((state) => state.isPlaying);
 
+  @override
   List<Song> get queue => _runtime.queue;
 
   /// Connects the backend before publishing its initial reconciled state.
   /// Safe to call repeatedly; the runtime and bridge both make startup
   /// idempotent.
+  @override
   Future<void> start() async {
     _ensureAlive();
     if (_started) return;
@@ -55,19 +57,30 @@ class Media3ProviderSession implements PlaybackObservationSource {
     _started = true;
   }
 
+  @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) =>
       _runtime.loadQueue(songs, startIndex: startIndex);
+  @override
   Future<void> play() => _runtime.play();
+  @override
   Future<void> pause() => _runtime.pause();
+  @override
   Future<void> stop() => _runtime.stop();
+  @override
   Future<void> seek(Duration position) => _runtime.seek(position);
+  @override
   Future<void> next() => _runtime.next();
+  @override
   Future<void> previous() => _runtime.previous();
+  @override
   Future<void> setVolume(double value) => _runtime.setVolume(value);
+  @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _runtime.setRepeatMode(mode);
+  @override
   Future<void> setShuffleMode(bool enabled) =>
       _runtime.setShuffleMode(enabled);
+  @override
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
@@ -81,16 +94,20 @@ class Media3ProviderSession implements PlaybackObservationSource {
         focusDuck: focusDuck,
       );
 
+  @override
   Future<void> preloadNext(Song song, {int? queueIndex}) =>
       _runtime.preloadNext(song, queueIndex: queueIndex);
+  @override
   Future<void> crossfade({required Duration duration}) =>
       _runtime.crossfade(duration: duration);
+  @override
   Future<void> cancelCrossfade() => _runtime.cancelCrossfade();
 
   void _ensureAlive() {
     if (_disposed) throw StateError('Media3ProviderSession is disposed.');
   }
 
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
