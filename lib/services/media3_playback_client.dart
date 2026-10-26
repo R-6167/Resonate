@@ -105,7 +105,7 @@ class Media3PlaybackClient {
     if (!uri.hasScheme) {
       throw ArgumentError.value(uri, 'uri', 'A URI with a scheme is required.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'setSource',
       <String, Object>{'uri': uri.toString()},
     );
@@ -127,7 +127,7 @@ class Media3PlaybackClient {
     if (startIndex < 0 || startIndex >= items.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must point to an item in the queue.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'setQueue',
       <String, Object>{
         'items': items.map((item) => item.toMap()).toList(growable: false),
@@ -143,14 +143,14 @@ class Media3PlaybackClient {
     if (!const {'off', 'one', 'all'}.contains(mode)) {
       throw ArgumentError.value(mode, 'mode', 'Must be off, one, or all.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'setRepeatMode',
       <String, Object>{'mode': mode},
     );
   }
 
   Future<void> setShuffleMode(bool enabled) async {
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'setShuffleMode',
       <String, Object>{'enabled': enabled},
     );
@@ -164,7 +164,7 @@ class Media3PlaybackClient {
     if (position.isNegative) {
       throw ArgumentError.value(position, 'position', 'Must not be negative.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'seekTo',
       <String, Object>{'positionMs': position.inMilliseconds},
     );
@@ -174,7 +174,7 @@ class Media3PlaybackClient {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'setVolume',
       <String, Object>{'value': volume.clamp(0.0, 1.0).toDouble()},
     );
@@ -207,7 +207,7 @@ class Media3PlaybackClient {
         );
       }
     }
-    await _methodChannel.invokeMethod<bool>('setGainFactors', factors);
+    await _invokeAccepted('setGainFactors', factors);
   }
 
   Future<void> preloadNext(
@@ -225,7 +225,7 @@ class Media3PlaybackClient {
     if (items[startIndex].id != item.id || items[startIndex].uri != item.uri) {
       throw ArgumentError('The selected queue occurrence must match the incoming item.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'preloadNext',
       <String, Object?>{
         'item': item.toMap(),
@@ -240,7 +240,7 @@ class Media3PlaybackClient {
         duration > const Duration(seconds: 15)) {
       throw ArgumentError.value(duration, 'duration', 'Must be between 250 ms and 15 s.');
     }
-    await _methodChannel.invokeMethod<bool>(
+    await _invokeAccepted(
       'crossfade',
       <String, Object>{'durationMs': duration.inMilliseconds},
     );
@@ -262,7 +262,23 @@ class Media3PlaybackClient {
   }
 
   Future<void> _command(String method) async {
-    await _methodChannel.invokeMethod<bool>(method);
+    await _invokeAccepted(method);
+  }
+
+  /// Native commands acknowledge acceptance with true. Treat false or a
+  /// missing acknowledgement as failure so the Dart runtime cannot commit
+  /// state for a queue/transport operation the native service rejected.
+  Future<void> _invokeAccepted(
+    String method, [
+    Map<String, Object?>? arguments,
+  ]) async {
+    final accepted = await _methodChannel.invokeMethod<bool>(method, arguments);
+    if (accepted != true) {
+      throw PlatformException(
+        code: 'MEDIA3_COMMAND_REJECTED',
+        message: 'Native Media3 did not accept "$method".',
+      );
+    }
   }
 }
 
