@@ -51,7 +51,13 @@ class Media3ProviderSession implements PlaybackEngineSession {
   /// idempotent.
   @override
   Future<void> start() {
-    _ensureAlive();
+    // Preserve the Future-based contract: callers observe disposed startup
+    // as an asynchronous StateError rather than a synchronous throw.
+    if (_disposed) {
+      return Future<void>.error(
+        StateError('Media3ProviderSession is disposed.'),
+      );
+    }
     if (_started) return Future<void>.value();
     final pending = _startFuture;
     if (pending != null) return pending;
