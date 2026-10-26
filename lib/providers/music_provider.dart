@@ -107,8 +107,7 @@ class MusicProvider extends ChangeNotifier {
   /// Read-only UI observations are isolated from the concrete playback engine.
   /// The current adapter reads just_audio; Media3ProviderSession implements the
   /// same contract for the eventual staged cutover.
-  late final PlaybackObservationSource _playbackObservations =
-      JustAudioPlaybackObservationSource(() => audioPlayer);
+  late final PlaybackObservationSource _playbackObservations;
   Stream<Duration> get playbackPositionStream =>
       _playbackObservations.positionStream;
   Stream<Duration?> get playbackDurationStream =>
@@ -639,7 +638,16 @@ class MusicProvider extends ChangeNotifier {
   static const _repeatModeKey = 'playback_repeat_mode';
   static const MethodChannel _systemVolumeChannel = MethodChannel('com.aetherion.resonate/media_store');
 
-  MusicProvider({this.audioHandler}) {
+  MusicProvider({
+    this.audioHandler,
+    PlaybackObservationSource? playbackObservationSource,
+  }) {
+    // Keep legacy playback as the default until command ownership, DSP, focus,
+    // history, modes, and handoff parity are ready for the Media3 cutover.
+    // Injection lets the provider boundary be validated without silently
+    // selecting Media3 for production playback.
+    _playbackObservations = playbackObservationSource ??
+        JustAudioPlaybackObservationSource(() => audioPlayer);
     // Players + Android effects are constructed by [EnginePair].
     _audioEffectsController = AudioEffectsController(
       equalizerA: _equalizerA,
