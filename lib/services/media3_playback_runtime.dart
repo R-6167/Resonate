@@ -22,6 +22,7 @@ class Media3PlaybackRuntime {
   Media3RuntimeState _current = const Media3RuntimeState.empty();
   bool _disposed = false;
   int _snapshotRevision = 0;
+  Future<void> _connectTail = Future<void>.value();
   Future<void> _commandTail = Future<void>.value();
 
   Stream<Media3RuntimeState> get states => _states.stream;
@@ -30,16 +31,36 @@ class Media3PlaybackRuntime {
 
   /// Starts listening before reading the initial state so a fast native state
   /// update cannot be missed between the snapshot request and subscription.
-  Future<void> connect() async {
-    if (_disposed) throw StateError('Media3PlaybackRuntime is disposed.');
+  Future<void> connect() {
+    _ensureAlive();
+    // Session startup can be requested by multiple owners at once. Serialize
+    // reconnects so two callers cannot both pass the cancellation await and
+    // leave duplicate native-state subscriptions behind.
+    final result = _connectTail.then((_) {
+      _ensureAlive();
+      return _connectOnce();
+    });
+    _connectTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
+  Future<void> _connectOnce() async {
     await _subscription?.cancel();
+    _ensureAlive();
     _subscription = _backend.states.listen((snapshot) {
+      if (_disposed) return;
       _snapshotRevision++;
       _acceptSnapshot(snapshot);
     });
     final revisionBeforeRead = _snapshotRevision;
     try {
       final initial = await _backend.currentState();
+      // Disposal may happen while the native snapshot request is in flight.
+      // Never publish late state after the runtime has closed its stream.
+      if (_disposed) return;
       // A stream event received while the snapshot request was in flight is
       // newer than that request's result. Never let the delayed read roll state
       // backwards after reconnecting to the native service.
