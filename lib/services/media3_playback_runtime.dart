@@ -117,7 +117,18 @@ class Media3PlaybackRuntime {
       _queueLoadInProgress = false;
       final pending = _pendingQueueSnapshot;
       _pendingQueueSnapshot = null;
-      if (pending != null) _acceptSnapshot(pending);
+      if (pending != null) {
+        final pendingIndex =
+            Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        // Drop an outgoing-queue snapshot rather than briefly clearing or
+        // misidentifying the newly selected track. A fresh state read below
+        // or the next native event will publish the accepted queue's state.
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
 
       final revisionBeforeRead = _snapshotRevision;
       try {
