@@ -158,6 +158,38 @@ void main() {
       expect(runtime.current.isPlaying, isTrue);
     });
 
+    test('serializes concurrent reconnects without duplicate state subscriptions', () async {
+      final observed = <Media3RuntimeState>[];
+      final subscription = runtime.states.listen(observed.add);
+
+      await Future.wait<void>([
+        runtime.connect(),
+        runtime.connect(),
+      ]);
+      backend.controller.add(snapshot(mediaId: 'fresh', playing: true));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        observed.where((state) => state.snapshot?.mediaId == 'fresh').length,
+        1,
+      );
+      await subscription.cancel();
+    });
+
+    test('does not publish a delayed snapshot after disposal', () async {
+      backend.stateGate = Completer<PlaybackSnapshot>();
+      backend.stateReadStarted = Completer<void>();
+
+      final reconnect = runtime.connect();
+      await backend.stateReadStarted!.future;
+      await runtime.dispose();
+      backend.stateGate!.complete(snapshot(mediaId: 'late', playing: true));
+      await reconnect;
+
+      expect(runtime.current.snapshot?.mediaId, isNot('late'));
+    });
+
     test('loads queue through a single backend without optimistic playing state', () async {
       final songs = [makeSong('a'), makeSong('b')];
       await runtime.loadQueue(songs, startIndex: 1);
