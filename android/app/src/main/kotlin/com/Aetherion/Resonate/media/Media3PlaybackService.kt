@@ -208,6 +208,19 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    /**
+     * Invalidates the standby deck when the active source or queue is replaced.
+     * Without this, a later crossfade could promote a track from an obsolete queue.
+     */
+    fun clearPreload(): Boolean {
+        if (!::activePlayer.isInitialized || !::standbyPlayer.isInitialized) return false
+        cancelCrossfade()
+        standbyPlayer.pause()
+        standbyPlayer.clearMediaItems()
+        crossfadeStatus = "idle"
+        return true
+    }
+
     fun cancelCrossfade(): Boolean {
         fadeGeneration++
         fadeRunnable?.let(mainHandler::removeCallbacks)
