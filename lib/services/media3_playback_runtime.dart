@@ -21,6 +21,7 @@ class Media3PlaybackRuntime {
   List<Song> _queue = const <Song>[];
   Media3RuntimeState _current = const Media3RuntimeState.empty();
   bool _disposed = false;
+  int _snapshotRevision = 0;
   Future<void> _commandTail = Future<void>.value();
 
   Stream<Media3RuntimeState> get states => _states.stream;
@@ -32,9 +33,19 @@ class Media3PlaybackRuntime {
   Future<void> connect() async {
     if (_disposed) throw StateError('Media3PlaybackRuntime is disposed.');
     await _subscription?.cancel();
-    _subscription = _backend.states.listen(_acceptSnapshot);
+    _subscription = _backend.states.listen((snapshot) {
+      _snapshotRevision++;
+      _acceptSnapshot(snapshot);
+    });
+    final revisionBeforeRead = _snapshotRevision;
     try {
-      _acceptSnapshot(await _backend.currentState());
+      final initial = await _backend.currentState();
+      // A stream event received while the snapshot request was in flight is
+      // newer than that request's result. Never let the delayed read roll state
+      // backwards after reconnecting to the native service.
+      if (_snapshotRevision == revisionBeforeRead) {
+        _acceptSnapshot(initial);
+      }
     } catch (_) {
       // A not-yet-connected native service will publish its first valid state
       // through the stream. Keep the runtime alive for that connection.
@@ -61,8 +72,12 @@ class Media3PlaybackRuntime {
       // the engine never actually installed.
       await _backend.loadQueue(nextQueue, startIndex: startIndex);
       _queue = nextQueue;
+      final revisionBeforeRead = _snapshotRevision;
       try {
-        _acceptSnapshot(await _backend.currentState());
+        final loadedState = await _backend.currentState();
+        if (_snapshotRevision == revisionBeforeRead) {
+          _acceptSnapshot(loadedState);
+        }
       } catch (_) {
         // The native event stream remains authoritative if a snapshot read is
         // temporarily unavailable after a successful queue load.
