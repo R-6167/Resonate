@@ -137,6 +137,8 @@ class Media3PlaybackBridge(
                             .setMediaMetadata(metadata)
                             .build()
                     }
+                    // A previous standby deck must not survive queue replacement.
+                    Media3PlaybackService.instance?.clearPreload()
                     connected.setMediaItems(items, startIndex, 0L)
                     connected.prepare()
                     result.success(true)
@@ -182,6 +184,8 @@ class Media3PlaybackBridge(
                         .setUri(uri)
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
                         .build()
+                    // Single-source loads also invalidate any old incoming deck.
+                    Media3PlaybackService.instance?.clearPreload()
                     connected.setMediaItem(item)
                     connected.prepare()
                     result.success(true)
@@ -189,7 +193,7 @@ class Media3PlaybackBridge(
                 "play" -> { connected.play(); result.success(true) }
                 "pause" -> { connected.pause(); result.success(true) }
                 "stop" -> {
-                    Media3PlaybackService.instance?.cancelCrossfade()
+                    Media3PlaybackService.instance?.clearPreload()
                     connected.stop()
                     result.success(true)
                 }
