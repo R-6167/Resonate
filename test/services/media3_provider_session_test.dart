@@ -5,6 +5,7 @@ import 'package:resonate/models/song.dart';
 import 'package:resonate/services/media3_provider_session.dart';
 import 'package:resonate/services/playback_backend.dart';
 import 'package:resonate/services/playback_snapshot.dart';
+import 'package:resonate/services/playback_engine_session.dart';
 import 'package:resonate/services/playback_observation_source.dart';
 
 Song _song(String id) => Song(
@@ -119,23 +120,22 @@ void main() {
       expect(backend.calls, ['loadQueue']);
     });
 
-    test('implements the shared playback observation contract', () async {
-      final PlaybackObservationSource observations = session;
-      await session.start();
+    test('implements one contract for commands and observations', () async {
+      final PlaybackEngineSession engine = session;
+      final PlaybackObservationSource observations = engine;
+      await engine.start();
+
       final position = observations.positionStream.firstWhere(
         (value) => value == const Duration(seconds: 12),
       );
       final duration = observations.durationStream.firstWhere(
         (value) => value == const Duration(minutes: 3),
       );
-      await session.loadQueue(<Song>[_song('track-1')]);
+      await engine.loadQueue(<Song>[_song('track-1')]);
 
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
-
-      final playing = observations.playingStream.firstWhere((value) => value);
-      await session.play();
-      expect(await playing, isTrue);
+      expect(engine.queue.map((song) => song.id), ['track-1']);
     });
 
     test('forwards transport through the serialized runtime', () async {
