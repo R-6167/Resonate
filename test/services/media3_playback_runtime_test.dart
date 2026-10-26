@@ -204,7 +204,13 @@ void main() {
     test('buffers snapshots until replacement queue identity is committed', () async {
       await runtime.loadQueue([makeSong('old')]);
       final observed = <Media3RuntimeState>[];
-      final subscription = runtime.states.listen(observed.add);
+      final acceptedState = Completer<void>();
+      final subscription = runtime.states.listen((state) {
+        observed.add(state);
+        if (state.currentSong?.id == 'new' && !acceptedState.isCompleted) {
+          acceptedState.complete();
+        }
+      });
       addTearDown(subscription.cancel);
 
       backend.loadGate = Completer<void>();
@@ -219,6 +225,9 @@ void main() {
 
       backend.loadGate!.complete();
       await replacement;
+      // Broadcast stream delivery is asynchronous; wait for the runtime to
+      // publish the accepted queue's reconciled state before asserting it.
+      await acceptedState.future;
 
       expect(runtime.queue.map((song) => song.id), ['new']);
       expect(runtime.current.currentSong?.id, 'new');
