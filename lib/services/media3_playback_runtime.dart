@@ -104,6 +104,10 @@ class Media3PlaybackRuntime {
       _pendingQueueSnapshot = null;
       try {
         await _backend.loadQueue(nextQueue, startIndex: startIndex);
+        // Disposal can race a slow native queue load. Do not commit queue
+        // identity or publish post-disposal state when that load eventually
+        // completes.
+        _ensureAlive();
       } catch (_) {
         _queueLoadInProgress = false;
         final pending = _pendingQueueSnapshot;
