@@ -56,6 +56,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   int cancelCrossfadeCalls = 0;
   Completer<void>? loadGate;
   Completer<PlaybackSnapshot>? stateGate;
+  Completer<void>? stateReadStarted;
   bool failLoad = false;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
@@ -64,6 +65,9 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Stream<PlaybackSnapshot> get states => controller.stream;
   @override
   Future<PlaybackSnapshot> currentState() async {
+    if (!(stateReadStarted?.isCompleted ?? true)) {
+      stateReadStarted!.complete();
+    }
     final gate = stateGate;
     if (gate != null) return gate.future;
     return value;
@@ -136,11 +140,15 @@ void main() {
       final fresh = snapshot(mediaId: 'fresh', index: 1, playing: true);
       backend.value = stale;
       backend.stateGate = Completer<PlaybackSnapshot>();
+      backend.stateReadStarted = Completer<void>();
 
       final freshState = runtime.states.firstWhere(
         (state) => state.snapshot?.mediaId == 'fresh',
       );
       final reconnect = runtime.connect();
+      // Wait until connect has installed its backend listener and started the
+      // delayed snapshot read before publishing the newer stream event.
+      await backend.stateReadStarted!.future;
       backend.controller.add(fresh);
       await freshState;
       backend.stateGate!.complete(stale);
