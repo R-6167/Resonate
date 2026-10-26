@@ -55,6 +55,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
   Completer<void>? loadGate;
+  Completer<PlaybackSnapshot>? stateGate;
   bool failLoad = false;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
@@ -62,7 +63,11 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
   @override
-  Future<PlaybackSnapshot> currentState() async => value;
+  Future<PlaybackSnapshot> currentState() async {
+    final gate = stateGate;
+    if (gate != null) return gate.future;
+    return value;
+  }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     await loadGate?.future;
@@ -124,6 +129,22 @@ void main() {
     tearDown(() async {
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('does not let a delayed initial snapshot overwrite a newer stream event', () async {
+      final stale = snapshot(mediaId: 'stale', index: 0);
+      final fresh = snapshot(mediaId: 'fresh', index: 1, playing: true);
+      backend.value = stale;
+      backend.stateGate = Completer<PlaybackSnapshot>();
+
+      final reconnect = runtime.connect();
+      backend.controller.add(fresh);
+      await Future<void>.delayed(Duration.zero);
+      backend.stateGate!.complete(stale);
+      await reconnect;
+
+      expect(runtime.current.snapshot?.mediaId, 'fresh');
+      expect(runtime.current.isPlaying, isTrue);
     });
 
     test('loads queue through a single backend without optimistic playing state', () async {
