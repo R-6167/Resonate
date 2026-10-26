@@ -55,6 +55,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Duration? crossfadeDuration;
   int cancelCrossfadeCalls = 0;
   Completer<void>? loadGate;
+  Completer<PlaybackSnapshot>? stateGate;
+  Completer<void>? stateReadStarted;
   bool failLoad = false;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
@@ -62,7 +64,14 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
   @override
-  Future<PlaybackSnapshot> currentState() async => value;
+  Future<PlaybackSnapshot> currentState() async {
+    if (!(stateReadStarted?.isCompleted ?? true)) {
+      stateReadStarted!.complete();
+    }
+    final gate = stateGate;
+    if (gate != null) return gate.future;
+    return value;
+  }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     await loadGate?.future;
@@ -124,6 +133,29 @@ void main() {
     tearDown(() async {
       await runtime.dispose();
       await backend.controller.close();
+    });
+
+    test('does not let a delayed initial snapshot overwrite a newer stream event', () async {
+      final stale = snapshot(mediaId: 'stale', index: 0);
+      final fresh = snapshot(mediaId: 'fresh', index: 1, playing: true);
+      backend.value = stale;
+      backend.stateGate = Completer<PlaybackSnapshot>();
+      backend.stateReadStarted = Completer<void>();
+
+      final freshState = runtime.states.firstWhere(
+        (state) => state.snapshot?.mediaId == 'fresh',
+      );
+      final reconnect = runtime.connect();
+      // Wait until connect has installed its backend listener and started the
+      // delayed snapshot read before publishing the newer stream event.
+      await backend.stateReadStarted!.future;
+      backend.controller.add(fresh);
+      await freshState;
+      backend.stateGate!.complete(stale);
+      await reconnect;
+
+      expect(runtime.current.snapshot?.mediaId, 'fresh');
+      expect(runtime.current.isPlaying, isTrue);
     });
 
     test('loads queue through a single backend without optimistic playing state', () async {
