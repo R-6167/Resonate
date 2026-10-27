@@ -122,8 +122,26 @@ class Media3PlaybackService : MediaSessionService() {
                 .build()
         },
     ).build().apply {
+        val deck = this
         setAudioAttributes(audioAttributes(), handleAudioFocus)
         repeatMode = Player.REPEAT_MODE_OFF
+        addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // ExoPlayer can pause the active deck on audio-focus loss or
+                // buffering without a Flutter transport command. Freeze the
+                // crossfade clock and standby deck in that case too, then
+                // resume the same ramp when the active deck starts again.
+                if (!::activePlayer.isInitialized ||
+                    deck !== activePlayer ||
+                    crossfadeStatus != "fading"
+                ) return
+                if (isPlaying) {
+                    resumeCrossfade()
+                } else {
+                    pauseCrossfade()
+                }
+            }
+        })
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
