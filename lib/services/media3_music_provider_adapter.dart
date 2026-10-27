@@ -23,6 +23,7 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   double _preamp = 1.0;
   double _sleepFade = 1.0;
   double _focusDuck = 1.0;
+  Future<void> _gainUpdateTail = Future<void>.value();
 
   @override
   Stream<PlaybackSnapshot> get states => _client.states.map(_snapshotFromMedia3);
@@ -150,26 +151,36 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     double? preamp,
     double? sleepFade,
     double? focusDuck,
-  }) async {
-    // Validate and apply a candidate before mutating the cached state. If the
-    // native command rejects it, the next partial update still uses the last
-    // known-good factor set.
-    final nextTrackLevel = trackLevel ?? _trackLevel;
-    final nextPreamp = preamp ?? _preamp;
-    final nextSleepFade = sleepFade ?? _sleepFade;
-    final nextFocusDuck = focusDuck ?? _focusDuck;
+  }) {
+    // Partial updates depend on the last accepted factor set. Serialize them
+    // here as well as in Media3PlaybackRuntime so direct backend callers cannot
+    // compute concurrent candidates from the same stale cache.
+    final result = _gainUpdateTail.then((_) async {
+      final nextTrackLevel = trackLevel ?? _trackLevel;
+      final nextPreamp = preamp ?? _preamp;
+      final nextSleepFade = sleepFade ?? _sleepFade;
+      final nextFocusDuck = focusDuck ?? _focusDuck;
 
-    await _client.setGainFactors(
-      trackLevel: nextTrackLevel,
-      preamp: nextPreamp,
-      sleepFade: nextSleepFade,
-      focusDuck: nextFocusDuck,
+      await _client.setGainFactors(
+        trackLevel: nextTrackLevel,
+        preamp: nextPreamp,
+        sleepFade: nextSleepFade,
+        focusDuck: nextFocusDuck,
+      );
+
+      // Commit only after native acceptance. Rejection leaves the previous
+      // accepted values available to the next queued partial update.
+      _trackLevel = nextTrackLevel;
+      _preamp = nextPreamp;
+      _sleepFade = nextSleepFade;
+      _focusDuck = nextFocusDuck;
+    });
+    // A rejected update must not poison the lane for later valid updates.
+    _gainUpdateTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
     );
-
-    _trackLevel = nextTrackLevel;
-    _preamp = nextPreamp;
-    _sleepFade = nextSleepFade;
-    _focusDuck = nextFocusDuck;
+    return result;
   }
 
   @override
