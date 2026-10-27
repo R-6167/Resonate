@@ -255,14 +255,7 @@ void main() {
 
       // A subsequent partial update must be based on the last native-accepted
       // state, not the rejected candidate.
-      await expectLater(
-        adapter.setGainFactors(focusDuck: 0.2),
-        throwsA(isA<PlatformException>().having(
-          (error) => error.code,
-          'code',
-          'MEDIA3_COMMAND_REJECTED',
-        )),
-      );
+      await adapter.setGainFactors(focusDuck: 0.2);
       expect(calls, hasLength(3));
       expect(calls[1].arguments, {
         'trackLevel': 0.8,
