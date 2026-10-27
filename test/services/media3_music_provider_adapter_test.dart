@@ -223,12 +223,11 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
       const channel = MethodChannel('test.resonate/native-gain-rejection');
       final calls = <MethodCall>[];
-      channel;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
         // First gain update is accepted; the second is explicitly rejected.
-        return calls.length == 1;
+        return calls.length != 2;
       });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
