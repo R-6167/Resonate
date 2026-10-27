@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/song.dart';
@@ -270,6 +272,49 @@ void main() {
         'preamp': 1.2,
         'sleepFade': 0.9,
         'focusDuck': 0.2,
+      });
+    });
+
+    test('serializes concurrent partial gain updates against accepted state', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/concurrent-gain-updates');
+      final calls = <MethodCall>[];
+      final firstCallGate = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (calls.length == 1) await firstCallGate.future;
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      final preampUpdate = adapter.setGainFactors(preamp: 1.4);
+      final duckUpdate = adapter.setGainFactors(focusDuck: 0.3);
+
+      // The second command must wait until the first candidate is accepted.
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, hasLength(1));
+      firstCallGate.complete();
+      await Future.wait<void>([preampUpdate, duckUpdate]);
+
+      expect(calls, hasLength(2));
+      expect(calls[0].arguments, {
+        'trackLevel': 1.0,
+        'preamp': 1.4,
+        'sleepFade': 1.0,
+        'focusDuck': 1.0,
+      });
+      expect(calls[1].arguments, {
+        'trackLevel': 1.0,
+        'preamp': 1.4,
+        'sleepFade': 1.0,
+        'focusDuck': 0.3,
       });
     });
 
