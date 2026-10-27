@@ -257,12 +257,14 @@ void main() {
       // state, not the rejected candidate.
       await adapter.setGainFactors(focusDuck: 0.2);
       expect(calls, hasLength(3));
+      // The rejected command must contain the candidate preamp value.
       expect(calls[1].arguments, {
         'trackLevel': 0.8,
-        'preamp': 1.2,
+        'preamp': 1.5,
         'sleepFade': 0.9,
         'focusDuck': 0.5,
       });
+      // The next partial update must retain the last accepted preamp value.
       expect(calls[2].arguments, {
         'trackLevel': 0.8,
         'preamp': 1.2,
