@@ -219,6 +219,66 @@ void main() {
       });
     });
 
+    test('native gain rejection preserves last accepted factor set', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/native-gain-rejection');
+      final calls = <MethodCall>[];
+      channel;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        // First gain update is accepted; the second is explicitly rejected.
+        return calls.length == 1;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      await adapter.setGainFactors(
+        trackLevel: 0.8,
+        preamp: 1.2,
+        sleepFade: 0.9,
+        focusDuck: 0.5,
+      );
+
+      await expectLater(
+        adapter.setGainFactors(preamp: 1.5),
+        throwsA(isA<PlatformException>().having(
+          (error) => error.code,
+          'code',
+          'MEDIA3_COMMAND_REJECTED',
+        )),
+      );
+
+      // A subsequent partial update must be based on the last native-accepted
+      // state, not the rejected candidate.
+      await expectLater(
+        adapter.setGainFactors(focusDuck: 0.2),
+        throwsA(isA<PlatformException>().having(
+          (error) => error.code,
+          'code',
+          'MEDIA3_COMMAND_REJECTED',
+        )),
+      );
+      expect(calls, hasLength(3));
+      expect(calls[1].arguments, {
+        'trackLevel': 0.8,
+        'preamp': 1.2,
+        'sleepFade': 0.9,
+        'focusDuck': 0.5,
+      });
+      expect(calls[2].arguments, {
+        'trackLevel': 0.8,
+        'preamp': 1.2,
+        'sleepFade': 0.9,
+        'focusDuck': 0.2,
+      });
+    });
+
     test('repeat policy has explicit native values', () {
       expect(PlaybackQueueRepeatMode.off.nativeValue, 'off');
       expect(PlaybackQueueRepeatMode.one.nativeValue, 'one');
