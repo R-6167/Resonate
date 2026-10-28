@@ -46,6 +46,7 @@ class _Backend implements PlaybackBackend {
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
+  Completer<void>? stateGate;
   PlaybackSnapshot value = _snapshot();
 
   @override
@@ -53,6 +54,7 @@ class _Backend implements PlaybackBackend {
   @override
   Future<PlaybackSnapshot> currentState() async {
     currentStateCalls++;
+    await stateGate?.future;
     return value;
   }
   @override
@@ -171,6 +173,20 @@ void main() {
         'gain',
         'seek',
       ]);
+    });
+
+    test('dispose during pending startup prevents late session activation', () async {
+      backend.stateGate = Completer<void>();
+      final starting = session.start();
+
+      // Let runtime.connect install the listener and begin its initial state read.
+      await Future<void>.delayed(Duration.zero);
+      await session.dispose();
+      backend.stateGate!.complete();
+
+      await expectLater(starting, throwsStateError);
+      expect(backend.currentStateCalls, 1);
+      await expectLater(session.start(), throwsStateError);
     });
 
     test('dispose prevents later startup and commands', () async {
