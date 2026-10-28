@@ -20,6 +20,7 @@ class Media3PlaybackState {
     required this.currentMediaItemIndex,
     required this.mediaItemCount,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -39,6 +40,8 @@ class Media3PlaybackState {
   final int currentMediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  /// Active ExoPlayer audio session; can change when the crossfade decks swap.
+  final int? audioSessionId;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;
@@ -71,6 +74,9 @@ class Media3PlaybackState {
       currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
       mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
+      audioSessionId: integerValue(map['audioSessionId'], 0) > 0
+          ? integerValue(map['audioSessionId'])
+          : null,
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',
