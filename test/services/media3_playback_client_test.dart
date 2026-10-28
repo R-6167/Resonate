@@ -15,6 +15,7 @@ void main() {
         'durationMs': 9000,
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
+        'audioSessionId': 37,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -28,6 +29,7 @@ void main() {
       expect(state.duration, const Duration(milliseconds: 9000));
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
+      expect(state.audioSessionId, 37);
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
@@ -56,6 +58,7 @@ void main() {
       expect(state.volume, 1.0);
       expect(state.isPlaying, isFalse);
       expect(state.mediaId, isNull);
+      expect(state.audioSessionId, isNull);
       expect(state.repeatMode, 'off');
       expect(state.shuffleModeEnabled, isFalse);
     });
