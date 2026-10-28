@@ -43,7 +43,7 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -93,6 +93,17 @@ class _Backend implements PlaybackBackend {
       calls.add('repeat');
   @override
   Future<void> setShuffleMode(bool enabled) async => calls.add('shuffle');
+  @override
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  }) async => calls.add('preloadNext');
+  @override
+  Future<void> crossfade({required Duration duration}) async =>
+      calls.add('crossfade');
+  @override
+  Future<void> cancelCrossfade() async => calls.add('cancelCrossfade');
 }
 
 void main() {
@@ -202,6 +213,47 @@ void main() {
         'shuffle',
         'gain',
         'seek',
+      ]);
+    });
+
+    test('forwards the full transport and crossfade contract through one session', () async {
+      await session.start();
+      final queue = <Song>[_song('track-1'), _song('track-2')];
+      await session.loadQueue(queue);
+      await session.play();
+      await session.pause();
+      await session.seek(const Duration(seconds: 20));
+      await session.next();
+      await session.previous();
+      await session.setVolume(0.8);
+      await session.setGainFactors(
+        trackLevel: 0.9,
+        preamp: 1.1,
+        sleepFade: 0.7,
+        focusDuck: 0.5,
+      );
+      await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+      await session.setShuffleMode(true);
+      await session.preloadNext(queue[1], queue: queue, queueIndex: 1);
+      await session.crossfade(duration: const Duration(milliseconds: 1200));
+      await session.cancelCrossfade();
+      await session.stop();
+
+      expect(backend.calls, [
+        'loadQueue',
+        'play',
+        'pause',
+        'seek',
+        'next',
+        'previous',
+        'volume',
+        'gain',
+        'repeat',
+        'shuffle',
+        'preloadNext',
+        'crossfade',
+        'cancelCrossfade',
+        'stop',
       ]);
     });
 
