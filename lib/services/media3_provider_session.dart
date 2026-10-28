@@ -33,20 +33,29 @@ class Media3ProviderSession implements PlaybackEngineSession {
   /// crossfade swaps the active player and its Android audio session.
   @override
   Stream<int?> get audioSessionIdStream => Stream<int?>.multi((output) {
-        // Provider consumers may attach after startup. Deliver the current
-        // session immediately, then forward only real changes from the state
-        // stream so DSP never waits for the next native ticker to bind.
-        var lastSessionId = current.audioSessionId;
-        output.add(lastSessionId);
+        // Subscribe before taking the initial snapshot. This closes the gap
+        // where a deck handoff could occur after reading current.audioSessionId
+        // but before the listener is attached, leaving DSP bound to a stale ID.
+        var initialized = false;
+        int? lastSessionId;
         final subscription = states.listen(
           (state) {
             final nextSessionId = state.audioSessionId;
+            if (!initialized) {
+              // No initial value has been delivered yet. The snapshot below
+              // will supply it; don't let a queued event be emitted ahead of
+              // that initial value.
+              return;
+            }
             if (nextSessionId == lastSessionId) return;
             lastSessionId = nextSessionId;
             output.add(nextSessionId);
           },
           onError: output.addError,
         );
+        lastSessionId = current.audioSessionId;
+        initialized = true;
+        output.add(lastSessionId);
         output.onCancel = subscription.cancel;
       });
   Media3ProviderState get current => _bridge.current;
