@@ -154,10 +154,24 @@ void main() {
       expect(engine.queue.map((song) => song.id), ['track-1']);
     });
 
+    test('emits the current session to late DSP subscribers', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      await session.start();
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37]);
+      await subscription.cancel();
+    });
+
     test('publishes audio-session changes for DSP handoff', () async {
       await session.start();
       final sessions = <int?>[];
       final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
 
       backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       backend.controller.add(backend.value);
