@@ -13,6 +13,20 @@ abstract interface class PlaybackEngineSession
   Future<void> start();
   List<Song> get queue;
 
+  /// Synchronous snapshot of the same engine that receives transport commands.
+  /// These values are reconciled from backend state; they are never optimistic.
+  Song? get currentSong;
+  int? get queueIndex;
+  bool get isPlaying;
+  Duration get position;
+  Duration? get duration;
+  bool get isReady;
+  bool get hasError;
+  String? get error;
+  double get volume;
+  PlaybackQueueRepeatMode get repeatMode;
+  bool get shuffleModeEnabled;
+
   /// Emits the active native audio session, including changes at deck handoff.
   /// A null value means the backend has no active session to attach DSP to.
   Stream<int?> get audioSessionIdStream;
