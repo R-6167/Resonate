@@ -214,6 +214,33 @@ void main() {
       await subscription.cancel();
     });
 
+    test('does not repeat the same audio session on ordinary state ticks', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      // Position/playing updates can publish many state snapshots without
+      // changing the active Android audio session. DSP should not reattach.
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        audioSessionId: 37,
+        playing: true,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, isEmpty);
+      await subscription.cancel();
+    });
+
     test('forwards transport through the serialized runtime', () async {
       await session.start();
       await session.loadQueue(<Song>[_song('track-1')]);
