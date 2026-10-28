@@ -21,6 +21,7 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  int? audioSessionId,
   String repeatMode = 'off',
   bool shuffleModeEnabled = false,
 }) =>
@@ -38,6 +39,7 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 1,
+      audioSessionId: audioSessionId,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -104,6 +106,7 @@ void main() {
     });
 
     test('projects reconciled Media3 state without optimistic changes', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       await runtime.loadQueue([_song('track-1')]);
       await bridge.start();
 
@@ -118,11 +121,12 @@ void main() {
       expect(bridge.current.queueLength, 1);
       expect(bridge.current.volume, 1.0);
       expect(bridge.current.duration, const Duration(minutes: 3));
+      expect(bridge.current.audioSessionId, 37);
       expect(bridge.current.repeatMode, 'off');
       expect(bridge.current.shuffleModeEnabled, isFalse);
     });
 
-    test('forwards later native state updates', () async {
+    test('forwards later native state updates including deck session changes', () async {
       await runtime.loadQueue([_song('track-1')]);
       await bridge.start();
 
@@ -130,6 +134,7 @@ void main() {
       backend.controller.add(_snapshot(
         mediaId: 'track-1',
         playing: true,
+        audioSessionId: 42,
         repeatMode: 'one',
         shuffleModeEnabled: true,
       ));
@@ -142,6 +147,7 @@ void main() {
       expect(projected.playWhenReady, isTrue);
       expect(projected.mediaId, 'track-1');
       expect(projected.queueLength, 1);
+      expect(projected.audioSessionId, 42);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
     });
