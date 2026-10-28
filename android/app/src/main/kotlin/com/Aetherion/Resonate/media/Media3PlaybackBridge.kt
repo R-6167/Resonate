@@ -402,6 +402,7 @@ class Media3PlaybackBridge(
         },
         "shuffleModeEnabled" to player.shuffleModeEnabled,
         "volume" to player.volume,
+        "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
     )
