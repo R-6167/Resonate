@@ -22,6 +22,7 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  int? audioSessionId,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -37,6 +38,7 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 0.75,
+      audioSessionId: audioSessionId,
       hasError: false,
       error: null,
     );
@@ -150,6 +152,22 @@ void main() {
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
       expect(engine.queue.map((song) => song.id), ['track-1']);
+    });
+
+    test('publishes audio-session changes for DSP handoff', () async {
+      await session.start();
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 42);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37, 42]);
+      await subscription.cancel();
     });
 
     test('forwards transport through the serialized runtime', () async {

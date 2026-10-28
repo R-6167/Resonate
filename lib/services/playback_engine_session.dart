@@ -13,6 +13,10 @@ abstract interface class PlaybackEngineSession
   Future<void> start();
   List<Song> get queue;
 
+  /// Emits the active native audio session, including changes at deck handoff.
+  /// A null value means the backend has no active session to attach DSP to.
+  Stream<int?> get audioSessionIdStream;
+
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
   Future<void> play();
   Future<void> pause();

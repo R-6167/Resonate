@@ -28,6 +28,12 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Future<void>? _startFuture;
 
   Stream<Media3ProviderState> get states => _bridge.states;
+
+  /// Follows the active Media3 deck so DSP and visualizers can rebind when a
+  /// crossfade swaps the active player and its Android audio session.
+  @override
+  Stream<int?> get audioSessionIdStream =>
+      states.map((state) => state.audioSessionId).distinct();
   Media3ProviderState get current => _bridge.current;
 
   /// Compatibility observations for UI consumers that previously subscribed
