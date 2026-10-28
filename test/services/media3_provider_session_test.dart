@@ -163,6 +163,20 @@ void main() {
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
       expect(engine.queue.map((song) => song.id), ['track-1']);
+
+      // Commands, streams, and synchronous reads must describe one reconciled
+      // backend state; consumers should not need a parallel player reference.
+      expect(engine.currentSong?.id, 'track-1');
+      expect(engine.queueIndex, 0);
+      expect(engine.isPlaying, isFalse);
+      expect(engine.position, const Duration(seconds: 12));
+      expect(engine.duration, const Duration(minutes: 3));
+      expect(engine.isReady, isTrue);
+      expect(engine.hasError, isFalse);
+      expect(engine.error, isNull);
+      expect(engine.volume, 0.75);
+      expect(engine.repeatMode, PlaybackQueueRepeatMode.off);
+      expect(engine.shuffleModeEnabled, isFalse);
     });
 
     test('emits the current session to late DSP subscribers', () async {
