@@ -195,6 +195,25 @@ void main() {
       await subscription.cancel();
     });
 
+    test('publishes audio-session loss so DSP can detach safely', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: null);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null]);
+      await subscription.cancel();
+    });
+
     test('forwards transport through the serialized runtime', () async {
       await session.start();
       await session.loadQueue(<Song>[_song('track-1')]);
