@@ -57,7 +57,11 @@ class _Backend implements PlaybackBackend {
   Future<PlaybackSnapshot> currentState() async => value;
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
-    value = _snapshot(\n      mediaId: songs[startIndex].id,\n      index: startIndex,\n      audioSessionId: value.audioSessionId,\n    );
+    value = _snapshot(
+      mediaId: songs[startIndex].id,
+      index: startIndex,
+      audioSessionId: value.audioSessionId,
+    );
   }
   @override
   Future<void> play() async {}
