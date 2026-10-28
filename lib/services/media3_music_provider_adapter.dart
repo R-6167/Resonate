@@ -198,15 +198,15 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     if (startIndex == null || startIndex < 0 || startIndex >= songs.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming queue occurrence.');
     }
-    final playable = songs.where((entry) => entry.filePath.trim().isNotEmpty).toList(growable: false);
     final selectedSong = songs[startIndex];
     if (selectedSong.id != song.id || selectedSong.filePath.trim() != song.filePath.trim()) {
       throw ArgumentError('The incoming song must match the selected queue occurrence.');
     }
-    final nativeStartIndex = songs
-        .take(startIndex)
-        .where((entry) => entry.filePath.trim().isNotEmpty)
-        .length;
+    // Use the same validation/index mapping as initial queue loads. Otherwise
+    // an unplayable selected occurrence is filtered out and its native index
+    // silently points at a different song during crossfade preload.
+    final nativeStartIndex = resolvePlayableStartIndex(songs, startIndex);
+    final playable = songs.where((entry) => entry.filePath.trim().isNotEmpty).toList(growable: false);
     await _client.preloadNext(
       item,
       queue: playable.map(Media3QueueItem.fromSong).toList(growable: false),
