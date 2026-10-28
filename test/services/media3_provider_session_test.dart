@@ -234,7 +234,7 @@ void main() {
       );
       await session.setRepeatMode(PlaybackQueueRepeatMode.one);
       await session.setShuffleMode(true);
-      await session.preloadNext(queue[1], queue: queue, queueIndex: 1);
+      await session.preloadNext(queue[1], queueIndex: 1);
       await session.crossfade(duration: const Duration(milliseconds: 1200));
       await session.cancelCrossfade();
       await session.stop();
