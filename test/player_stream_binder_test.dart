@@ -1,19 +1,25 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:resonate/playback/player_stream_binder.dart';
+
+class _EngineState {
+  const _EngineState(this.playing, this.phase);
+
+  final bool playing;
+  final String phase;
+}
 
 void main() {
   group('PlayerStreamBinder', () {
     late PlayerStreamBinder binder;
-    late StreamController<PlayerState> stateController;
+    late StreamController<_EngineState> stateController;
     late StreamController<Duration> positionController;
     late StreamController<Duration?> durationController;
 
     setUp(() {
       binder = PlayerStreamBinder();
-      stateController = StreamController<PlayerState>.broadcast();
+      stateController = StreamController<_EngineState>.broadcast();
       positionController = StreamController<Duration>.broadcast();
       durationController = StreamController<Duration?>.broadcast();
     });
@@ -25,8 +31,8 @@ void main() {
       await durationController.close();
     });
 
-    test('forwards state, position, and duration events', () async {
-      final states = <PlayerState>[];
+    test('forwards engine-neutral state, position, and duration events', () async {
+      final states = <_EngineState>[];
       final positions = <Duration>[];
       final durations = <Duration?>[];
 
@@ -34,7 +40,7 @@ void main() {
       binder.bindPosition(positionController.stream, positions.add);
       binder.bindDuration(durationController.stream, durations.add);
 
-      final state = PlayerState(false, ProcessingState.ready);
+      const state = _EngineState(true, 'ready');
       const position = Duration(seconds: 12);
       const duration = Duration(minutes: 3);
       stateController.add(state);
