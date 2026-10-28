@@ -17,6 +17,7 @@ class PlaybackSnapshot {
     required this.currentQueueIndex,
     required this.queueLength,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -35,6 +36,8 @@ class PlaybackSnapshot {
   final String? album;
   final int currentQueueIndex;
   final int queueLength;
+  /// Active native audio session, when the backend exposes one.
+  final int? audioSessionId;
   final double volume;
   /// Current queue repeat policy: `off`, `one`, or `all`.
   final String repeatMode;
