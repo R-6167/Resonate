@@ -138,7 +138,12 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _bridge.dispose();
-    await _runtime.dispose();
+    // A failed observer shutdown must not leave the native Media3 runtime
+    // connected in the background. The session owns both resources.
+    try {
+      await _bridge.dispose();
+    } finally {
+      await _runtime.dispose();
+    }
   }
 }
