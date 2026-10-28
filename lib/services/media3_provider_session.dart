@@ -51,6 +51,36 @@ class Media3ProviderSession implements PlaybackEngineSession {
       });
   Media3ProviderState get current => _bridge.current;
 
+  // Synchronous reads are projections of the exact state stream that belongs
+  // to this command session. MusicProvider can reconcile state without
+  // reaching around the session for a second player/observation source.
+  @override
+  Song? get currentSong => current.currentSong;
+  @override
+  int? get queueIndex => current.queueIndex;
+  @override
+  bool get isPlaying => current.isPlaying;
+  @override
+  Duration get position => current.position;
+  @override
+  Duration? get duration => current.duration;
+  @override
+  bool get isReady => current.isReady;
+  @override
+  bool get hasError => current.hasError;
+  @override
+  String? get error => current.error;
+  @override
+  double get volume => current.volume;
+  @override
+  PlaybackQueueRepeatMode get repeatMode => switch (current.repeatMode) {
+        'one' => PlaybackQueueRepeatMode.one,
+        'all' => PlaybackQueueRepeatMode.all,
+        _ => PlaybackQueueRepeatMode.off,
+      };
+  @override
+  bool get shuffleModeEnabled => current.shuffleModeEnabled;
+
   /// Compatibility observations for UI consumers that previously subscribed
   /// directly to just_audio's active-player streams. Values are projected from
   /// reconciled Media3 snapshots; they never issue playback commands.
