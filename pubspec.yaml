@@ -24,6 +24,9 @@ dependencies:
   url_launcher: ^6.3.2
   sensors_plus: ^6.1.2
   flutter_animate: ^4.5.2
+  # Transitional only: retained while legacy consumers are moved behind the
+  # engine-neutral Media3 session boundary. Remove after the final import is gone.
+  just_audio: ^0.10.5
 
 dev_dependencies:
   flutter_test:
