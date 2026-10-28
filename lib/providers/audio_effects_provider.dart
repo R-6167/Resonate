@@ -15,6 +15,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   final Stream<int?>? engineAudioSessionIdStream;
   StreamSubscription<int?>? _engineSessionSubscription;
   int? _engineSessionId;
+  int _engineSessionRevision = 0;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
@@ -39,13 +40,18 @@ class AudioEffectsProvider extends ChangeNotifier {
       // to legacy player's session streams.
       _engineSessionSubscription = engineSessions.listen((id) {
         final previousId = _engineSessionId;
-        if (id == previousId) return;
-        _engineSessionId = id != null && id > 0 ? id : null;
+        final currentId = id != null && id > 0 ? id : null;
+        if (currentId == previousId) return;
+
+        // A deck can change again while native detach/apply work is queued.
+        // Only the newest observed session should receive the restored effects.
+        final revision = ++_engineSessionRevision;
+        _engineSessionId = currentId;
         unawaited(() async {
           if (previousId != null) {
             await _detachNativeSession(previousId);
           }
-          final currentId = _engineSessionId;
+          if (revision != _engineSessionRevision) return;
           if (currentId != null) {
             await _applyNative(sessionIdOverride: currentId);
           }
@@ -266,6 +272,7 @@ class AudioEffectsProvider extends ChangeNotifier {
     unawaited(_engineSessionSubscription?.cancel());
     _engineSessionSubscription = null;
     _engineSessionId = null;
+    _engineSessionRevision++;
     for (final subscription in _sessionSubscriptions) {
       unawaited(subscription.cancel());
     }
