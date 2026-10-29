@@ -274,8 +274,9 @@ class Media3PlaybackRuntime {
     await _run(() async {
       // Resolve against the queue that actually precedes this command in the
       // serialized lane, not a stale queue captured before a pending load.
-      if (_queue.isNotEmpty && queueIndex != null) {
-        if (queueIndex < 0 ||
+      if (queueIndex != null) {
+        if (_queue.isEmpty ||
+            queueIndex < 0 ||
             queueIndex >= _queue.length ||
             !_sameTrack(_queue[queueIndex], song)) {
           throw ArgumentError.value(
