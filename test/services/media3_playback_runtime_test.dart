@@ -61,6 +61,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Completer<void>? stateReadStarted;
   bool failLoad = false;
   bool failClear = false;
+  bool failCancelCrossfade = false;
   Completer<void>? clearGate;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
@@ -132,7 +133,12 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
   @override
-  Future<void> cancelCrossfade() async { cancelCrossfadeCalls++; }
+  Future<void> cancelCrossfade() async {
+    cancelCrossfadeCalls++;
+    if (failCancelCrossfade) {
+      throw StateError('simulated crossfade cancellation failure');
+    }
+  }
 }
 
 void main() {
@@ -671,6 +677,23 @@ void main() {
       expect(backend.lastSeek, isNull);
       expect(backend.playing, isFalse);
       expect(backend.commandOrder, ['pause-start', 'pause-end']);
+    });
+
+    test('queue synchronization cancellation failure preserves the committed queue', () async {
+      final stable = makeSong('stable');
+      await runtime.loadQueue([stable]);
+      backend.failCancelCrossfade = true;
+
+      await expectLater(
+        runtime.synchronizeQueue([makeSong('replacement')]),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.playing, isTrue);
     });
 
     test('command lane remains usable after queue synchronization fails', () async {
