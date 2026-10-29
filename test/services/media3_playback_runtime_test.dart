@@ -596,6 +596,24 @@ void main() {
       expect(backend.commandOrder, ['pause-start', 'pause-end']);
     });
 
+    test('command lane remains usable after queue synchronization fails', () async {
+      final stable = makeSong('stable');
+      await runtime.loadQueue([stable]);
+      backend.recordLoadCommands = true;
+      backend.failLoad = true;
+
+      await expectLater(
+        runtime.synchronizeQueue([makeSong('rejected')]),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.commandOrder, ['loadQueue-start', 'play']);
+      expect(backend.playing, isTrue);
+    });
+
     test('queue synchronization waits behind an in-flight transport command', () async {
       final current = makeSong('current');
       final replacement = makeSong('replacement');
