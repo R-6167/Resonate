@@ -64,6 +64,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Completer<void>? clearGate;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
+  bool recordLoadCommands = false;
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
@@ -78,13 +79,13 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
-    commandOrder.add('loadQueue-start');
+    if (recordLoadCommands) commandOrder.add('loadQueue-start');
     await loadGate?.future;
     if (failLoad) throw StateError('simulated queue load failure');
     loaded = List<Song>.of(songs);
     loadedIndex = startIndex;
     value = snapshot(mediaId: songs[startIndex].id, index: startIndex, queueLength: songs.length);
-    commandOrder.add('loadQueue-end');
+    if (recordLoadCommands) commandOrder.add('loadQueue-end');
   }
   @override
   Future<void> clearQueue() async {
@@ -600,6 +601,7 @@ void main() {
       final replacement = makeSong('replacement');
       await runtime.loadQueue([current], startIndex: 0);
       backend.pauseGate = Completer<void>();
+      backend.recordLoadCommands = true;
 
       final pause = runtime.pause();
       final synchronize = runtime.synchronizeQueue([replacement]);
