@@ -246,6 +246,23 @@ void main() {
       expect(runtime.current.currentSong?.id, 'stable');
     });
 
+    test('ignores an uncommitted native snapshot when queue replacement fails', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.loadGate = Completer<void>();
+      backend.failLoad = true;
+
+      final replacement = runtime.loadQueue([makeSong('rejected')]);
+      await Future<void>.delayed(Duration.zero);
+      backend.controller.add(snapshot(mediaId: 'rejected', index: 0));
+      await Future<void>.delayed(Duration.zero);
+      backend.loadGate!.complete();
+
+      await expectLater(replacement, throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(runtime.current.snapshot?.mediaId, 'stable');
+    });
+
     test('loads queue through a single backend without optimistic playing state', () async {
       final songs = [makeSong('a'), makeSong('b')];
       await runtime.loadQueue(songs, startIndex: 1);
