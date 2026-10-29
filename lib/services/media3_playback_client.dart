@@ -49,7 +49,7 @@ class Media3PlaybackState {
 
   factory Media3PlaybackState.fromMap(Map<Object?, Object?> map) {
     int integerValue(Object? value, [int fallback = 0]) =>
-        value is num ? value.toInt() : fallback;
+        value is num && value.isFinite ? value.toInt() : fallback;
     double doubleValue(Object? value, [double fallback = 1.0]) =>
         value is num && value.isFinite ? value.toDouble() : fallback;
     bool boolValue(Object? value) => value == true;
@@ -64,7 +64,9 @@ class Media3PlaybackState {
       position: Duration(
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
       ),
-      duration: rawDuration is num && rawDuration >= 0
+      duration: rawDuration is num &&
+              rawDuration.isFinite &&
+              rawDuration >= 0
           ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
