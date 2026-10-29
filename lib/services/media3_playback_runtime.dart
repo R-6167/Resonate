@@ -227,6 +227,11 @@ class Media3PlaybackRuntime {
       final preservePosition = previousSong != null &&
           _sameTrack(playable[nextIndex], previousSong);
 
+      if (_backend is PlaybackPlaylistSyncBackend) {
+        await _synchronizeQueueInPlace(playable);
+        return;
+      }
+
       if (_backend is PlaybackCrossfadeBackend) {
         await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
       }
@@ -240,6 +245,51 @@ class Media3PlaybackRuntime {
         await _backend.pause();
       }
     });
+  }
+
+  /// Reconciles the native playlist without replacing the active player. The
+  /// backend owns the in-place edit and invalidates any stale standby preload.
+  Future<void> _synchronizeQueueInPlace(List<Song> nextQueue) async {
+    final backend = _backend as PlaybackPlaylistSyncBackend;
+    _queueLoadInProgress = true;
+    _pendingQueueSnapshot = null;
+    try {
+      await backend.synchronizeQueue(nextQueue);
+      _ensureAlive();
+    } catch (_) {
+      _queueLoadInProgress = false;
+      final pending = _pendingQueueSnapshot;
+      _pendingQueueSnapshot = null;
+      if (pending != null) {
+        final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
+      rethrow;
+    }
+
+    _queue = List<Song>.unmodifiable(nextQueue);
+    _queueLoadInProgress = false;
+    final pending = _pendingQueueSnapshot;
+    _pendingQueueSnapshot = null;
+    if (pending != null) {
+      final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+        _queue,
+        mediaId: pending.mediaId,
+        playableIndex: pending.currentQueueIndex,
+      );
+      if (pendingIndex != null) _acceptSnapshot(pending);
+    }
+    final revisionBeforeRead = _snapshotRevision;
+    try {
+      final state = await _backend.currentState();
+      if (_snapshotRevision == revisionBeforeRead) _acceptSnapshot(state);
+    } catch (_) {
+      // The native state stream remains authoritative if a snapshot read fails.
+    }
   }
 
   bool _sameQueue(List<Song> left, List<Song> right) {
