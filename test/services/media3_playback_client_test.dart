@@ -47,6 +47,24 @@ void main() {
       expect(state.volume, 1.0);
     });
 
+    test('uses safe defaults for non-finite native numeric fields', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': double.infinity,
+        'durationMs': double.infinity,
+        'playbackState': double.nan,
+        'currentMediaItemIndex': double.infinity,
+        'mediaItemCount': double.nan,
+        'audioSessionId': double.infinity,
+      });
+
+      expect(state.position, Duration.zero);
+      expect(state.duration, isNull);
+      expect(state.playbackState, 0);
+      expect(state.currentMediaItemIndex, -1);
+      expect(state.mediaItemCount, 0);
+      expect(state.audioSessionId, isNull);
+    });
+
     test('uses safe defaults for malformed snapshot values', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'positionMs': 'unknown',
