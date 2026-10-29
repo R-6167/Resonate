@@ -47,6 +47,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  double? lastVolume;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
@@ -109,7 +110,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> previous() async {}
   @override
-  Future<void> setVolume(double value) async {}
+  Future<void> setVolume(double value) async { lastVolume = value; }
   @override
   Future<void> setGainFactors({double? trackLevel, double? preamp, double? sleepFade, double? focusDuck}) async {
     lastGainFactors = {'trackLevel': trackLevel, 'preamp': preamp, 'sleepFade': sleepFade, 'focusDuck': focusDuck};
@@ -291,6 +292,33 @@ void main() {
       expect(runtime.current.currentSong?.id, 'b');
       expect(runtime.current.currentQueueIndex, 1);
       expect(runtime.current.isPlaying, isFalse);
+    });
+
+    test('validates gain factors before sending native commands', () async {
+      expect(
+        () => runtime.setGainFactors(trackLevel: double.nan),
+        throwsArgumentError,
+      );
+      expect(
+        () => runtime.setGainFactors(preamp: 4.01),
+        throwsArgumentError,
+      );
+      expect(
+        () => runtime.setGainFactors(focusDuck: -0.1),
+        throwsArgumentError,
+      );
+      expect(() => runtime.setVolume(double.infinity), throwsArgumentError);
+      expect(backend.commandOrder, isEmpty);
+      expect(backend.lastGainFactors, isEmpty);
+    });
+
+    test('clamps master volume at the runtime boundary', () async {
+      await runtime.setVolume(1.5);
+      expect(backend.commandOrder, isEmpty);
+      // The fake records gain commands separately; assert the backend saw the
+      // normalized volume via a dedicated value rather than relying on native
+      // channel validation.
+      expect(backend.lastVolume, 1.0);
     });
 
     test('does not commit a queue when disposed during native load', () async {
