@@ -591,6 +591,46 @@ void main() {
       expect(backend.commandOrder, ['seek', 'pause-start', 'pause-end']);
     });
 
+    test('queue synchronization filters unplayable entries before resolving index', () async {
+      final first = makeSong('first');
+      final current = makeSong('current');
+      await runtime.loadQueue([first, current], startIndex: 1);
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: true,
+        isReady: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 22),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 1,
+        queueLength: 2,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+
+      await runtime.synchronizeQueue([
+        makeSong('unplayable', path: ' '),
+        first,
+        makeSong('also-unplayable', path: ''),
+        current,
+      ]);
+
+      expect(runtime.queue.map((song) => song.id), ['first', 'current']);
+      expect(backend.loaded.map((song) => song.id), ['first', 'current']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.loaded[backend.loadedIndex].id, 'current');
+      expect(backend.lastSeek, const Duration(seconds: 22));
+      expect(backend.playing, isTrue);
+    });
+
     test('forwards transport commands to the backend', () async {
       await runtime.play();
       expect(backend.playing, isTrue);
