@@ -159,6 +159,71 @@ class Media3PlaybackRuntime {
     });
   }
 
+  /// Reconciles a live queue edit without changing the selected track when it
+  /// still exists. The native queue is replaced at the current position and
+  /// playback intent is restored after the new queue is accepted. This also
+  /// invalidates any prepared crossfade deck so it cannot promote a stale item.
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    _ensureAlive();
+    if (songs.isEmpty) {
+      await clearQueue();
+      return;
+    }
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
+      throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
+    }
+
+    await _run(() async {
+      final previousSong = _current.currentSong;
+      final previousIndex = _current.currentQueueIndex ?? 0;
+      final previousPosition = _current.position;
+      final wasPlaying = _current.isPlaying;
+      var nextIndex = -1;
+
+      // Prefer the same queue occurrence, then a matching duplicate, then the
+      // nearest valid position. Never select an unplayable entry.
+      if (previousSong != null) {
+        for (var i = previousIndex.clamp(0, songs.length - 1); i < songs.length; i++) {
+          if (_sameTrack(songs[i], previousSong) && songs[i].filePath.trim().isNotEmpty) {
+            nextIndex = i;
+            break;
+          }
+        }
+        if (nextIndex < 0) {
+          for (var i = 0; i < songs.length; i++) {
+            if (_sameTrack(songs[i], previousSong) && songs[i].filePath.trim().isNotEmpty) {
+              nextIndex = i;
+              break;
+            }
+          }
+        }
+      }
+      if (nextIndex < 0) {
+        nextIndex = previousIndex.clamp(0, songs.length - 1);
+        if (songs[nextIndex].filePath.trim().isEmpty) {
+          nextIndex = songs.indexWhere((song) => song.filePath.trim().isNotEmpty);
+        }
+      }
+
+      if (_backend is PlaybackCrossfadeBackend) {
+        await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+      }
+      await loadQueue(songs, startIndex: nextIndex);
+      await seek(previousPosition);
+      if (wasPlaying) {
+        await play();
+      } else {
+        await pause();
+      }
+    });
+  }
+
+  bool _sameTrack(Song left, Song right) =>
+      left.id == right.id && left.filePath.trim() == right.filePath.trim();
+
   /// Clears queue identity only after the native backend accepts the clear.
   /// A failed command preserves the last committed Dart queue and state.
   Future<void> clearQueue() async {
