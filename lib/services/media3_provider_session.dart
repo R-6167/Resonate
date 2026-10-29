@@ -93,15 +93,29 @@ class Media3ProviderSession implements PlaybackEngineSession {
   /// Compatibility observations for UI consumers that previously subscribed
   /// directly to just_audio's active-player streams. Values are projected from
   /// reconciled Media3 snapshots; they never issue playback commands.
+  Stream<T> _observationStream<T>(T Function(Media3ProviderState) select) =>
+      Stream<T>.multi((output) {
+        // Subscribe first, then publish the current reconciled snapshot. The
+        // bridge uses an asynchronous broadcast controller, so any already
+        // queued state event follows this initial value rather than overtaking
+        // it. Late UI subscribers therefore receive a usable value immediately.
+        final subscription = states.listen(
+          (state) => output.add(select(state)),
+          onError: output.addError,
+        );
+        output.add(select(current));
+        output.onCancel = subscription.cancel;
+      });
+
   @override
   Stream<Duration> get positionStream =>
-      states.map((state) => state.position);
+      _observationStream((state) => state.position);
   @override
   Stream<Duration?> get durationStream =>
-      states.map((state) => state.duration);
+      _observationStream((state) => state.duration);
   @override
   Stream<bool> get playingStream =>
-      states.map((state) => state.isPlaying);
+      _observationStream((state) => state.isPlaying);
 
   @override
   List<Song> get queue => _runtime.queue;
