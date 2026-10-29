@@ -144,6 +144,27 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Reconciles a live queue edit while preserving the currently playing item
+  /// when possible. An empty list is treated as an explicit queue clear.
+  Future<void> synchronizeQueue(List<Media3QueueItem> items) async {
+    if (items.isEmpty) {
+      await clearQueue();
+      return;
+    }
+    if (items.length > 500) {
+      throw ArgumentError.value(
+        items.length,
+        'items',
+        'Queue cannot exceed 500 items.',
+      );
+    }
+    final mappedItems = items.map((item) => item.toMap()).toList(growable: false);
+    await _invokeAccepted(
+      'synchronizeQueue',
+      <String, Object>{'items': mappedItems},
+    );
+  }
+
   /// Clears the active queue and any prepared crossfade deck.
   Future<void> clearQueue() => _command('clearQueue');
 
