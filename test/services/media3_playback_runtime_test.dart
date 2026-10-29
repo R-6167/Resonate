@@ -220,6 +220,26 @@ void main() {
       expect(runtime.current.isPlaying, isFalse);
     });
 
+    test('queue clear waits behind an in-flight transport command', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.pauseGate = Completer<void>();
+
+      final pause = runtime.pause();
+      final clear = runtime.clearQueue();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(backend.commandOrder, ['pause-start']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+
+      backend.pauseGate!.complete();
+      await Future.wait([pause, clear]);
+
+      expect(backend.commandOrder, ['pause-start', 'pause-end', 'clearQueue']);
+      expect(backend.loaded, isEmpty);
+      expect(runtime.queue, isEmpty);
+    });
+
     test('does not let a delayed clear snapshot overwrite a newer native event', () async {
       await runtime.loadQueue([makeSong('old')]);
 
