@@ -142,6 +142,9 @@ class Media3PlaybackClient {
     );
   }
 
+  /// Clears the active queue and any prepared crossfade deck.
+  Future<void> clearQueue() => _command('clearQueue');
+
   Future<void> skipToNext() => _command('skipToNext');
   Future<void> skipToPrevious() => _command('skipToPrevious');
 
