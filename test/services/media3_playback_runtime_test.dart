@@ -78,11 +78,13 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    commandOrder.add('loadQueue-start');
     await loadGate?.future;
     if (failLoad) throw StateError('simulated queue load failure');
     loaded = List<Song>.of(songs);
     loadedIndex = startIndex;
     value = snapshot(mediaId: songs[startIndex].id, index: startIndex, queueLength: songs.length);
+    commandOrder.add('loadQueue-end');
   }
   @override
   Future<void> clearQueue() async {
@@ -612,8 +614,14 @@ void main() {
       await Future.wait([pause, synchronize]);
 
       expect(backend.loaded.map((song) => song.id), ['replacement']);
-      expect(backend.commandOrder.first, 'pause-start');
-      expect(backend.commandOrder.indexOf('pause-end'), lessThan(backend.commandOrder.length));
+      expect(backend.commandOrder, [
+        'pause-start',
+        'pause-end',
+        'loadQueue-start',
+        'loadQueue-end',
+        'pause-start',
+        'pause-end',
+      ]);
     });
 
     test('queue synchronization filters unplayable entries before resolving index', () async {
