@@ -335,6 +335,46 @@ void main() {
       expect(runtime.current.isPlaying, isFalse);
     });
 
+    test('does not reload or cancel preload for an unchanged queue', () async {
+      final songs = [makeSong('a'), makeSong('b')];
+      await runtime.loadQueue(songs, startIndex: 1);
+      backend.preloadedSong = songs[0];
+
+      await runtime.synchronizeQueue([
+        makeSong('a'),
+        makeSong('b'),
+      ]);
+
+      expect(backend.loaded.map((song) => song.id), ['a', 'b']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.cancelCrossfadeCalls, 0);
+      expect(backend.preloadedSong?.id, 'a');
+      expect(backend.commandOrder, isEmpty);
+      expect(runtime.current.currentSong?.id, 'b');
+      expect(runtime.current.currentQueueIndex, 1);
+    });
+
+    test('reloads queue when metadata changes despite stable track identity', () async {
+      final original = makeSong('a');
+      await runtime.loadQueue([original]);
+      final updated = Song(
+        id: original.id,
+        title: 'Updated title',
+        artist: original.artist,
+        album: original.album,
+        filePath: original.filePath,
+        duration: original.duration,
+        dateAdded: original.dateAdded,
+        albumArt: original.albumArt,
+      );
+
+      await runtime.synchronizeQueue([updated]);
+
+      expect(backend.loaded.single.title, 'Updated title');
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.commandOrder, ['pause-start', 'pause-end']);
+    });
+
     test('validates gain factors before sending native commands', () async {
       expect(
         () => runtime.setGainFactors(trackLevel: double.nan),
