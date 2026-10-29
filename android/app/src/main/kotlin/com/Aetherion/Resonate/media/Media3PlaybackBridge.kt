@@ -221,9 +221,10 @@ class Media3PlaybackBridge(
                     if (targetIndex < items.lastIndex) {
                         connected.addMediaItems(targetIndex + 1, items.subList(targetIndex + 1, items.size))
                     }
-                    if (keepPosition && oldPosition > 0L) {
-                        connected.seekTo(targetIndex, oldPosition)
-                    }
+                    // A removed current track must not carry its old timestamp
+                    // into the fallback track. Keep the exact position only when
+                    // the same media occurrence survives the queue edit.
+                    connected.seekTo(targetIndex, if (keepPosition) oldPosition else 0L)
                     result.success(true)
                 }
                 "clearQueue" -> {
