@@ -58,6 +58,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Completer<PlaybackSnapshot>? stateGate;
   Completer<void>? stateReadStarted;
   bool failLoad = false;
+  bool failClear = false;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
 
@@ -83,6 +84,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> clearQueue() async {
     commandOrder.add('clearQueue');
+    if (failClear) throw StateError('simulated clear failure');
     loaded = const <Song>[];
     loadedIndex = -1;
     value = snapshot(mediaId: null, index: -1, queueLength: 0);
@@ -213,15 +215,11 @@ void main() {
 
     test('preserves committed queue when native clear is rejected', () async {
       await runtime.loadQueue([makeSong('stable')]);
-      backend.failLoad = true;
-      // Use the backend's load failure switch to simulate a rejected clear.
-      final originalClear = backend.clearQueue;
-      backend.clearQueue = () async => throw StateError('simulated clear failure');
+      backend.failClear = true;
 
       await expectLater(runtime.clearQueue(), throwsA(isA<StateError>()));
       expect(runtime.queue.map((song) => song.id), ['stable']);
       expect(runtime.current.currentSong?.id, 'stable');
-      backend.clearQueue = originalClear;
     });
 
     test('loads queue through a single backend without optimistic playing state', () async {
