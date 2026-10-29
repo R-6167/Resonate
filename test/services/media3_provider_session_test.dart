@@ -185,6 +185,29 @@ void main() {
       expect(engine.shuffleModeEnabled, isFalse);
     });
 
+    test('replays reconciled observations to late subscribers', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      // A subscriber attaching after queue load must not wait for the next
+      // native event just to learn the current position, duration, or playing
+      // state. This matters when UI/provider consumers attach lazily.
+      expect(
+        await session.positionStream.first,
+        const Duration(seconds: 12),
+      );
+      expect(
+        await session.durationStream.first,
+        const Duration(minutes: 3),
+      );
+      expect(await session.playingStream.first, isFalse);
+
+      final playing = session.playingStream.firstWhere((value) => value);
+      backend.value = _snapshot(mediaId: 'track-1', playing: true);
+      backend.controller.add(backend.value);
+      expect(await playing, isTrue);
+    });
+
     test('emits the current session to late DSP subscribers', () async {
       backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       await session.start();
