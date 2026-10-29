@@ -208,6 +208,24 @@ void main() {
       expect(await playing, isTrue);
     });
 
+    test('DSP subscriber attached before startup receives the native session', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 53);
+
+      // MusicProvider installs its audio-session listener during construction,
+      // before asynchronous engine startup has completed. That early listener
+      // must still see the first real native session when Media3 connects.
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(sessions, [null]);
+
+      await session.start();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null, 53]);
+      await subscription.cancel();
+    });
+
     test('emits the current session to late DSP subscribers', () async {
       backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       await session.start();
