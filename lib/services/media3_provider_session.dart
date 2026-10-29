@@ -162,6 +162,9 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) =>
       _runtime.loadQueue(songs, startIndex: startIndex);
   @override
+  Future<void> synchronizeQueue(List<Song> songs) =>
+      _runtime.synchronizeQueue(songs);
+  @override
   Future<void> clearQueue() => _runtime.clearQueue();
   @override
   Future<void> play() => _runtime.play();
