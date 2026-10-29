@@ -112,7 +112,19 @@ class Media3PlaybackRuntime {
         _queueLoadInProgress = false;
         final pending = _pendingQueueSnapshot;
         _pendingQueueSnapshot = null;
-        if (pending != null) _acceptSnapshot(pending);
+        if (pending != null) {
+          // A failed replacement never commits its queue identity. Reconcile a
+          // buffered native event only if it can still identify an item in the
+          // previously committed queue; otherwise it may describe a partial
+          // native replacement and must not erase the last known-good state.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
         rethrow;
       }
 
