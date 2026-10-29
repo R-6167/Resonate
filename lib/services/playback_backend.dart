@@ -10,6 +10,7 @@ abstract interface class PlaybackBackend {
   Stream<PlaybackSnapshot> get states;
 
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
+  Future<void> clearQueue();
   Future<PlaybackSnapshot> currentState();
 
   Future<void> play();
