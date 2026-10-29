@@ -185,7 +185,7 @@ class Media3PlaybackRuntime {
       // Prefer the same queue occurrence, then a matching duplicate, then the
       // nearest valid position. Never select an unplayable entry.
       if (previousSong != null) {
-        for (var i = previousIndex.clamp(0, songs.length - 1); i < songs.length; i++) {
+        for (var i = previousIndex.clamp(0, songs.length - 1).toInt(); i < songs.length; i++) {
           if (_sameTrack(songs[i], previousSong) && songs[i].filePath.trim().isNotEmpty) {
             nextIndex = i;
             break;
@@ -201,7 +201,7 @@ class Media3PlaybackRuntime {
         }
       }
       if (nextIndex < 0) {
-        nextIndex = previousIndex.clamp(0, songs.length - 1);
+        nextIndex = previousIndex.clamp(0, songs.length - 1).toInt();
         if (songs[nextIndex].filePath.trim().isEmpty) {
           nextIndex = songs.indexWhere((song) => song.filePath.trim().isNotEmpty);
         }
