@@ -143,6 +143,12 @@ class Media3PlaybackBridge(
                     connected.prepare()
                     result.success(true)
                 }
+                "clearQueue" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.stop()
+                    connected.clearMediaItems()
+                    result.success(true)
+                }
                 "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
                 "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
                 "setRepeatMode" -> {
