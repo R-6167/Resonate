@@ -96,7 +96,16 @@ class Media3PlaybackRuntime {
     }
 
     final nextQueue = List<Song>.unmodifiable(songs);
-    await _run(() async {
+    await _run(() => _loadQueueWithinLane(nextQueue, startIndex: startIndex));
+  }
+
+  /// Installs a queue while the caller owns the serialized command lane.
+  /// Keeping this separate lets queue synchronization treat replacement,
+  /// position restoration, and play intent as one indivisible operation.
+  Future<void> _loadQueueWithinLane(
+    List<Song> nextQueue, {
+    required int startIndex,
+  }) async {
       // Buffer native snapshots while queue identity is changing. Publishing
       // them immediately would reconcile a new native index against the old
       // Dart queue and briefly expose the wrong current song.
@@ -156,7 +165,6 @@ class Media3PlaybackRuntime {
         // The native event stream remains authoritative if a snapshot read is
         // temporarily unavailable after a successful queue load.
       }
-    });
   }
 
   /// Reconciles a live queue edit without changing the selected track when it
@@ -181,52 +189,52 @@ class Media3PlaybackRuntime {
       );
     }
 
-    final previousSong = _current.currentSong;
-    final previousIndex = _current.currentQueueIndex ?? 0;
-    final previousPosition = _current.position;
-    final wasPlaying = _current.isPlaying;
-    var nextIndex = -1;
+    // Resolve the previous state only after earlier transport commands finish.
+    // The queue replacement, optional seek, and play/pause restoration then
+    // remain in the same command lane, so a concurrent seek or pause cannot
+    // be overwritten by a stale snapshot captured before synchronization.
+    await _run(() async {
+      final previousSong = _current.currentSong;
+      final previousIndex = _current.currentQueueIndex ?? 0;
+      final previousPosition = _current.position;
+      final wasPlaying = _current.isPlaying;
+      var nextIndex = -1;
 
-    // Resolve against the filtered queue that will actually be installed.
-    // Prefer the same occurrence when it still occupies that position, then
-    // another matching occurrence, and finally the nearest playable index.
-    if (previousSong != null) {
-      if (previousIndex >= 0 &&
-          previousIndex < playable.length &&
-          _sameTrack(playable[previousIndex], previousSong)) {
-        nextIndex = previousIndex;
-      } else {
-        for (var i = 0; i < playable.length; i++) {
-          if (_sameTrack(playable[i], previousSong)) {
-            nextIndex = i;
-            break;
+      if (previousSong != null) {
+        if (previousIndex >= 0 &&
+            previousIndex < playable.length &&
+            _sameTrack(playable[previousIndex], previousSong)) {
+          nextIndex = previousIndex;
+        } else {
+          for (var i = 0; i < playable.length; i++) {
+            if (_sameTrack(playable[i], previousSong)) {
+              nextIndex = i;
+              break;
+            }
           }
         }
       }
-    }
-    if (nextIndex < 0) {
-      nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
-    }
-    // A removed current track must not transfer its old timestamp to the
-    // fallback track. Only preserve position when the same track occurrence
-    // remains selected in the replacement queue.
-    final preservePosition = previousSong != null &&
-        nextIndex >= 0 &&
-        nextIndex < playable.length &&
-        _sameTrack(playable[nextIndex], previousSong);
+      if (nextIndex < 0) {
+        nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
+      }
+      // A removed current track must not transfer its old timestamp to the
+      // fallback track. Only preserve position when the same track remains.
+      final preservePosition = previousSong != null &&
+          _sameTrack(playable[nextIndex], previousSong);
 
-    if (_backend is PlaybackCrossfadeBackend) {
-      await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
-    }
-    await loadQueue(playable, startIndex: nextIndex);
-    if (preservePosition) {
-      await seek(previousPosition);
-    }
-    if (wasPlaying) {
-      await play();
-    } else {
-      await pause();
-    }
+      if (_backend is PlaybackCrossfadeBackend) {
+        await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+      }
+      await _loadQueueWithinLane(playable, startIndex: nextIndex);
+      if (preservePosition) {
+        await _backend.seek(previousPosition);
+      }
+      if (wasPlaying) {
+        await _backend.play();
+      } else {
+        await _backend.pause();
+      }
+    });
   }
 
   bool _sameTrack(Song left, Song right) =>
