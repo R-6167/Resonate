@@ -11,7 +11,7 @@ import 'playback_snapshot.dart';
 /// Resonate's Song/queue model into immutable Media3 descriptors and forwards
 /// the native state stream. MusicProvider can migrate its transport boundary
 /// through this facade without exposing Media3 implementation details.
-class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend {
+class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackPlaylistSyncBackend {
   Media3MusicProviderAdapter({Media3PlaybackClient? client})
       : _client = client ?? Media3PlaybackClient();
 
@@ -37,6 +37,27 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
     await _client.setQueue(
       playable.map(Media3QueueItem.fromSong).toList(growable: false),
       startIndex: resolvedStartIndex,
+    );
+  }
+
+  @override
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
+      await _client.clearQueue();
+      return;
+    }
+    if (playable.length > 500) {
+      throw ArgumentError.value(
+        playable.length,
+        'songs',
+        'Queue cannot exceed 500 playable items.',
+      );
+    }
+    await _client.synchronizeQueue(
+      playable.map(Media3QueueItem.fromSong).toList(growable: false),
     );
   }
 
