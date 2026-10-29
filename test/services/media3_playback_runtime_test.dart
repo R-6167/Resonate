@@ -47,6 +47,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  Duration? lastSeek;
+  double? lastVolume;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
@@ -58,8 +60,12 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Completer<PlaybackSnapshot>? stateGate;
   Completer<void>? stateReadStarted;
   bool failLoad = false;
+  bool failClear = false;
+  bool failCancelCrossfade = false;
+  Completer<void>? clearGate;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
+  bool recordLoadCommands = false;
 
   @override
   Stream<PlaybackSnapshot> get states => controller.stream;
@@ -74,11 +80,22 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   }
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
+    if (recordLoadCommands) commandOrder.add('loadQueue-start');
     await loadGate?.future;
     if (failLoad) throw StateError('simulated queue load failure');
     loaded = List<Song>.of(songs);
     loadedIndex = startIndex;
     value = snapshot(mediaId: songs[startIndex].id, index: startIndex, queueLength: songs.length);
+    if (recordLoadCommands) commandOrder.add('loadQueue-end');
+  }
+  @override
+  Future<void> clearQueue() async {
+    commandOrder.add('clearQueue');
+    await clearGate?.future;
+    if (failClear) throw StateError('simulated clear failure');
+    loaded = const <Song>[];
+    loadedIndex = -1;
+    value = snapshot(mediaId: null, index: -1, queueLength: 0);
   }
   @override
   Future<void> play() async { commandOrder.add('play'); playing = true; }
@@ -92,13 +109,13 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> stop() async { playing = false; }
   @override
-  Future<void> seek(Duration position) async {}
+  Future<void> seek(Duration position) async { commandOrder.add('seek'); lastSeek = position; }
   @override
   Future<void> next() async {}
   @override
   Future<void> previous() async {}
   @override
-  Future<void> setVolume(double value) async {}
+  Future<void> setVolume(double value) async { lastVolume = value; }
   @override
   Future<void> setGainFactors({double? trackLevel, double? preamp, double? sleepFade, double? focusDuck}) async {
     lastGainFactors = {'trackLevel': trackLevel, 'preamp': preamp, 'sleepFade': sleepFade, 'focusDuck': focusDuck};
@@ -116,7 +133,12 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> crossfade({required Duration duration}) async { crossfadeDuration = duration; }
   @override
-  Future<void> cancelCrossfade() async { cancelCrossfadeCalls++; }
+  Future<void> cancelCrossfade() async {
+    cancelCrossfadeCalls++;
+    if (failCancelCrossfade) {
+      throw StateError('simulated crossfade cancellation failure');
+    }
+  }
 }
 
 void main() {
@@ -190,6 +212,124 @@ void main() {
       expect(runtime.current.snapshot?.mediaId, isNot('late'));
     });
 
+    test('clears native and Dart queue identity through the serialized lane', () async {
+      await runtime.loadQueue([makeSong('a'), makeSong('b')], startIndex: 1);
+
+      await runtime.clearQueue();
+
+      expect(backend.commandOrder, ['clearQueue']);
+      expect(backend.loaded, isEmpty);
+      expect(backend.loadedIndex, -1);
+      expect(runtime.queue, isEmpty);
+      expect(runtime.current.currentSong, isNull);
+      expect(runtime.current.currentQueueIndex, isNull);
+      expect(runtime.current.isPlaying, isFalse);
+    });
+
+    test('queue clear waits behind an in-flight transport command', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.pauseGate = Completer<void>();
+
+      final pause = runtime.pause();
+      final clear = runtime.clearQueue();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(backend.commandOrder, ['pause-start']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+
+      backend.pauseGate!.complete();
+      await Future.wait([pause, clear]);
+
+      expect(backend.commandOrder, ['pause-start', 'pause-end', 'clearQueue']);
+      expect(backend.loaded, isEmpty);
+      expect(runtime.queue, isEmpty);
+    });
+
+    test('does not let a delayed clear snapshot overwrite a newer native event', () async {
+      await runtime.loadQueue([makeSong('old')]);
+
+      final stale = snapshot(mediaId: 'stale', playing: false, queueLength: 0);
+      final fresh = snapshot(mediaId: 'fresh', playing: true, queueLength: 0);
+      backend.stateGate = Completer<PlaybackSnapshot>();
+      backend.stateReadStarted = Completer<void>();
+
+      final clear = runtime.clearQueue();
+      await backend.stateReadStarted!.future;
+      final freshState = runtime.states.firstWhere(
+        (state) => state.snapshot?.mediaId == 'fresh',
+      );
+      backend.value = fresh;
+      backend.controller.add(fresh);
+      await freshState;
+      backend.stateGate!.complete(stale);
+      await clear;
+
+      expect(runtime.queue, isEmpty);
+      expect(runtime.current.snapshot?.mediaId, 'fresh');
+      expect(runtime.current.isPlaying, isTrue);
+    });
+
+    test('preserves committed queue when native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failClear = true;
+
+      await expectLater(runtime.clearQueue(), throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+    });
+
+    test('ignores a partial empty snapshot when native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failClear = true;
+      backend.clearGate = Completer<void>();
+
+      final clear = runtime.clearQueue();
+      await Future<void>.delayed(Duration.zero);
+      backend.controller.add(snapshot(mediaId: null, index: -1, queueLength: 0));
+      await Future<void>.delayed(Duration.zero);
+      backend.clearGate!.complete();
+
+      await expectLater(clear, throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(runtime.current.snapshot?.mediaId, 'stable');
+    });
+
+    test('command lane remains usable after native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failClear = true;
+
+      await expectLater(
+        runtime.clearQueue(),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.commandOrder, ['clearQueue', 'play']);
+      expect(backend.playing, isTrue);
+    });
+
+    test('ignores an uncommitted native snapshot when queue replacement fails', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.loadGate = Completer<void>();
+      backend.failLoad = true;
+
+      final replacement = runtime.loadQueue([makeSong('rejected')]);
+      await Future<void>.delayed(Duration.zero);
+      backend.controller.add(snapshot(mediaId: 'rejected', index: 0));
+      await Future<void>.delayed(Duration.zero);
+      backend.loadGate!.complete();
+
+      await expectLater(replacement, throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(runtime.current.snapshot?.mediaId, 'stable');
+    });
+
     test('loads queue through a single backend without optimistic playing state', () async {
       final songs = [makeSong('a'), makeSong('b')];
       await runtime.loadQueue(songs, startIndex: 1);
@@ -199,6 +339,73 @@ void main() {
       expect(runtime.current.currentSong?.id, 'b');
       expect(runtime.current.currentQueueIndex, 1);
       expect(runtime.current.isPlaying, isFalse);
+    });
+
+    test('does not reload or cancel preload for an unchanged queue', () async {
+      final songs = [makeSong('a'), makeSong('b')];
+      await runtime.loadQueue(songs, startIndex: 1);
+      backend.preloadedSong = songs[0];
+
+      await runtime.synchronizeQueue([
+        makeSong('a'),
+        makeSong('b'),
+      ]);
+
+      expect(backend.loaded.map((song) => song.id), ['a', 'b']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.cancelCrossfadeCalls, 0);
+      expect(backend.preloadedSong?.id, 'a');
+      expect(backend.commandOrder, isEmpty);
+      expect(runtime.current.currentSong?.id, 'b');
+      expect(runtime.current.currentQueueIndex, 1);
+    });
+
+    test('reloads queue when metadata changes despite stable track identity', () async {
+      final original = makeSong('a');
+      await runtime.loadQueue([original]);
+      final updated = Song(
+        id: original.id,
+        title: 'Updated title',
+        artist: original.artist,
+        album: original.album,
+        filePath: original.filePath,
+        duration: original.duration,
+        dateAdded: original.dateAdded,
+        albumArt: original.albumArt,
+      );
+
+      await runtime.synchronizeQueue([updated]);
+
+      expect(backend.loaded.single.title, 'Updated title');
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.commandOrder, ['seek', 'pause-start', 'pause-end']);
+    });
+
+    test('validates gain factors before sending native commands', () async {
+      expect(
+        () => runtime.setGainFactors(trackLevel: double.nan),
+        throwsArgumentError,
+      );
+      expect(
+        () => runtime.setGainFactors(preamp: 4.01),
+        throwsArgumentError,
+      );
+      expect(
+        () => runtime.setGainFactors(focusDuck: -0.1),
+        throwsArgumentError,
+      );
+      expect(() => runtime.setVolume(double.infinity), throwsArgumentError);
+      expect(backend.commandOrder, isEmpty);
+      expect(backend.lastGainFactors, isEmpty);
+    });
+
+    test('clamps master volume at the runtime boundary', () async {
+      await runtime.setVolume(1.5);
+      expect(backend.commandOrder, isEmpty);
+      // The fake records gain commands separately; assert the backend saw the
+      // normalized volume via a dedicated value rather than relying on native
+      // channel validation.
+      expect(backend.lastVolume, 1.0);
     });
 
     test('does not commit a queue when disposed during native load', () async {
@@ -352,6 +559,33 @@ void main() {
       expect(backend.preloadedQueueIndex, 1);
     });
 
+    test('rejects explicit preload indices that do not identify the incoming song', () async {
+      final first = makeSong('first');
+      final incoming = makeSong('incoming');
+      final last = makeSong('last');
+      await runtime.loadQueue([first, incoming, last]);
+
+      await expectLater(
+        runtime.preloadNext(incoming, queueIndex: 2),
+        throwsArgumentError,
+      );
+      await expectLater(
+        runtime.preloadNext(incoming, queueIndex: 8),
+        throwsArgumentError,
+      );
+
+      expect(backend.preloadedSong, isNull);
+      expect(backend.preloadedQueueIndex, isNull);
+    });
+
+    test('rejects an explicit preload index when no queue is committed', () async {
+      await expectLater(
+        runtime.preloadNext(makeSong('incoming'), queueIndex: 0),
+        throwsArgumentError,
+      );
+      expect(backend.preloadedSong, isNull);
+    });
+
     test('rejects crossfade durations outside native supported range', () async {
       await expectLater(
         runtime.crossfade(duration: const Duration(milliseconds: 100)),
@@ -369,6 +603,190 @@ void main() {
       expect(backend.lastShuffleMode, isTrue);
       await runtime.setShuffleMode(false);
       expect(backend.lastShuffleMode, isFalse);
+    });
+
+    test('synchronizes a live queue edit while retaining current track, position and play intent', () async {
+      final first = makeSong('first');
+      final current = makeSong('current');
+      final last = makeSong('last');
+      await runtime.loadQueue([first, current, last], startIndex: 1);
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: true,
+        isReady: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 47),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 1,
+        queueLength: 3,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+      backend.playing = true;
+
+      await runtime.synchronizeQueue([first, current, makeSong('added'), last]);
+
+      expect(runtime.queue.map((song) => song.id), ['first', 'current', 'added', 'last']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.loaded[backend.loadedIndex].id, 'current');
+      expect(backend.lastSeek, const Duration(seconds: 47));
+      expect(backend.playing, isTrue);
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.commandOrder, ['seek', 'play']);
+    });
+
+    test('synchronizes queue when current track was removed using nearest playable item', () async {
+      final current = makeSong('current');
+      final next = makeSong('next');
+      await runtime.loadQueue([current, next], startIndex: 0);
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: false,
+        isReady: true,
+        playWhenReady: false,
+        position: const Duration(seconds: 31),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 0,
+        queueLength: 2,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+
+      await runtime.synchronizeQueue([next, makeSong('new')]);
+
+      expect(backend.loadedIndex, 0);
+      expect(backend.loaded[0].id, 'next');
+      // The old track's timestamp belongs to the removed item and must
+      // not jump the replacement track forward by 31 seconds.
+      expect(backend.lastSeek, isNull);
+      expect(backend.playing, isFalse);
+      expect(backend.commandOrder, ['pause-start', 'pause-end']);
+    });
+
+    test('queue synchronization cancellation failure preserves the committed queue', () async {
+      final stable = makeSong('stable');
+      await runtime.loadQueue([stable]);
+      backend.failCancelCrossfade = true;
+
+      await expectLater(
+        runtime.synchronizeQueue([makeSong('replacement')]),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.playing, isTrue);
+    });
+
+    test('command lane remains usable after queue synchronization fails', () async {
+      final stable = makeSong('stable');
+      await runtime.loadQueue([stable]);
+      backend.recordLoadCommands = true;
+      backend.failLoad = true;
+
+      await expectLater(
+        runtime.synchronizeQueue([makeSong('rejected')]),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.commandOrder, ['loadQueue-start', 'play']);
+      expect(backend.playing, isTrue);
+    });
+
+    test('queue synchronization waits behind an in-flight transport command', () async {
+      final current = makeSong('current');
+      final replacement = makeSong('replacement');
+      await runtime.loadQueue([current], startIndex: 0);
+      backend.pauseGate = Completer<void>();
+      backend.recordLoadCommands = true;
+
+      final pause = runtime.pause();
+      final synchronize = runtime.synchronizeQueue([replacement]);
+      await Future<void>.delayed(Duration.zero);
+
+      // Queue replacement must not overtake a transport command already in
+      // the serialized lane.
+      expect(backend.loaded.map((song) => song.id), ['current']);
+      expect(backend.commandOrder, ['pause-start']);
+
+      backend.pauseGate!.complete();
+      await Future.wait([pause, synchronize]);
+
+      expect(backend.loaded.map((song) => song.id), ['replacement']);
+      expect(backend.commandOrder, [
+        'pause-start',
+        'pause-end',
+        'loadQueue-start',
+        'loadQueue-end',
+        'pause-start',
+        'pause-end',
+      ]);
+    });
+
+    test('queue synchronization filters unplayable entries before resolving index', () async {
+      final first = makeSong('first');
+      final current = makeSong('current');
+      await runtime.loadQueue([first, current], startIndex: 1);
+      // Keep the fake backend's command state consistent with the snapshot
+      // emitted below; unchanged synchronization must preserve active playback.
+      backend.playing = true;
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: true,
+        isReady: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 22),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 1,
+        queueLength: 2,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+
+      await runtime.synchronizeQueue([
+        makeSong('unplayable', path: ' '),
+        first,
+        makeSong('also-unplayable', path: ''),
+        current,
+      ]);
+
+      expect(runtime.queue.map((song) => song.id), ['first', 'current']);
+      expect(backend.loaded.map((song) => song.id), ['first', 'current']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.loaded[backend.loadedIndex].id, 'current');
+      // Filtering the unplayable entries leaves the native queue unchanged,
+      // so synchronization must not reload or seek the active item.
+      expect(backend.lastSeek, isNull);
+      expect(backend.playing, isTrue);
     });
 
     test('forwards transport commands to the backend', () async {

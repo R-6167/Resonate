@@ -40,7 +40,9 @@ class PlaybackAuthority extends ChangeNotifier {
   String get lastCommand => _lastCommand;
   PlaybackEvent? get lastEvent => _lastEvent;
 
-  String engineLabel(MusicProvider music) => _engineLabelFor(music.audioPlayer);
+  /// Uses the provider's explicit active-deck policy rather than inferring
+  /// deck identity from a concrete player object's identity hash.
+  String engineLabel(MusicProvider music) => music.isEngineA ? 'A' : 'B';
 
   Future<void> userPause(MusicProvider music) => music.pause();
   Future<void> userStop(MusicProvider music) => music.stop();
@@ -99,16 +101,5 @@ class PlaybackAuthority extends ChangeNotifier {
 
   void _recordCommand(String source, String command) {
     unawaited(ResonateDiagnostics.recordPlaybackCommand(source: source, command: command, generation: _userGeneration));
-  }
-
-  static final Map<int, String> _engineIds = <int, String>{};
-
-  String _engineLabelFor(Object player) {
-    final id = identityHashCode(player);
-    final known = _engineIds[id];
-    if (known != null) return known;
-    final label = _engineIds.isEmpty ? 'A' : (_engineIds.values.contains('A') ? 'B' : 'A');
-    _engineIds[id] = label;
-    return label;
   }
 }

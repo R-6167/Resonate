@@ -10,6 +10,12 @@ class AudioEffectsProvider extends ChangeNotifier {
   final AudioPlayer? player;
   final List<AudioPlayer> sessionPlayers;
   final AndroidLoudnessEnhancer? loudnessEnhancer;
+  /// Optional engine-neutral active session stream. When supplied, it replaces
+  /// per-player just_audio session discovery for Media3-backed playback.
+  final Stream<int?>? engineAudioSessionIdStream;
+  StreamSubscription<int?>? _engineSessionSubscription;
+  int? _engineSessionId;
+  int _engineSessionRevision = 0;
   double reverb = 0.0;
   double bassBoost = 0.0;
   double virtualizer = 0.0;
@@ -24,11 +30,39 @@ class AudioEffectsProvider extends ChangeNotifier {
     this.player,
     List<AudioPlayer>? sessionPlayers,
     this.loudnessEnhancer,
+    this.engineAudioSessionIdStream,
   }) : sessionPlayers = sessionPlayers ??
             (player == null ? const <AudioPlayer>[] : <AudioPlayer>[player]) {
-    // A/B players own independent Android sessions. Track both so an incoming
-    // crossfade engine receives the same saved auxiliary-effect profile.
-    for (final sessionPlayer in this.sessionPlayers) {
+    final engineSessions = engineAudioSessionIdStream;
+    if (engineSessions != null) {
+      // Media3 owns the active session and may change it when the crossfade
+      // deck swaps. Follow that engine-neutral signal instead of subscribing
+      // to legacy player's session streams.
+      _engineSessionSubscription = engineSessions.listen((id) {
+        final previousId = _engineSessionId;
+        final currentId = id != null && id > 0 ? id : null;
+        if (currentId == previousId) return;
+
+        // A deck can change again while native detach/apply work is queued.
+        // Only the newest observed session should receive the restored effects.
+        final revision = ++_engineSessionRevision;
+        _engineSessionId = currentId;
+        unawaited(() async {
+          if (previousId != null) {
+            await _detachNativeSession(previousId);
+          }
+          if (revision != _engineSessionRevision) return;
+          if (currentId != null) {
+            await _applyNative(sessionIdOverride: currentId);
+          }
+        }());
+      }, onError: (Object error) {
+        debugPrint('Engine audio-session stream failed: $error');
+      });
+    } else {
+      // Legacy compatibility while MusicProvider is migrated in coordinated
+      // slices. This path is not used once the Media3 session is injected.
+      for (final sessionPlayer in this.sessionPlayers) {
       final currentId = sessionPlayer.androidAudioSessionId;
       if (currentId != null && currentId > 0) {
         _sessionIdsByPlayer[sessionPlayer] = currentId;
@@ -58,6 +92,7 @@ class AudioEffectsProvider extends ChangeNotifier {
           debugPrint('Audio-effects session stream failed: $error');
         }),
       );
+      }
     }
     _load();
   }
@@ -129,11 +164,13 @@ class AudioEffectsProvider extends ChangeNotifier {
   Future<void> _applyNativeNow({int? sessionIdOverride}) async {
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
-        : <int>{
-            ..._sessionIdsByPlayer.values,
-            if ((player?.androidAudioSessionId ?? 0) > 0)
-              player!.androidAudioSessionId!,
-          };
+        : engineAudioSessionIdStream != null
+            ? <int>{if ((_engineSessionId ?? 0) > 0) _engineSessionId!}
+            : <int>{
+                ..._sessionIdsByPlayer.values,
+                if ((player?.androidAudioSessionId ?? 0) > 0)
+                  player!.androidAudioSessionId!,
+              };
     if (sessionIds.isEmpty) return;
 
     final enabled = effectsEnabled;
@@ -232,6 +269,10 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_engineSessionSubscription?.cancel());
+    _engineSessionSubscription = null;
+    _engineSessionId = null;
+    _engineSessionRevision++;
     for (final subscription in _sessionSubscriptions) {
       unawaited(subscription.cancel());
     }

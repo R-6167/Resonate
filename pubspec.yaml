@@ -12,7 +12,6 @@ dependencies:
   provider: ^6.1.5+1
   shared_preferences: ^2.5.3
   cupertino_icons: ^1.0.8
-  just_audio: ^0.10.5
   audio_service: ^0.18.19
   audio_session: ^0.1.25
   flutter_volume_controller: ^2.0.2
@@ -25,6 +24,9 @@ dependencies:
   url_launcher: ^6.3.2
   sensors_plus: ^6.1.2
   flutter_animate: ^4.5.2
+  # Transitional only: retained while legacy consumers are moved behind the
+  # engine-neutral Media3 session boundary. Remove after the final import is gone.
+  just_audio: ^0.10.5
 
 dev_dependencies:
   flutter_test:

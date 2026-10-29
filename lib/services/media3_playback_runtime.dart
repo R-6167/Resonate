@@ -96,7 +96,16 @@ class Media3PlaybackRuntime {
     }
 
     final nextQueue = List<Song>.unmodifiable(songs);
-    await _run(() async {
+    await _run(() => _loadQueueWithinLane(nextQueue, startIndex: startIndex));
+  }
+
+  /// Installs a queue while the caller owns the serialized command lane.
+  /// Keeping this separate lets queue synchronization treat replacement,
+  /// position restoration, and play intent as one indivisible operation.
+  Future<void> _loadQueueWithinLane(
+    List<Song> nextQueue, {
+    required int startIndex,
+  }) async {
       // Buffer native snapshots while queue identity is changing. Publishing
       // them immediately would reconcile a new native index against the old
       // Dart queue and briefly expose the wrong current song.
@@ -112,7 +121,19 @@ class Media3PlaybackRuntime {
         _queueLoadInProgress = false;
         final pending = _pendingQueueSnapshot;
         _pendingQueueSnapshot = null;
-        if (pending != null) _acceptSnapshot(pending);
+        if (pending != null) {
+          // A failed replacement never commits its queue identity. Reconcile a
+          // buffered native event only if it can still identify an item in the
+          // previously committed queue; otherwise it may describe a partial
+          // native replacement and must not erase the last known-good state.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
         rethrow;
       }
 
@@ -144,6 +165,203 @@ class Media3PlaybackRuntime {
         // The native event stream remains authoritative if a snapshot read is
         // temporarily unavailable after a successful queue load.
       }
+  }
+
+  /// Reconciles a live queue edit without changing the selected track when it
+  /// still exists. The native queue is replaced at the current position and
+  /// playback intent is restored after the new queue is accepted. This also
+  /// invalidates any prepared crossfade deck so it cannot promote a stale item.
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    _ensureAlive();
+    if (songs.isEmpty) {
+      await clearQueue();
+      return;
+    }
+
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
+      throw ArgumentError.value(
+        songs,
+        'songs',
+        'Queue contains no playable tracks.',
+      );
+    }
+
+    // Resolve the previous state only after earlier transport commands finish.
+    // The queue replacement, optional seek, and play/pause restoration then
+    // remain in the same command lane, so a concurrent seek or pause cannot
+    // be overwritten by a stale snapshot captured before synchronization.
+    await _run(() async {
+      // Queue observers can report the same list repeatedly. A full native
+      // replacement here would cancel a valid preload, reload the current
+      // item, and briefly rebuffer playback despite there being no edit.
+      if (_sameQueue(_queue, playable)) return;
+
+      final previousSong = _current.currentSong;
+      final previousIndex = _current.currentQueueIndex ?? 0;
+      final previousPosition = _current.position;
+      final wasPlaying = _current.isPlaying;
+      var nextIndex = -1;
+
+      if (previousSong != null) {
+        if (previousIndex >= 0 &&
+            previousIndex < playable.length &&
+            _sameTrack(playable[previousIndex], previousSong)) {
+          nextIndex = previousIndex;
+        } else {
+          for (var i = 0; i < playable.length; i++) {
+            if (_sameTrack(playable[i], previousSong)) {
+              nextIndex = i;
+              break;
+            }
+          }
+        }
+      }
+      if (nextIndex < 0) {
+        nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
+      }
+      // A removed current track must not transfer its old timestamp to the
+      // fallback track. Only preserve position when the same track remains.
+      final preservePosition = previousSong != null &&
+          _sameTrack(playable[nextIndex], previousSong);
+
+      if (_backend is PlaybackPlaylistSyncBackend) {
+        await _synchronizeQueueInPlace(playable);
+        return;
+      }
+
+      if (_backend is PlaybackCrossfadeBackend) {
+        await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+      }
+      await _loadQueueWithinLane(playable, startIndex: nextIndex);
+      if (preservePosition) {
+        await _backend.seek(previousPosition);
+      }
+      if (wasPlaying) {
+        await _backend.play();
+      } else {
+        await _backend.pause();
+      }
+    });
+  }
+
+  /// Reconciles the native playlist without replacing the active player. The
+  /// backend owns the in-place edit and invalidates any stale standby preload.
+  Future<void> _synchronizeQueueInPlace(List<Song> nextQueue) async {
+    final backend = _backend as PlaybackPlaylistSyncBackend;
+    _queueLoadInProgress = true;
+    _pendingQueueSnapshot = null;
+    try {
+      await backend.synchronizeQueue(nextQueue);
+      _ensureAlive();
+    } catch (_) {
+      _queueLoadInProgress = false;
+      final pending = _pendingQueueSnapshot;
+      _pendingQueueSnapshot = null;
+      if (pending != null) {
+        final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          _queue,
+          mediaId: pending.mediaId,
+          playableIndex: pending.currentQueueIndex,
+        );
+        if (pendingIndex != null) _acceptSnapshot(pending);
+      }
+      rethrow;
+    }
+
+    _queue = List<Song>.unmodifiable(nextQueue);
+    _queueLoadInProgress = false;
+    final pending = _pendingQueueSnapshot;
+    _pendingQueueSnapshot = null;
+    if (pending != null) {
+      final pendingIndex = Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+        _queue,
+        mediaId: pending.mediaId,
+        playableIndex: pending.currentQueueIndex,
+      );
+      if (pendingIndex != null) _acceptSnapshot(pending);
+    }
+    final revisionBeforeRead = _snapshotRevision;
+    try {
+      final state = await _backend.currentState();
+      if (_snapshotRevision == revisionBeforeRead) _acceptSnapshot(state);
+    } catch (_) {
+      // The native state stream remains authoritative if a snapshot read fails.
+    }
+  }
+
+  bool _sameQueue(List<Song> left, List<Song> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      final a = left[i];
+      final b = right[i];
+      if (a.id != b.id ||
+          a.filePath.trim() != b.filePath.trim() ||
+          a.title != b.title ||
+          a.artist != b.artist ||
+          a.album != b.album ||
+          a.duration != b.duration ||
+          a.dateAdded != b.dateAdded ||
+          a.albumArt != b.albumArt) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameTrack(Song left, Song right) =>
+      left.id == right.id && left.filePath.trim() == right.filePath.trim();
+
+  /// Clears queue identity only after the native backend accepts the clear.
+  /// A failed command preserves the last committed Dart queue and state.
+  Future<void> clearQueue() async {
+    _ensureAlive();
+    await _run(() async {
+      _queueLoadInProgress = true;
+      _pendingQueueSnapshot = null;
+      try {
+        await _backend.clearQueue();
+        _ensureAlive();
+      } catch (_) {
+        _queueLoadInProgress = false;
+        final pending = _pendingQueueSnapshot;
+        _pendingQueueSnapshot = null;
+        if (pending != null) {
+          // A rejected clear must retain the previously committed queue. Ignore
+          // snapshots that can only describe a partially-cleared native queue.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
+        rethrow;
+      }
+      _queue = const <Song>[];
+      _queueLoadInProgress = false;
+      _pendingQueueSnapshot = null;
+      final revisionBeforeRead = _snapshotRevision;
+      try {
+        final clearedState = await _backend.currentState();
+        // A native state event delivered while the follow-up read was in
+        // flight is newer than that read. Do not let a delayed snapshot roll
+        // the reconciled state backwards after the queue has been cleared.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _acceptSnapshot(clearedState);
+        }
+      } catch (_) {
+        // Native clear was accepted, so never leave a stale current song
+        // visible just because the follow-up snapshot was temporarily lost.
+        // But don't erase a newer state event that arrived during the read.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _current = const Media3RuntimeState.empty();
+          if (!_states.isClosed) _states.add(_current);
+        }
+      }
     });
   }
 
@@ -153,18 +371,48 @@ class Media3PlaybackRuntime {
   Future<void> seek(Duration position) => _run(() => _backend.seek(position));
   Future<void> next() => _run(_backend.next);
   Future<void> previous() => _run(_backend.previous);
-  Future<void> setVolume(double value) => _run(() => _backend.setVolume(value));
+  Future<void> setVolume(double value) {
+    _ensureAlive();
+    if (!value.isFinite) {
+      throw ArgumentError.value(value, 'value', 'Volume must be finite.');
+    }
+    return _run(() => _backend.setVolume(value.clamp(0.0, 1.0).toDouble()));
+  }
+
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
     double? sleepFade,
     double? focusDuck,
-  }) => _run(() => _backend.setGainFactors(
-        trackLevel: trackLevel,
-        preamp: preamp,
-        sleepFade: sleepFade,
-        focusDuck: focusDuck,
-      ));
+  }) {
+    _ensureAlive();
+    final factors = <String, double?>{
+      'trackLevel': trackLevel,
+      'preamp': preamp,
+      'sleepFade': sleepFade,
+      'focusDuck': focusDuck,
+    };
+    for (final entry in factors.entries) {
+      final value = entry.value;
+      if (value == null) continue;
+      final max = entry.key == 'preamp' ? 4.0 : 1.0;
+      if (!value.isFinite || value < 0 || value > max) {
+        throw ArgumentError.value(
+          value,
+          entry.key,
+          entry.key == 'preamp'
+              ? 'Must be finite and between 0 and 4.'
+              : 'Must be finite and between 0 and 1.',
+        );
+      }
+    }
+    return _run(() => _backend.setGainFactors(
+          trackLevel: trackLevel,
+          preamp: preamp,
+          sleepFade: sleepFade,
+          focusDuck: focusDuck,
+        ));
+  }
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
   Future<void> setShuffleMode(bool enabled) =>
@@ -181,6 +429,18 @@ class Media3PlaybackRuntime {
     await _run(() async {
       // Resolve against the queue that actually precedes this command in the
       // serialized lane, not a stale queue captured before a pending load.
+      if (queueIndex != null) {
+        if (_queue.isEmpty ||
+            queueIndex < 0 ||
+            queueIndex >= _queue.length ||
+            !_sameTrack(_queue[queueIndex], song)) {
+          throw ArgumentError.value(
+            queueIndex,
+            'queueIndex',
+            'Must identify the incoming song in the committed queue.',
+          );
+        }
+      }
       final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
       if (_queue.isNotEmpty && resolvedIndex != null) {
         await (_backend as PlaybackCrossfadeBackend).preloadNext(
@@ -210,9 +470,6 @@ class Media3PlaybackRuntime {
     }
     return uniqueMatch;
   }
-
-  bool _sameTrack(Song left, Song right) =>
-      left.id == right.id && left.filePath.trim() == right.filePath.trim();
 
   Future<void> crossfade({required Duration duration}) async {
     _ensureAlive();

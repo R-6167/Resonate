@@ -107,6 +107,69 @@ void main() {
       );
     });
 
+    test('crossfade preload rejects an unplayable selected queue occurrence', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/preload-unplayable');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      final queue = <Song>[
+        song(id: 'first'),
+        song(id: 'missing', filePath: '  '),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+
+      await expectLater(
+        adapter.preloadNext(queue[1], queue: queue, startIndex: 1),
+        throwsArgumentError,
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('crossfade preload maps selected occurrence after filtered entries', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/preload-index');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      final queue = <Song>[
+        song(id: 'first'),
+        song(id: 'missing', filePath: '  '),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+      await adapter.preloadNext(queue[2], queue: queue, startIndex: 2);
+
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'preloadNext');
+      final args = calls.single.arguments as Map<Object?, Object?>;
+      expect(args['startIndex'], 1);
+      final items = args['items'] as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items[1] as Map<Object?, Object?>)['id'], 'third');
+    });
+
     test('does not guess duplicate queue occurrences when native ID conflicts', () {
       final repeated = song(id: 'duplicate');
       final songs = <Song>[

@@ -143,6 +143,99 @@ class Media3PlaybackBridge(
                     connected.prepare()
                     result.success(true)
                 }
+                "synchronizeQueue" -> {
+                    val rawItems = call.argument<List<Map<String, Any?>>>("items")
+                    if (rawItems.isNullOrEmpty()) {
+                        Media3PlaybackService.instance?.clearPreload()
+                        connected.stop()
+                        connected.clearMediaItems()
+                        result.success(true)
+                        return
+                    }
+                    if (rawItems.size > 500) {
+                        result.error("INVALID_QUEUE", "Queue is too large; maximum is 500 items.", null)
+                        return
+                    }
+                    val items = mutableListOf<MediaItem>()
+                    for (raw in rawItems) {
+                        val source = raw["uri"] as? String
+                        if (source.isNullOrBlank()) {
+                            result.error("INVALID_QUEUE", "Every queue item needs a non-empty URI.", null)
+                            return
+                        }
+                        val uri = Uri.parse(source)
+                        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                            ?: "Unknown track"
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(raw["artist"] as? String)
+                            .setAlbumTitle(raw["album"] as? String)
+                            .apply {
+                                val artwork = raw["artworkUri"] as? String
+                                if (!artwork.isNullOrBlank()) setArtworkUri(Uri.parse(artwork))
+                            }
+                            .build()
+                        items += MediaItem.Builder()
+                            .setMediaId((raw["id"] as? String)?.takeIf { it.isNotBlank() } ?: source)
+                            .setUri(uri)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+
+                    Media3PlaybackService.instance?.clearPreload()
+                    val oldIndex = connected.currentMediaItemIndex
+                    val oldItem = connected.currentMediaItem
+                    val oldPosition = connected.currentPosition.coerceAtLeast(0L)
+                    val oldPlayIntent = connected.playWhenReady
+                    if (oldItem == null || connected.mediaItemCount == 0 || oldIndex !in 0 until connected.mediaItemCount) {
+                        connected.setMediaItems(items, 0, 0L)
+                        connected.prepare()
+                        if (oldPlayIntent) connected.play()
+                        result.success(true)
+                        return
+                    }
+
+                    val oldIdentity = Media3QueueEntryIdentity(
+                        mediaId = oldItem.mediaId,
+                        uri = oldItem.localConfiguration?.uri?.toString().orEmpty(),
+                    )
+                    val reconciliation = Media3QueueReconciliationPolicy.resolve(
+                        newQueue = items.map { item ->
+                            Media3QueueEntryIdentity(
+                                mediaId = item.mediaId,
+                                uri = item.localConfiguration?.uri?.toString().orEmpty(),
+                            )
+                        },
+                        oldIndex = oldIndex,
+                        oldItem = oldIdentity,
+                    )
+                    val targetIndex = reconciliation.targetIndex
+
+                    // Keep the active deck attached to the player while rebuilding the
+                    // surrounding playlist. This avoids resetting the whole player for
+                    // append/remove/reorder edits and invalidates stale crossfade preload.
+                    connected.removeMediaItems(oldIndex + 1, connected.mediaItemCount)
+                    connected.removeMediaItems(0, oldIndex)
+                    connected.replaceMediaItem(0, items[targetIndex])
+                    if (targetIndex > 0) {
+                        connected.addMediaItems(0, items.subList(0, targetIndex))
+                    }
+                    if (targetIndex < items.lastIndex) {
+                        connected.addMediaItems(targetIndex + 1, items.subList(targetIndex + 1, items.size))
+                    }
+                    // A removed current track must not carry its old timestamp
+                    // into the fallback track. Keep the exact position only when
+                    // the same media occurrence survives the queue edit.
+                    connected.seekTo(targetIndex, reconciliation.targetPosition(oldPosition))
+                    result.success(true)
+                }
+                "clearQueue" -> {
+                    Media3PlaybackService.instance?.clearPreload()
+                    connected.stop()
+                    connected.clearMediaItems()
+                    result.success(true)
+                }
                 "skipToNext" -> { connected.seekToNextMediaItem(); result.success(true) }
                 "skipToPrevious" -> { connected.seekToPreviousMediaItem(); result.success(true) }
                 "setRepeatMode" -> {
@@ -402,6 +495,7 @@ class Media3PlaybackBridge(
         },
         "shuffleModeEnabled" to player.shuffleModeEnabled,
         "volume" to player.volume,
+        "audioSessionId" to (Media3PlaybackService.instance?.activeAudioSessionId() ?: 0),
         "hasError" to (player.playerError != null),
         "error" to player.playerError?.message,
     )

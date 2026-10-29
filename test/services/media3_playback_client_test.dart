@@ -15,6 +15,7 @@ void main() {
         'durationMs': 9000,
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
+        'audioSessionId': 37,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -28,6 +29,7 @@ void main() {
       expect(state.duration, const Duration(milliseconds: 9000));
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
+      expect(state.audioSessionId, 37);
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
@@ -45,6 +47,24 @@ void main() {
       expect(state.volume, 1.0);
     });
 
+    test('uses safe defaults for non-finite native numeric fields', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': double.infinity,
+        'durationMs': double.infinity,
+        'playbackState': double.nan,
+        'currentMediaItemIndex': double.infinity,
+        'mediaItemCount': double.nan,
+        'audioSessionId': double.infinity,
+      });
+
+      expect(state.position, Duration.zero);
+      expect(state.duration, isNull);
+      expect(state.playbackState, 0);
+      expect(state.currentMediaItemIndex, -1);
+      expect(state.mediaItemCount, 0);
+      expect(state.audioSessionId, isNull);
+    });
+
     test('uses safe defaults for malformed snapshot values', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'positionMs': 'unknown',
@@ -56,6 +76,7 @@ void main() {
       expect(state.volume, 1.0);
       expect(state.isPlaying, isFalse);
       expect(state.mediaId, isNull);
+      expect(state.audioSessionId, isNull);
       expect(state.repeatMode, 'off');
       expect(state.shuffleModeEnabled, isFalse);
     });
@@ -93,6 +114,45 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('sends live queue reconciliation as a single native command', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.synchronizeQueue(<Media3QueueItem>[
+        Media3QueueItem(
+          id: 'track-1',
+          uri: Uri.file('/music/one.mp3'),
+          title: 'One',
+        ),
+        Media3QueueItem(
+          id: 'track-2',
+          uri: Uri.file('/music/two.mp3'),
+          title: 'Two',
+        ),
+      ]);
+
+      expect(captured?.method, 'synchronizeQueue');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      final items = arguments['items'] as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items.first as Map<Object?, Object?>)['id'], 'track-1');
+    });
+
+    test('rejects oversized live queue before native invocation', () async {
+      final items = List<Media3QueueItem>.generate(
+        501,
+        (index) => Media3QueueItem(
+          id: 'track-$index',
+          uri: Uri.file('/music/$index.mp3'),
+          title: 'Track $index',
+        ),
+      );
+      await expectLater(client.synchronizeQueue(items), throwsArgumentError);
     });
 
     test('rejects a volume command when native gain policy declines it', () async {

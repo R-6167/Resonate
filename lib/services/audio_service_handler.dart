@@ -48,7 +48,9 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     // Only publish a small window around the current track. Publishing the
     // entire library (100+ MediaItems) on low-RAM devices can kill the UI
     // while ExoPlayer keeps playing ("app keeps stopping").
-    final full = (playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]))
+    final originalQueue =
+        playbackQueue ?? (song == null ? const <Song>[] : <Song>[song]);
+    final full = originalQueue
         .where((item) => item.filePath.trim().isNotEmpty)
         .toList();
     List<Song> window;
@@ -57,7 +59,11 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       window = const <Song>[];
       windowIndex = 0;
     } else {
-      final center = queueIndex.clamp(0, full.length - 1);
+      // queueIndex belongs to the original Resonate queue. Convert it after
+      // filtering unplayable entries so the system queue stays on the song
+      // the provider actually selected.
+      final center = _playableIndexForOriginalIndex(originalQueue, queueIndex)
+          .clamp(0, full.length - 1);
       final start = (center - 8).clamp(0, full.length - 1);
       final end = (center + 9).clamp(0, full.length); // exclusive
       window = full.sublist(start, end);
@@ -147,6 +153,15 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  static int _playableIndexForOriginalIndex(List<Song> songs, int originalIndex) {
+    if (songs.isEmpty) return 0;
+    final safeIndex = originalIndex.clamp(0, songs.length - 1);
+    return songs
+        .take(safeIndex)
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .length;
+  }
+
   Future<void> setSongQueue(List<Song> songs, {int startIndex = 0}) async {
     final sourceSongs = songs.where((song) => song.filePath.trim().isNotEmpty).toList();
     if (sourceSongs.isEmpty) {
@@ -155,7 +170,8 @@ class AudioServiceHandler extends BaseAudioHandler with SeekHandler {
       mediaItem.add(null);
       return;
     }
-    final requestedIndex = startIndex.clamp(0, sourceSongs.length - 1);
+    final requestedIndex = _playableIndexForOriginalIndex(songs, startIndex)
+        .clamp(0, sourceSongs.length - 1);
     _items
       ..clear()
       ..addAll(sourceSongs.map(songToMediaItem));

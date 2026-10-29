@@ -43,6 +43,10 @@ class Media3PlaybackService : MediaSessionService() {
         if (::standbyPlayer.isInitialized) standbyPlayer.volume = gainPolicy.standbyVolume()
     }
 
+    /** Current deck session for session-bound DSP/effects attachment. */
+    fun activeAudioSessionId(): Int =
+        if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
+
     fun setMasterVolume(value: Float): Boolean {
         if (!gainPolicy.setMasterVolume(value)) return false
         applyDeckVolumes()

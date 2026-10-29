@@ -50,6 +50,7 @@ class Media3ProviderStateBridge {
       mediaId: snapshot?.mediaId,
       queueLength: snapshot?.queueLength ?? 0,
       volume: snapshot?.volume ?? 1.0,
+      audioSessionId: snapshot?.audioSessionId,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -82,6 +83,7 @@ class Media3ProviderState {
     required this.mediaId,
     required this.queueLength,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -100,6 +102,7 @@ class Media3ProviderState {
         mediaId = null,
         queueLength = 0,
         volume = 1.0,
+        audioSessionId = null,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -116,6 +119,12 @@ class Media3ProviderState {
   final String? mediaId;
   final int queueLength;
   final double volume;
+
+  /// Android session owned by the active Media3 deck. It can change at a
+  /// crossfade handoff, so consumers must follow state updates rather than
+  /// cache the first non-null value indefinitely.
+  final int? audioSessionId;
+
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;

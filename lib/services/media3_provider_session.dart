@@ -28,20 +28,94 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Future<void>? _startFuture;
 
   Stream<Media3ProviderState> get states => _bridge.states;
+
+  /// Follows the active Media3 deck so DSP and visualizers can rebind when a
+  /// crossfade swaps the active player and its Android audio session.
+  @override
+  Stream<int?> get audioSessionIdStream => Stream<int?>.multi((output) {
+        // Subscribe before taking the initial snapshot. This closes the gap
+        // where a deck handoff could occur after reading current.audioSessionId
+        // but before the listener is attached, leaving DSP bound to a stale ID.
+        var initialized = false;
+        int? lastSessionId;
+        final subscription = states.listen(
+          (state) {
+            final nextSessionId = state.audioSessionId;
+            if (!initialized) {
+              // No initial value has been delivered yet. The snapshot below
+              // will supply it; don't let a queued event be emitted ahead of
+              // that initial value.
+              return;
+            }
+            if (nextSessionId == lastSessionId) return;
+            lastSessionId = nextSessionId;
+            output.add(nextSessionId);
+          },
+          onError: output.addError,
+        );
+        lastSessionId = current.audioSessionId;
+        initialized = true;
+        output.add(lastSessionId);
+        output.onCancel = subscription.cancel;
+      });
   Media3ProviderState get current => _bridge.current;
+
+  // Synchronous reads are projections of the exact state stream that belongs
+  // to this command session. MusicProvider can reconcile state without
+  // reaching around the session for a second player/observation source.
+  @override
+  Song? get currentSong => current.currentSong;
+  @override
+  int? get queueIndex => current.queueIndex;
+  @override
+  bool get isPlaying => current.isPlaying;
+  @override
+  Duration get position => current.position;
+  @override
+  Duration? get duration => current.duration;
+  @override
+  bool get isReady => current.isReady;
+  @override
+  bool get hasError => current.hasError;
+  @override
+  String? get error => current.error;
+  @override
+  double get volume => current.volume;
+  @override
+  PlaybackQueueRepeatMode get repeatMode => switch (current.repeatMode) {
+        'one' => PlaybackQueueRepeatMode.one,
+        'all' => PlaybackQueueRepeatMode.all,
+        _ => PlaybackQueueRepeatMode.off,
+      };
+  @override
+  bool get shuffleModeEnabled => current.shuffleModeEnabled;
 
   /// Compatibility observations for UI consumers that previously subscribed
   /// directly to just_audio's active-player streams. Values are projected from
   /// reconciled Media3 snapshots; they never issue playback commands.
+  Stream<T> _observationStream<T>(T Function(Media3ProviderState) select) =>
+      Stream<T>.multi((output) {
+        // Subscribe first, then publish the current reconciled snapshot. The
+        // bridge uses an asynchronous broadcast controller, so any already
+        // queued state event follows this initial value rather than overtaking
+        // it. Late UI subscribers therefore receive a usable value immediately.
+        final subscription = states.listen(
+          (state) => output.add(select(state)),
+          onError: output.addError,
+        );
+        output.add(select(current));
+        output.onCancel = subscription.cancel;
+      });
+
   @override
   Stream<Duration> get positionStream =>
-      states.map((state) => state.position);
+      _observationStream((state) => state.position);
   @override
   Stream<Duration?> get durationStream =>
-      states.map((state) => state.duration);
+      _observationStream((state) => state.duration);
   @override
   Stream<bool> get playingStream =>
-      states.map((state) => state.isPlaying);
+      _observationStream((state) => state.isPlaying);
 
   @override
   List<Song> get queue => _runtime.queue;
@@ -87,6 +161,11 @@ class Media3ProviderSession implements PlaybackEngineSession {
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) =>
       _runtime.loadQueue(songs, startIndex: startIndex);
+  @override
+  Future<void> synchronizeQueue(List<Song> songs) =>
+      _runtime.synchronizeQueue(songs);
+  @override
+  Future<void> clearQueue() => _runtime.clearQueue();
   @override
   Future<void> play() => _runtime.play();
   @override
@@ -138,7 +217,12 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _bridge.dispose();
-    await _runtime.dispose();
+    // A failed observer shutdown must not leave the native Media3 runtime
+    // connected in the background. The session owns both resources.
+    try {
+      await _bridge.dispose();
+    } finally {
+      await _runtime.dispose();
+    }
   }
 }

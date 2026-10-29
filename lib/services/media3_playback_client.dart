@@ -20,6 +20,7 @@ class Media3PlaybackState {
     required this.currentMediaItemIndex,
     required this.mediaItemCount,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -39,6 +40,8 @@ class Media3PlaybackState {
   final int currentMediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  /// Active ExoPlayer audio session; can change when the crossfade decks swap.
+  final int? audioSessionId;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;
@@ -46,7 +49,7 @@ class Media3PlaybackState {
 
   factory Media3PlaybackState.fromMap(Map<Object?, Object?> map) {
     int integerValue(Object? value, [int fallback = 0]) =>
-        value is num ? value.toInt() : fallback;
+        value is num && value.isFinite ? value.toInt() : fallback;
     double doubleValue(Object? value, [double fallback = 1.0]) =>
         value is num && value.isFinite ? value.toDouble() : fallback;
     bool boolValue(Object? value) => value == true;
@@ -61,7 +64,9 @@ class Media3PlaybackState {
       position: Duration(
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
       ),
-      duration: rawDuration is num && rawDuration >= 0
+      duration: rawDuration is num &&
+              rawDuration.isFinite &&
+              rawDuration >= 0
           ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
@@ -71,6 +76,9 @@ class Media3PlaybackState {
       currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
       mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
+      audioSessionId: integerValue(map['audioSessionId'], 0) > 0
+          ? integerValue(map['audioSessionId'])
+          : null,
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',
@@ -135,6 +143,30 @@ class Media3PlaybackClient {
       },
     );
   }
+
+  /// Reconciles a live queue edit while preserving the currently playing item
+  /// when possible. An empty list is treated as an explicit queue clear.
+  Future<void> synchronizeQueue(List<Media3QueueItem> items) async {
+    if (items.isEmpty) {
+      await clearQueue();
+      return;
+    }
+    if (items.length > 500) {
+      throw ArgumentError.value(
+        items.length,
+        'items',
+        'Queue cannot exceed 500 items.',
+      );
+    }
+    final mappedItems = items.map((item) => item.toMap()).toList(growable: false);
+    await _invokeAccepted(
+      'synchronizeQueue',
+      <String, Object>{'items': mappedItems},
+    );
+  }
+
+  /// Clears the active queue and any prepared crossfade deck.
+  Future<void> clearQueue() => _command('clearQueue');
 
   Future<void> skipToNext() => _command('skipToNext');
   Future<void> skipToPrevious() => _command('skipToPrevious');

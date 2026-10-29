@@ -22,6 +22,7 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  int? audioSessionId,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -37,11 +38,12 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 0.75,
+      audioSessionId: audioSessionId,
       hasError: false,
       error: null,
     );
 
-class _Backend implements PlaybackBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -60,6 +62,12 @@ class _Backend implements PlaybackBackend {
     calls.add('loadQueue');
     value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
     controller.add(value);
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    calls.add('clearQueue');
+    value = _snapshot(mediaId: null, index: -1);
   }
   @override
   Future<void> play() async {
@@ -91,6 +99,17 @@ class _Backend implements PlaybackBackend {
       calls.add('repeat');
   @override
   Future<void> setShuffleMode(bool enabled) async => calls.add('shuffle');
+  @override
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  }) async => calls.add('preloadNext');
+  @override
+  Future<void> crossfade({required Duration duration}) async =>
+      calls.add('crossfade');
+  @override
+  Future<void> cancelCrossfade() async => calls.add('cancelCrossfade');
 }
 
 void main() {
@@ -150,6 +169,137 @@ void main() {
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
       expect(engine.queue.map((song) => song.id), ['track-1']);
+
+      // Commands, streams, and synchronous reads must describe one reconciled
+      // backend state; consumers should not need a parallel player reference.
+      expect(engine.currentSong?.id, 'track-1');
+      expect(engine.queueIndex, 0);
+      expect(engine.isPlaying, isFalse);
+      expect(engine.position, const Duration(seconds: 12));
+      expect(engine.duration, const Duration(minutes: 3));
+      expect(engine.isReady, isTrue);
+      expect(engine.hasError, isFalse);
+      expect(engine.error, isNull);
+      expect(engine.volume, 0.75);
+      expect(engine.repeatMode, PlaybackQueueRepeatMode.off);
+      expect(engine.shuffleModeEnabled, isFalse);
+    });
+
+    test('replays reconciled observations to late subscribers', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      // A subscriber attaching after queue load must not wait for the next
+      // native event just to learn the current position, duration, or playing
+      // state. This matters when UI/provider consumers attach lazily.
+      expect(
+        await session.positionStream.first,
+        const Duration(seconds: 12),
+      );
+      expect(
+        await session.durationStream.first,
+        const Duration(minutes: 3),
+      );
+      expect(await session.playingStream.first, isFalse);
+
+      final playing = session.playingStream.firstWhere((value) => value);
+      backend.value = _snapshot(mediaId: 'track-1', playing: true);
+      backend.controller.add(backend.value);
+      expect(await playing, isTrue);
+    });
+
+    test('DSP subscriber attached before startup receives the native session', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 53);
+
+      // MusicProvider installs its audio-session listener during construction,
+      // before asynchronous engine startup has completed. That early listener
+      // must still see the first real native session when Media3 connects.
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(sessions, [null]);
+
+      await session.start();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null, 53]);
+      await subscription.cancel();
+    });
+
+    test('emits the current session to late DSP subscribers', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      await session.start();
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37]);
+      await subscription.cancel();
+    });
+
+    test('publishes audio-session changes for DSP handoff', () async {
+      await session.start();
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 42);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37, 42]);
+      await subscription.cancel();
+    });
+
+    test('publishes audio-session loss so DSP can detach safely', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: null);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null]);
+      await subscription.cancel();
+    });
+
+    test('does not repeat the same audio session on ordinary state ticks', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      // Position/playing updates can publish many state snapshots without
+      // changing the active Android audio session. DSP should not reattach.
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        audioSessionId: 37,
+        playing: true,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, isEmpty);
+      await subscription.cancel();
     });
 
     test('forwards transport through the serialized runtime', () async {
@@ -170,6 +320,51 @@ void main() {
         'shuffle',
         'gain',
         'seek',
+      ]);
+    });
+
+    test('forwards the full transport and crossfade contract through one session', () async {
+      await session.start();
+      final queue = <Song>[_song('track-1'), _song('track-2')];
+      await session.loadQueue(queue);
+      await session.clearQueue();
+      await session.loadQueue(queue);
+      await session.play();
+      await session.pause();
+      await session.seek(const Duration(seconds: 20));
+      await session.next();
+      await session.previous();
+      await session.setVolume(0.8);
+      await session.setGainFactors(
+        trackLevel: 0.9,
+        preamp: 1.1,
+        sleepFade: 0.7,
+        focusDuck: 0.5,
+      );
+      await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+      await session.setShuffleMode(true);
+      await session.preloadNext(queue[1], queueIndex: 1);
+      await session.crossfade(duration: const Duration(milliseconds: 1200));
+      await session.cancelCrossfade();
+      await session.stop();
+
+      expect(backend.calls, [
+        'loadQueue',
+        'clearQueue',
+        'loadQueue',
+        'play',
+        'pause',
+        'seek',
+        'next',
+        'previous',
+        'volume',
+        'gain',
+        'repeat',
+        'shuffle',
+        'preloadNext',
+        'crossfade',
+        'cancelCrossfade',
+        'stop',
       ]);
     });
 
