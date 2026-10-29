@@ -118,6 +118,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   }
 
   @override
+  Future<void> clearQueue() => _client.clearQueue();
+
+  @override
   Future<void> play() => _client.play();
 
   @override
