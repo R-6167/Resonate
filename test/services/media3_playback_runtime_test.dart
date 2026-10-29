@@ -593,6 +593,29 @@ void main() {
       expect(backend.commandOrder, ['pause-start', 'pause-end']);
     });
 
+    test('queue synchronization waits behind an in-flight transport command', () async {
+      final current = makeSong('current');
+      final replacement = makeSong('replacement');
+      await runtime.loadQueue([current], startIndex: 0);
+      backend.pauseGate = Completer<void>();
+
+      final pause = runtime.pause();
+      final synchronize = runtime.synchronizeQueue([replacement]);
+      await Future<void>.delayed(Duration.zero);
+
+      // Queue replacement must not overtake a transport command already in
+      // the serialized lane.
+      expect(backend.loaded.map((song) => song.id), ['current']);
+      expect(backend.commandOrder, ['pause-start']);
+
+      backend.pauseGate!.complete();
+      await Future.wait([pause, synchronize]);
+
+      expect(backend.loaded.map((song) => song.id), ['replacement']);
+      expect(backend.commandOrder.first, 'pause-start');
+      expect(backend.commandOrder.indexOf('pause-end'), lessThan(backend.commandOrder.length));
+    });
+
     test('queue synchronization filters unplayable entries before resolving index', () async {
       final first = makeSong('first');
       final current = makeSong('current');
