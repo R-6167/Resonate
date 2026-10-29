@@ -491,6 +491,14 @@ void main() {
       expect(backend.preloadedQueueIndex, isNull);
     });
 
+    test('rejects an explicit preload index when no queue is committed', () async {
+      await expectLater(
+        runtime.preloadNext(makeSong('incoming'), queueIndex: 0),
+        throwsArgumentError,
+      );
+      expect(backend.preloadedSong, isNull);
+    });
+
     test('rejects crossfade durations outside native supported range', () async {
       await expectLater(
         runtime.crossfade(duration: const Duration(milliseconds: 100)),
