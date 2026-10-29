@@ -59,6 +59,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Completer<void>? stateReadStarted;
   bool failLoad = false;
   bool failClear = false;
+  Completer<void>? clearGate;
   Completer<void>? pauseGate;
   final List<String> commandOrder = <String>[];
 
@@ -84,6 +85,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> clearQueue() async {
     commandOrder.add('clearQueue');
+    await clearGate?.future;
     if (failClear) throw StateError('simulated clear failure');
     loaded = const <Song>[];
     loadedIndex = -1;
@@ -244,6 +246,23 @@ void main() {
       await expectLater(runtime.clearQueue(), throwsA(isA<StateError>()));
       expect(runtime.queue.map((song) => song.id), ['stable']);
       expect(runtime.current.currentSong?.id, 'stable');
+    });
+
+    test('ignores a partial empty snapshot when native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failClear = true;
+      backend.clearGate = Completer<void>();
+
+      final clear = runtime.clearQueue();
+      await Future<void>.delayed(Duration.zero);
+      backend.controller.add(snapshot(mediaId: null, index: -1, queueLength: 0));
+      await Future<void>.delayed(Duration.zero);
+      backend.clearGate!.complete();
+
+      await expectLater(clear, throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(runtime.current.snapshot?.mediaId, 'stable');
     });
 
     test('ignores an uncommitted native snapshot when queue replacement fails', () async {
