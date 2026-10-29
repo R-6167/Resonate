@@ -47,6 +47,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   List<Song> loaded = const [];
   int loadedIndex = -1;
   bool playing = false;
+  Duration? lastSeek;
   double? lastVolume;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
@@ -104,7 +105,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   @override
   Future<void> stop() async { playing = false; }
   @override
-  Future<void> seek(Duration position) async {}
+  Future<void> seek(Duration position) async { commandOrder.add('seek'); lastSeek = position; }
   @override
   Future<void> next() async {}
   @override
@@ -516,6 +517,78 @@ void main() {
       expect(backend.lastShuffleMode, isTrue);
       await runtime.setShuffleMode(false);
       expect(backend.lastShuffleMode, isFalse);
+    });
+
+    test('synchronizes a live queue edit while retaining current track, position and play intent', () async {
+      final first = makeSong('first');
+      final current = makeSong('current');
+      final last = makeSong('last');
+      await runtime.loadQueue([first, current, last], startIndex: 1);
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: true,
+        isReady: true,
+        playWhenReady: true,
+        position: const Duration(seconds: 47),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 1,
+        queueLength: 3,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+      backend.playing = true;
+
+      await runtime.synchronizeQueue([first, current, makeSong('added'), last]);
+
+      expect(runtime.queue.map((song) => song.id), ['first', 'current', 'added', 'last']);
+      expect(backend.loadedIndex, 1);
+      expect(backend.loaded[backend.loadedIndex].id, 'current');
+      expect(backend.lastSeek, const Duration(seconds: 47));
+      expect(backend.playing, isTrue);
+      expect(backend.cancelCrossfadeCalls, 1);
+      expect(backend.commandOrder, ['seek', 'play']);
+    });
+
+    test('synchronizes queue when current track was removed using nearest playable item', () async {
+      final current = makeSong('current');
+      final next = makeSong('next');
+      await runtime.loadQueue([current, next], startIndex: 0);
+      backend.value = PlaybackSnapshot(
+        connected: true,
+        isPlaying: false,
+        isReady: true,
+        playWhenReady: false,
+        position: const Duration(seconds: 31),
+        duration: const Duration(minutes: 3),
+        mediaId: 'current',
+        title: 'current',
+        artist: 'Artist',
+        album: 'Album',
+        currentQueueIndex: 0,
+        queueLength: 2,
+        volume: 1,
+        hasError: false,
+        error: null,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.commandOrder.clear();
+
+      await runtime.synchronizeQueue([next, makeSong('new')]);
+
+      expect(backend.loadedIndex, 0);
+      expect(backend.loaded[0].id, 'next');
+      expect(backend.lastSeek, const Duration(seconds: 31));
+      expect(backend.playing, isFalse);
+      expect(backend.commandOrder, ['seek', 'pause-start', 'pause-end']);
     });
 
     test('forwards transport commands to the backend', () async {
