@@ -32,6 +32,7 @@ abstract interface class PlaybackEngineSession
   Stream<int?> get audioSessionIdStream;
 
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
+  Future<void> synchronizeQueue(List<Song> songs);
   Future<void> clearQueue();
   Future<void> play();
   Future<void> pause();
