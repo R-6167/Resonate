@@ -169,49 +169,50 @@ class Media3PlaybackRuntime {
       await clearQueue();
       return;
     }
+
     final playable = songs
         .where((song) => song.filePath.trim().isNotEmpty)
         .toList(growable: false);
     if (playable.isEmpty) {
-      throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
+      throw ArgumentError.value(
+        songs,
+        'songs',
+        'Queue contains no playable tracks.',
+      );
     }
 
     final previousSong = _current.currentSong;
-      final previousIndex = _current.currentQueueIndex ?? 0;
-      final previousPosition = _current.position;
-      final wasPlaying = _current.isPlaying;
-      var nextIndex = -1;
+    final previousIndex = _current.currentQueueIndex ?? 0;
+    final previousPosition = _current.position;
+    final wasPlaying = _current.isPlaying;
+    var nextIndex = -1;
 
-      // Prefer the same queue occurrence, then a matching duplicate, then the
-      // nearest valid position. Never select an unplayable entry.
-      if (previousSong != null) {
-        for (var i = previousIndex.clamp(0, songs.length - 1).toInt(); i < songs.length; i++) {
-          if (_sameTrack(songs[i], previousSong) && songs[i].filePath.trim().isNotEmpty) {
+    // Resolve against the filtered queue that will actually be installed.
+    // Prefer the same occurrence when it still occupies that position, then
+    // another matching occurrence, and finally the nearest playable index.
+    if (previousSong != null) {
+      if (previousIndex >= 0 &&
+          previousIndex < playable.length &&
+          _sameTrack(playable[previousIndex], previousSong)) {
+        nextIndex = previousIndex;
+      } else {
+        for (var i = 0; i < playable.length; i++) {
+          if (_sameTrack(playable[i], previousSong)) {
             nextIndex = i;
             break;
           }
         }
-        if (nextIndex < 0) {
-          for (var i = 0; i < songs.length; i++) {
-            if (_sameTrack(songs[i], previousSong) && songs[i].filePath.trim().isNotEmpty) {
-              nextIndex = i;
-              break;
-            }
-          }
-        }
       }
-      if (nextIndex < 0) {
-        nextIndex = previousIndex.clamp(0, songs.length - 1).toInt();
-        if (songs[nextIndex].filePath.trim().isEmpty) {
-          nextIndex = songs.indexWhere((song) => song.filePath.trim().isNotEmpty);
-        }
-      }
+    }
+    if (nextIndex < 0) {
+      nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
+    }
 
-      if (_backend is PlaybackCrossfadeBackend) {
-        await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
-      }
-      await loadQueue(songs, startIndex: nextIndex);
-      await seek(previousPosition);
+    if (_backend is PlaybackCrossfadeBackend) {
+      await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
+    }
+    await loadQueue(playable, startIndex: nextIndex);
+    await seek(previousPosition);
     if (wasPlaying) {
       await play();
     } else {
@@ -378,9 +379,6 @@ class Media3PlaybackRuntime {
     }
     return uniqueMatch;
   }
-
-  bool _sameTrack(Song left, Song right) =>
-      left.id == right.id && left.filePath.trim() == right.filePath.trim();
 
   Future<void> crossfade({required Duration duration}) async {
     _ensureAlive();
