@@ -147,6 +147,37 @@ class Media3PlaybackRuntime {
     });
   }
 
+  /// Clears queue identity only after the native backend accepts the clear.
+  /// A failed command preserves the last committed Dart queue and state.
+  Future<void> clearQueue() async {
+    _ensureAlive();
+    await _run(() async {
+      _queueLoadInProgress = true;
+      _pendingQueueSnapshot = null;
+      try {
+        await _backend.clearQueue();
+        _ensureAlive();
+      } catch (_) {
+        _queueLoadInProgress = false;
+        final pending = _pendingQueueSnapshot;
+        _pendingQueueSnapshot = null;
+        if (pending != null) _acceptSnapshot(pending);
+        rethrow;
+      }
+      _queue = const <Song>[];
+      _queueLoadInProgress = false;
+      _pendingQueueSnapshot = null;
+      try {
+        _acceptSnapshot(await _backend.currentState());
+      } catch (_) {
+        // Native clear was accepted, so never leave a stale current song
+        // visible just because the follow-up snapshot was temporarily lost.
+        _current = const Media3RuntimeState.empty();
+        if (!_states.isClosed) _states.add(_current);
+      }
+    });
+  }
+
   Future<void> play() => _run(_backend.play);
   Future<void> pause() => _run(_backend.pause);
   Future<void> stop() => _run(_backend.stop);
