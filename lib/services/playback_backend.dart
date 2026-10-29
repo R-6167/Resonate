@@ -30,6 +30,12 @@ abstract interface class PlaybackBackend {
   Future<void> setShuffleMode(bool enabled);
 }
 
+/// Optional capability for reconciling queue edits without resetting the active player.
+/// Backends that do not implement this retain their existing full-load fallback.
+abstract interface class PlaybackPlaylistSyncBackend {
+  Future<void> synchronizeQueue(List<Song> songs);
+}
+
 /// Optional crossfade capability for engines that own two synchronized decks.
 /// A backend without this capability must not emulate a crossfade by starting a
 /// second independent playback authority.
