@@ -309,6 +309,8 @@ void main() {
 
       expect(backend.calls, [
         'loadQueue',
+        'clearQueue',
+        'loadQueue',
         'play',
         'pause',
         'seek',
