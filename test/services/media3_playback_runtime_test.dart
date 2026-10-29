@@ -757,7 +757,9 @@ void main() {
       expect(backend.loaded.map((song) => song.id), ['first', 'current']);
       expect(backend.loadedIndex, 1);
       expect(backend.loaded[backend.loadedIndex].id, 'current');
-      expect(backend.lastSeek, const Duration(seconds: 22));
+      // Filtering the unplayable entries leaves the native queue unchanged,
+      // so synchronization must not reload or seek the active item.
+      expect(backend.lastSeek, isNull);
       expect(backend.playing, isTrue);
     });
 
