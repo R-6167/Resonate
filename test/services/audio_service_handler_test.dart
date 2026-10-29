@@ -2,12 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resonate/models/song.dart';
 import 'package:resonate/services/audio_service_handler.dart';
 
-Song _song(String id, {String path = '/music/$id.mp3'}) => Song(
+Song _song(String id, {String? path}) => Song(
       id: id,
       title: id,
       artist: 'Resonate Artist',
       album: 'Resonate Album',
-      filePath: path,
+      filePath: path ?? '/music/$id.mp3',
       duration: const Duration(minutes: 3),
       dateAdded: DateTime.utc(2026, 1, 1),
     );
