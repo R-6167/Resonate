@@ -81,6 +81,13 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
     value = snapshot(mediaId: songs[startIndex].id, index: startIndex, queueLength: songs.length);
   }
   @override
+  Future<void> clearQueue() async {
+    commandOrder.add('clearQueue');
+    loaded = const <Song>[];
+    loadedIndex = -1;
+    value = snapshot(mediaId: null, index: -1, queueLength: 0);
+  }
+  @override
   Future<void> play() async { commandOrder.add('play'); playing = true; }
   @override
   Future<void> pause() async {
@@ -188,6 +195,33 @@ void main() {
       await reconnect;
 
       expect(runtime.current.snapshot?.mediaId, isNot('late'));
+    });
+
+    test('clears native and Dart queue identity through the serialized lane', () async {
+      await runtime.loadQueue([makeSong('a'), makeSong('b')], startIndex: 1);
+
+      await runtime.clearQueue();
+
+      expect(backend.commandOrder, ['clearQueue']);
+      expect(backend.loaded, isEmpty);
+      expect(backend.loadedIndex, -1);
+      expect(runtime.queue, isEmpty);
+      expect(runtime.current.currentSong, isNull);
+      expect(runtime.current.currentQueueIndex, isNull);
+      expect(runtime.current.isPlaying, isFalse);
+    });
+
+    test('preserves committed queue when native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failLoad = true;
+      // Use the backend's load failure switch to simulate a rejected clear.
+      final originalClear = backend.clearQueue;
+      backend.clearQueue = () async => throw StateError('simulated clear failure');
+
+      await expectLater(runtime.clearQueue(), throwsA(isA<StateError>()));
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      backend.clearQueue = originalClear;
     });
 
     test('loads queue through a single backend without optimistic playing state', () async {
