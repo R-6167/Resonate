@@ -270,6 +270,23 @@ void main() {
       expect(runtime.current.snapshot?.mediaId, 'stable');
     });
 
+    test('command lane remains usable after native clear is rejected', () async {
+      await runtime.loadQueue([makeSong('stable')]);
+      backend.failClear = true;
+
+      await expectLater(
+        runtime.clearQueue(),
+        throwsA(isA<StateError>()),
+      );
+      await runtime.play();
+
+      expect(runtime.queue.map((song) => song.id), ['stable']);
+      expect(runtime.current.currentSong?.id, 'stable');
+      expect(backend.loaded.map((song) => song.id), ['stable']);
+      expect(backend.commandOrder, ['clearQueue', 'play']);
+      expect(backend.playing, isTrue);
+    });
+
     test('ignores an uncommitted native snapshot when queue replacement fails', () async {
       await runtime.loadQueue([makeSong('stable')]);
       backend.loadGate = Completer<void>();
