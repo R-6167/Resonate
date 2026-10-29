@@ -273,6 +273,8 @@ void main() {
 
       expect(backend.calls, [
         'loadQueue',
+        'clearQueue',
+        'loadQueue',
         'play',
         'repeat',
         'shuffle',
@@ -284,6 +286,8 @@ void main() {
     test('forwards the full transport and crossfade contract through one session', () async {
       await session.start();
       final queue = <Song>[_song('track-1'), _song('track-2')];
+      await session.loadQueue(queue);
+      await session.clearQueue();
       await session.loadQueue(queue);
       await session.play();
       await session.pause();
