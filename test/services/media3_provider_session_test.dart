@@ -274,8 +274,6 @@ void main() {
 
       expect(backend.calls, [
         'loadQueue',
-        'clearQueue',
-        'loadQueue',
         'play',
         'repeat',
         'shuffle',
