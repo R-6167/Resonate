@@ -586,9 +586,11 @@ void main() {
 
       expect(backend.loadedIndex, 0);
       expect(backend.loaded[0].id, 'next');
-      expect(backend.lastSeek, const Duration(seconds: 31));
+      // The old track's timestamp belongs to the removed item and must
+      // not jump the replacement track forward by 31 seconds.
+      expect(backend.lastSeek, isNull);
       expect(backend.playing, isFalse);
-      expect(backend.commandOrder, ['seek', 'pause-start', 'pause-end']);
+      expect(backend.commandOrder, ['pause-start', 'pause-end']);
     });
 
     test('queue synchronization filters unplayable entries before resolving index', () async {
