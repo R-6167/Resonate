@@ -116,6 +116,45 @@ void main() {
       );
     });
 
+    test('sends live queue reconciliation as a single native command', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.synchronizeQueue(<Media3QueueItem>[
+        Media3QueueItem(
+          id: 'track-1',
+          uri: Uri.file('/music/one.mp3'),
+          title: 'One',
+        ),
+        Media3QueueItem(
+          id: 'track-2',
+          uri: Uri.file('/music/two.mp3'),
+          title: 'Two',
+        ),
+      ]);
+
+      expect(captured?.method, 'synchronizeQueue');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      final items = arguments['items'] as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items.first as Map<Object?, Object?>)['id'], 'track-1');
+    });
+
+    test('rejects oversized live queue before native invocation', () async {
+      final items = List<Media3QueueItem>.generate(
+        501,
+        (index) => Media3QueueItem(
+          id: 'track-$index',
+          uri: Uri.file('/music/$index.mp3'),
+          title: 'Track $index',
+        ),
+      );
+      await expectLater(client.synchronizeQueue(items), throwsArgumentError);
+    });
+
     test('rejects a volume command when native gain policy declines it', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
