@@ -216,18 +216,48 @@ class Media3PlaybackRuntime {
   Future<void> seek(Duration position) => _run(() => _backend.seek(position));
   Future<void> next() => _run(_backend.next);
   Future<void> previous() => _run(_backend.previous);
-  Future<void> setVolume(double value) => _run(() => _backend.setVolume(value));
+  Future<void> setVolume(double value) {
+    _ensureAlive();
+    if (!value.isFinite) {
+      throw ArgumentError.value(value, 'value', 'Volume must be finite.');
+    }
+    return _run(() => _backend.setVolume(value.clamp(0.0, 1.0).toDouble()));
+  }
+
   Future<void> setGainFactors({
     double? trackLevel,
     double? preamp,
     double? sleepFade,
     double? focusDuck,
-  }) => _run(() => _backend.setGainFactors(
-        trackLevel: trackLevel,
-        preamp: preamp,
-        sleepFade: sleepFade,
-        focusDuck: focusDuck,
-      ));
+  }) {
+    _ensureAlive();
+    final factors = <String, double?>{
+      'trackLevel': trackLevel,
+      'preamp': preamp,
+      'sleepFade': sleepFade,
+      'focusDuck': focusDuck,
+    };
+    for (final entry in factors.entries) {
+      final value = entry.value;
+      if (value == null) continue;
+      final max = entry.key == 'preamp' ? 4.0 : 1.0;
+      if (!value.isFinite || value < 0 || value > max) {
+        throw ArgumentError.value(
+          value,
+          entry.key,
+          entry.key == 'preamp'
+              ? 'Must be finite and between 0 and 4.'
+              : 'Must be finite and between 0 and 1.',
+        );
+      }
+    }
+    return _run(() => _backend.setGainFactors(
+          trackLevel: trackLevel,
+          preamp: preamp,
+          sleepFade: sleepFade,
+          focusDuck: focusDuck,
+        ));
+  }
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
       _run(() => _backend.setRepeatMode(mode));
   Future<void> setShuffleMode(bool enabled) =>
