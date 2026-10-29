@@ -213,6 +213,30 @@ void main() {
       expect(runtime.current.isPlaying, isFalse);
     });
 
+    test('does not let a delayed clear snapshot overwrite a newer native event', () async {
+      await runtime.loadQueue([makeSong('old')]);
+
+      final stale = snapshot(mediaId: 'stale', playing: false, queueLength: 0);
+      final fresh = snapshot(mediaId: 'fresh', playing: true, queueLength: 0);
+      backend.stateGate = Completer<PlaybackSnapshot>();
+      backend.stateReadStarted = Completer<void>();
+
+      final clear = runtime.clearQueue();
+      await backend.stateReadStarted!.future;
+      final freshState = runtime.states.firstWhere(
+        (state) => state.snapshot?.mediaId == 'fresh',
+      );
+      backend.value = fresh;
+      backend.controller.add(fresh);
+      await freshState;
+      backend.stateGate!.complete(stale);
+      await clear;
+
+      expect(runtime.queue, isEmpty);
+      expect(runtime.current.snapshot?.mediaId, 'fresh');
+      expect(runtime.current.isPlaying, isTrue);
+    });
+
     test('preserves committed queue when native clear is rejected', () async {
       await runtime.loadQueue([makeSong('stable')]);
       backend.failClear = true;
