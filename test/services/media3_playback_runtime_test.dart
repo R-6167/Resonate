@@ -725,6 +725,9 @@ void main() {
       final first = makeSong('first');
       final current = makeSong('current');
       await runtime.loadQueue([first, current], startIndex: 1);
+      // Keep the fake backend's command state consistent with the snapshot
+      // emitted below; unchanged synchronization must preserve active playback.
+      backend.playing = true;
       backend.value = PlaybackSnapshot(
         connected: true,
         isPlaying: true,
