@@ -372,7 +372,7 @@ void main() {
 
       expect(backend.loaded.single.title, 'Updated title');
       expect(backend.cancelCrossfadeCalls, 1);
-      expect(backend.commandOrder, ['pause-start', 'pause-end']);
+      expect(backend.commandOrder, ['seek', 'pause-start', 'pause-end']);
     });
 
     test('validates gain factors before sending native commands', () async {
