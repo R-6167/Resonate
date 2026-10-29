@@ -207,12 +207,21 @@ class Media3PlaybackRuntime {
     if (nextIndex < 0) {
       nextIndex = previousIndex.clamp(0, playable.length - 1).toInt();
     }
+    // A removed current track must not transfer its old timestamp to the
+    // fallback track. Only preserve position when the same track occurrence
+    // remains selected in the replacement queue.
+    final preservePosition = previousSong != null &&
+        nextIndex >= 0 &&
+        nextIndex < playable.length &&
+        _sameTrack(playable[nextIndex], previousSong);
 
     if (_backend is PlaybackCrossfadeBackend) {
       await (_backend as PlaybackCrossfadeBackend).cancelCrossfade();
     }
     await loadQueue(playable, startIndex: nextIndex);
-    await seek(previousPosition);
+    if (preservePosition) {
+      await seek(previousPosition);
+    }
     if (wasPlaying) {
       await play();
     } else {
