@@ -167,13 +167,23 @@ class Media3PlaybackRuntime {
       _queue = const <Song>[];
       _queueLoadInProgress = false;
       _pendingQueueSnapshot = null;
+      final revisionBeforeRead = _snapshotRevision;
       try {
-        _acceptSnapshot(await _backend.currentState());
+        final clearedState = await _backend.currentState();
+        // A native state event delivered while the follow-up read was in
+        // flight is newer than that read. Do not let a delayed snapshot roll
+        // the reconciled state backwards after the queue has been cleared.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _acceptSnapshot(clearedState);
+        }
       } catch (_) {
         // Native clear was accepted, so never leave a stale current song
         // visible just because the follow-up snapshot was temporarily lost.
-        _current = const Media3RuntimeState.empty();
-        if (!_states.isClosed) _states.add(_current);
+        // But don't erase a newer state event that arrived during the read.
+        if (_snapshotRevision == revisionBeforeRead) {
+          _current = const Media3RuntimeState.empty();
+          if (!_states.isClosed) _states.add(_current);
+        }
       }
     });
   }
