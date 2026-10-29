@@ -63,6 +63,11 @@ class _Backend implements PlaybackBackend {
       audioSessionId: value.audioSessionId,
     );
   }
+
+  @override
+  Future<void> clearQueue() async {
+    value = _snapshot(mediaId: null, index: -1);
+  }
   @override
   Future<void> play() async {}
   @override
