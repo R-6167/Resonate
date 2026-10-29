@@ -196,18 +196,21 @@ class Media3PlaybackBridge(
                         return
                     }
 
-                    val sameOccurrence = items.getOrNull(oldIndex)?.let { candidate ->
-                        candidate.mediaId == oldItem.mediaId &&
-                            candidate.localConfiguration?.uri == oldItem.localConfiguration?.uri
-                    } == true
-                    val matchingIndex = if (sameOccurrence) oldIndex else items.indexOfFirst { candidate ->
-                        candidate.mediaId == oldItem.mediaId &&
-                            candidate.localConfiguration?.uri == oldItem.localConfiguration?.uri
-                    }
-                    val targetIndex = if (matchingIndex >= 0) matchingIndex
-                        else oldIndex.coerceIn(0, items.lastIndex)
-                    val keepPosition = items[targetIndex].mediaId == oldItem.mediaId &&
-                        items[targetIndex].localConfiguration?.uri == oldItem.localConfiguration?.uri
+                    val oldIdentity = Media3QueueEntryIdentity(
+                        mediaId = oldItem.mediaId,
+                        uri = oldItem.localConfiguration?.uri?.toString().orEmpty(),
+                    )
+                    val reconciliation = Media3QueueReconciliationPolicy.resolve(
+                        newQueue = items.map { item ->
+                            Media3QueueEntryIdentity(
+                                mediaId = item.mediaId,
+                                uri = item.localConfiguration?.uri?.toString().orEmpty(),
+                            )
+                        },
+                        oldIndex = oldIndex,
+                        oldItem = oldIdentity,
+                    )
+                    val targetIndex = reconciliation.targetIndex
 
                     // Keep the active deck attached to the player while rebuilding the
                     // surrounding playlist. This avoids resetting the whole player for
@@ -224,7 +227,7 @@ class Media3PlaybackBridge(
                     // A removed current track must not carry its old timestamp
                     // into the fallback track. Keep the exact position only when
                     // the same media occurrence survives the queue edit.
-                    connected.seekTo(targetIndex, if (keepPosition) oldPosition else 0L)
+                    connected.seekTo(targetIndex, reconciliation.targetPosition(oldPosition))
                     result.success(true)
                 }
                 "clearQueue" -> {
