@@ -274,6 +274,17 @@ class Media3PlaybackRuntime {
     await _run(() async {
       // Resolve against the queue that actually precedes this command in the
       // serialized lane, not a stale queue captured before a pending load.
+      if (_queue.isNotEmpty && queueIndex != null) {
+        if (queueIndex < 0 ||
+            queueIndex >= _queue.length ||
+            !_sameTrack(_queue[queueIndex], song)) {
+          throw ArgumentError.value(
+            queueIndex,
+            'queueIndex',
+            'Must identify the incoming song in the committed queue.',
+          );
+        }
+      }
       final resolvedIndex = queueIndex ?? _resolveIncomingQueueIndex(song);
       if (_queue.isNotEmpty && resolvedIndex != null) {
         await (_backend as PlaybackCrossfadeBackend).preloadNext(
