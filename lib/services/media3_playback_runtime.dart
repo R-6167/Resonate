@@ -173,7 +173,17 @@ class Media3PlaybackRuntime {
         _queueLoadInProgress = false;
         final pending = _pendingQueueSnapshot;
         _pendingQueueSnapshot = null;
-        if (pending != null) _acceptSnapshot(pending);
+        if (pending != null) {
+          // A rejected clear must retain the previously committed queue. Ignore
+          // snapshots that can only describe a partially-cleared native queue.
+          final pendingIndex =
+              Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+            _queue,
+            mediaId: pending.mediaId,
+            playableIndex: pending.currentQueueIndex,
+          );
+          if (pendingIndex != null) _acceptSnapshot(pending);
+        }
         rethrow;
       }
       _queue = const <Song>[];
