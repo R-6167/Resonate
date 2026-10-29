@@ -194,6 +194,11 @@ class Media3PlaybackRuntime {
     // remain in the same command lane, so a concurrent seek or pause cannot
     // be overwritten by a stale snapshot captured before synchronization.
     await _run(() async {
+      // Queue observers can report the same list repeatedly. A full native
+      // replacement here would cancel a valid preload, reload the current
+      // item, and briefly rebuffer playback despite there being no edit.
+      if (_sameQueue(_queue, playable)) return;
+
       final previousSong = _current.currentSong;
       final previousIndex = _current.currentQueueIndex ?? 0;
       final previousPosition = _current.position;
@@ -235,6 +240,25 @@ class Media3PlaybackRuntime {
         await _backend.pause();
       }
     });
+  }
+
+  bool _sameQueue(List<Song> left, List<Song> right) {
+    if (left.length != right.length) return false;
+    for (var i = 0; i < left.length; i++) {
+      final a = left[i];
+      final b = right[i];
+      if (a.id != b.id ||
+          a.filePath.trim() != b.filePath.trim() ||
+          a.title != b.title ||
+          a.artist != b.artist ||
+          a.album != b.album ||
+          a.duration != b.duration ||
+          a.dateAdded != b.dateAdded ||
+          a.albumArt != b.albumArt) {
+        return false;
+      }
+    }
+    return true;
   }
 
   bool _sameTrack(Song left, Song right) =>
