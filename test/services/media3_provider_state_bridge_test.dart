@@ -66,6 +66,7 @@ class _Backend implements PlaybackBackend {
 
   @override
   Future<void> clearQueue() async {
+    calls.add('clearQueue');
     value = _snapshot(mediaId: null, index: -1);
   }
   @override
