@@ -176,8 +176,7 @@ class Media3PlaybackRuntime {
       throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
     }
 
-    await _run(() async {
-      final previousSong = _current.currentSong;
+    final previousSong = _current.currentSong;
       final previousIndex = _current.currentQueueIndex ?? 0;
       final previousPosition = _current.position;
       final wasPlaying = _current.isPlaying;
@@ -213,12 +212,11 @@ class Media3PlaybackRuntime {
       }
       await loadQueue(songs, startIndex: nextIndex);
       await seek(previousPosition);
-      if (wasPlaying) {
-        await play();
-      } else {
-        await pause();
-      }
-    });
+    if (wasPlaying) {
+      await play();
+    } else {
+      await pause();
+    }
   }
 
   bool _sameTrack(Song left, Song right) =>
