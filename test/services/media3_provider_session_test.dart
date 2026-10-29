@@ -63,6 +63,11 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend {
     value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
     controller.add(value);
   }
+
+  @override
+  Future<void> clearQueue() async {
+    value = _snapshot(mediaId: null, index: -1);
+  }
   @override
   Future<void> play() async {
     calls.add('play');
