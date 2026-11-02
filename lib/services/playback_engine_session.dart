@@ -19,7 +19,10 @@ abstract interface class PlaybackEngineSession
   int? get queueIndex;
   bool get isPlaying;
   Duration get position;
+  Duration get bufferedPosition;
   Duration? get duration;
+  bool get isBuffering;
+  bool get isCompleted;
   bool get isReady;
   bool get hasError;
   String? get error;
