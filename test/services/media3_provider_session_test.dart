@@ -43,7 +43,7 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -85,6 +85,8 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Future<void> next() async => calls.add('next');
   @override
   Future<void> previous() async => calls.add('previous');
+  @override
+  Future<void> setPlaybackSpeed(double speed) async => calls.add('speed');
   @override
   Future<void> setVolume(double value) async => calls.add('volume');
   @override
@@ -335,6 +337,7 @@ void main() {
       await session.next();
       await session.previous();
       await session.setVolume(0.8);
+      await session.setPlaybackSpeed(1.1);
       await session.setGainFactors(
         trackLevel: 0.9,
         preamp: 1.1,
@@ -358,6 +361,7 @@ void main() {
         'next',
         'previous',
         'volume',
+        'speed',
         'gain',
         'repeat',
         'shuffle',
