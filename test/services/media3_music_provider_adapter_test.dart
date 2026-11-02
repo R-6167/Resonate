@@ -188,6 +188,69 @@ void main() {
       );
     });
 
+    test('native queue index disambiguates repeated media IDs', () {
+      final repeated = song(id: 'duplicate');
+      final songs = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 2,
+        ),
+        2,
+      );
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 0,
+        ),
+        0,
+      );
+    });
+
+    test('does not guess when duplicate media ID conflicts with native index', () {
+      final repeated = song(id: 'duplicate');
+      final songs = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      // The native index identifies a different track, while the media ID
+      // matches two queue occurrences. Neither signal is safe to prefer.
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 1,
+        ),
+        isNull,
+      );
+    });
+
+    test('unique media ID recovers from a stale native queue index', () {
+      final songs = <Song>[
+        song(id: 'first'),
+        song(id: 'second', filePath: '/music/second.mp3'),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'third',
+          playableIndex: 0,
+        ),
+        2,
+      );
+    });
+
     test('forwards queue, transport policy, and gain updates to native Media3', () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       const channel = MethodChannel('test.resonate/media3');
