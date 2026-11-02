@@ -43,7 +43,7 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPlaylistSyncBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
@@ -62,6 +62,13 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     calls.add('loadQueue');
     value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
+    controller.add(value);
+  }
+
+  @override
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    calls.add('syncQueue');
+    value = _snapshot(mediaId: value.mediaId, index: value.currentQueueIndex ?? 0);
     controller.add(value);
   }
 
@@ -147,6 +154,21 @@ void main() {
       expect(state.isReady, isTrue);
       expect(state.volume, 0.75);
       expect(backend.calls, ['loadQueue']);
+    });
+
+    test('forwards live queue reconciliation through the session command lane', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      await session.synchronizeQueue(<Song>[
+        _song('track-1'),
+        _song('track-2'),
+      ]);
+
+      expect(backend.calls, ['loadQueue', 'syncQueue']);
+      expect(session.queue.map((song) => song.id), ['track-1', 'track-2']);
+      expect(session.currentSong?.id, 'track-1');
+      expect(session.queueIndex, 0);
     });
 
     test('coalesces concurrent startup requests into one backend connection', () async {
