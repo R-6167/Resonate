@@ -309,6 +309,29 @@ class Media3PlaybackBridge(
                     if (accepted) result.success(true)
                     else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback speed is unavailable.", null)
                 }
+                "setDeckPlaybackSpeeds" -> {
+                    val active = call.argument<Number>("activeSpeed")?.toFloat()
+                    val standby = call.argument<Number>("standbySpeed")?.toFloat()
+                    if (active == null || standby == null ||
+                        !active.isFinite() || active !in 0.5f..2.0f ||
+                        !standby.isFinite() || standby !in 0.5f..2.0f
+                    ) {
+                        result.error(
+                            "INVALID_DECK_PLAYBACK_SPEED",
+                            "Both deck speeds must be finite and between 0.5 and 2.0.",
+                            null,
+                        )
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance
+                        ?.setDeckPlaybackSpeeds(active, standby) == true
+                    if (accepted) result.success(true)
+                    else result.error(
+                        "MEDIA3_TRANSPORT_UNAVAILABLE",
+                        "Independent Media3 deck speed control is unavailable.",
+                        null,
+                    )
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
