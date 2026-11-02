@@ -166,7 +166,7 @@ void main() {
 
       expect(backend.lastSpeed, 1.25);
       expect(backend.calls, ['speed']);
-      await expectLater(session.setPlaybackSpeed(2.1), throwsArgumentError);
+      expect(() => session.setPlaybackSpeed(2.1), throwsArgumentError);
       expect(backend.calls, ['speed']);
     });
 
