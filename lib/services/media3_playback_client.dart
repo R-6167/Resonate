@@ -202,6 +202,13 @@ class Media3PlaybackClient {
     );
   }
 
+  Future<void> setPlaybackSpeed(double speed) async {
+    if (!speed.isFinite || speed < 0.5 || speed > 2.0) {
+      throw ArgumentError.value(speed, 'speed', 'Must be finite and between 0.5 and 2.0.');
+    }
+    await _invokeAccepted('setPlaybackSpeed', <String, Object>{'speed': speed});
+  }
+
   Future<void> setVolume(double volume) async {
     if (!volume.isFinite) {
       throw ArgumentError.value(volume, 'volume', 'Must be finite.');
