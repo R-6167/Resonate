@@ -72,7 +72,13 @@ class Media3ProviderSession implements PlaybackEngineSession {
   @override
   Duration get position => current.position;
   @override
+  Duration get bufferedPosition => current.bufferedPosition;
+  @override
   Duration? get duration => current.duration;
+  @override
+  bool get isBuffering => current.isBuffering;
+  @override
+  bool get isCompleted => current.isCompleted;
   @override
   bool get isReady => current.isReady;
   @override
@@ -111,11 +117,20 @@ class Media3ProviderSession implements PlaybackEngineSession {
   Stream<Duration> get positionStream =>
       _observationStream((state) => state.position);
   @override
+  Stream<Duration> get bufferedPositionStream =>
+      _observationStream((state) => state.bufferedPosition);
+  @override
   Stream<Duration?> get durationStream =>
       _observationStream((state) => state.duration);
   @override
   Stream<bool> get playingStream =>
       _observationStream((state) => state.isPlaying);
+  @override
+  Stream<bool> get bufferingStream =>
+      _observationStream((state) => state.isBuffering);
+  @override
+  Stream<bool> get completedStream =>
+      _observationStream((state) => state.isCompleted);
 
   @override
   List<Song> get queue => _runtime.queue;
