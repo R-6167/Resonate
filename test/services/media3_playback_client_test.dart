@@ -183,7 +183,12 @@ void main() {
       expect((items.first as Map<Object?, Object?>)['id'], 'track-1');
     });
 
-    test('rejects oversized live queue before native invocation', () async {
+    test('forwards large live queues without an arbitrary client limit', () async {
+      List<Object?>? forwarded;
+      channel.setMockMethodCallHandler((call) async {
+        forwarded = (call.arguments as Map)['items'] as List<Object?>;
+        return true;
+      });
       final items = List<Media3QueueItem>.generate(
         501,
         (index) => Media3QueueItem(
@@ -192,7 +197,10 @@ void main() {
           title: 'Track $index',
         ),
       );
-      await expectLater(client.synchronizeQueue(items), throwsArgumentError);
+
+      await client.synchronizeQueue(items);
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
     });
 
     test('rejects a volume command when native gain policy declines it', () async {
