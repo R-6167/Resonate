@@ -38,6 +38,8 @@ void main() {
     test('parses buffering, completion, and buffered position independently', () {
       final buffering = Media3PlaybackState.fromMap(<Object?, Object?>{
         'playbackState': 2,
+        'isBuffering': true,
+        'isCompleted': false,
         'positionMs': 1200,
         'bufferedPositionMs': 6400,
         'isPlaying': false,
@@ -49,6 +51,8 @@ void main() {
 
       final completed = Media3PlaybackState.fromMap(<Object?, Object?>{
         'playbackState': 4,
+        'isBuffering': false,
+        'isCompleted': true,
         'positionMs': 9000,
         'bufferedPositionMs': 9000,
       });
