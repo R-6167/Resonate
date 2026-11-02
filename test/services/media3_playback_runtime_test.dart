@@ -518,14 +518,25 @@ void main() {
       expect(backend.loaded, isEmpty);
     });
 
-    test('rejects oversized initial queues before native dispatch', () async {
-      final songs = List<Song>.generate(501, (index) => makeSong('track-$index'));
+    test('filters unplayable neighbours from initial queue and preserves selection', () async {
+      final first = makeSong('first');
+      final selected = makeSong('selected');
+      final last = makeSong('last');
+      final songs = [
+        first,
+        makeSong('unplayable-before', path: ' '),
+        selected,
+        makeSong('unplayable-after', path: ''),
+        last,
+      ];
 
-      await expectLater(runtime.loadQueue(songs), throwsArgumentError);
+      await runtime.loadQueue(songs, startIndex: 2);
 
-      expect(backend.loaded, isEmpty);
-      expect(runtime.queue, isEmpty);
-      expect(backend.commandOrder, isEmpty);
+      expect(backend.loaded.map((song) => song.id), ['first', 'selected', 'last']);
+      expect(backend.loadedIndex, 1);
+      expect(runtime.queue.map((song) => song.id), ['first', 'selected', 'last']);
+      expect(runtime.current.currentSong?.id, 'selected');
+      expect(runtime.current.currentQueueIndex, 1);
     });
 
     test('reconciles snapshots to the original queue and preserves duplicate occurrence', () async {
