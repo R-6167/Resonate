@@ -48,6 +48,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
+  Completer<void>? stateGate;
   double? lastSpeed;
   PlaybackSnapshot value = _snapshot();
 
@@ -56,6 +57,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   @override
   Future<PlaybackSnapshot> currentState() async {
     currentStateCalls++;
+    await stateGate?.future;
     return value;
   }
   @override
