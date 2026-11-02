@@ -168,12 +168,12 @@ void main() {
     });
 
     test('projects buffering, buffered position, and completion state', () async {
+      await runtime.loadQueue([_song('track-1')]);
       backend.value = _snapshot(
         mediaId: 'track-1',
         bufferedPosition: const Duration(seconds: 52),
         buffering: true,
       );
-      await runtime.loadQueue([_song('track-1')]);
       await bridge.start();
 
       expect(bridge.current.isBuffering, isTrue);
