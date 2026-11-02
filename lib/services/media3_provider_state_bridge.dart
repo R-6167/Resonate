@@ -43,6 +43,9 @@ class Media3ProviderStateBridge {
       queueIndex: state.currentQueueIndex,
       isPlaying: state.isPlaying,
       position: state.position,
+      bufferedPosition: snapshot?.bufferedPosition ?? Duration.zero,
+      isBuffering: snapshot?.isBuffering ?? false,
+      isCompleted: snapshot?.isCompleted ?? false,
       duration: state.duration,
       connected: state.connected,
       isReady: snapshot?.isReady ?? false,
@@ -76,6 +79,9 @@ class Media3ProviderState {
     required this.queueIndex,
     required this.isPlaying,
     required this.position,
+    this.bufferedPosition = Duration.zero,
+    this.isBuffering = false,
+    this.isCompleted = false,
     required this.duration,
     required this.connected,
     required this.isReady,
@@ -95,6 +101,9 @@ class Media3ProviderState {
         queueIndex = null,
         isPlaying = false,
         position = Duration.zero,
+        bufferedPosition = Duration.zero,
+        isBuffering = false,
+        isCompleted = false,
         duration = null,
         connected = false,
         isReady = false,
@@ -112,6 +121,9 @@ class Media3ProviderState {
   final int? queueIndex;
   final bool isPlaying;
   final Duration position;
+  final Duration bufferedPosition;
+  final bool isBuffering;
+  final bool isCompleted;
   final Duration? duration;
   final bool connected;
   final bool isReady;
