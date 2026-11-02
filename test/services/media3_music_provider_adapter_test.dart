@@ -281,6 +281,7 @@ void main() {
         sleepFade: 0.9,
         focusDuck: 0.5,
       );
+      await adapter.setDeckPlaybackSpeeds(activeSpeed: 1.06, standbySpeed: 0.96);
       await adapter.seek(const Duration(seconds: 17));
       await adapter.next();
 
@@ -289,6 +290,7 @@ void main() {
         'setRepeatMode',
         'setShuffleMode',
         'setGainFactors',
+        'setDeckPlaybackSpeeds',
         'seekTo',
         'skipToNext',
       ]);
@@ -305,7 +307,11 @@ void main() {
         'sleepFade': 0.9,
         'focusDuck': 0.5,
       });
-      expect(calls[4].arguments, {'positionMs': 17000});
+      expect(calls[4].arguments, {
+        'activeSpeed': 1.06,
+        'standbySpeed': 0.96,
+      });
+      expect(calls[5].arguments, {'positionMs': 17000});
     });
 
     test('rejected partial gain update does not poison later updates', () async {
