@@ -380,7 +380,8 @@ class Media3PlaybackRuntime {
     if (backend is! PlaybackSpeedBackend) {
       throw UnsupportedError('The active playback backend does not support speed changes.');
     }
-    return _run(() => backend.setPlaybackSpeed(speed));
+    final speedBackend = backend as PlaybackSpeedBackend;
+    return _run(() => speedBackend.setPlaybackSpeed(speed));
   }
 
   Future<void> setVolume(double value) {
