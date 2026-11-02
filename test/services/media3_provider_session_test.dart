@@ -48,6 +48,7 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
+  double? lastSpeed;
   PlaybackSnapshot value = _snapshot();
 
   @override
@@ -86,7 +87,10 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   @override
   Future<void> previous() async => calls.add('previous');
   @override
-  Future<void> setPlaybackSpeed(double speed) async => calls.add('speed');
+  Future<void> setPlaybackSpeed(double speed) async {
+    lastSpeed = speed;
+    calls.add('speed');
+  }
   @override
   Future<void> setVolume(double value) async => calls.add('volume');
   @override
@@ -153,6 +157,17 @@ void main() {
       ]);
 
       expect(backend.currentStateCalls, 1);
+    });
+
+    test('forwards validated playback speed through the session command lane', () async {
+      await session.start();
+
+      await session.setPlaybackSpeed(1.25);
+
+      expect(backend.lastSpeed, 1.25);
+      expect(backend.calls, ['speed']);
+      await expectLater(session.setPlaybackSpeed(2.1), throwsArgumentError);
+      expect(backend.calls, ['speed']);
     });
 
     test('implements one contract for commands and observations', () async {
