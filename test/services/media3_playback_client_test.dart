@@ -203,6 +203,34 @@ void main() {
       expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
     });
 
+    test('forwards large initial and preload queues without arbitrary limits', () async {
+      List<Object?>? forwarded;
+      String? forwardedMethod;
+      channel.setMockMethodCallHandler((call) async {
+        forwardedMethod = call.method;
+        forwarded = (call.arguments as Map)['items'] as List<Object?>;
+        return true;
+      });
+      final items = List<Media3QueueItem>.generate(
+        501,
+        (index) => Media3QueueItem(
+          id: 'track-$index',
+          uri: Uri.file('/music/$index.mp3'),
+          title: 'Track $index',
+        ),
+      );
+
+      await client.setQueue(items, startIndex: 500);
+      expect(forwardedMethod, 'setQueue');
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
+
+      await client.preloadNext(items.last, queue: items, startIndex: 500);
+      expect(forwardedMethod, 'preloadNext');
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
+    });
+
     test('rejects a volume command when native gain policy declines it', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
