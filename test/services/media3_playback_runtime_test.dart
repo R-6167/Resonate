@@ -539,6 +539,22 @@ void main() {
       expect(runtime.current.currentQueueIndex, 1);
     });
 
+    test('preserves selected occurrence when the same Song instance is repeated', () async {
+      final repeated = makeSong('same');
+      final songs = [
+        repeated,
+        makeSong('unplayable', path: ' '),
+        repeated,
+        makeSong('last'),
+      ];
+
+      await runtime.loadQueue(songs, startIndex: 2);
+
+      expect(backend.loaded.map((song) => song.id), ['same', 'same', 'last']);
+      expect(backend.loadedIndex, 1);
+      expect(runtime.current.currentQueueIndex, 1);
+    });
+
     test('reconciles snapshots to the original queue and preserves duplicate occurrence', () async {
       final repeated = makeSong('same');
       await runtime.loadQueue([repeated, makeSong('middle'), repeated]);
