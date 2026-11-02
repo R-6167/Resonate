@@ -8,6 +8,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -43,6 +44,10 @@ class Media3PlaybackService : MediaSessionService() {
         if (::standbyPlayer.isInitialized) standbyPlayer.volume = gainPolicy.standbyVolume()
     }
 
+    /** Current deck session for session-bound DSP/effects attachment. */
+    fun activeAudioSessionId(): Int =
+        if (::activePlayer.isInitialized) activePlayer.audioSessionId else 0
+
     fun setMasterVolume(value: Float): Boolean {
         if (!gainPolicy.setMasterVolume(value)) return false
         applyDeckVolumes()
@@ -60,6 +65,25 @@ class Media3PlaybackService : MediaSessionService() {
         ) return false
         activePlayer.repeatMode = mode
         standbyPlayer.repeatMode = mode
+        return true
+    }
+
+    fun setPlaybackSpeed(speed: Float): Boolean {
+        if (!speed.isFinite() || speed !in 0.5f..2.0f) return false
+        return setDeckPlaybackSpeeds(active = speed, standby = speed)
+    }
+
+    /**
+     * DJ transitions may need different rates on outgoing and incoming decks.
+     * Keep the two values explicit so a standby correction never changes the
+     * active deck or gets silently overwritten by a shared speed update.
+     */
+    fun setDeckPlaybackSpeeds(active: Float, standby: Float): Boolean {
+        if (!active.isFinite() || active !in 0.5f..2.0f ||
+            !standby.isFinite() || standby !in 0.5f..2.0f
+        ) return false
+        activePlayer.playbackParameters = PlaybackParameters(active)
+        standbyPlayer.playbackParameters = PlaybackParameters(standby)
         return true
     }
 
@@ -166,6 +190,9 @@ class Media3PlaybackService : MediaSessionService() {
         // reconstructing the playlist mid-playback or reloading the incoming track.
         standbyPlayer.repeatMode = activePlayer.repeatMode
         standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        // Start from the active deck's baseline; DJ analysis may then apply an
+        // independent standby correction through setDeckPlaybackSpeeds().
+        standbyPlayer.playbackParameters = activePlayer.playbackParameters
         standbyPlayer.setMediaItems(items, startIndex, 0L)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
@@ -204,6 +231,10 @@ class Media3PlaybackService : MediaSessionService() {
                     val oldPlayer = activePlayer
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
+                    // The promoted deck keeps its transition rate. Reset the
+                    // now-standby deck so the next preload starts from the new
+                    // active rate rather than a stale outgoing correction.
+                    standbyPlayer.playbackParameters = activePlayer.playbackParameters
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
                     activePlayer.setAudioAttributes(audioAttributes(), true)
                     mediaSession?.setPlayer(activePlayer)
@@ -270,6 +301,7 @@ class Media3PlaybackService : MediaSessionService() {
             gainPolicy.resetDecks()
             applyDeckVolumes()
             standbyPlayer.pause()
+            standbyPlayer.playbackParameters = activePlayer.playbackParameters
         }
         if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
             crossfadeStatus = "cancelled"

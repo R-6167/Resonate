@@ -43,6 +43,9 @@ class Media3ProviderStateBridge {
       queueIndex: state.currentQueueIndex,
       isPlaying: state.isPlaying,
       position: state.position,
+      bufferedPosition: snapshot?.bufferedPosition ?? Duration.zero,
+      isBuffering: snapshot?.isBuffering ?? false,
+      isCompleted: snapshot?.isCompleted ?? false,
       duration: state.duration,
       connected: state.connected,
       isReady: snapshot?.isReady ?? false,
@@ -50,6 +53,7 @@ class Media3ProviderStateBridge {
       mediaId: snapshot?.mediaId,
       queueLength: snapshot?.queueLength ?? 0,
       volume: snapshot?.volume ?? 1.0,
+      audioSessionId: snapshot?.audioSessionId,
       repeatMode: snapshot?.repeatMode ?? 'off',
       shuffleModeEnabled: snapshot?.shuffleModeEnabled ?? false,
       hasError: state.hasError,
@@ -75,6 +79,9 @@ class Media3ProviderState {
     required this.queueIndex,
     required this.isPlaying,
     required this.position,
+    this.bufferedPosition = Duration.zero,
+    this.isBuffering = false,
+    this.isCompleted = false,
     required this.duration,
     required this.connected,
     required this.isReady,
@@ -82,6 +89,7 @@ class Media3ProviderState {
     required this.mediaId,
     required this.queueLength,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -93,6 +101,9 @@ class Media3ProviderState {
         queueIndex = null,
         isPlaying = false,
         position = Duration.zero,
+        bufferedPosition = Duration.zero,
+        isBuffering = false,
+        isCompleted = false,
         duration = null,
         connected = false,
         isReady = false,
@@ -100,6 +111,7 @@ class Media3ProviderState {
         mediaId = null,
         queueLength = 0,
         volume = 1.0,
+        audioSessionId = null,
         repeatMode = 'off',
         shuffleModeEnabled = false,
         hasError = false,
@@ -109,6 +121,9 @@ class Media3ProviderState {
   final int? queueIndex;
   final bool isPlaying;
   final Duration position;
+  final Duration bufferedPosition;
+  final bool isBuffering;
+  final bool isCompleted;
   final Duration? duration;
   final bool connected;
   final bool isReady;
@@ -116,6 +131,12 @@ class Media3ProviderState {
   final String? mediaId;
   final int queueLength;
   final double volume;
+
+  /// Android session owned by the active Media3 deck. It can change at a
+  /// crossfade handoff, so consumers must follow state updates rather than
+  /// cache the first non-null value indefinitely.
+  final int? audioSessionId;
+
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;

@@ -5,6 +5,9 @@
 /// engine commands.
 abstract interface class PlaybackObservationSource {
   Stream<Duration> get positionStream;
+  Stream<Duration> get bufferedPositionStream;
   Stream<Duration?> get durationStream;
   Stream<bool> get playingStream;
+  Stream<bool> get bufferingStream;
+  Stream<bool> get completedStream;
 }

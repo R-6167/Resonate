@@ -21,8 +21,12 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  int? audioSessionId,
   String repeatMode = 'off',
   bool shuffleModeEnabled = false,
+  Duration bufferedPosition = Duration.zero,
+  bool buffering = false,
+  bool completed = false,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -30,6 +34,9 @@ PlaybackSnapshot _snapshot({
       isReady: true,
       playWhenReady: playing,
       position: const Duration(seconds: 18),
+      bufferedPosition: bufferedPosition,
+      isBuffering: buffering,
+      isCompleted: completed,
       duration: const Duration(minutes: 3),
       mediaId: mediaId,
       title: mediaId,
@@ -38,6 +45,7 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 1,
+      audioSessionId: audioSessionId,
       repeatMode: repeatMode,
       shuffleModeEnabled: shuffleModeEnabled,
       hasError: false,
@@ -55,7 +63,16 @@ class _Backend implements PlaybackBackend {
   Future<PlaybackSnapshot> currentState() async => value;
   @override
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
-    value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
+    value = _snapshot(
+      mediaId: songs[startIndex].id,
+      index: startIndex,
+      audioSessionId: value.audioSessionId,
+    );
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    value = _snapshot(mediaId: null, index: -1);
   }
   @override
   Future<void> play() async {}
@@ -104,6 +121,7 @@ void main() {
     });
 
     test('projects reconciled Media3 state without optimistic changes', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
       await runtime.loadQueue([_song('track-1')]);
       await bridge.start();
 
@@ -118,11 +136,12 @@ void main() {
       expect(bridge.current.queueLength, 1);
       expect(bridge.current.volume, 1.0);
       expect(bridge.current.duration, const Duration(minutes: 3));
+      expect(bridge.current.audioSessionId, 37);
       expect(bridge.current.repeatMode, 'off');
       expect(bridge.current.shuffleModeEnabled, isFalse);
     });
 
-    test('forwards later native state updates', () async {
+    test('forwards later native state updates including deck session changes', () async {
       await runtime.loadQueue([_song('track-1')]);
       await bridge.start();
 
@@ -130,6 +149,7 @@ void main() {
       backend.controller.add(_snapshot(
         mediaId: 'track-1',
         playing: true,
+        audioSessionId: 42,
         repeatMode: 'one',
         shuffleModeEnabled: true,
       ));
@@ -142,8 +162,37 @@ void main() {
       expect(projected.playWhenReady, isTrue);
       expect(projected.mediaId, 'track-1');
       expect(projected.queueLength, 1);
+      expect(projected.audioSessionId, 42);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects buffering, buffered position, and completion state', () async {
+      await runtime.loadQueue([_song('track-1')]);
+      final bufferingUpdate = runtime.states.first;
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(seconds: 52),
+        buffering: true,
+      );
+      backend.controller.add(backend.value);
+      await bufferingUpdate;
+      await bridge.start();
+
+      expect(bridge.current.isBuffering, isTrue);
+      expect(bridge.current.isCompleted, isFalse);
+      expect(bridge.current.bufferedPosition, const Duration(seconds: 52));
+
+      final completedState = bridge.states.first;
+      backend.controller.add(_snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(minutes: 3),
+        completed: true,
+      ));
+      final projected = await completedState;
+      expect(projected.isBuffering, isFalse);
+      expect(projected.isCompleted, isTrue);
+      expect(projected.bufferedPosition, const Duration(minutes: 3));
     });
 
     test('start is idempotent and disposal stops projection', () async {

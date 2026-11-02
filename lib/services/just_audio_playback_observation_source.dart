@@ -16,11 +16,25 @@ class JustAudioPlaybackObservationSource implements PlaybackObservationSource {
   Stream<Duration> get positionStream => _activePlayer().positionStream;
 
   @override
+  Stream<Duration> get bufferedPositionStream =>
+      _activePlayer().bufferedPositionStream;
+
+  @override
   Stream<Duration?> get durationStream => _activePlayer().durationStream;
 
   @override
   Stream<bool> get playingStream => _activePlayer().playerStateStream.map(
         (state) => state.playing &&
             state.processingState != ProcessingState.completed,
+      );
+
+  @override
+  Stream<bool> get bufferingStream => _activePlayer().playerStateStream.map(
+        (state) => state.processingState == ProcessingState.buffering,
+      );
+
+  @override
+  Stream<bool> get completedStream => _activePlayer().playerStateStream.map(
+        (state) => state.processingState == ProcessingState.completed,
       );
 }

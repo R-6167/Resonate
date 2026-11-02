@@ -107,6 +107,69 @@ void main() {
       );
     });
 
+    test('crossfade preload rejects an unplayable selected queue occurrence', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/preload-unplayable');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      final queue = <Song>[
+        song(id: 'first'),
+        song(id: 'missing', filePath: '  '),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+
+      await expectLater(
+        adapter.preloadNext(queue[1], queue: queue, startIndex: 1),
+        throwsArgumentError,
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('crossfade preload maps selected occurrence after filtered entries', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const channel = MethodChannel('test.resonate/preload-index');
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return true;
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final adapter = Media3MusicProviderAdapter(
+        client: Media3PlaybackClient(methodChannel: channel),
+      );
+      final queue = <Song>[
+        song(id: 'first'),
+        song(id: 'missing', filePath: '  '),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+      await adapter.preloadNext(queue[2], queue: queue, startIndex: 2);
+
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'preloadNext');
+      final args = calls.single.arguments as Map<Object?, Object?>;
+      expect(args['startIndex'], 1);
+      final items = args['items'] as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items[1] as Map<Object?, Object?>)['id'], 'third');
+    });
+
     test('does not guess duplicate queue occurrences when native ID conflicts', () {
       final repeated = song(id: 'duplicate');
       final songs = <Song>[
@@ -122,6 +185,69 @@ void main() {
           playableIndex: 0,
         ),
         isNull,
+      );
+    });
+
+    test('native queue index disambiguates repeated media IDs', () {
+      final repeated = song(id: 'duplicate');
+      final songs = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 2,
+        ),
+        2,
+      );
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 0,
+        ),
+        0,
+      );
+    });
+
+    test('does not guess when duplicate media ID conflicts with native index', () {
+      final repeated = song(id: 'duplicate');
+      final songs = <Song>[
+        repeated,
+        song(id: 'middle', filePath: '/music/middle.mp3'),
+        repeated,
+      ];
+
+      // The native index identifies a different track, while the media ID
+      // matches two queue occurrences. Neither signal is safe to prefer.
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'duplicate',
+          playableIndex: 1,
+        ),
+        isNull,
+      );
+    });
+
+    test('unique media ID recovers from a stale native queue index', () {
+      final songs = <Song>[
+        song(id: 'first'),
+        song(id: 'second', filePath: '/music/second.mp3'),
+        song(id: 'third', filePath: '/music/third.mp3'),
+      ];
+
+      expect(
+        Media3MusicProviderAdapter.resolveCurrentQueueIndex(
+          songs,
+          mediaId: 'third',
+          playableIndex: 0,
+        ),
+        2,
       );
     });
 
@@ -155,6 +281,7 @@ void main() {
         sleepFade: 0.9,
         focusDuck: 0.5,
       );
+      await adapter.setDeckPlaybackSpeeds(activeSpeed: 1.06, standbySpeed: 0.96);
       await adapter.seek(const Duration(seconds: 17));
       await adapter.next();
 
@@ -163,6 +290,7 @@ void main() {
         'setRepeatMode',
         'setShuffleMode',
         'setGainFactors',
+        'setDeckPlaybackSpeeds',
         'seekTo',
         'skipToNext',
       ]);
@@ -179,7 +307,11 @@ void main() {
         'sleepFade': 0.9,
         'focusDuck': 0.5,
       });
-      expect(calls[4].arguments, {'positionMs': 17000});
+      expect(calls[4].arguments, {
+        'activeSpeed': 1.06,
+        'standbySpeed': 0.96,
+      });
+      expect(calls[5].arguments, {'positionMs': 17000});
     });
 
     test('rejected partial gain update does not poison later updates', () async {

@@ -10,6 +10,7 @@ abstract interface class PlaybackBackend {
   Stream<PlaybackSnapshot> get states;
 
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0});
+  Future<void> clearQueue();
   Future<PlaybackSnapshot> currentState();
 
   Future<void> play();
@@ -27,6 +28,27 @@ abstract interface class PlaybackBackend {
   });
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode);
   Future<void> setShuffleMode(bool enabled);
+}
+
+/// Optional playback-rate capability. Backends without native speed support
+/// remain valid, but the provider-facing session must report it as unsupported.
+abstract interface class PlaybackSpeedBackend {
+  Future<void> setPlaybackSpeed(double speed);
+}
+
+/// Optional capability for DJ transitions that require independent rates on
+/// the outgoing and prepared incoming Media3 decks.
+abstract interface class PlaybackDeckSpeedBackend {
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  });
+}
+
+/// Optional capability for reconciling queue edits without resetting the active player.
+/// Backends that do not implement this retain their existing full-load fallback.
+abstract interface class PlaybackPlaylistSyncBackend {
+  Future<void> synchronizeQueue(List<Song> songs);
 }
 
 /// Optional crossfade capability for engines that own two synchronized decks.

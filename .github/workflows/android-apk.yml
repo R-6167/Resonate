@@ -44,12 +44,6 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Patch just_audio DSP sink
-        run: python3 scripts/patch_just_audio_dsp_sink.py
-
-      - name: Verify just_audio DSP sink injection
-        run: python3 scripts/patch_just_audio_dsp_sink.py --verify
-
       - name: Flutter analyze
         run: flutter analyze --no-fatal-warnings --no-fatal-infos
 

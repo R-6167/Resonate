@@ -15,6 +15,7 @@ void main() {
         'durationMs': 9000,
         'mediaId': 'content://media/track/1',
         'volume': 0.65,
+        'audioSessionId': 37,
         'repeatMode': 'all',
         'shuffleModeEnabled': true,
         'hasError': false,
@@ -28,9 +29,36 @@ void main() {
       expect(state.duration, const Duration(milliseconds: 9000));
       expect(state.mediaId, 'content://media/track/1');
       expect(state.volume, 0.65);
+      expect(state.audioSessionId, 37);
       expect(state.repeatMode, 'all');
       expect(state.shuffleModeEnabled, isTrue);
       expect(state.hasError, isFalse);
+    });
+
+    test('parses buffering, completion, and buffered position independently', () {
+      final buffering = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'playbackState': 2,
+        'isBuffering': true,
+        'isCompleted': false,
+        'positionMs': 1200,
+        'bufferedPositionMs': 6400,
+        'isPlaying': false,
+      });
+
+      expect(buffering.isBuffering, isTrue);
+      expect(buffering.isCompleted, isFalse);
+      expect(buffering.bufferedPosition, const Duration(milliseconds: 6400));
+
+      final completed = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'playbackState': 4,
+        'isBuffering': false,
+        'isCompleted': true,
+        'positionMs': 9000,
+        'bufferedPositionMs': 9000,
+      });
+      expect(completed.isBuffering, isFalse);
+      expect(completed.isCompleted, isTrue);
+      expect(completed.bufferedPosition, const Duration(milliseconds: 9000));
     });
 
     test('clamps invalid negative time and out-of-range volume', () {
@@ -45,6 +73,24 @@ void main() {
       expect(state.volume, 1.0);
     });
 
+    test('uses safe defaults for non-finite native numeric fields', () {
+      final state = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'positionMs': double.infinity,
+        'durationMs': double.infinity,
+        'playbackState': double.nan,
+        'currentMediaItemIndex': double.infinity,
+        'mediaItemCount': double.nan,
+        'audioSessionId': double.infinity,
+      });
+
+      expect(state.position, Duration.zero);
+      expect(state.duration, isNull);
+      expect(state.playbackState, 0);
+      expect(state.currentMediaItemIndex, -1);
+      expect(state.mediaItemCount, 0);
+      expect(state.audioSessionId, isNull);
+    });
+
     test('uses safe defaults for malformed snapshot values', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'positionMs': 'unknown',
@@ -56,6 +102,7 @@ void main() {
       expect(state.volume, 1.0);
       expect(state.isPlaying, isFalse);
       expect(state.mediaId, isNull);
+      expect(state.audioSessionId, isNull);
       expect(state.repeatMode, 'off');
       expect(state.shuffleModeEnabled, isFalse);
     });
@@ -70,6 +117,43 @@ void main() {
 
     tearDown(() {
       channel.setMockMethodCallHandler(null);
+    });
+
+    test('sends validated independent deck speeds to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setDeckPlaybackSpeeds(activeSpeed: 1.12, standbySpeed: 0.93);
+      expect(captured?.method, 'setDeckPlaybackSpeeds');
+      expect(captured?.arguments, {
+        'activeSpeed': 1.12,
+        'standbySpeed': 0.93,
+      });
+      await expectLater(
+        client.setDeckPlaybackSpeeds(activeSpeed: 2.1, standbySpeed: 1.0),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDeckPlaybackSpeeds(activeSpeed: 1.0, standbySpeed: double.nan),
+        throwsArgumentError,
+      );
+    });
+
+    test('sends a validated playback speed to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setPlaybackSpeed(1.15);
+      expect(captured?.method, 'setPlaybackSpeed');
+      expect((captured?.arguments as Map)['speed'], 1.15);
+      await expectLater(client.setPlaybackSpeed(2.1), throwsArgumentError);
+      await expectLater(client.setPlaybackSpeed(double.nan), throwsArgumentError);
     });
 
     test('rejects a queue command explicitly refused by native Media3', () async {
@@ -93,6 +177,81 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('sends live queue reconciliation as a single native command', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.synchronizeQueue(<Media3QueueItem>[
+        Media3QueueItem(
+          id: 'track-1',
+          uri: Uri.file('/music/one.mp3'),
+          title: 'One',
+        ),
+        Media3QueueItem(
+          id: 'track-2',
+          uri: Uri.file('/music/two.mp3'),
+          title: 'Two',
+        ),
+      ]);
+
+      expect(captured?.method, 'synchronizeQueue');
+      final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+      final items = arguments['items'] as List<Object?>;
+      expect(items, hasLength(2));
+      expect((items.first as Map<Object?, Object?>)['id'], 'track-1');
+    });
+
+    test('forwards large live queues without an arbitrary client limit', () async {
+      List<Object?>? forwarded;
+      channel.setMockMethodCallHandler((call) async {
+        forwarded = (call.arguments as Map)['items'] as List<Object?>;
+        return true;
+      });
+      final items = List<Media3QueueItem>.generate(
+        501,
+        (index) => Media3QueueItem(
+          id: 'track-$index',
+          uri: Uri.file('/music/$index.mp3'),
+          title: 'Track $index',
+        ),
+      );
+
+      await client.synchronizeQueue(items);
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
+    });
+
+    test('forwards large initial and preload queues without arbitrary limits', () async {
+      List<Object?>? forwarded;
+      String? forwardedMethod;
+      channel.setMockMethodCallHandler((call) async {
+        forwardedMethod = call.method;
+        forwarded = (call.arguments as Map)['items'] as List<Object?>;
+        return true;
+      });
+      final items = List<Media3QueueItem>.generate(
+        501,
+        (index) => Media3QueueItem(
+          id: 'track-$index',
+          uri: Uri.file('/music/$index.mp3'),
+          title: 'Track $index',
+        ),
+      );
+
+      await client.setQueue(items, startIndex: 500);
+      expect(forwardedMethod, 'setQueue');
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
+
+      await client.preloadNext(items.last, queue: items, startIndex: 500);
+      expect(forwardedMethod, 'preloadNext');
+      expect(forwarded, hasLength(501));
+      expect((forwarded!.last as Map<Object?, Object?>)['id'], 'track-500');
     });
 
     test('rejects a volume command when native gain policy declines it', () async {

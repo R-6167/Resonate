@@ -22,6 +22,10 @@ PlaybackSnapshot _snapshot({
   String? mediaId,
   int index = 0,
   bool playing = false,
+  int? audioSessionId,
+  Duration bufferedPosition = Duration.zero,
+  bool buffering = false,
+  bool completed = false,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -29,6 +33,9 @@ PlaybackSnapshot _snapshot({
       isReady: true,
       playWhenReady: playing,
       position: const Duration(seconds: 12),
+      bufferedPosition: bufferedPosition,
+      isBuffering: buffering,
+      isCompleted: completed,
       duration: const Duration(minutes: 3),
       mediaId: mediaId,
       title: mediaId,
@@ -37,16 +44,19 @@ PlaybackSnapshot _snapshot({
       currentQueueIndex: index,
       queueLength: 1,
       volume: 0.75,
+      audioSessionId: audioSessionId,
       hasError: false,
       error: null,
     );
 
-class _Backend implements PlaybackBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
   Completer<void>? stateGate;
+  double? lastSpeed;
+  (double, double)? lastDeckSpeeds;
   PlaybackSnapshot value = _snapshot();
 
   @override
@@ -62,6 +72,19 @@ class _Backend implements PlaybackBackend {
     calls.add('loadQueue');
     value = _snapshot(mediaId: songs[startIndex].id, index: startIndex);
     controller.add(value);
+  }
+
+  @override
+  Future<void> synchronizeQueue(List<Song> songs) async {
+    calls.add('syncQueue');
+    value = _snapshot(mediaId: value.mediaId, index: value.currentQueueIndex ?? 0);
+    controller.add(value);
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    calls.add('clearQueue');
+    value = _snapshot(mediaId: null, index: -1);
   }
   @override
   Future<void> play() async {
@@ -80,6 +103,19 @@ class _Backend implements PlaybackBackend {
   @override
   Future<void> previous() async => calls.add('previous');
   @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    lastSpeed = speed;
+    calls.add('speed');
+  }
+  @override
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) async {
+    lastDeckSpeeds = (activeSpeed, standbySpeed);
+    calls.add('deckSpeeds');
+  }
+  @override
   Future<void> setVolume(double value) async => calls.add('volume');
   @override
   Future<void> setGainFactors({
@@ -93,6 +129,17 @@ class _Backend implements PlaybackBackend {
       calls.add('repeat');
   @override
   Future<void> setShuffleMode(bool enabled) async => calls.add('shuffle');
+  @override
+  Future<void> preloadNext(
+    Song song, {
+    List<Song>? queue,
+    int? startIndex,
+  }) async => calls.add('preloadNext');
+  @override
+  Future<void> crossfade({required Duration duration}) async =>
+      calls.add('crossfade');
+  @override
+  Future<void> cancelCrossfade() async => calls.add('cancelCrossfade');
 }
 
 void main() {
@@ -126,6 +173,21 @@ void main() {
       expect(backend.calls, ['loadQueue']);
     });
 
+    test('forwards live queue reconciliation through the session command lane', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      await session.synchronizeQueue(<Song>[
+        _song('track-1'),
+        _song('track-2'),
+      ]);
+
+      expect(backend.calls, ['loadQueue', 'syncQueue']);
+      expect(session.queue.map((song) => song.id), ['track-1', 'track-2']);
+      expect(session.currentSong?.id, 'track-1');
+      expect(session.queueIndex, 0);
+    });
+
     test('coalesces concurrent startup requests into one backend connection', () async {
       await Future.wait<void>([
         session.start(),
@@ -134,6 +196,37 @@ void main() {
       ]);
 
       expect(backend.currentStateCalls, 1);
+    });
+
+    test('forwards validated playback speed through the session command lane', () async {
+      await session.start();
+
+      await session.setPlaybackSpeed(1.25);
+
+      expect(backend.lastSpeed, 1.25);
+      expect(backend.calls, ['speed']);
+      expect(() => session.setPlaybackSpeed(2.1), throwsArgumentError);
+      expect(backend.calls, ['speed']);
+    });
+
+    test('forwards independent active and standby deck speeds through the session', () async {
+      await session.start();
+
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.08,
+        standbySpeed: 0.94,
+      );
+
+      expect(backend.lastDeckSpeeds, (1.08, 0.94));
+      expect(backend.calls, ['deckSpeeds']);
+      expect(
+        () => session.setDeckPlaybackSpeeds(
+          activeSpeed: 2.1,
+          standbySpeed: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.calls, ['deckSpeeds']);
     });
 
     test('implements one contract for commands and observations', () async {
@@ -152,6 +245,173 @@ void main() {
       expect(await position, const Duration(seconds: 12));
       expect(await duration, const Duration(minutes: 3));
       expect(engine.queue.map((song) => song.id), ['track-1']);
+
+      // Commands, streams, and synchronous reads must describe one reconciled
+      // backend state; consumers should not need a parallel player reference.
+      expect(engine.currentSong?.id, 'track-1');
+      expect(engine.queueIndex, 0);
+      expect(engine.isPlaying, isFalse);
+      expect(engine.position, const Duration(seconds: 12));
+      expect(engine.duration, const Duration(minutes: 3));
+      expect(engine.isReady, isTrue);
+      expect(engine.hasError, isFalse);
+      expect(engine.error, isNull);
+      expect(engine.volume, 0.75);
+      expect(engine.repeatMode, PlaybackQueueRepeatMode.off);
+      expect(engine.shuffleModeEnabled, isFalse);
+    });
+
+    test('exposes buffered position, buffering, and completion on one session', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(seconds: 48),
+        buffering: true,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.bufferedPosition, const Duration(seconds: 48));
+      expect(session.isBuffering, isTrue);
+      expect(session.isCompleted, isFalse);
+      expect(
+        await session.bufferedPositionStream.first,
+        const Duration(seconds: 48),
+      );
+      expect(await session.bufferingStream.first, isTrue);
+
+      final completed = session.completedStream.firstWhere((value) => value);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(minutes: 3),
+        completed: true,
+      );
+      backend.controller.add(backend.value);
+
+      expect(await completed, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.isBuffering, isFalse);
+      expect(session.isCompleted, isTrue);
+      expect(session.bufferedPosition, const Duration(minutes: 3));
+    });
+
+    test('replays reconciled observations to late subscribers', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      // A subscriber attaching after queue load must not wait for the next
+      // native event just to learn the current position, duration, or playing
+      // state. This matters when UI/provider consumers attach lazily.
+      expect(
+        await session.positionStream.first,
+        const Duration(seconds: 12),
+      );
+      expect(
+        await session.durationStream.first,
+        const Duration(minutes: 3),
+      );
+      expect(await session.playingStream.first, isFalse);
+
+      final playing = session.playingStream.firstWhere((value) => value);
+      backend.value = _snapshot(mediaId: 'track-1', playing: true);
+      backend.controller.add(backend.value);
+      expect(await playing, isTrue);
+    });
+
+    test('DSP subscriber attached before startup receives the native session', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 53);
+
+      // MusicProvider installs its audio-session listener during construction,
+      // before asynchronous engine startup has completed. That early listener
+      // must still see the first real native session when Media3 connects.
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(sessions, [null]);
+
+      await session.start();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null, 53]);
+      await subscription.cancel();
+    });
+
+    test('emits the current session to late DSP subscribers', () async {
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      await session.start();
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37]);
+      await subscription.cancel();
+    });
+
+    test('publishes audio-session changes for DSP handoff', () async {
+      await session.start();
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 42);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [37, 42]);
+      await subscription.cancel();
+    });
+
+    test('publishes audio-session loss so DSP can detach safely', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: null);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, [null]);
+      await subscription.cancel();
+    });
+
+    test('does not repeat the same audio session on ordinary state ticks', () async {
+      await session.start();
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      final sessions = <int?>[];
+      final subscription = session.audioSessionIdStream.listen(sessions.add);
+      await Future<void>.delayed(Duration.zero);
+      sessions.clear();
+
+      // Position/playing updates can publish many state snapshots without
+      // changing the active Android audio session. DSP should not reattach.
+      backend.value = _snapshot(mediaId: 'track-1', audioSessionId: 37);
+      backend.controller.add(backend.value);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        audioSessionId: 37,
+        playing: true,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(sessions, isEmpty);
+      await subscription.cancel();
     });
 
     test('forwards transport through the serialized runtime', () async {
@@ -172,6 +432,56 @@ void main() {
         'shuffle',
         'gain',
         'seek',
+      ]);
+    });
+
+    test('forwards the full transport and crossfade contract through one session', () async {
+      await session.start();
+      final queue = <Song>[_song('track-1'), _song('track-2')];
+      await session.loadQueue(queue);
+      await session.clearQueue();
+      await session.loadQueue(queue);
+      await session.play();
+      await session.pause();
+      await session.seek(const Duration(seconds: 20));
+      await session.next();
+      await session.previous();
+      await session.setVolume(0.8);
+      await session.setPlaybackSpeed(1.1);
+      await session.setDeckPlaybackSpeeds(activeSpeed: 1.08, standbySpeed: 0.94);
+      await session.setGainFactors(
+        trackLevel: 0.9,
+        preamp: 1.1,
+        sleepFade: 0.7,
+        focusDuck: 0.5,
+      );
+      await session.setRepeatMode(PlaybackQueueRepeatMode.one);
+      await session.setShuffleMode(true);
+      await session.preloadNext(queue[1], queueIndex: 1);
+      await session.crossfade(duration: const Duration(milliseconds: 1200));
+      await session.cancelCrossfade();
+      await session.stop();
+
+      expect(backend.lastDeckSpeeds, (1.08, 0.94));
+      expect(backend.calls, [
+        'loadQueue',
+        'clearQueue',
+        'loadQueue',
+        'play',
+        'pause',
+        'seek',
+        'next',
+        'previous',
+        'volume',
+        'speed',
+        'deckSpeeds',
+        'gain',
+        'repeat',
+        'shuffle',
+        'preloadNext',
+        'crossfade',
+        'cancelCrossfade',
+        'stop',
       ]);
     });
 

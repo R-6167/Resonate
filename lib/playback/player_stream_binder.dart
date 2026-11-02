@@ -1,17 +1,15 @@
 import 'dart:async';
 
-import 'package:just_audio/just_audio.dart';
-
 /// Owns the lifecycle of the active player's state, position, and duration
 /// subscriptions. MusicProvider continues to own playback decisions and side effects.
 class PlayerStreamBinder {
-  StreamSubscription<PlayerState>? _playerStateSubscription;
+  StreamSubscription<dynamic>? _playerStateSubscription;
   StreamSubscription<Duration>? _positionSubscription;
   StreamSubscription<Duration?>? _durationSubscription;
 
-  void bindPlayerState(
-    Stream<PlayerState> stream,
-    void Function(PlayerState state) onData,
+  void bindPlayerState<T>(
+    Stream<T> stream,
+    void Function(T state) onData,
   ) {
     unawaited(_playerStateSubscription?.cancel());
     _playerStateSubscription = stream.listen(onData);

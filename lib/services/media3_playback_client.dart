@@ -10,8 +10,11 @@ class Media3PlaybackState {
     required this.connected,
     required this.isPlaying,
     required this.playbackState,
+    this.isBuffering = false,
+    this.isCompleted = false,
     required this.playWhenReady,
     required this.position,
+    this.bufferedPosition = Duration.zero,
     required this.duration,
     required this.mediaId,
     required this.title,
@@ -20,6 +23,7 @@ class Media3PlaybackState {
     required this.currentMediaItemIndex,
     required this.mediaItemCount,
     required this.volume,
+    this.audioSessionId,
     this.repeatMode = 'off',
     this.shuffleModeEnabled = false,
     required this.hasError,
@@ -29,8 +33,11 @@ class Media3PlaybackState {
   final bool connected;
   final bool isPlaying;
   final int playbackState;
+  final bool isBuffering;
+  final bool isCompleted;
   final bool playWhenReady;
   final Duration position;
+  final Duration bufferedPosition;
   final Duration? duration;
   final String? mediaId;
   final String? title;
@@ -39,6 +46,8 @@ class Media3PlaybackState {
   final int currentMediaItemIndex;
   final int mediaItemCount;
   final double volume;
+  /// Active ExoPlayer audio session; can change when the crossfade decks swap.
+  final int? audioSessionId;
   final String repeatMode;
   final bool shuffleModeEnabled;
   final bool hasError;
@@ -46,7 +55,7 @@ class Media3PlaybackState {
 
   factory Media3PlaybackState.fromMap(Map<Object?, Object?> map) {
     int integerValue(Object? value, [int fallback = 0]) =>
-        value is num ? value.toInt() : fallback;
+        value is num && value.isFinite ? value.toInt() : fallback;
     double doubleValue(Object? value, [double fallback = 1.0]) =>
         value is num && value.isFinite ? value.toDouble() : fallback;
     bool boolValue(Object? value) => value == true;
@@ -57,11 +66,20 @@ class Media3PlaybackState {
       connected: boolValue(map['connected']),
       isPlaying: boolValue(map['isPlaying']),
       playbackState: integerValue(map['playbackState']),
+      isBuffering: boolValue(map['isBuffering']),
+      isCompleted: boolValue(map['isCompleted']),
       playWhenReady: boolValue(map['playWhenReady']),
       position: Duration(
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
       ),
-      duration: rawDuration is num && rawDuration >= 0
+      bufferedPosition: Duration(
+        milliseconds: integerValue(map['bufferedPositionMs'])
+            .clamp(0, 0x7fffffff)
+            .toInt(),
+      ),
+      duration: rawDuration is num &&
+              rawDuration.isFinite &&
+              rawDuration >= 0
           ? Duration(milliseconds: rawDuration.toInt().clamp(0, 0x7fffffff).toInt())
           : null,
       mediaId: stringValue(map['mediaId']),
@@ -71,6 +89,9 @@ class Media3PlaybackState {
       currentMediaItemIndex: integerValue(map['currentMediaItemIndex'], -1),
       mediaItemCount: integerValue(map['mediaItemCount']),
       volume: doubleValue(map['volume']).clamp(0.0, 1.0).toDouble(),
+      audioSessionId: integerValue(map['audioSessionId'], 0) > 0
+          ? integerValue(map['audioSessionId'])
+          : null,
       repeatMode: const {'off', 'one', 'all'}.contains(map['repeatMode'])
           ? map['repeatMode'] as String
           : 'off',
@@ -121,9 +142,6 @@ class Media3PlaybackClient {
     if (items.isEmpty) {
       throw ArgumentError.value(items, 'items', 'Queue must not be empty.');
     }
-    if (items.length > 500) {
-      throw ArgumentError.value(items.length, 'items', 'Queue cannot exceed 500 items.');
-    }
     if (startIndex < 0 || startIndex >= items.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must point to an item in the queue.');
     }
@@ -135,6 +153,23 @@ class Media3PlaybackClient {
       },
     );
   }
+
+  /// Reconciles a live queue edit while preserving the currently playing item
+  /// when possible. An empty list is treated as an explicit queue clear.
+  Future<void> synchronizeQueue(List<Media3QueueItem> items) async {
+    if (items.isEmpty) {
+      await clearQueue();
+      return;
+    }
+    final mappedItems = items.map((item) => item.toMap()).toList(growable: false);
+    await _invokeAccepted(
+      'synchronizeQueue',
+      <String, Object>{'items': mappedItems},
+    );
+  }
+
+  /// Clears the active queue and any prepared crossfade deck.
+  Future<void> clearQueue() => _command('clearQueue');
 
   Future<void> skipToNext() => _command('skipToNext');
   Future<void> skipToPrevious() => _command('skipToPrevious');
@@ -168,6 +203,35 @@ class Media3PlaybackClient {
       'seekTo',
       <String, Object>{'positionMs': position.inMilliseconds},
     );
+  }
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    if (!speed.isFinite || speed < 0.5 || speed > 2.0) {
+      throw ArgumentError.value(speed, 'speed', 'Must be finite and between 0.5 and 2.0.');
+    }
+    await _invokeAccepted('setPlaybackSpeed', <String, Object>{'speed': speed});
+  }
+
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) async {
+    for (final entry in <String, double>{
+      'activeSpeed': activeSpeed,
+      'standbySpeed': standbySpeed,
+    }.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    await _invokeAccepted('setDeckPlaybackSpeeds', <String, Object>{
+      'activeSpeed': activeSpeed,
+      'standbySpeed': standbySpeed,
+    });
   }
 
   Future<void> setVolume(double volume) async {
@@ -216,8 +280,8 @@ class Media3PlaybackClient {
     int startIndex = 0,
   }) async {
     final items = queue ?? <Media3QueueItem>[item];
-    if (items.isEmpty || items.length > 500) {
-      throw ArgumentError.value(items.length, 'queue', 'Queue must contain 1–500 items.');
+    if (items.isEmpty) {
+      throw ArgumentError.value(items.length, 'queue', 'Queue must not be empty.');
     }
     if (startIndex < 0 || startIndex >= items.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming item.');
