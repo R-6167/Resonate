@@ -35,6 +35,28 @@ void main() {
       expect(state.hasError, isFalse);
     });
 
+    test('parses buffering, completion, and buffered position independently', () {
+      final buffering = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'playbackState': 2,
+        'positionMs': 1200,
+        'bufferedPositionMs': 6400,
+        'isPlaying': false,
+      });
+
+      expect(buffering.isBuffering, isTrue);
+      expect(buffering.isCompleted, isFalse);
+      expect(buffering.bufferedPosition, const Duration(milliseconds: 6400));
+
+      final completed = Media3PlaybackState.fromMap(<Object?, Object?>{
+        'playbackState': 4,
+        'positionMs': 9000,
+        'bufferedPositionMs': 9000,
+      });
+      expect(completed.isBuffering, isFalse);
+      expect(completed.isCompleted, isTrue);
+      expect(completed.bufferedPosition, const Duration(milliseconds: 9000));
+    });
+
     test('clamps invalid negative time and out-of-range volume', () {
       final state = Media3PlaybackState.fromMap(<Object?, Object?>{
         'positionMs': -50,
