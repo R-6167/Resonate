@@ -93,6 +93,20 @@ void main() {
       channel.setMockMethodCallHandler(null);
     });
 
+    test('sends a validated playback speed to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setPlaybackSpeed(1.15);
+      expect(captured?.method, 'setPlaybackSpeed');
+      expect((captured?.arguments as Map)['speed'], 1.15);
+      await expectLater(client.setPlaybackSpeed(2.1), throwsArgumentError);
+      await expectLater(client.setPlaybackSpeed(double.nan), throwsArgumentError);
+    });
+
     test('rejects a queue command explicitly refused by native Media3', () async {
       channel.setMockMethodCallHandler((call) async => false);
 
