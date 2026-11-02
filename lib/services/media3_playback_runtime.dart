@@ -425,7 +425,8 @@ class Media3PlaybackRuntime {
         'The active playback backend does not support independent deck speeds.',
       );
     }
-    return _run(() => backend.setDeckPlaybackSpeeds(
+    final deckSpeedBackend = backend as PlaybackDeckSpeedBackend;
+    return _run(() => deckSpeedBackend.setDeckPlaybackSpeeds(
           activeSpeed: activeSpeed,
           standbySpeed: standbySpeed,
         ));
