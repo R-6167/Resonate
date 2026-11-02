@@ -103,10 +103,6 @@ class Media3PlaybackBridge(
                         result.error("INVALID_QUEUE", "At least one playable queue item is required.", null)
                         return
                     }
-                    if (rawItems.size > 500) {
-                        result.error("INVALID_QUEUE", "Queue is too large; maximum is 500 items.", null)
-                        return
-                    }
                     if (startIndex !in rawItems.indices) {
                         result.error("INVALID_QUEUE_INDEX", "startIndex must identify an item in the queue.", null)
                         return
@@ -150,10 +146,6 @@ class Media3PlaybackBridge(
                         connected.stop()
                         connected.clearMediaItems()
                         result.success(true)
-                        return
-                    }
-                    if (rawItems.size > 500) {
-                        result.error("INVALID_QUEUE", "Queue is too large; maximum is 500 items.", null)
                         return
                     }
                     val items = mutableListOf<MediaItem>()
