@@ -94,7 +94,6 @@ class Media3PlaybackRuntime {
 
     // Match live queue synchronization: discard unplayable neighbours before
     // sending the playlist to Media3, while preserving the selected track.
-    final selectedSong = songs[startIndex];
     final playable = songs
         .where((song) => song.filePath.trim().isNotEmpty)
         .toList(growable: false);
