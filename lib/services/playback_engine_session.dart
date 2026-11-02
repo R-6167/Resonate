@@ -44,6 +44,10 @@ abstract interface class PlaybackEngineSession
   Future<void> next();
   Future<void> previous();
   Future<void> setPlaybackSpeed(double speed);
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  });
   Future<void> setVolume(double value);
   Future<void> setGainFactors({
     double? trackLevel,
