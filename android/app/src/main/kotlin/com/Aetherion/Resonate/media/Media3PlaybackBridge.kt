@@ -359,8 +359,8 @@ class Media3PlaybackBridge(
                     val rawItems = call.argument<List<Map<String, Any?>>>("items")
                     val startIndex = call.argument<Number>("startIndex")?.toInt() ?: 0
                     val descriptors = rawItems ?: listOf(raw)
-                    if (descriptors.isEmpty() || descriptors.size > 500 || startIndex !in descriptors.indices) {
-                        result.error("INVALID_QUEUE", "Incoming queue must contain 1–500 items and a valid start index.", null)
+                    if (descriptors.isEmpty() || startIndex !in descriptors.indices) {
+                        result.error("INVALID_QUEUE", "Incoming queue must not be empty and must have a valid start index.", null)
                         return
                     }
                     val items = mutableListOf<MediaItem>()
