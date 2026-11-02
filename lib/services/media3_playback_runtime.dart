@@ -85,6 +85,13 @@ class Media3PlaybackRuntime {
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     _ensureAlive();
     if (songs.isEmpty) throw ArgumentError.value(songs, 'songs', 'Queue must not be empty.');
+    if (songs.length > 500) {
+      throw ArgumentError.value(
+        songs.length,
+        'songs',
+        'Queue cannot exceed 500 items.',
+      );
+    }
     if (startIndex < 0 || startIndex >= songs.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify an item in the queue.');
     }
