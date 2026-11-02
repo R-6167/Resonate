@@ -30,6 +30,12 @@ abstract interface class PlaybackBackend {
   Future<void> setShuffleMode(bool enabled);
 }
 
+/// Optional playback-rate capability. Backends without native speed support
+/// remain valid, but the provider-facing session must report it as unsupported.
+abstract interface class PlaybackSpeedBackend {
+  Future<void> setPlaybackSpeed(double speed);
+}
+
 /// Optional capability for reconciling queue edits without resetting the active player.
 /// Backends that do not implement this retain their existing full-load fallback.
 abstract interface class PlaybackPlaylistSyncBackend {
