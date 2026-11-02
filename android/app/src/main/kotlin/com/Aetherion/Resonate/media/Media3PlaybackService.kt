@@ -68,6 +68,14 @@ class Media3PlaybackService : MediaSessionService() {
         return true
     }
 
+    fun setPlaybackSpeed(speed: Float): Boolean {
+        if (!speed.isFinite() || speed !in 0.5f..2.0f) return false
+        val parameters = PlaybackParameters(speed)
+        activePlayer.playbackParameters = parameters
+        standbyPlayer.playbackParameters = parameters
+        return true
+    }
+
     fun setShuffleMode(enabled: Boolean): Boolean {
         activePlayer.shuffleModeEnabled = enabled
         standbyPlayer.shuffleModeEnabled = enabled
