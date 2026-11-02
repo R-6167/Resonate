@@ -101,9 +101,12 @@ class Media3PlaybackRuntime {
     if (playable.isEmpty) {
       throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
     }
-    final playableStartIndex = playable.indexWhere(
-      (song) => identical(song, selectedSong),
-    );
+    // Count playable entries before the requested occurrence. Identity lookup
+    // alone is ambiguous when the same Song instance appears more than once.
+    final playableStartIndex = songs
+        .take(startIndex)
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .length;
     if (playableStartIndex < 0) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Selected track is not playable.');
     }
