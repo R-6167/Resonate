@@ -142,9 +142,6 @@ class Media3PlaybackClient {
     if (items.isEmpty) {
       throw ArgumentError.value(items, 'items', 'Queue must not be empty.');
     }
-    if (items.length > 500) {
-      throw ArgumentError.value(items.length, 'items', 'Queue cannot exceed 500 items.');
-    }
     if (startIndex < 0 || startIndex >= items.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must point to an item in the queue.');
     }
@@ -163,13 +160,6 @@ class Media3PlaybackClient {
     if (items.isEmpty) {
       await clearQueue();
       return;
-    }
-    if (items.length > 500) {
-      throw ArgumentError.value(
-        items.length,
-        'items',
-        'Queue cannot exceed 500 items.',
-      );
     }
     final mappedItems = items.map((item) => item.toMap()).toList(growable: false);
     await _invokeAccepted(
@@ -268,8 +258,8 @@ class Media3PlaybackClient {
     int startIndex = 0,
   }) async {
     final items = queue ?? <Media3QueueItem>[item];
-    if (items.isEmpty || items.length > 500) {
-      throw ArgumentError.value(items.length, 'queue', 'Queue must contain 1–500 items.');
+    if (items.isEmpty) {
+      throw ArgumentError.value(items.length, 'queue', 'Queue must not be empty.');
     }
     if (startIndex < 0 || startIndex >= items.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify the incoming item.');
