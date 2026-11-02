@@ -85,25 +85,34 @@ class Media3PlaybackRuntime {
   Future<void> loadQueue(List<Song> songs, {int startIndex = 0}) async {
     _ensureAlive();
     if (songs.isEmpty) throw ArgumentError.value(songs, 'songs', 'Queue must not be empty.');
-    if (songs.length > 500) {
-      throw ArgumentError.value(
-        songs.length,
-        'songs',
-        'Queue cannot exceed 500 items.',
-      );
-    }
     if (startIndex < 0 || startIndex >= songs.length) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Must identify an item in the queue.');
     }
     if (songs[startIndex].filePath.trim().isEmpty) {
       throw ArgumentError.value(startIndex, 'startIndex', 'Selected track is not playable.');
     }
-    if (!songs.any((song) => song.filePath.trim().isNotEmpty)) {
+
+    // Match live queue synchronization: discard unplayable neighbours before
+    // sending the playlist to Media3, while preserving the selected track.
+    final selectedSong = songs[startIndex];
+    final playable = songs
+        .where((song) => song.filePath.trim().isNotEmpty)
+        .toList(growable: false);
+    if (playable.isEmpty) {
       throw ArgumentError.value(songs, 'songs', 'Queue contains no playable tracks.');
     }
+    final playableStartIndex = playable.indexWhere(
+      (song) => identical(song, selectedSong),
+    );
+    if (playableStartIndex < 0) {
+      throw ArgumentError.value(startIndex, 'startIndex', 'Selected track is not playable.');
+    }
 
-    final nextQueue = List<Song>.unmodifiable(songs);
-    await _run(() => _loadQueueWithinLane(nextQueue, startIndex: startIndex));
+    final nextQueue = List<Song>.unmodifiable(playable);
+    await _run(() => _loadQueueWithinLane(
+          nextQueue,
+          startIndex: playableStartIndex,
+        ));
   }
 
   /// Installs a queue while the caller owns the serialized command lane.
