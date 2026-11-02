@@ -25,6 +25,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   final List<StreamSubscription<int?>> _sessionSubscriptions = [];
   final Map<AudioPlayer, int> _sessionIdsByPlayer = {};
   Future<void> _nativeApplyQueue = Future<void>.value();
+  bool _disposed = false;
 
   AudioEffectsProvider({
     this.player,
@@ -39,6 +40,7 @@ class AudioEffectsProvider extends ChangeNotifier {
       // deck swaps. Follow that engine-neutral signal instead of subscribing
       // to legacy player's session streams.
       _engineSessionSubscription = engineSessions.listen((id) {
+        if (_disposed) return;
         final previousId = _engineSessionId;
         final currentId = id != null && id > 0 ? id : null;
         if (currentId == previousId) return;
@@ -146,6 +148,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   Future<void> _detachNativeSession(int sessionId) {
+    if (_disposed) return Future<void>.value();
     _nativeApplyQueue = _nativeApplyQueue
         .catchError((_) {})
         .then((_) => AudioEffectsBridge.detachFromSession(sessionId));
@@ -153,6 +156,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   Future<void> _applyNative({int? sessionIdOverride}) {
+    if (_disposed) return Future<void>.value();
     // AndroidEffectsBridge has a current-session selector, so each attach +
     // apply sequence must be serialized to prevent A/B calls interleaving.
     _nativeApplyQueue = _nativeApplyQueue
@@ -162,6 +166,7 @@ class AudioEffectsProvider extends ChangeNotifier {
   }
 
   Future<void> _applyNativeNow({int? sessionIdOverride}) async {
+    if (_disposed) return;
     final sessionIds = sessionIdOverride != null
         ? <int>{sessionIdOverride}
         : engineAudioSessionIdStream != null
@@ -269,6 +274,8 @@ class AudioEffectsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     unawaited(_engineSessionSubscription?.cancel());
     _engineSessionSubscription = null;
     _engineSessionId = null;
@@ -278,7 +285,12 @@ class AudioEffectsProvider extends ChangeNotifier {
     }
     _sessionSubscriptions.clear();
     _sessionIdsByPlayer.clear();
-    AudioEffectsBridge.release();
+    // Do not release the process-wide native bridge while an attach/apply call
+    // is still in flight. Drain the serialized lane first so a late queued
+    // operation cannot recreate effects after release.
+    unawaited(_nativeApplyQueue
+        .catchError((_) {})
+        .then((_) => AudioEffectsBridge.release()));
     super.dispose();
   }
 }
