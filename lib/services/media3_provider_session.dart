@@ -179,6 +179,9 @@ class Media3ProviderSession implements PlaybackEngineSession {
   @override
   Future<void> previous() => _runtime.previous();
   @override
+  Future<void> setPlaybackSpeed(double speed) => _runtime.setPlaybackSpeed(speed);
+
+  @override
   Future<void> setVolume(double value) => _runtime.setVolume(value);
   @override
   Future<void> setRepeatMode(PlaybackQueueRepeatMode mode) =>
