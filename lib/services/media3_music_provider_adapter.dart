@@ -49,13 +49,6 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
       await _client.clearQueue();
       return;
     }
-    if (playable.length > 500) {
-      throw ArgumentError.value(
-        playable.length,
-        'songs',
-        'Queue cannot exceed 500 playable items.',
-      );
-    }
     await _client.synchronizeQueue(
       playable.map(Media3QueueItem.fromSong).toList(growable: false),
     );
