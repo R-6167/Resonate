@@ -12,6 +12,7 @@ class Media3PlaybackState {
     required this.playbackState,
     required this.playWhenReady,
     required this.position,
+    this.bufferedPosition = Duration.zero,
     required this.duration,
     required this.mediaId,
     required this.title,
@@ -30,8 +31,11 @@ class Media3PlaybackState {
   final bool connected;
   final bool isPlaying;
   final int playbackState;
+  bool get isBuffering => playbackState == 2;
+  bool get isCompleted => playbackState == 4;
   final bool playWhenReady;
   final Duration position;
+  final Duration bufferedPosition;
   final Duration? duration;
   final String? mediaId;
   final String? title;
@@ -63,6 +67,11 @@ class Media3PlaybackState {
       playWhenReady: boolValue(map['playWhenReady']),
       position: Duration(
         milliseconds: integerValue(map['positionMs']).clamp(0, 0x7fffffff).toInt(),
+      ),
+      bufferedPosition: Duration(
+        milliseconds: integerValue(map['bufferedPositionMs'])
+            .clamp(0, 0x7fffffff)
+            .toInt(),
       ),
       duration: rawDuration is num &&
               rawDuration.isFinite &&
