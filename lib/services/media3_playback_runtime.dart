@@ -371,6 +371,18 @@ class Media3PlaybackRuntime {
   Future<void> seek(Duration position) => _run(() => _backend.seek(position));
   Future<void> next() => _run(_backend.next);
   Future<void> previous() => _run(_backend.previous);
+  Future<void> setPlaybackSpeed(double speed) {
+    _ensureAlive();
+    if (!speed.isFinite || speed < 0.5 || speed > 2.0) {
+      throw ArgumentError.value(speed, 'speed', 'Must be finite and between 0.5 and 2.0.');
+    }
+    final backend = _backend;
+    if (backend is! PlaybackSpeedBackend) {
+      throw UnsupportedError('The active playback backend does not support speed changes.');
+    }
+    return _run(() => backend.setPlaybackSpeed(speed));
+  }
+
   Future<void> setVolume(double value) {
     _ensureAlive();
     if (!value.isFinite) {
