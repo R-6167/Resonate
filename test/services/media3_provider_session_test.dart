@@ -49,13 +49,14 @@ PlaybackSnapshot _snapshot({
       error: null,
     );
 
-class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackPlaylistSyncBackend {
+class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend, PlaybackDeckSpeedBackend, PlaybackPlaylistSyncBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   final List<String> calls = <String>[];
   int currentStateCalls = 0;
   Completer<void>? stateGate;
   double? lastSpeed;
+  (double, double)? lastDeckSpeeds;
   PlaybackSnapshot value = _snapshot();
 
   @override
@@ -105,6 +106,14 @@ class _Backend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpe
   Future<void> setPlaybackSpeed(double speed) async {
     lastSpeed = speed;
     calls.add('speed');
+  }
+  @override
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) async {
+    lastDeckSpeeds = (activeSpeed, standbySpeed);
+    calls.add('deckSpeeds');
   }
   @override
   Future<void> setVolume(double value) async => calls.add('volume');
@@ -419,6 +428,7 @@ void main() {
       await session.previous();
       await session.setVolume(0.8);
       await session.setPlaybackSpeed(1.1);
+      await session.setDeckPlaybackSpeeds(activeSpeed: 1.08, standbySpeed: 0.94);
       await session.setGainFactors(
         trackLevel: 0.9,
         preamp: 1.1,
@@ -432,6 +442,7 @@ void main() {
       await session.cancelCrossfade();
       await session.stop();
 
+      expect(backend.lastDeckSpeeds, (1.08, 0.94));
       expect(backend.calls, [
         'loadQueue',
         'clearQueue',
@@ -443,6 +454,7 @@ void main() {
         'previous',
         'volume',
         'speed',
+        'deckSpeeds',
         'gain',
         'repeat',
         'shuffle',
