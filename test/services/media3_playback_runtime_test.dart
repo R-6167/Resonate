@@ -40,7 +40,7 @@ PlaybackSnapshot snapshot({
       error: null,
     );
 
-class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
+class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend, PlaybackSpeedBackend {
   final StreamController<PlaybackSnapshot> controller =
       StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot value = snapshot();
@@ -49,6 +49,7 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   bool playing = false;
   Duration? lastSeek;
   double? lastVolume;
+  double? lastSpeed;
   bool? lastShuffleMode;
   Map<String, double?> lastGainFactors = const {};
   Song? preloadedSong;
@@ -114,6 +115,8 @@ class FakePlaybackBackend implements PlaybackBackend, PlaybackCrossfadeBackend {
   Future<void> next() async {}
   @override
   Future<void> previous() async {}
+  @override
+  Future<void> setPlaybackSpeed(double speed) async { lastSpeed = speed; commandOrder.add('speed'); }
   @override
   Future<void> setVolume(double value) async { lastVolume = value; }
   @override
@@ -397,6 +400,15 @@ void main() {
       expect(() => runtime.setVolume(double.infinity), throwsArgumentError);
       expect(backend.commandOrder, isEmpty);
       expect(backend.lastGainFactors, isEmpty);
+    });
+
+    test('validates and serializes playback speed at the runtime boundary', () async {
+      await runtime.setPlaybackSpeed(1.15);
+      expect(backend.lastSpeed, 1.15);
+      expect(backend.commandOrder, ['speed']);
+      await expectLater(runtime.setPlaybackSpeed(0.1), throwsArgumentError);
+      await expectLater(runtime.setPlaybackSpeed(double.nan), throwsArgumentError);
+      expect(backend.lastSpeed, 1.15);
     });
 
     test('clamps master volume at the runtime boundary', () async {
