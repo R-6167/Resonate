@@ -24,6 +24,9 @@ PlaybackSnapshot _snapshot({
   int? audioSessionId,
   String repeatMode = 'off',
   bool shuffleModeEnabled = false,
+  Duration bufferedPosition = Duration.zero,
+  bool buffering = false,
+  bool completed = false,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -31,6 +34,9 @@ PlaybackSnapshot _snapshot({
       isReady: true,
       playWhenReady: playing,
       position: const Duration(seconds: 18),
+      bufferedPosition: bufferedPosition,
+      isBuffering: buffering,
+      isCompleted: completed,
       duration: const Duration(minutes: 3),
       mediaId: mediaId,
       title: mediaId,
@@ -159,6 +165,31 @@ void main() {
       expect(projected.audioSessionId, 42);
       expect(projected.repeatMode, 'one');
       expect(projected.shuffleModeEnabled, isTrue);
+    });
+
+    test('projects buffering, buffered position, and completion state', () async {
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(seconds: 52),
+        buffering: true,
+      );
+      await runtime.loadQueue([_song('track-1')]);
+      await bridge.start();
+
+      expect(bridge.current.isBuffering, isTrue);
+      expect(bridge.current.isCompleted, isFalse);
+      expect(bridge.current.bufferedPosition, const Duration(seconds: 52));
+
+      final completedState = bridge.states.first;
+      backend.controller.add(_snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(minutes: 3),
+        completed: true,
+      ));
+      final projected = await completedState;
+      expect(projected.isBuffering, isFalse);
+      expect(projected.isCompleted, isTrue);
+      expect(projected.bufferedPosition, const Duration(minutes: 3));
     });
 
     test('start is idempotent and disposal stops projection', () async {
