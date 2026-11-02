@@ -406,8 +406,8 @@ void main() {
       await runtime.setPlaybackSpeed(1.15);
       expect(backend.lastSpeed, 1.15);
       expect(backend.commandOrder, ['speed']);
-      await expectLater(runtime.setPlaybackSpeed(0.1), throwsArgumentError);
-      await expectLater(runtime.setPlaybackSpeed(double.nan), throwsArgumentError);
+      expect(() => runtime.setPlaybackSpeed(0.1), throwsArgumentError);
+      expect(() => runtime.setPlaybackSpeed(double.nan), throwsArgumentError);
       expect(backend.lastSpeed, 1.15);
     });
 
