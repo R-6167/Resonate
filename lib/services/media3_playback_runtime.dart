@@ -402,6 +402,35 @@ class Media3PlaybackRuntime {
     return _run(() => speedBackend.setPlaybackSpeed(speed));
   }
 
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  }) {
+    _ensureAlive();
+    for (final entry in <String, double>{
+      'activeSpeed': activeSpeed,
+      'standbySpeed': standbySpeed,
+    }.entries) {
+      if (!entry.value.isFinite || entry.value < 0.5 || entry.value > 2.0) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Must be finite and between 0.5 and 2.0.',
+        );
+      }
+    }
+    final backend = _backend;
+    if (backend is! PlaybackDeckSpeedBackend) {
+      throw UnsupportedError(
+        'The active playback backend does not support independent deck speeds.',
+      );
+    }
+    return _run(() => backend.setDeckPlaybackSpeeds(
+          activeSpeed: activeSpeed,
+          standbySpeed: standbySpeed,
+        ));
+  }
+
   Future<void> setVolume(double value) {
     _ensureAlive();
     if (!value.isFinite) {
