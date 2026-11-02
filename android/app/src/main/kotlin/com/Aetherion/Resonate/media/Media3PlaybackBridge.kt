@@ -307,6 +307,16 @@ class Media3PlaybackBridge(
                     connected.seekTo(positionMs)
                     result.success(true)
                 }
+                "setPlaybackSpeed" -> {
+                    val speed = call.argument<Number>("speed")?.toFloat()
+                    if (speed == null || !speed.isFinite() || speed !in 0.5f..2.0f) {
+                        result.error("INVALID_PLAYBACK_SPEED", "speed must be finite and between 0.5 and 2.0.", null)
+                        return
+                    }
+                    val accepted = Media3PlaybackService.instance?.setPlaybackSpeed(speed) == true
+                    if (accepted) result.success(true)
+                    else result.error("MEDIA3_TRANSPORT_UNAVAILABLE", "Media3 playback speed is unavailable.", null)
+                }
                 "setVolume" -> {
                     val volume = call.argument<Number>("value")?.toFloat()
                     if (volume == null || !volume.isFinite()) {
