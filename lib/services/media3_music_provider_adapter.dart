@@ -160,6 +160,9 @@ class Media3MusicProviderAdapter implements PlaybackBackend, PlaybackCrossfadeBa
   Future<void> previous() => _client.skipToPrevious();
 
   @override
+  Future<void> setPlaybackSpeed(double speed) => _client.setPlaybackSpeed(speed);
+
+  @override
   Future<void> setVolume(double value) => _client.setVolume(value);
 
   @override
