@@ -518,6 +518,16 @@ void main() {
       expect(backend.loaded, isEmpty);
     });
 
+    test('rejects oversized initial queues before native dispatch', () async {
+      final songs = List<Song>.generate(501, (index) => makeSong('track-$index'));
+
+      await expectLater(runtime.loadQueue(songs), throwsArgumentError);
+
+      expect(backend.loaded, isEmpty);
+      expect(runtime.queue, isEmpty);
+      expect(backend.commandOrder, isEmpty);
+    });
+
     test('reconciles snapshots to the original queue and preserves duplicate occurrence', () async {
       final repeated = makeSong('same');
       await runtime.loadQueue([repeated, makeSong('middle'), repeated]);
