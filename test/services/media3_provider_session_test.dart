@@ -23,6 +23,9 @@ PlaybackSnapshot _snapshot({
   int index = 0,
   bool playing = false,
   int? audioSessionId,
+  Duration bufferedPosition = Duration.zero,
+  bool buffering = false,
+  bool completed = false,
 }) =>
     PlaybackSnapshot(
       connected: true,
@@ -30,6 +33,9 @@ PlaybackSnapshot _snapshot({
       isReady: true,
       playWhenReady: playing,
       position: const Duration(seconds: 12),
+      bufferedPosition: bufferedPosition,
+      isBuffering: buffering,
+      isCompleted: completed,
       duration: const Duration(minutes: 3),
       mediaId: mediaId,
       title: mediaId,
@@ -224,6 +230,42 @@ void main() {
       expect(engine.volume, 0.75);
       expect(engine.repeatMode, PlaybackQueueRepeatMode.off);
       expect(engine.shuffleModeEnabled, isFalse);
+    });
+
+    test('exposes buffered position, buffering, and completion on one session', () async {
+      await session.start();
+      await session.loadQueue(<Song>[_song('track-1')]);
+
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(seconds: 48),
+        buffering: true,
+      );
+      backend.controller.add(backend.value);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(session.bufferedPosition, const Duration(seconds: 48));
+      expect(session.isBuffering, isTrue);
+      expect(session.isCompleted, isFalse);
+      expect(
+        await session.bufferedPositionStream.first,
+        const Duration(seconds: 48),
+      );
+      expect(await session.bufferingStream.first, isTrue);
+
+      final completed = session.completedStream.firstWhere((value) => value);
+      backend.value = _snapshot(
+        mediaId: 'track-1',
+        bufferedPosition: const Duration(minutes: 3),
+        completed: true,
+      );
+      backend.controller.add(backend.value);
+
+      expect(await completed, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.isBuffering, isFalse);
+      expect(session.isCompleted, isTrue);
+      expect(session.bufferedPosition, const Duration(minutes: 3));
     });
 
     test('replays reconciled observations to late subscribers', () async {
