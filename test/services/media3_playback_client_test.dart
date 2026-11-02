@@ -119,6 +119,29 @@ void main() {
       channel.setMockMethodCallHandler(null);
     });
 
+    test('sends validated independent deck speeds to native Media3', () async {
+      MethodCall? captured;
+      channel.setMockMethodCallHandler((call) async {
+        captured = call;
+        return true;
+      });
+
+      await client.setDeckPlaybackSpeeds(activeSpeed: 1.12, standbySpeed: 0.93);
+      expect(captured?.method, 'setDeckPlaybackSpeeds');
+      expect(captured?.arguments, {
+        'activeSpeed': 1.12,
+        'standbySpeed': 0.93,
+      });
+      await expectLater(
+        client.setDeckPlaybackSpeeds(activeSpeed: 2.1, standbySpeed: 1.0),
+        throwsArgumentError,
+      );
+      await expectLater(
+        client.setDeckPlaybackSpeeds(activeSpeed: 1.0, standbySpeed: double.nan),
+        throwsArgumentError,
+      );
+    });
+
     test('sends a validated playback speed to native Media3', () async {
       MethodCall? captured;
       channel.setMockMethodCallHandler((call) async {
