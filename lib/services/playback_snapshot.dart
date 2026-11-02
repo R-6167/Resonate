@@ -9,6 +9,9 @@ class PlaybackSnapshot {
     required this.isReady,
     required this.playWhenReady,
     required this.position,
+    this.bufferedPosition = Duration.zero,
+    this.isBuffering = false,
+    this.isCompleted = false,
     required this.duration,
     required this.mediaId,
     required this.title,
@@ -29,6 +32,9 @@ class PlaybackSnapshot {
   final bool isReady;
   final bool playWhenReady;
   final Duration position;
+  final Duration bufferedPosition;
+  final bool isBuffering;
+  final bool isCompleted;
   final Duration? duration;
   final String? mediaId;
   final String? title;
