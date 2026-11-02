@@ -69,6 +69,24 @@ void main() {
         <String>['one', 'two']);
   });
 
+  test('does not impose an arbitrary limit on playable queue size', () async {
+    MethodCall? captured;
+    channel.setMockMethodCallHandler((call) async {
+      captured = call;
+      return true;
+    });
+
+    final songs = List<Song>.generate(
+      501,
+      (index) => song('track-$index', '/music/track-$index.mp3'),
+    );
+    await adapter.synchronizeQueue(songs);
+
+    expect(captured?.method, 'synchronizeQueue');
+    final arguments = Map<Object?, Object?>.from(captured!.arguments as Map);
+    expect(arguments['items'], hasLength(501));
+  });
+
   test('clears native queue when no playable items remain', () async {
     MethodCall? captured;
     channel.setMockMethodCallHandler((call) async {
