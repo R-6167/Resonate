@@ -209,6 +209,26 @@ void main() {
       expect(backend.calls, ['speed']);
     });
 
+    test('forwards independent active and standby deck speeds through the session', () async {
+      await session.start();
+
+      await session.setDeckPlaybackSpeeds(
+        activeSpeed: 1.08,
+        standbySpeed: 0.94,
+      );
+
+      expect(backend.lastDeckSpeeds, (1.08, 0.94));
+      expect(backend.calls, ['deckSpeeds']);
+      expect(
+        () => session.setDeckPlaybackSpeeds(
+          activeSpeed: 2.1,
+          standbySpeed: 1.0,
+        ),
+        throwsArgumentError,
+      );
+      expect(backend.calls, ['deckSpeeds']);
+    });
+
     test('implements one contract for commands and observations', () async {
       final PlaybackEngineSession engine = session;
       final PlaybackObservationSource observations = engine;
