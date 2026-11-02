@@ -190,6 +190,9 @@ class Media3PlaybackService : MediaSessionService() {
         // reconstructing the playlist mid-playback or reloading the incoming track.
         standbyPlayer.repeatMode = activePlayer.repeatMode
         standbyPlayer.shuffleModeEnabled = activePlayer.shuffleModeEnabled
+        // Start from the active deck's baseline; DJ analysis may then apply an
+        // independent standby correction through setDeckPlaybackSpeeds().
+        standbyPlayer.playbackParameters = activePlayer.playbackParameters
         standbyPlayer.setMediaItems(items, startIndex, 0L)
         standbyPlayer.prepare()
         crossfadeStatus = "preparing"
@@ -228,6 +231,10 @@ class Media3PlaybackService : MediaSessionService() {
                     val oldPlayer = activePlayer
                     activePlayer = standbyPlayer
                     standbyPlayer = oldPlayer
+                    // The promoted deck keeps its transition rate. Reset the
+                    // now-standby deck so the next preload starts from the new
+                    // active rate rather than a stale outgoing correction.
+                    standbyPlayer.playbackParameters = activePlayer.playbackParameters
                     oldPlayer.setAudioAttributes(audioAttributes(), false)
                     activePlayer.setAudioAttributes(audioAttributes(), true)
                     mediaSession?.setPlayer(activePlayer)
@@ -294,6 +301,7 @@ class Media3PlaybackService : MediaSessionService() {
             gainPolicy.resetDecks()
             applyDeckVolumes()
             standbyPlayer.pause()
+            standbyPlayer.playbackParameters = activePlayer.playbackParameters
         }
         if (crossfadeStatus == "fading" || crossfadeStatus == "preparing" || crossfadeStatus == "ready") {
             crossfadeStatus = "cancelled"
