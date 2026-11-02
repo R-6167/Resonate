@@ -70,9 +70,20 @@ class Media3PlaybackService : MediaSessionService() {
 
     fun setPlaybackSpeed(speed: Float): Boolean {
         if (!speed.isFinite() || speed !in 0.5f..2.0f) return false
-        val parameters = PlaybackParameters(speed)
-        activePlayer.playbackParameters = parameters
-        standbyPlayer.playbackParameters = parameters
+        return setDeckPlaybackSpeeds(active = speed, standby = speed)
+    }
+
+    /**
+     * DJ transitions may need different rates on outgoing and incoming decks.
+     * Keep the two values explicit so a standby correction never changes the
+     * active deck or gets silently overwritten by a shared speed update.
+     */
+    fun setDeckPlaybackSpeeds(active: Float, standby: Float): Boolean {
+        if (!active.isFinite() || active !in 0.5f..2.0f ||
+            !standby.isFinite() || standby !in 0.5f..2.0f
+        ) return false
+        activePlayer.playbackParameters = PlaybackParameters(active)
+        standbyPlayer.playbackParameters = PlaybackParameters(standby)
         return true
     }
 
