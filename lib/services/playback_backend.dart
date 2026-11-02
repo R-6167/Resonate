@@ -36,6 +36,15 @@ abstract interface class PlaybackSpeedBackend {
   Future<void> setPlaybackSpeed(double speed);
 }
 
+/// Optional capability for DJ transitions that require independent rates on
+/// the outgoing and prepared incoming Media3 decks.
+abstract interface class PlaybackDeckSpeedBackend {
+  Future<void> setDeckPlaybackSpeeds({
+    required double activeSpeed,
+    required double standbySpeed,
+  });
+}
+
 /// Optional capability for reconciling queue edits without resetting the active player.
 /// Backends that do not implement this retain their existing full-load fallback.
 abstract interface class PlaybackPlaylistSyncBackend {
