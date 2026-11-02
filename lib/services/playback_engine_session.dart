@@ -40,6 +40,7 @@ abstract interface class PlaybackEngineSession
   Future<void> seek(Duration position);
   Future<void> next();
   Future<void> previous();
+  Future<void> setPlaybackSpeed(double speed);
   Future<void> setVolume(double value);
   Future<void> setGainFactors({
     double? trackLevel,
